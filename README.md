@@ -130,6 +130,7 @@ choma         by opa334
 dust          by bootandy
 fd            by David Peter
 ffmpeg        by FFmpeg Team
+fileicon      by Michael Klement
 fzf           by Junegunn Choi
 jq            by Stephen Dolan, Nicolas Williams, et al.
 ldid          by Jay Freeman (saurik) / Procursus Team
