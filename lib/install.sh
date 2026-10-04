@@ -9,7 +9,7 @@ set -e
 BRANCH="main"
 
 # 版本号只在这里定义：欢迎语与写入 VERSION.json 都引用它
-MACWAVE_VERSION="2.4.2"
+MACWAVE_VERSION="2.5"
 
 BASE_URL="https://raw.githubusercontent.com/Sha0huaZhang/MacWave/$BRANCH"
 
