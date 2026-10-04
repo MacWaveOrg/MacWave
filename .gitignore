@@ -3,6 +3,8 @@
 downloads/
 *.partial
 tmp/
+# 忽略软链接
+links/
 
 # 运行时动态生成的用户数据（不要上传）
 installed.json
