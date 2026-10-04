@@ -129,6 +129,7 @@ bat           by David Peter
 btop          by Aristocratos
 choma         by opa334
 dust          by bootandy
+eza           by Christina Sørensen and the eza community
 fd            by David Peter
 ffmpeg        by FFmpeg Team
 fileicon      by Michael Klement
