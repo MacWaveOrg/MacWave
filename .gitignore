@@ -39,3 +39,19 @@ backup_*.rb
 __pycache__/
 *.pyc
 .DS_Store
+
+# ========== 忽略私人文件 ==========
+*.docx
+*.pdf
+*.doc
+*.xlsx
+*.pages
+
+# 其他文件
+*.zip
+*.gz
+*.xz
+*.tgz
+*.bz2
+*.conda
+*.exe
