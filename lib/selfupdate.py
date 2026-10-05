@@ -21,7 +21,7 @@ RESET = '\033[0m'
 
 # -------------------- 常量 --------------------
 
-from configpaths import CONFIG_FILE, VERSION_FILE
+from configpaths import VERSION_FILE_NAME, config_dir_candidates, find_config_dir
 
 VERSION_DATA_URL = "https://raw.githubusercontent.com/Sha0huaZhang/MacWave/configdata/versiondata/latest_version"
 FETCH_TIMEOUT = 30
@@ -79,11 +79,21 @@ def version_key(value):
     return parts
 
 
+def version_file():
+    # 配置目录可能在上一次升级里被迁移（见 configdata 的 updatedata/），
+    # 所以每次都重新解析一遍，不要用模块级常量。
+    config_dir = find_config_dir()
+    if config_dir is not None:
+        return config_dir / VERSION_FILE_NAME
+    return config_dir_candidates()[0] / VERSION_FILE_NAME
+
+
 def installed_version():
-    if not VERSION_FILE.exists():
+    path = version_file()
+    if not path.exists():
         return None
     try:
-        return json.loads(VERSION_FILE.read_text()).get("version")
+        return json.loads(path.read_text()).get("version")
     except (ValueError, OSError):
         return None
 
@@ -91,7 +101,7 @@ def installed_version():
 # -------------------- 主流程 --------------------
 
 def handle_selfupdate(input_string=""):
-    if not CONFIG_FILE.exists():
+    if find_config_dir() is None:
         print(f"{RED_BOLD}🌊 Error: MacWave is not installed. Run lib/install.sh first.{RESET}")
         sys.exit(1)
 
