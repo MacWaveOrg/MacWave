@@ -125,16 +125,17 @@ deps: "gettext@0.21.0"
 
 ## 五、数据源（`configdata` 分支的 `updatedata/`）
 
-当某个版本**改动了目录结构**（例如 2.5 把用户级安装的配置从 `/opt/macwave_config` 挪到 `~/.config/macwave_config`）时，`install.sh` 与 `selfupdate.sh` 会在下载程序文件之前执行一段**数据驱动**的迁移：
+当某个版本**改动了目录结构**（例如 2.5 把用户级安装的配置从 `/opt/macwave_config` 挪到 `~/.config/macwave_config`）时，需要一段迁移。迁移是**数据驱动**的，由 `install.sh` 在下载程序文件之前执行：
 
 ```
 updatedata/{版本号}/dir_structure_change   只有一个字符：Y/y = 目录结构变了，N/n = 没变
 updatedata/{版本号}/transfer_commands      Y/y 时执行这个脚本（bash -c "$(curl …)"）
 ```
 
-- `{版本号}`：`install.sh` 用脚本里写死的 `MACWAVE_VERSION`（正在安装的版本）；`selfupdate.sh` 用 `latest_version` 里的目标版本
+- `{版本号}`：`install.sh` 用脚本里写死的 `MACWAVE_VERSION`（正在安装的版本）
 - 标记文件拉不到（不存在/网络失败）→ 按「没变」处理，静默跳过；标记为 Y/y 但**迁移脚本拉不到** → 报错退出（避免留下半迁移状态）
-- 执行迁移脚本前会 `export MACWAVE_INSTALL_DIR`（安装目录）/ `MACWAVE_CONFIG_DIR`（配置目录）/ `MACWAVE_TARGET_VERSION`，脚本据此**自己判断要不要搬**（例如只对用户级安装迁移）；`selfupdate.sh` 在迁移后会**重新解析一次配置目录**——配置可能刚被搬走
+- 执行迁移脚本前会 `export MACWAVE_INSTALL_DIR`（安装目录）/ `MACWAVE_CONFIG_DIR`（配置目录）/ `MACWAVE_TARGET_VERSION`，脚本据此**自己判断要不要搬**（例如只对用户级安装迁移）
+- **目前只有 `install.sh` 读这个标记**：2.5 的迁移必须走 `install.sh`，`wave selfupdate` 不迁移配置。以后想让 `selfupdate` 也承担迁移，在它里面接上同一段即可
 - 以后目录结构再变，只需在 configdata 加 `updatedata/{新版本}/` 这两个文件，**不用改任何代码**
 
 ## 六、关键机制

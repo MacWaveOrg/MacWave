@@ -28,36 +28,31 @@ BASE_URL="https://raw.githubusercontent.com/$REPO/$BRANCH"
 VERSION_DATA_URL="https://raw.githubusercontent.com/$REPO/configdata/versiondata/latest_version"
 
 # 配置目录：系统级优先，其次用户级（与 lib/configpaths.py 的规则一致）
-# 迁移可能把配置搬到用户级位置，所以做成函数，迁移之后要再解析一次。
 SYSTEM_CONFIG_DIR="/opt/macwave_config"
 USER_CONFIG_DIR="$HOME/.config/macwave_config"
 
-resolve_config_dir() {
-    CONFIG_DIR=""
-    for candidate in "$SYSTEM_CONFIG_DIR" "$USER_CONFIG_DIR"; do
-        if [[ -f "$candidate/config.json" ]]; then
-            CONFIG_DIR="$candidate"
-            break
-        fi
-    done
-
-    if [[ -z "$CONFIG_DIR" ]]; then
-        echo -e "${RED_BOLD}🌊 Error: MacWave is not installed (no config.json in $SYSTEM_CONFIG_DIR or $USER_CONFIG_DIR).${RESET}"
-        echo -e "${RED_BOLD}🌊 Install it first with lib/install.sh.${RESET}"
-        exit 1
+CONFIG_DIR=""
+for candidate in "$SYSTEM_CONFIG_DIR" "$USER_CONFIG_DIR"; do
+    if [[ -f "$candidate/config.json" ]]; then
+        CONFIG_DIR="$candidate"
+        break
     fi
+done
 
-    CONFIG_FILE="$CONFIG_DIR/config.json"
-    VERSION_FILE="$CONFIG_DIR/VERSION.json"
+if [[ -z "$CONFIG_DIR" ]]; then
+    echo -e "${RED_BOLD}🌊 Error: MacWave is not installed (no config.json in $SYSTEM_CONFIG_DIR or $USER_CONFIG_DIR).${RESET}"
+    echo -e "${RED_BOLD}🌊 Install it first with lib/install.sh.${RESET}"
+    exit 1
+fi
 
-    if [[ "$CONFIG_DIR" == "$HOME"* ]]; then
-        CONFIG_NEED_SUDO=false
-    else
-        CONFIG_NEED_SUDO=true
-    fi
-}
+CONFIG_FILE="$CONFIG_DIR/config.json"
+VERSION_FILE="$CONFIG_DIR/VERSION.json"
 
-resolve_config_dir
+if [[ "$CONFIG_DIR" == "$HOME"* ]]; then
+    CONFIG_NEED_SUDO=false
+else
+    CONFIG_NEED_SUDO=true
+fi
 
 echo "🌊 Updating from branch: $BRANCH"
 echo ""
@@ -130,45 +125,6 @@ if [[ -z "$VERSION" ]]; then
 fi
 
 echo "🌊 Updating MacWave to $VERSION"
-
-# ==========================================
-# 版本目录结构变更迁移（configdata/updatedata/{版本号}）
-# ==========================================
-#
-# configdata 的 updatedata/{版本号}/dir_structure_change 只有**一个字符**：
-#     Y/y → 该版本改变了目录结构，执行同目录下的 transfer_commands 完成迁移
-#     N/n → 没有改变，跳过（文件不存在也按「没有改变」处理）
-# 目标版本号用这次要升级到的版本（上面刚确定的 $VERSION）。
-# 迁移可能把配置搬到用户级位置，所以执行完要重新解析一次配置目录。
-
-UPDATEDATA_URL="https://raw.githubusercontent.com/$REPO/configdata/updatedata/$VERSION"
-
-DIR_STRUCTURE_CHANGE="$(curl -fsSL --max-time 30 "$UPDATEDATA_URL/dir_structure_change" 2>/dev/null | tr -d '[:space:]')" || DIR_STRUCTURE_CHANGE=""
-
-if [[ "$DIR_STRUCTURE_CHANGE" == "Y" || "$DIR_STRUCTURE_CHANGE" == "y" ]]; then
-    echo -e "${YELLOW}🌊 Directory structure changed in $VERSION, running migration...${RESET}"
-
-    TRANSFER_COMMANDS="$(curl -fsSL --max-time 60 "$UPDATEDATA_URL/transfer_commands" 2>/dev/null)" || TRANSFER_COMMANDS=""
-    if [[ -z "$TRANSFER_COMMANDS" ]]; then
-        echo -e "${RED_BOLD}🌊 Error: Cannot fetch the migration script for $VERSION.${RESET}"
-        echo -e "${RED_BOLD}🌊 Nothing was updated. Check your network, then try again.${RESET}"
-        exit 1
-    fi
-
-    # 把当前安装的位置与配置目录告诉迁移脚本，由它自己判断该不该搬
-    export MACWAVE_INSTALL_DIR="$BASE_DIR"
-    export MACWAVE_CONFIG_DIR="$CONFIG_DIR"
-    export MACWAVE_TARGET_VERSION="$VERSION"
-
-    if ! bash -c "$TRANSFER_COMMANDS"; then
-        echo -e "${RED_BOLD}🌊 Error: The migration for $VERSION failed.${RESET}"
-        echo -e "${RED_BOLD}🌊 Nothing was updated. Fix the issue above, then try again.${RESET}"
-        exit 1
-    fi
-
-    resolve_config_dir    # 配置可能已经搬到用户级位置
-    echo ""
-fi
 
 # ==========================================
 # 文件清单（configdata/versiondata/files_info）
