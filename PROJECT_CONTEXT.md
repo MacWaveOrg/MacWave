@@ -123,7 +123,21 @@ deps: "gettext@0.21.0"
 - 依赖引用格式强制 `依赖名@版本号`，不合规直接报错退出
 - 依赖名/版本在 `depsinfo_{arch}/` 里找不到时报错退出
 
-## 五、关键机制
+## 五、数据源（`configdata` 分支的 `updatedata/`）
+
+当某个版本**改动了目录结构**（例如 2.5 把用户级安装的配置从 `/opt/macwave_config` 挪到 `~/.config/macwave_config`）时，`install.sh` 与 `selfupdate.sh` 会在下载程序文件之前执行一段**数据驱动**的迁移：
+
+```
+updatedata/{版本号}/dir_structure_change   只有一个字符：Y/y = 目录结构变了，N/n = 没变
+updatedata/{版本号}/transfer_commands      Y/y 时执行这个脚本（bash -c "$(curl …)"）
+```
+
+- `{版本号}`：`install.sh` 用脚本里写死的 `MACWAVE_VERSION`（正在安装的版本）；`selfupdate.sh` 用 `latest_version` 里的目标版本
+- 标记文件拉不到（不存在/网络失败）→ 按「没变」处理，静默跳过；标记为 Y/y 但**迁移脚本拉不到** → 报错退出（避免留下半迁移状态）
+- 执行迁移脚本前会 `export MACWAVE_INSTALL_DIR`（安装目录）/ `MACWAVE_CONFIG_DIR`（配置目录）/ `MACWAVE_TARGET_VERSION`，脚本据此**自己判断要不要搬**（例如只对用户级安装迁移）；`selfupdate.sh` 在迁移后会**重新解析一次配置目录**——配置可能刚被搬走
+- 以后目录结构再变，只需在 configdata 加 `updatedata/{新版本}/` 这两个文件，**不用改任何代码**
+
+## 六、关键机制
 
 1. **目录 + 软链接**：包与依赖都不再以“单个文件”形式存在，而是目录；`links/` 里放软链接并已加入 PATH。`名字@版本号` 永远可用；想让 `名字` 也能直接跑，用 `wave link <名>` 建一条不带版本号的软链接（自动跟随最高已装版本），或装的时候默认就会建（`--unlink` 可关掉）
 2. **两种安装形态**（共用 `depsmanager.sh` 的同一套流程）：
@@ -138,7 +152,7 @@ deps: "gettext@0.21.0"
 6. **动态库路径替换**：依赖包里的库不会自动被 dyld 找到（conda 包的 install name 是 `@rpath/xxx.dylib`，自带 rpath 只有 `@loader_path/`，跨目录必然失败）。安装完成后由 `surfboard/transfer.sh` 用 `otool` + `install_name_tool` 把引用改成 `BASE_DIR` 下的绝对路径，并 `codesign --force --sign -` 重签名。替换统一放在**全部产物就位之后**做（先逐个处理 `deps/*/*`，再处理软件包目录），因为依赖声明顺序与实际库依赖顺序未必一致——例如 `wget` 的 `deps` 里 `libidn2` 排在 `libunistring` 前面，而 `libidn2.0.dylib` 恰好引用 `libunistring.5.dylib`，提前替换会解析不到
 7. **网络**：所有请求 30 秒超时；下载超时或连接失败时询问是否重试
 
-## 六、代码约定
+## 七、代码约定
 
 见 `STYLE.md`，要点：
 
@@ -150,7 +164,7 @@ deps: "gettext@0.21.0"
 
 ---
 
-## 七、安装「带依赖的软件包」时，各程序依次做什么
+## 八、安装「带依赖的软件包」时，各程序依次做什么
 
 以 `wave install wget@1.25.0` 为例（`_wget@1.25.0` 的 deps 为
 `gettext@0.21.0`、`libiconv@1.16`、`libidn2@2.3.8`、`libunistring@1.3`、`openssl@3.0.15`、`pcre2@10.42`、`zlib@1.2.13`，
@@ -227,4 +241,4 @@ BASE_DIR/links/                  wget@1.25.0，以及每个依赖 bin/ 下可执
                                  （如 openssl@3.0.15、iconv@1.16、msgfmt@0.21.0 …）—— 此目录已在 PATH 上
 ```
 
-卸载时的逆向动作见「五、关键机制」第 3、4 条：先删自己的标记，某个依赖再无任何标记时才连同它的依赖一起级联删除。
+卸载时的逆向动作见「六、关键机制」第 3、4 条：先删自己的标记，某个依赖再无任何标记时才连同它的依赖一起级联删除。

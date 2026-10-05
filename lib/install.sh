@@ -275,56 +275,42 @@ run_cmd mkdir -p "$CONFIG_DIR"
 run_cmd chmod 755 "$CONFIG_DIR"
 
 # ==========================================
-# 迁移 2.5 之前的系统级配置
+# 版本目录结构变更迁移（configdata/updatedata/{版本号}）
 # ==========================================
 #
-# 2.5 之前所有安装的配置都写在 /opt/macwave_config（不分系统级/用户级）。
-# 用户级安装如果把它留着，会因为「系统级优先」一直读到旧安装的 base_dir，
-# 新装的这份就永远用不上。所以用户级安装时，只要旧配置是 2.5 之前的版本，
-# 就把它删掉，让配置随下面「写入配置文件」落到 ~/.config/macwave_config。
-# 2.5 及以后的系统级配置不动 —— 那可能是另一份还在用的系统级 MacWave。
+# configdata 的 updatedata/{版本号}/dir_structure_change 只有**一个字符**：
+#     Y/y → 该版本改变了目录结构，执行同目录下的 transfer_commands 完成迁移
+#     N/n → 没有改变，跳过（文件不存在也按「没有改变」处理）
+# 目标版本号就是本脚本的 MACWAVE_VERSION（正在安装的这个版本）。
+# 迁移逻辑全部由 configdata 里的脚本提供，以后目录结构再变只改 configdata，
+# 不用再动这个脚本。
 
-LEGACY_CONFIG_DIR="/opt/macwave_config"
+UPDATEDATA_URL="$CONFIGDATA_URL/updatedata/$MACWAVE_VERSION"
 
-legacy_config_is_old() {
-    # 参数是旧 VERSION.json 的路径；读不到文件或 version 字段时保守视为旧版
-    python3 - "$1" <<'PY'
-import json
-import re
-import sys
+DIR_STRUCTURE_CHANGE="$(curl -fsSL --max-time 30 "$UPDATEDATA_URL/dir_structure_change" 2>/dev/null | tr -d '[:space:]')" || DIR_STRUCTURE_CHANGE=""
 
-try:
-    with open(sys.argv[1]) as handle:
-        version = json.load(handle).get("version", "")
-except Exception:
-    version = ""
+if [[ "$DIR_STRUCTURE_CHANGE" == "Y" || "$DIR_STRUCTURE_CHANGE" == "y" ]]; then
+    echo -e "${YELLOW}🌊 Directory structure changed in $MACWAVE_VERSION, running migration...${RESET}"
 
-
-def key(value):
-    parts = [int(part) for part in re.findall(r"\d+", str(value))]
-    while len(parts) < 2:
-        parts.append(0)
-    return parts[:2]
-
-
-sys.exit(0 if key(version) < key("2.5") else 1)
-PY
-}
-
-if [[ "$NEED_SUDO" == "false" && -d "$LEGACY_CONFIG_DIR" ]]; then
-    if legacy_config_is_old "$LEGACY_CONFIG_DIR/VERSION.json"; then
-        echo -e "${YELLOW}🌊 Found a pre-2.5 configuration in $LEGACY_CONFIG_DIR.${RESET}"
-        echo -e "${YELLOW}🌊 Migrating it to $CONFIG_DIR...${RESET}"
-
-        rm -rf "$LEGACY_CONFIG_DIR" 2>/dev/null || true
-        if [[ -d "$LEGACY_CONFIG_DIR" ]]; then
-            sudo rm -rf "$LEGACY_CONFIG_DIR" || {
-                echo -e "${RED_BOLD}🌊 Error: Cannot remove the old configuration at $LEGACY_CONFIG_DIR.${RESET}"
-                echo -e "${RED_BOLD}🌊 Please remove it manually (sudo rm -rf $LEGACY_CONFIG_DIR) and run the installer again.${RESET}"
-                exit 1
-            }
-        fi
+    TRANSFER_COMMANDS="$(curl -fsSL --max-time 60 "$UPDATEDATA_URL/transfer_commands" 2>/dev/null)" || TRANSFER_COMMANDS=""
+    if [[ -z "$TRANSFER_COMMANDS" ]]; then
+        echo -e "${RED_BOLD}🌊 Error: Cannot fetch the migration script for $MACWAVE_VERSION.${RESET}"
+        echo -e "${RED_BOLD}🌊 Nothing was installed. Check your network, then run the installer again.${RESET}"
+        exit 1
     fi
+
+    # 把本次安装的位置与配置目录告诉迁移脚本，由它自己判断该不该搬
+    export MACWAVE_INSTALL_DIR="$BASE_DIR"
+    export MACWAVE_CONFIG_DIR="$CONFIG_DIR"
+    export MACWAVE_TARGET_VERSION="$MACWAVE_VERSION"
+
+    if ! bash -c "$TRANSFER_COMMANDS"; then
+        echo -e "${RED_BOLD}🌊 Error: The migration for $MACWAVE_VERSION failed.${RESET}"
+        echo -e "${RED_BOLD}🌊 Nothing was installed. Fix the issue above, then run the installer again.${RESET}"
+        exit 1
+    fi
+
+    echo ""
 fi
 
 # ==========================================
