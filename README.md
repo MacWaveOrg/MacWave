@@ -10,7 +10,7 @@ A package manager for macOS software developers.
 macOS Sonoma14 and above
 ## 🌊 Latest Version
 
-2.5.1, Release on 2026-10-06
+2.5.2, Release on 2026-10-07
 
 ## 🌊 What is MacWave?
 
@@ -42,15 +42,16 @@ In the terminal, run:
 
 ### Unattended install
 
-For scripts and batch use, the installer takes flags so it never waits for input:
+For scripts and batch use, the installer takes flags so it never waits for input.
+Options go after `--`, which ends bash's own options:
 
 ```
 # script already on disk
 bash install.sh --silent --dir-option=1
 
 # straight from the repository
-curl -fsSL https://raw.githubusercontent.com/Sha0huaZhang/MacWave/HEAD/lib/install.sh \
-  | bash -s -- --silent --dir-option=2
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Sha0huaZhang/MacWave/HEAD/lib/install.sh)" \
+  -- --silent --dir-option=2
 ```
 
 `--silent` (`-S`) answers the directory menu and the agreement automatically. It
@@ -59,11 +60,17 @@ needs passwordless sudo, or root, when the chosen directory requires privilege.
 custom entry, append the path after `=`, as in `--dir-option=4=/opt/my-macwave`. Run
 `install.sh --help` for the list.
 
-> When piping through `curl`, put the options after `bash -s --`. Writing
-> `bash -c "$(curl ...)" --silent` makes `--silent` the script name (`$0`), so it
-> is silently dropped; the installer warns when it detects this.
+> **Mind where the options go.** Writing
+> `/bin/bash -c "$(curl ...)" --silent` makes `--silent` the script name (`$0`), so
+> it is silently dropped; the installer warns when it detects this. The working
+> form puts the options after `--`.
 
-`uninstall.sh` is scriptable in the same way: `--force` skips the confirmation.
+`uninstall.sh` is scriptable in the same way: `--force` skips the confirmation,
+which otherwise needs a terminal (so use `--force` in CI):
+
+```
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Sha0huaZhang/MacWave/HEAD/lib/uninstall.sh)" -- --force
+```
 
 ## 🌊 Download Directory 
 Installed binaries are stored in (options):    
