@@ -3,8 +3,9 @@
 # MacWave 🌊 Official Installer
 # This script downloads wave.py, installs dependencies, and configures PATH.
 # Usage: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Sha0huaZhang/MacWave/main/lib/install.sh)"
+# Unattended: /bin/bash -c "$(curl -fsSL .../main/lib/install.sh)" -- --silent --dir-option=1
 
-set -e
+set -eE
 
 BRANCH="main"
 
@@ -141,6 +142,9 @@ Examples:
   install.sh --silent --dir-option=1
   install.sh -S --dir-option=2
   install.sh --silent --dir-option=$CUSTOM_OPTION=/opt/my-macwave
+
+Running it straight from the repository (options go after '--'):
+  /bin/bash -c "\$(curl -fsSL <url>)" -- --silent --dir-option=1
 USAGE_EOF
 }
 
@@ -174,10 +178,11 @@ done
 #   bash -c "$(curl ...)" --silent     ← --silent 变成 $0，被静默丢掉
 # 这里明确提示，避免「静默模式没生效、脚本却卡在交互上」。
 case "$0" in
+    --) ;;              # 正确写法：`--` 之后的参数才轮到脚本
     -*)
         echo -e "${YELLOW}🌊 Warning: '$0' was treated as the script name, not as an option.${RESET}" >&2
-        echo -e "${YELLOW}🌊 When piping the installer, pass options after 'bash -s --'.${RESET}" >&2
-        echo "🌊   curl -fsSL <url> | bash -s -- $0" >&2
+        echo -e "${YELLOW}🌊 Put installer options after '--', which ends bash's own options.${RESET}" >&2
+        echo "🌊   /bin/bash -c \"\$(curl -fsSL <url>)\" -- $0" >&2
         ;;
 esac
 
@@ -375,6 +380,20 @@ else
 fi
 CONFIG_FILE="$CONFIG_DIR/config.json"
 VERSION_FILE="$CONFIG_DIR/VERSION.json"
+
+# 中途失败时给出明确指引。刻意**不自动删除**已下载的内容：升级安装时
+# 删掉安装树会把用户原有的可用安装一起毁掉，重跑安装器才是安全的做法。
+install_failed() {
+    local code=$?
+    echo "" >&2
+    echo -e "${RED_BOLD}🌊 Installation did not finish (exit $code).${RESET}" >&2
+    echo "🌊 Nothing was removed. Files already downloaded may be left in:" >&2
+    echo "     ${BASE_DIR:-<not chosen yet>}" >&2
+    echo "     ${CONFIG_DIR:-<not chosen yet>}" >&2
+    echo "🌊 Fix the cause (network, permissions, disk space) and run the installer again;" >&2
+    echo "🌊 a repeated install overwrites what it downloaded and is safe to rerun." >&2
+}
+trap install_failed ERR
 
 run_cmd mkdir -p "$INSTALL_DIR"
 run_cmd mkdir -p "$LINKS_DIR"
@@ -636,6 +655,18 @@ fi
 
 PATH_LINE="export PATH=\"$INSTALL_DIR:$LINKS_DIR:$LIB_DIR:\$PATH\""
 
+# 从 rc 文件里摘掉我们写入的 PATH 行（连同标记行）。
+# 安装回滚时要靠它，否则会留下一个指向已删除目录的 PATH。
+remove_lw_path_entries() {
+    local rc="$1"
+    [[ -f "$rc" ]] || return 0
+    grep -qF -e "$PATH_LINE" -e "# MacWave" "$rc" 2>/dev/null || return 0
+    grep -v -F -e "$PATH_LINE" -e "# MacWave" "$rc" > "$rc.macwave.tmp" || true
+    cat "$rc.macwave.tmp" > "$rc"
+    rm -f "$rc.macwave.tmp"
+    echo "🌊 Removed MacWave PATH entries from $rc"
+}
+
 if grep -qF "$PATH_LINE" "$RC_FILE" 2>/dev/null; then
     echo "🌊 MacWave is already in your PATH."
 else
@@ -655,6 +686,34 @@ else
 fi
 
 # ==========================================
+# 许可协议确认
+# ==========================================
+# 必须放在「安装完成」之前：否则先告诉用户已经装好，随后又因为不同意而全部删除。
+
+echo ""
+echo -e "${YELLOW}Please read the agreement before use (see bottom of https://macwave.org).${RESET}"
+if [[ "$CLI_SILENT" == "true" ]]; then
+    echo "🌊 --silent: the agreement is accepted automatically."
+    agreement="y"
+else
+    echo -e "${YELLOW}Have you read and agreed to the agreement? [Y/n]${RESET}"
+    read -r agreement < /dev/tty
+fi
+if [[ -z "$agreement" || "$agreement" =~ ^[Yy]$ ]]; then
+    echo -e "${GREEN}You have agreed to the agreement.${RESET}"
+else
+    # 回滚要连 rc 里的 PATH 一起清掉，否则会留下指向已删除目录的一行。
+    # 这里不写死 sudo：用户级安装全程无需提权，回滚也不该突然要密码。
+    echo -e "${RED_BOLD}You do not agree to the agreement. Installation stopped.${RESET}"
+    echo -e "${RED_BOLD}🌊 Cleaning up downloaded files...${RESET}"
+    run_cmd rm -rf "$BASE_DIR"
+    run_cmd rm -rf "$CONFIG_DIR"
+    remove_lw_path_entries "$RC_FILE"
+    echo -e "${RED_BOLD}🌊 All files have been deleted.${RESET}"
+    exit 1
+fi
+
+# ==========================================
 # 完成信息
 # ==========================================
 
@@ -668,27 +727,3 @@ echo "🌊 To use 'wave' immediately in this terminal, run:"
 echo -e "${YELLOW}    source $RC_DISPLAY${RESET}"
 echo "🌊 Or simply open a new terminal window."
 echo ""
-
-# ==========================================
-# 许可协议确认
-# ==========================================
-
-echo ""
-echo -e "${YELLOW}Please read the agreement before use (see bottom of https://macwave.org).${RESET}"
-if [[ "$CLI_SILENT" == "true" ]]; then
-    echo "🌊 --silent: the agreement is accepted automatically."
-    agreement="y"
-else
-    echo -e "${YELLOW}Have you read and agreed to the agreement? [Y/n]${RESET}"
-    read -r agreement < /dev/tty
-fi
-if [[ -z "$agreement" || "$agreement" =~ ^[Yy]$ ]]; then
-    echo -e "${GREEN}You have agreed to the agreement. Installation continues.${RESET}"
-else
-    echo -e "${RED_BOLD}You do not agree to the agreement. Installation stopped.${RESET}"
-    echo -e "${RED_BOLD}🌊 Cleaning up downloaded files...${RESET}"
-    run_cmd rm -rf "$BASE_DIR"
-    sudo rm -rf "$CONFIG_DIR"
-    echo -e "${RED_BOLD}🌊 All files have been deleted.${RESET}"
-    exit 1
-fi
