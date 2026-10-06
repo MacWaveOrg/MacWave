@@ -97,6 +97,17 @@ Or create an unversioned shortcut once with `wave link {package_name}`, then jus
 ```
 The unversioned link always points at the highest installed version, and is re-pointed automatically when you install or remove versions.
 
+## 🌊 Symlink Management
+
+Since MacWave 2.4, once a versionless link exists, MacWave keeps it pointing at the right version on its own:
+
+1. If the highest version is uninstalled, the versionless link moves to the highest version that remains, and the uninstalled version's own link goes with it.
+2. An install re-points the versionless link at the version it just installed; add `--unlink` to that install to skip this.
+3. If a package has no versions left at all, the versionless link is removed.
+4. A versioned name is always callable, whether or not a versionless link exists.
+
+A manual `wave unlink {package_name}` is remembered: a later uninstall will not re-create the link for that package.
+
 ## 🌊 Command Reference
 
 ```
