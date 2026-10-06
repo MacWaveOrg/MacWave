@@ -1,0 +1,26 @@
+# ==========================================================
+# GitHub Linguist 语言统计的覆盖规则
+# ==========================================================
+# 只影响 GitHub 上的语言统计（占比条与语言标签），不改变 git 的任何行为：
+# 合并、diff、检出、打包、release 附件都不受影响。
+#
+# 为什么用 -linguist-detectable，而不是更常见的 linguist-generated / linguist-vendored：
+#   · linguist-generated 虽然也排除统计，但会把这些文件在 diff 里**折叠隐藏**，
+#     而测试脚本是要被 review 的；
+#   · linguist-vendored 的语义是「第三方携带代码」，用在自己的脚本上不准确。
+#
+# 依据 linguist / rugged 源码：
+#   blob_helper.rb  include_in_language_stats?
+#     !vendored? && !documentation? && !generated? && ... &&
+#     language && (detectable? 非 nil ? detectable? : 语言类型 ∈ {programming, markup})
+#   lazy_blob.rb    detectable? → boolean_attribute(属性值)
+#   rugged_repo.c   `-attr`（unset）→ GIT_ATTR_FALSE_T → Ruby false；属性未出现 → nil
+# 所以 `-linguist-detectable` 让 detectable? 为 false，文件连同其字节数一起被排除在统计之外。
+#
+# 影响面（GitHub 按字节统计）：
+#   scripts/    6 个 .sh + 1 个 .py，约 2000 行 —— 从 Shell / Python 中移除
+#   .templates/ 现只有 .json / .txt / .gitkeep 与一个无扩展名的文件（data / prose
+#               与无扩展名，默认本就不计入），一并声明是为了以后往里放 .py / .sh
+#               时不再计入
+.templates/**   -linguist-detectable
+scripts/**      -linguist-detectable
