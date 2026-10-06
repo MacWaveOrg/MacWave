@@ -9,7 +9,7 @@ set -e
 BRANCH="main"
 
 # 版本号只在这里定义：欢迎语与写入 VERSION.json 都引用它
-MACWAVE_VERSION="2.5"
+MACWAVE_VERSION="2.5.1"
 
 BASE_URL="https://raw.githubusercontent.com/Sha0huaZhang/MacWave/$BRANCH"
 
@@ -85,84 +85,187 @@ validate_custom_dir() {
 }
 
 # ==========================================
+# 系统架构与目录菜单
+# ==========================================
+#
+# 菜单项数随架构变化：Intel 机器多提供一个 /usr/local/macwave
+# （Apple 芯片上不建议写入 /usr/local，因此只对 Intel 提供），
+# 自定义目录的编号也随之变化，所以这里统一算好。
+
+ARCH=$(uname -m)
+
+if [[ "$ARCH" == "x86_64" ]] || [[ "$ARCH" == "amd64" ]]; then
+    CUSTOM_OPTION=4
+else
+    CUSTOM_OPTION=3
+fi
+
+print_dir_menu() {
+    echo "1. ~/.local/macwave"
+    echo "2. /opt/macwave"
+    if [[ "$CUSTOM_OPTION" == "4" ]]; then
+        echo "3. /usr/local/macwave"
+    fi
+    echo "$CUSTOM_OPTION. other (enter custom directory)"
+}
+
+# ==========================================
+# 命令行参数（批量 / 脚本化安装）
+# ==========================================
+
+CLI_SILENT=false
+CLI_DIR_OPTION=""
+CLI_CUSTOM_DIR=""
+
+usage() {
+    cat <<USAGE_EOF
+MacWave installer
+
+Usage:
+  install.sh [options]
+
+Options:
+  -S, --silent            No interaction at all: the directory menu and the
+                          agreement are answered automatically. Without
+                          --dir-option the default (option 1) is used.
+                          Requires passwordless sudo when privilege is needed.
+      --dir-option=N      Pick menu entry N without prompting (1-$CUSTOM_OPTION).
+      --dir-option=N=DIR  Pick entry N and, for the custom entry ($CUSTOM_OPTION), use DIR
+                          as the installation directory.
+  -h, --help              Show this help.
+
+Directory menu:
+$(print_dir_menu | sed 's/^/  /')
+
+Examples:
+  install.sh --silent --dir-option=1
+  install.sh -S --dir-option=2
+  install.sh --silent --dir-option=$CUSTOM_OPTION=/opt/my-macwave
+USAGE_EOF
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -S|--silent)
+            CLI_SILENT=true
+            ;;
+        --dir-option=*)
+            _value="${1#--dir-option=}"
+            if [[ "$_value" == *=* ]]; then
+                CLI_DIR_OPTION="${_value%%=*}"
+                CLI_CUSTOM_DIR="${_value#*=}"
+            else
+                CLI_DIR_OPTION="$_value"
+            fi
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo -e "${RED_BOLD}🌊 Error: unknown option '$1'. Try --help.${RESET}" >&2
+            exit 1
+            ;;
+    esac
+    shift
+done
+
+# 通过管道安装时，选项很容易被当成脚本名传进来：
+#   bash -c "$(curl ...)" --silent     ← --silent 变成 $0，被静默丢掉
+# 这里明确提示，避免「静默模式没生效、脚本却卡在交互上」。
+case "$0" in
+    -*)
+        echo -e "${YELLOW}🌊 Warning: '$0' was treated as the script name, not as an option.${RESET}" >&2
+        echo -e "${YELLOW}🌊 When piping the installer, pass options after 'bash -s --'.${RESET}" >&2
+        echo "🌊   curl -fsSL <url> | bash -s -- $0" >&2
+        ;;
+esac
+
+if [[ -n "$CLI_DIR_OPTION" && ! "$CLI_DIR_OPTION" =~ ^[0-9]+$ ]]; then
+    echo -e "${RED_BOLD}🌊 Error: --dir-option must be a number, got '$CLI_DIR_OPTION'.${RESET}" >&2
+    exit 1
+fi
+
+if [[ -n "$CLI_DIR_OPTION" ]] && [[ "$CLI_DIR_OPTION" -lt 1 || "$CLI_DIR_OPTION" -gt "$CUSTOM_OPTION" ]]; then
+    echo -e "${RED_BOLD}🌊 Error: --dir-option must be 1-$CUSTOM_OPTION on this architecture, got '$CLI_DIR_OPTION'.${RESET}" >&2
+    exit 1
+fi
+
+if [[ -n "$CLI_CUSTOM_DIR" && "$CLI_DIR_OPTION" != "$CUSTOM_OPTION" ]]; then
+    echo -e "${RED_BOLD}🌊 Error: only --dir-option=$CUSTOM_OPTION takes a directory (this architecture has $CUSTOM_OPTION entries).${RESET}" >&2
+    exit 1
+fi
+
+if [[ "$CLI_DIR_OPTION" == "$CUSTOM_OPTION" && -z "$CLI_CUSTOM_DIR" && "$CLI_SILENT" == "true" ]]; then
+    echo -e "${RED_BOLD}🌊 Error: --dir-option=$CUSTOM_OPTION needs a directory in --silent mode.${RESET}" >&2
+    echo -e "${RED_BOLD}🌊 Use --dir-option=$CUSTOM_OPTION=/some/dir${RESET}" >&2
+    exit 1
+fi
+
+# 解析自定义安装目录：命令行给了就直接用，否则提示输入
+resolve_custom_dir() {
+    local custom_dir validated
+    if [[ -n "$CLI_CUSTOM_DIR" ]]; then
+        custom_dir="$CLI_CUSTOM_DIR"
+        echo "🌊 Installation directory: $custom_dir (from --dir-option)"
+    else
+        echo -e "${YELLOW}Please enter the installation directory:${RESET}"
+        read -r custom_dir < /dev/tty
+    fi
+    validated=$(validate_custom_dir "$custom_dir") || exit 1
+    BASE_DIR="$validated"
+}
+
+# ==========================================
 # 显示欢迎信息
 # ==========================================
 
 echo "🌊 Welcome to MacWave $MACWAVE_VERSION!"
 echo ""
 
-# ==========================================
-# 检测系统架构
-# ==========================================
-
-ARCH=$(uname -m)
 echo "🌊 Detected architecture: $ARCH"
 
 # ==========================================
-# 交互式目录选择
+# 选择安装目录（交互式 / --dir-option / --silent 默认）
 # ==========================================
 
-if [[ "$ARCH" == "x86_64" ]] || [[ "$ARCH" == "amd64" ]]; then
-    echo -e "${YELLOW}Where do you want to install MacWave? (Enter the number)${RESET}"
-    echo "1. ~/.local/macwave"
-    echo "2. /opt/macwave"
-    echo "3. /usr/local/macwave"
-    echo "4. other (enter custom directory)"
-    echo ""
-    echo -e "${YELLOW}Enter your choice:${RESET}"
-
-    read -r choice < /dev/tty
-
-    case "$choice" in
-        1)
-            BASE_DIR="$HOME/.local/macwave"
-            ;;
-        2)
-            BASE_DIR="/opt/macwave"
-            ;;
-        3)
-            BASE_DIR="/usr/local/macwave"
-            ;;
-        4)
-            echo -e "${YELLOW}Please enter the installation directory:${RESET}"
-            read -r custom_dir < /dev/tty
-            validated=$(validate_custom_dir "$custom_dir") || exit 1
-            BASE_DIR="$validated"
-            ;;
-        *)
-            echo -e "${RED_BOLD}🌊 Invalid choice. Using default: ~/.local/macwave${RESET}"
-            BASE_DIR="$HOME/.local/macwave"
-            ;;
-    esac
+if [[ -n "$CLI_DIR_OPTION" ]]; then
+    choice="$CLI_DIR_OPTION"
+    echo "🌊 Directory option: $choice (from --dir-option)"
+elif [[ "$CLI_SILENT" == "true" ]]; then
+    choice="1"
+    echo "🌊 --silent: using the default directory option 1."
 else
     echo -e "${YELLOW}Where do you want to install MacWave? (Enter the number)${RESET}"
-    echo "1. ~/.local/macwave"
-    echo "2. /opt/macwave"
-    echo "3. other (enter custom directory)"
+    print_dir_menu
     echo ""
     echo -e "${YELLOW}Enter your choice:${RESET}"
 
     read -r choice < /dev/tty
-
-    case "$choice" in
-        1)
-            BASE_DIR="$HOME/.local/macwave"
-            ;;
-        2)
-            BASE_DIR="/opt/macwave"
-            ;;
-        3)
-            echo -e "${YELLOW}Please enter the installation directory:${RESET}"
-            read -r custom_dir < /dev/tty
-            validated=$(validate_custom_dir "$custom_dir") || exit 1
-            BASE_DIR="$validated"
-            ;;
-        *)
-            echo -e "${RED_BOLD}🌊 Invalid choice. Using default: ~/.local/macwave${RESET}"
-            BASE_DIR="$HOME/.local/macwave"
-            ;;
-    esac
 fi
+
+case "$choice" in
+    1)
+        BASE_DIR="$HOME/.local/macwave"
+        ;;
+    2)
+        BASE_DIR="/opt/macwave"
+        ;;
+    3)
+        if [[ "$CUSTOM_OPTION" == "3" ]]; then
+            resolve_custom_dir
+        else
+            BASE_DIR="/usr/local/macwave"
+        fi
+        ;;
+    4)
+        resolve_custom_dir
+        ;;
+    *)
+        echo -e "${RED_BOLD}🌊 Invalid choice. Using default: ~/.local/macwave${RESET}"
+        BASE_DIR="$HOME/.local/macwave"
+        ;;
+esac
 
 DISPLAY_DIR=$(home_to_tilde "$BASE_DIR")
 
@@ -187,8 +290,17 @@ run_cmd() {
 }
 
 if [[ "$NEED_SUDO" == "true" ]]; then
-    echo -e "${YELLOW}🌊 Granting temporary administrator access for installation...${RESET}"
-    sudo -v
+    if [[ "$CLI_SILENT" == "true" ]]; then
+        # --silent 不能停下来等密码：要么已经是 root，要么已有免密 sudo
+        if ! sudo -n true 2> /dev/null; then
+            echo -e "${RED_BOLD}🌊 Error: this install needs privilege, but --silent cannot ask for a password.${RESET}" >&2
+            echo -e "${RED_BOLD}🌊 Run as root, or configure passwordless sudo for the install user.${RESET}" >&2
+            exit 1
+        fi
+    else
+        echo -e "${YELLOW}🌊 Granting temporary administrator access for installation...${RESET}"
+        sudo -v
+    fi
 fi
 
 # ==========================================
@@ -460,7 +572,9 @@ while IFS=$'\t' read -r repo_path local_path executable; do
         continue
     fi
 
-    echo "🌊 Downloading $repo_path..."
+    if [[ "$CLI_SILENT" != "true" ]]; then
+        echo "🌊 Downloading $repo_path..."
+    fi
     run_cmd mkdir -p "$(dirname "$BASE_DIR/$local_path")"
     run_cmd curl -fsSL -o "$BASE_DIR/$local_path" "$BASE_URL/$repo_path"
 
@@ -561,8 +675,13 @@ echo ""
 
 echo ""
 echo -e "${YELLOW}Please read the agreement before use (see bottom of https://macwave.org).${RESET}"
-echo -e "${YELLOW}Have you read and agreed to the agreement? [Y/n]${RESET}"
-read -r agreement < /dev/tty
+if [[ "$CLI_SILENT" == "true" ]]; then
+    echo "🌊 --silent: the agreement is accepted automatically."
+    agreement="y"
+else
+    echo -e "${YELLOW}Have you read and agreed to the agreement? [Y/n]${RESET}"
+    read -r agreement < /dev/tty
+fi
 if [[ -z "$agreement" || "$agreement" =~ ^[Yy]$ ]]; then
     echo -e "${GREEN}You have agreed to the agreement. Installation continues.${RESET}"
 else

@@ -10,7 +10,7 @@ A package manager for macOS software developers.
 macOS Sonoma14 and above
 ## 🌊 Latest Version
 
-2.5, Release on 2026-10-05
+2.5.1, Release on 2026-10-06
 
 ## 🌊 What is MacWave?
 
@@ -39,6 +39,31 @@ In the terminal, run:
 (If you are using bash instead of zsh, run ```source ~/.bashrc```)
 
 **Requirements: Python (3.14 and above), Xcode Command Line Tools (14.0 and above).**
+
+### Unattended install
+
+For scripts and batch use, the installer takes flags so it never waits for input:
+
+```
+# script already on disk
+bash install.sh --silent --dir-option=1
+
+# straight from the repository
+curl -fsSL https://raw.githubusercontent.com/Sha0huaZhang/MacWave/HEAD/lib/install.sh \
+  | bash -s -- --silent --dir-option=2
+```
+
+`--silent` (`-S`) answers the directory menu and the agreement automatically. It
+needs passwordless sudo, or root, when the chosen directory requires privilege.
+`--dir-option=N` picks menu entry `N` (1-4 on Intel, 1-3 on Apple silicon); for the
+custom entry, append the path after `=`, as in `--dir-option=4=/opt/my-macwave`. Run
+`install.sh --help` for the list.
+
+> When piping through `curl`, put the options after `bash -s --`. Writing
+> `bash -c "$(curl ...)" --silent` makes `--silent` the script name (`$0`), so it
+> is silently dropped; the installer warns when it detects this.
+
+`uninstall.sh` is scriptable in the same way: `--force` skips the confirmation.
 
 ## 🌊 Download Directory 
 Installed binaries are stored in (options):    
