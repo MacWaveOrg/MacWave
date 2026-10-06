@@ -1,0 +1,126 @@
+#!/bin/bash
+
+# transfer_commands
+# MacWave 2.5 的目录结构变更迁移脚本（由 install.sh / selfupdate.sh 从 configdata 拉取后执行）。
+#
+# 这里放在 updatedata/2.5.2 下是**同一份迁移的副本**：install.sh / selfupdate.sh 只按
+# 「正在安装的完整版本号」找 updatedata/{版本号}，所以补丁版本要再放一份，否则
+# 从 2.5 之前升级到 2.5.2 时这段迁移不会执行。脚本本身是幂等的、且只在旧配置版本
+# 低于 2.5 时才动作，复制过来不会有副作用。
+#
+# 2.5 的变更：配置文件位置跟随安装级别
+#   系统级安装（/opt/macwave、/usr/local/macwave、家目录之外的自定义目录）→ /opt/macwave_config
+#   用户级安装（~/.local/macwave、家目录之内的自定义目录）→ ~/.config/macwave_config
+#
+# 2.5 之前所有安装的配置都写在 /opt/macwave_config，而读取规则是「系统级优先」，
+# 所以用户级安装如果留着旧配置，新写的用户级配置会被它盖住、永远读不到。
+# 这个脚本把旧配置搬到用户级位置（连 config.json 一起搬，否则程序会认为没安装）。
+#
+# 调用方传入的环境变量（都可不传，缺省时脚本自己从旧配置里读）：
+#   MACWAVE_INSTALL_DIR     本次/当前安装的目录，用来判断是不是用户级安装
+#   MACWAVE_CONFIG_DIR      调用方准备写入配置的目录（仅用于日志）
+#   MACWAVE_TARGET_VERSION  目标版本号（仅用于日志）
+#
+# 幂等：没有旧配置、不是用户级安装、旧配置已经是 2.5 及以后时，直接退出 0。
+
+set -e
+
+# -------------------- 颜色定义 --------------------
+
+RED_BOLD='\033[1;31m'
+YELLOW='\033[33m'
+RESET='\033[0m'
+
+# -------------------- 常量 --------------------
+
+LEGACY_CONFIG_DIR="/opt/macwave_config"
+LEGACY_CONFIG_FILE="$LEGACY_CONFIG_DIR/config.json"
+LEGACY_VERSION_FILE="$LEGACY_CONFIG_DIR/VERSION.json"
+USER_CONFIG_DIR="$HOME/.config/macwave_config"
+
+# -------------------- 判断是否需要迁移 --------------------
+
+if [[ ! -d "$LEGACY_CONFIG_DIR" || ! -f "$LEGACY_CONFIG_FILE" ]]; then
+    exit 0        # 没有旧配置，不用迁移
+fi
+
+LEGACY_BASE_DIR=$(python3 - "$LEGACY_CONFIG_FILE" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1]) as handle:
+        print(json.load(handle).get("base_dir", ""))
+except Exception:
+    print("")
+PY
+)
+
+INSTALL_DIR="${MACWAVE_INSTALL_DIR:-$LEGACY_BASE_DIR}"
+
+if [[ -z "$INSTALL_DIR" ]]; then
+    exit 0        # 读不到安装目录，不敢动
+fi
+
+# 只有用户级安装才需要迁移：系统级安装的配置本来就该在 /opt/macwave_config
+case "$INSTALL_DIR" in
+    "$HOME"*) ;;
+    *) exit 0 ;;
+esac
+
+is_old_version() {
+    # 参数是旧 VERSION.json 的路径；读不到文件或 version 字段时保守视为旧版
+    python3 - "$1" <<'PY'
+import json
+import re
+import sys
+
+try:
+    with open(sys.argv[1]) as handle:
+        version = json.load(handle).get("version", "")
+except Exception:
+    version = ""
+
+
+def key(value):
+    parts = [int(part) for part in re.findall(r"\d+", str(value))]
+    while len(parts) < 2:
+        parts.append(0)
+    return parts[:2]
+
+
+sys.exit(0 if key(version) < key("2.5") else 1)
+PY
+}
+
+if [[ -f "$LEGACY_VERSION_FILE" ]] && ! is_old_version "$LEGACY_VERSION_FILE"; then
+    exit 0        # 旧配置已经是 2.5 及以后，不属于本次迁移
+fi
+
+# -------------------- 迁移 --------------------
+
+echo -e "${YELLOW}🌊 Found a pre-2.5 configuration in $LEGACY_CONFIG_DIR.${RESET}"
+echo -e "${YELLOW}🌊 Moving it to $USER_CONFIG_DIR...${RESET}"
+
+mkdir -p "$USER_CONFIG_DIR"
+
+# 旧配置是当时实际生效的那一份，直接覆盖到新位置
+cp "$LEGACY_CONFIG_FILE" "$USER_CONFIG_DIR/config.json"
+if [[ -f "$LEGACY_VERSION_FILE" ]]; then
+    cp "$LEGACY_VERSION_FILE" "$USER_CONFIG_DIR/VERSION.json"
+fi
+
+# 删掉旧配置目录：/opt 属主是 root，普通权限删不掉时改用 sudo
+rm -rf "$LEGACY_CONFIG_DIR" 2>/dev/null || true
+if [[ -d "$LEGACY_CONFIG_DIR" ]]; then
+    sudo rm -rf "$LEGACY_CONFIG_DIR"
+fi
+
+if [[ -d "$LEGACY_CONFIG_DIR" ]]; then
+    echo -e "${RED_BOLD}🌊 Error: Cannot remove the old configuration at $LEGACY_CONFIG_DIR.${RESET}"
+    echo -e "${RED_BOLD}🌊 Please remove it manually (sudo rm -rf $LEGACY_CONFIG_DIR) and try again.${RESET}"
+    exit 1
+fi
+
+echo -e "${YELLOW}🌊 Old configuration removed.${RESET}"
+exit 0
