@@ -27,7 +27,11 @@ Options:
                       dedicated account, so this does nothing.
       -h, --help      Show this help.
 
-Without options the uninstaller asks once before deleting.
+Without options the uninstaller asks once before deleting; it needs a terminal
+for that, so use --force when there is none (CI, scripts).
+
+Running it straight from the repository (options go after '--'):
+  /bin/bash -c "$(curl -fsSL <url>)" -- --force
 USAGE_EOF
 }
 
@@ -51,12 +55,15 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 
-# 通过管道卸载时，选项容易被当成脚本名传进来（--force 会静默失效）
+# 用 `/bin/bash -c "$(curl ...)"` 运行时，第一个参数会变成脚本名（$0）：
+#   /bin/bash -c "$(curl ...)" --force     ← --force 成了 $0，被静默丢掉
+# 正确写法是加 `--`：它结束 bash 自身的选项，后面的参数才会传进脚本。
 case "$0" in
+    --) ;;              # 正确写法：`--` 之后的参数才轮到脚本
     -*)
         echo "🌊 Warning: '$0' was treated as the script name, not as an option." >&2
-        echo "🌊 When piping the uninstaller, pass options after 'bash -s --'." >&2
-        echo "🌊   curl -fsSL <url> | bash -s -- $0" >&2
+        echo "🌊 Put uninstaller options after '--', which ends bash's own options." >&2
+        echo "🌊   /bin/bash -c \"\$(curl -fsSL <url>)\" -- $0" >&2
         ;;
 esac
 
@@ -91,7 +98,17 @@ if [[ "$CLI_FORCE" == "true" ]]; then
     echo "🌊 --force: uninstalling without confirmation."
 else
     echo -e "\033[1;31mYou are deleting MacWave, are you sure? [Y/n]\033[0m"
-    read -n 1 -r
+    # 从 /dev/tty 读，且读不到就**中止**：
+    # 删除是不可逆的，stdin 是 EOF（< /dev/null、CI、被别的命令吃掉输入）时
+    # 绝不能默认当成「同意」。无人值守的场景请显式用 --force。
+    # `2>/dev/null` 写在输入重定向之前：没有控制终端时打开 /dev/tty 会失败，
+    # 重定向按从左到右处理，先屏蔽 stderr 才不会喷出那行原始报错。
+    if ! read -n 1 -r 2>/dev/null < /dev/tty; then
+        echo
+        echo -e "\033[1;31m🌊 No terminal available to confirm on. Nothing was deleted.\033[0m" >&2
+        echo "🌊 To uninstall non-interactively, run again with --force." >&2
+        exit 1
+    fi
     echo
     if [[ -n "$REPLY" && ! "$REPLY" =~ ^[Yy]$ ]]; then
         echo "🌊 Uninstall cancelled."
@@ -158,5 +175,11 @@ echo "🌊 MacWave has been uninstalled."
 echo "🌊 Please restart your terminal to apply changes."
 
 # ========== 删除自身脚本 ==========
-rm -f "$0"
+# 只有「脚本确实来自一个文件」时才有自己可删。用文档推荐的
+# `/bin/bash -c "$(curl ...)"` 运行时，$0 是解释器路径（无参数）或 `--`（带参数），
+# 直接 rm 会把 /bin/bash 删掉，所以这里逐条排除后再按内容确认一次。
+if [[ -f "$0" && "$0" != "$BASH" && "$0" != --* ]] \
+   && grep -q "MacWave Uninstaller" "$0" 2>/dev/null; then
+    rm -f "$0"
+fi
 exit 0

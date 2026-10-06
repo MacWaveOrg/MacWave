@@ -76,6 +76,118 @@ def print_custom_help():
     print("For more details, visit: https://macwave.org")
 
 
+# -------------------- 子命令帮助 --------------------
+#
+# `wave <command> -h|--help` 用这张表。只列该命令真正接受的旗标
+# （依据各 handler 的旗标白名单），避免承诺做不到的事。
+
+COMMAND_HELP = {
+    "install": {
+        "usage": "wave install <package>[@<version>] [flags]",
+        "desc": "Install a package, or one specific version of it.",
+        "flags": [
+            ("-C, --continue", "Resume an interrupted download (like curl -C -)"),
+            ("--proxy <string>", "HTTP/HTTPS proxy (e.g. http://127.0.0.1:8080)"),
+            ("--skip-ssl", "Skip SSL certificate verification (insecure)"),
+            ("--limit-rate <string>", "Limit download speed (e.g. 200K, 1M, 5M)"),
+            ("--unlink", "Do not create or re-point the unversioned link"),
+            ("-v, --verbose", "Enable verbose output"),
+        ],
+        "examples": ["wave install jq", "wave install ffmpeg@6.1", "wave install jq --limit-rate 1M"],
+    },
+    "uninstall": {
+        "usage": "wave uninstall <package>[@<version>] [flags]",
+        "desc": "Uninstall a package version. The unversioned link falls back to the "
+                "highest remaining version, and goes away with the last one.",
+        "flags": [
+            ("--unlink", "Leave the unversioned link alone"),
+        ],
+        "examples": ["wave uninstall jq", "wave uninstall ffmpeg@6.1"],
+    },
+    "list": {
+        "usage": "wave list",
+        "desc": "List the packages you have installed, with their versions.",
+        "flags": [],
+        "examples": ["wave list"],
+    },
+    "search": {
+        "usage": "wave search <keyword>",
+        "desc": "Search the package index.",
+        "flags": [],
+        "examples": ["wave search json"],
+    },
+    "info": {
+        "usage": "wave info <package>",
+        "desc": "Show author, description, homepage and the installed / available versions.",
+        "flags": [],
+        "examples": ["wave info jq"],
+    },
+    "selfupdate": {
+        "usage": "wave selfupdate",
+        "desc": "Update MacWave itself to the version published in the configdata branch.",
+        "flags": [],
+        "examples": ["wave selfupdate"],
+    },
+    "link": {
+        "usage": "wave link <package>[@<version>] | wave link --all",
+        "desc": "Create a versionless shortcut, or re-point it at another installed "
+                "version. Installs and uninstalls keep it up to date afterwards.",
+        "flags": [
+            ("--all, -a", "Apply to every installed package"),
+        ],
+        "examples": ["wave link jq", "wave link ffmpeg@6.1", "wave link --all"],
+    },
+    "unlink": {
+        "usage": "wave unlink <package> | wave unlink --all",
+        "desc": "Remove the versionless shortcut. A later uninstall will not re-create it.",
+        "flags": [
+            ("--all, -a", "Apply to every installed package"),
+        ],
+        "examples": ["wave unlink jq", "wave unlink --all"],
+    },
+    "linkquery": {
+        "usage": "wave linkquery <package> | wave linkquery --all",
+        "desc": "Show which version the versionless shortcut points at.",
+        "flags": [
+            ("--all, -a", "Apply to every installed package"),
+        ],
+        "examples": ["wave linkquery jq"],
+    },
+    "version": {
+        "usage": "wave version",
+        "desc": "Print the installed MacWave version.",
+        "flags": [],
+        "examples": ["wave version"],
+    },
+}
+
+
+def print_command_help(command):
+    """`wave <command> --help`：打印该命令自己的用法"""
+    entry = COMMAND_HELP.get(command)
+    if entry is None:
+        print_custom_help()
+        return
+
+    print(f"{PURPLE}usage: {ORANGE}{entry['usage']}{RESET}")
+    print()
+    print(entry["desc"])
+
+    if entry["flags"]:
+        print()
+        print(f"{PURPLE}Flags:{RESET}")
+        for name, text in entry["flags"]:
+            print(f"  {GREEN}{name}{RESET}" + " " * max(1, 22 - len(name)) + text)
+
+    print()
+    print(f"{PURPLE}Examples:{RESET}")
+    for example in entry["examples"]:
+        print(f"  {example}")
+
+    print()
+    print(f"All commands: {GREEN}wave --help{RESET}")
+
+
 # -------------------- 版本与错误提示 --------------------
 
 def print_version():

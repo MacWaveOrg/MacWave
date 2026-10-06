@@ -72,6 +72,14 @@ def main():
 
     # 3. 命令分发
     if FirstWord in COMMANDS:
+        # `wave <command> -h|--help`：打印该命令自己的用法后退出。
+        # 必须在这里拦下：各 handler 的旗标白名单里没有 --help，
+        # 否则它会被当作未知旗标忽略（selfupdate 甚至直接开始自更新）。
+        if any(word in ("-h", "--help") for word in words[1:]):
+            from help import print_command_help
+            print_command_help(FirstWord)
+            sys.exit(0)
+
         module_name = COMMANDS[FirstWord]
         full_input = "wave " + " ".join(words)
 
