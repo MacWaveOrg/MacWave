@@ -23,7 +23,7 @@ RESET = '\033[0m'
 
 from configpaths import VERSION_FILE_NAME, config_dir_candidates, find_config_dir
 
-VERSION_DATA_URL = "https://raw.githubusercontent.com/Sha0huaZhang/MacWave/configdata/versiondata/latest_version"
+VERSION_DATA_URL = "https://raw.githubusercontent.com/MacWaveOrg/MacWave/configdata/versiondata/latest_version"
 FETCH_TIMEOUT = 30
 UPDATE_TIMEOUT = 1800
 

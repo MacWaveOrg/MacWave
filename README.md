@@ -33,7 +33,7 @@ MacWave is a **package manager** that runs on **macOS/Linux**, designed to host 
 In the terminal, run:
 
 ```
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Sha0huaZhang/MacWave/HEAD/lib/install.sh)" && source ~/.zshrc
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/install.sh)" && source ~/.zshrc
 ```
 
 (If you are using bash instead of zsh, run ```source ~/.bashrc```)
@@ -50,7 +50,7 @@ Options go after `--`, which ends bash's own options:
 bash install.sh --silent --dir-option=1
 
 # straight from the repository
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Sha0huaZhang/MacWave/HEAD/lib/install.sh)" \
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/install.sh)" \
   -- --silent --dir-option=2
 ```
 
@@ -69,7 +69,7 @@ custom entry, append the path after `=`, as in `--dir-option=4=/opt/my-macwave`.
 which otherwise needs a terminal (so use `--force` in CI):
 
 ```
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Sha0huaZhang/MacWave/HEAD/lib/uninstall.sh)" -- --force
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/uninstall.sh)" -- --force
 ```
 
 ## 🌊 Download Directory 
@@ -90,7 +90,7 @@ Config file is stored in (a system-level install always takes priority):
 To completely remove MacWave from your system, run the following command in your terminal:
 
 ```
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Sha0huaZhang/MacWave/HEAD/lib/uninstall.sh)"
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/uninstall.sh)"
 ```
 
 ## 🌊 Run Packages
