@@ -149,7 +149,7 @@ import re
 import subprocess
 import sys
 
-url = "https://raw.githubusercontent.com/Sha0huaZhang/MacWave/configdata/versiondata/latest_version"
+url = "https://raw.githubusercontent.com/MacWaveOrg/MacWave/configdata/versiondata/latest_version"
 result = subprocess.run(['curl', '-fsSL', '--max-time', '60', url], capture_output=True, text=True)
 if result.returncode != 0:
     print(f'🌊 Error: cannot fetch the version data ({result.returncode})')
