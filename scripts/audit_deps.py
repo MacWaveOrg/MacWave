@@ -31,8 +31,8 @@ RESET = '\033[0m'
 # -------------------- 常量 --------------------
 
 BRANCH = "infosource"
-RAW_BASE = f"https://raw.githubusercontent.com/Sha0huaZhang/MacWave/{BRANCH}"
-TREE_API = f"https://api.github.com/repos/Sha0huaZhang/MacWave/git/trees/{BRANCH}?recursive=1"
+RAW_BASE = f"https://raw.githubusercontent.com/MacWaveOrg/MacWave/{BRANCH}"
+TREE_API = f"https://api.github.com/repos/MacWaveOrg/MacWave/git/trees/{BRANCH}?recursive=1"
 CONFIG_FILES = (
     Path("/opt/macwave_config/config.json"),          # 系统级优先
     Path.home() / ".config" / "macwave_config" / "config.json",
