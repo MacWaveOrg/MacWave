@@ -2,7 +2,7 @@
 
 # MacWave 🌊 Official Installer
 # This script downloads wave.py, installs dependencies, and configures PATH.
-# Usage: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Sha0huaZhang/MacWave/main/lib/install.sh)"
+# Usage: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/main/lib/install.sh)"
 
 set -e
 
@@ -11,7 +11,7 @@ BRANCH="main"
 # 版本号只在这里定义：欢迎语与写入 VERSION.json 都引用它
 MACWAVE_VERSION="2.4.2"
 
-BASE_URL="https://raw.githubusercontent.com/Sha0huaZhang/MacWave/$BRANCH"
+BASE_URL="https://raw.githubusercontent.com/MacWaveOrg/MacWave/$BRANCH"
 
 # ==========================================
 # 颜色定义
@@ -212,7 +212,7 @@ fi
 # 这一步刻意放在「建目录 / 写配置 / 清旧版」之前：连不上 configdata 就直接退出，
 # 不会留下一个配置已写好、文件却一个都没下的半成品安装。
 
-CONFIGDATA_URL="https://raw.githubusercontent.com/Sha0huaZhang/MacWave/configdata"
+CONFIGDATA_URL="https://raw.githubusercontent.com/MacWaveOrg/MacWave/configdata"
 FILES_INFO_URL="$CONFIGDATA_URL/versiondata/files_info"
 FILES_INFO_TMP="$(mktemp)"
 FILES_INFO_ATTEMPTS=3

@@ -370,7 +370,7 @@ def download_file(url, temp_path, config, input_string, display_name):
 def fetch_max_version(package_name, arch):
     # 数据在 infosource 分支，API 必须显式带 ref，
     # 否则默认分支（main）下没有 pkginfo_{arch} 目录，会直接 404
-    api_url = f"https://api.github.com/repos/Sha0huaZhang/MacWave/contents/pkg/pkginfo_{arch}/{package_name}?ref=infosource"
+    api_url = f"https://api.github.com/repos/MacWaveOrg/MacWave/contents/pkg/pkginfo_{arch}/{package_name}?ref=infosource"
     try:
         response = requests.get(api_url, timeout=30)
         if response.status_code != 200:
@@ -437,7 +437,7 @@ def handle_install(input_string):
         print("🌊 Version info fetched successfully.")
 
     # 4. 获取 bin_name（从 @common 文件）
-    common_url = f"https://raw.githubusercontent.com/Sha0huaZhang/MacWave/infosource/pkg/pkginfo_{ARCH}/{ParsePkgName}/_{ParsePkgName}@common"
+    common_url = f"https://raw.githubusercontent.com/MacWaveOrg/MacWave/infosource/pkg/pkginfo_{ARCH}/{ParsePkgName}/_{ParsePkgName}@common"
     try:
         common_resp = requests.get(common_url, timeout=30)
         if common_resp.status_code != 200:
@@ -454,7 +454,7 @@ def handle_install(input_string):
         sys.exit(1)
 
     # 5. 获取 URL 和 SHA256（deps 也写在该版本文件里）
-    pkg_version_url = f"https://raw.githubusercontent.com/Sha0huaZhang/MacWave/infosource/pkg/pkginfo_{ARCH}/{ParsePkgName}/_{ParsePkgName}@{ParsePkgVersion}"
+    pkg_version_url = f"https://raw.githubusercontent.com/MacWaveOrg/MacWave/infosource/pkg/pkginfo_{ARCH}/{ParsePkgName}/_{ParsePkgName}@{ParsePkgVersion}"
     try:
         resp = requests.get(pkg_version_url, timeout=30)
         if resp.status_code != 200:

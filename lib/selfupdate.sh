@@ -21,7 +21,7 @@ RESET='\033[0m'
 # 目标仓库、分支与版本
 # ==========================================
 
-REPO="Sha0huaZhang/MacWave"
+REPO="MacWaveOrg/MacWave"
 BRANCH="${MACWAVE_UPDATE_BRANCH:-${1:-main}}"
 BASE_URL="https://raw.githubusercontent.com/$REPO/$BRANCH"
 VERSION_DATA_URL="https://raw.githubusercontent.com/$REPO/configdata/versiondata/latest_version"

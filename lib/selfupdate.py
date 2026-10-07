@@ -25,7 +25,7 @@ RESET = '\033[0m'
 CONFIG_DIR = Path("/opt/macwave_config")
 CONFIG_FILE = CONFIG_DIR / "config.json"
 VERSION_FILE = CONFIG_DIR / "VERSION.json"
-VERSION_DATA_URL = "https://raw.githubusercontent.com/Sha0huaZhang/MacWave/configdata/versiondata/latest_version"
+VERSION_DATA_URL = "https://raw.githubusercontent.com/MacWaveOrg/MacWave/configdata/versiondata/latest_version"
 FETCH_TIMEOUT = 30
 UPDATE_TIMEOUT = 1800
 

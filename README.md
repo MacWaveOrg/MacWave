@@ -33,7 +33,7 @@ MacWave is a **package manager** that runs on **macOS/Linux**, designed to host 
 In the terminal, run:
 
 ```
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Sha0huaZhang/MacWave/HEAD/lib/install.sh)" && source ~/.zshrc
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/install.sh)" && source ~/.zshrc
 ```
 
 (If you are using bash instead of zsh, run ```source ~/.bashrc```)
@@ -57,7 +57,7 @@ Config file is stored in:
 To completely remove MacWave from your system, run the following command in your terminal:
 
 ```
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Sha0huaZhang/MacWave/HEAD/lib/uninstall.sh)"
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/uninstall.sh)"
 ```
 
 ## 🌊 Run Packages

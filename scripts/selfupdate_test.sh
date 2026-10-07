@@ -149,7 +149,7 @@ import re
 import subprocess
 import sys
 
-url = "https://raw.githubusercontent.com/Sha0huaZhang/MacWave/configdata/versiondata/latest_version"
+url = "https://raw.githubusercontent.com/MacWaveOrg/MacWave/configdata/versiondata/latest_version"
 result = subprocess.run(['curl', '-fsSL', '--max-time', '60', url], capture_output=True, text=True)
 if result.returncode != 0:
     print(f'🌊 Error: cannot fetch the version data ({result.returncode})')
@@ -187,7 +187,7 @@ echo "========== every listed file landed =========="
 
 BASE_DIR=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE'))['base_dir'])")
 
-FILES_INFO_URL="https://raw.githubusercontent.com/Sha0huaZhang/MacWave/configdata/versiondata/files_info"
+FILES_INFO_URL="https://raw.githubusercontent.com/MacWaveOrg/MacWave/configdata/versiondata/files_info"
 FILES_INFO_TMP="$(mktemp)"
 PARSER_TMP="$(mktemp)"
 
