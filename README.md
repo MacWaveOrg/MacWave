@@ -1,7 +1,8 @@
 ## 🌊 MacWave
 
-A package manager for macOS software developers.
+A package manager for macOS software developers.  
 
+Linux? View [LinuxWave](https://github.com/LinuxWaveOrg/LinuxWave)
 ## 🌊 Official Website
 
 [macwave.org](https://macwave.org)
