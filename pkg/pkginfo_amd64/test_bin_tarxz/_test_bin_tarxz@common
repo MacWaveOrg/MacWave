@@ -1,5 +1,5 @@
 bin_name: "test_bin_tarxz"
 des: "MacWave format test package for .tar.xz"
-hom: "https://github.com/Sha0huaZhang/MacWavePkgTest"
+hom: "https://github.com/MacWaveOrg/MacWavePkgTest"
 lic: "MIT"
 aut: "MacWave Test"

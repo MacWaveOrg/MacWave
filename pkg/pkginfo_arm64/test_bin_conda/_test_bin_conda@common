@@ -1,5 +1,5 @@
 bin_name: "test_bin_conda"
 des: "MacWave format test package for .conda"
-hom: "https://github.com/Sha0huaZhang/MacWavePkgTest"
+hom: "https://github.com/MacWaveOrg/MacWavePkgTest"
 lic: "MIT"
 aut: "MacWave Test"

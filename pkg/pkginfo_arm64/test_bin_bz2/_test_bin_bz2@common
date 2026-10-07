@@ -1,5 +1,5 @@
 bin_name: "test_bin_bz2"
 des: "MacWave format test package for .bz2"
-hom: "https://github.com/Sha0huaZhang/MacWavePkgTest"
+hom: "https://github.com/MacWaveOrg/MacWavePkgTest"
 lic: "MIT"
 aut: "MacWave Test"
