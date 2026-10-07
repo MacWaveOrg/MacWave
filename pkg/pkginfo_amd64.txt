@@ -29,9 +29,9 @@ $ PackagesURL $
     let "ldid" = [SPECIAL]
     let "machox" = %f% "https://github.com/Sha0huaZhang/MachOX/releases/download/{parse_download_version}/MachOX_force_Homebrew_x86_64"
     let "palera1n" = %f% "https://github.com/palera1n/palera1n/releases/download/v{parse_download_version}/palera1n-macos-x86_64"
-    let "test_001" = "https://github.com/Sha0huaZhang/test_001/releases/download/v1.0/test_001.txt"
-    let "test_no_sha256" = "https://raw.githubusercontent.com/Sha0huaZhang/MacWave/main/test/test_no_sha256"
-    let "test_wrong_sha256" = "https://raw.githubusercontent.com/Sha0huaZhang/MacWave/main/test/test_wrong_sha256"
+    let "test_001" = "https://github.com/MacWaveOrg/test_001/releases/download/v1.0/test_001.txt"
+    let "test_no_sha256" = "https://raw.githubusercontent.com/MacWaveOrg/MacWave/main/test/test_no_sha256"
+    let "test_wrong_sha256" = "https://raw.githubusercontent.com/MacWaveOrg/MacWave/main/test/test_wrong_sha256"
     let "trollrestore" = %f% "https://github.com/JJTech0130/TrollRestore/releases/download/{parse_download_version}/TrollRestore_macOS_amd64.zip"
     let "choma" = %f% "https://github.com/Sha0huaZhang/ChOma-macwave/releases/download/v{parse_download_version}/ChOma_amd64"
 }
@@ -117,7 +117,7 @@ $ PackagesDetails $
 
     %START%
         des:  "MacWave test package."
-        hom: "https://github.com/Sha0huaZhang/test_001"
+        hom: "https://github.com/MacWaveOrg/test_001"
         lic: "MIT"
         aut: "Sha0huaZhang (MacWave Team)"
         ver: "1.0.0"
@@ -130,7 +130,7 @@ $ PackagesDetails $
 
     %START%
         des:  "MacWave test package."
-        hom: "https://github.com/Sha0huaZhang/MacWave"
+        hom: "https://github.com/MacWaveOrg/MacWave"
         lic: "MIT"
         aut: "Sha0huaZhang (MacWave Team)"
         ver: "1.0.0"
@@ -143,7 +143,7 @@ $ PackagesDetails $
 
     %START%
         des:  "MacWave test package."
-        hom: "https://github.com/Sha0huaZhang/MacWave"
+        hom: "https://github.com/MacWaveOrg/MacWave"
         lic: "MIT"
         aut: "Sha0huaZhang (MacWave Team)"
         ver: "1.0.0"

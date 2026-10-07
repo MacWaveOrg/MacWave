@@ -628,7 +628,7 @@ class MacWaveCLI:
         if self._is_protected(safe_name):
             print(f"{RED_BOLD}🌊 ERROR: Cannot upgrade protected package: {safe_name}{RESET}")
             print(f"{YELLOW}🌊 To update MacWave, download the new version manually:{RESET}")
-            print(f"{YELLOW}🌊   curl -fsSL -o {INSTALL_DIR}/wave https://raw.githubusercontent.com/Sha0huaZhang/MacWave/main/wave.py{RESET}")
+            print(f"{YELLOW}🌊   curl -fsSL -o {INSTALL_DIR}/wave https://raw.githubusercontent.com/MacWaveOrg/MacWave/main/wave.py{RESET}")
             return
 
         INSTALLED_DB.parent.mkdir(parents=True, exist_ok=True)

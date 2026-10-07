@@ -2,12 +2,12 @@
 
 # MacWave 🌊 Official Installer
 # This script downloads wave.py, installs dependencies, and configures PATH.
-# Usage: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Sha0huaZhang/MacWave/2.0.0-dev/lib/install.sh)"
+# Usage: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/2.0.0-dev/lib/install.sh)"
 
 set -e
 
 BRANCH="2.0.0-dev"
-BASE_URL="https://raw.githubusercontent.com/Sha0huaZhang/MacWave/$BRANCH"
+BASE_URL="https://raw.githubusercontent.com/MacWaveOrg/MacWave/$BRANCH"
 
 # ==========================================
 # 颜色定义
