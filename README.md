@@ -10,7 +10,7 @@ A package manager for macOS software developers.
 macOS Sonoma14 and above
 ## 🌊 Latest Version
 
-2.5.2, Release on 2026-10-07
+2.6.0, Release on 2026-10-07
 
 ## 🌊 What is MacWave?
 
