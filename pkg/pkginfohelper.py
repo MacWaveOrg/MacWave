@@ -80,7 +80,7 @@ def fetch_remote_versions(pkg_name, arch):
     
     # 通过 GitHub API 遍历 infosource 中的版本文件，返回所有可安装版本号列表。
     
-    api_url = f"https://api.github.com/repos/Sha0huaZhang/MacWave/contents/pkg/pkginfo_{arch}/{pkg_name}"
+    api_url = f"https://api.github.com/repos/MacWaveOrg/MacWave/contents/pkg/pkginfo_{arch}/{pkg_name}"
     try:
         resp = requests.get(api_url, timeout=30)
         if resp.status_code != 200:
@@ -102,7 +102,7 @@ def fetch_remote_info(pkg_name, arch):
     
     # 从 infosource 拉取 @common 文件，返回描述信息。
     
-    common_url = f"https://raw.githubusercontent.com/Sha0huaZhang/MacWave/infosource/pkg/pkginfo_{arch}/{pkg_name}/_{pkg_name}@common"
+    common_url = f"https://raw.githubusercontent.com/MacWaveOrg/MacWave/infosource/pkg/pkginfo_{arch}/{pkg_name}/_{pkg_name}@common"
     try:
         resp = requests.get(common_url)
         if resp.status_code != 200:
@@ -144,7 +144,7 @@ def handle_search(query):
     # 远程搜索 infosource 分支下所有包名，匹配查询词。
     
     arch = get_arch()
-    api_url = f"https://api.github.com/repos/Sha0huaZhang/MacWave/contents/pkg/pkginfo_{arch}"
+    api_url = f"https://api.github.com/repos/MacWaveOrg/MacWave/contents/pkg/pkginfo_{arch}"
 
     try:
         resp = requests.get(api_url, timeout=30)

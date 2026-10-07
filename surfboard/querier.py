@@ -63,7 +63,7 @@ def _get_arch():
 
 
 def _get_data_base_url():
-    return "https://raw.githubusercontent.com/Sha0huaZhang/MacWave/infosource"
+    return "https://raw.githubusercontent.com/MacWaveOrg/MacWave/infosource"
 
 
 def to_tilde(path):
