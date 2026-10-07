@@ -56,7 +56,7 @@ except ImportError:
     pass
 
 VERSION = "1.0.0"
-REPO_URL = "https://raw.githubusercontent.com/Sha0huaZhang/MacWave/main/repo/repo.json"
+REPO_URL = "https://raw.githubusercontent.com/MacWaveOrg/MacWave/main/repo/repo.json"
 INSTALL_DIR = Path.home() / ".local" / "macwave" / "bin"
 INSTALLED_DB = Path.home() / ".local" / "macwave" / "installed.json"
 REPO_CACHE = Path.home() / ".local" / "macwave" / "repo_cache.json"

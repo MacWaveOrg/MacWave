@@ -6,7 +6,7 @@
 set -e
 
 INSTALL_DIR="$HOME/.local/macwave/bin"
-WAVE_URL="https://raw.githubusercontent.com/Sha0huaZhang/MacWave/main/wave.py"
+WAVE_URL="https://raw.githubusercontent.com/MacWaveOrg/MacWave/main/wave.py"
 
 echo "🌊 Welcome to MacWave!"
 echo "🌊 Installing to $INSTALL_DIR..."

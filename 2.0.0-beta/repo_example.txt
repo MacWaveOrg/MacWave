@@ -26,7 +26,7 @@ def repo_dict:
     let "ldid" = "https://raw.githubusercontent.com/ProcursusTeam/ldid/main/ldid"
     let "machox" = "https://github.com/Sha0huaZhang/MachOX/releases/latest/download/machox"
     let "palera1n" = "https://github.com/palera1n/palera1n/releases/latest/download/palera1n-macos-universal"
-    let "test_001" = "https://raw.githubusercontent.com/Sha0huaZhang/MacWave/main/test/test_001"
+    let "test_001" = "https://raw.githubusercontent.com/MacWaveOrg/MacWave/main/test/test_001"
 }
 
 <!-- ==================== 3. Package Details ==================== -->

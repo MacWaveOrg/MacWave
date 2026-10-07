@@ -54,7 +54,7 @@ except ImportError:
 # ==========================================
 
 VERSION = "1.1.0"
-REPO_URL = "https://raw.githubusercontent.com/Sha0huaZhang/MacWave/main/repo/repo.json"
+REPO_URL = "https://raw.githubusercontent.com/MacWaveOrg/MacWave/main/repo/repo.json"
 INSTALL_DIR = Path.home() / ".local" / "macwave" / "bin"
 DOWNLOAD_TMP = Path.home() / ".local" / "macwave" / "downloads" / "tmp"
 INSTALLED_DB = Path.home() / ".local" / "macwave" / "installed.json"
@@ -626,7 +626,7 @@ class MacWaveCLI:
         if self._is_protected(safe_name):
             print(f"🌊 \033[31mERROR: Cannot upgrade protected package: {safe_name}\033[0m")
             print(f"🌊 \033[93mTo update MacWave, download the new version manually:\033[0m")
-            print(f"🌊 \033[93m  curl -fsSL -o ~/.local/macwave/bin/wave https://raw.githubusercontent.com/Sha0huaZhang/MacWave/main/wave.py\033[0m")
+            print(f"🌊 \033[93m  curl -fsSL -o ~/.local/macwave/bin/wave https://raw.githubusercontent.com/MacWaveOrg/MacWave/main/wave.py\033[0m")
             return
 
         INSTALLED_DB.parent.mkdir(parents=True, exist_ok=True)
