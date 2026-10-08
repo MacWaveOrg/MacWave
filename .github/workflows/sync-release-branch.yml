@@ -1,0 +1,76 @@
+name: Sync main with the release branch
+
+# main 与「发布分支」互为镜像，发布分支是谁由 configdata 决定：
+# 读 MacWaveOrg/configdata 的 versiondata/latest_version 里的 branch 字段（现为 3.0），
+# 任一侧有了新提交，就把另一侧快进（fast-forward）过去。只做快进、绝不覆盖已有提交；
+# 两边都已经分叉时直接报错，交给人处理。
+#
+# 所以以后开新分支（如 3.1）**不需要改本工作流**：把 configdata 的 branch 改成 3.1 即可。
+# 触发范围是所有分支，但脚本只碰 main 与发布分支——2.3/2.4/2.5 这类历史分支不会被误动。
+#
+# 不会自激循环：本工作流用仓库自带的 GITHUB_TOKEN 推送，而 GITHUB_TOKEN 触发的 push
+# 不会再触发工作流（GitHub 的既定行为）。
+
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-release-branch
+  cancel-in-progress: false
+
+env:
+  CONFIGDATA_URL: https://raw.githubusercontent.com/MacWaveOrg/configdata/main
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fast-forward whichever side lagged
+        run: |
+          set -euo pipefail
+
+          # 发布分支由数据决定，不写死在代码里
+          release_branch="$(curl -fsSL --max-time 30 "$CONFIGDATA_URL/versiondata/latest_version" \
+            | sed -n 's/^branch:[[:space:]]*"\(.*\)"/\1/p' | head -n 1)"
+
+          if [[ -z "$release_branch" ]]; then
+            echo "::error::cannot read the release branch from $CONFIGDATA_URL."
+            exit 1
+          fi
+          echo "Release branch declared by configdata: $release_branch"
+
+          git fetch --prune origin '+refs/heads/*:refs/remotes/origin/*'
+
+          if ! git rev-parse --verify -q "refs/remotes/origin/$release_branch" > /dev/null; then
+            echo "Branch '$release_branch' does not exist yet; nothing to mirror."
+            exit 0
+          fi
+
+          main="$(git rev-parse refs/remotes/origin/main)"
+          release="$(git rev-parse "refs/remotes/origin/$release_branch")"
+
+          if [[ "$main" == "$release" ]]; then
+            echo "main and $release_branch already match; nothing to do."
+            exit 0
+          fi
+
+          if git merge-base --is-ancestor "$main" "$release"; then
+            echo "$release_branch is ahead of main; fast-forwarding main."
+            git push origin "refs/remotes/origin/$release_branch:refs/heads/main"
+          elif git merge-base --is-ancestor "$release" "$main"; then
+            echo "main is ahead of $release_branch; fast-forwarding $release_branch."
+            git push origin "refs/remotes/origin/main:refs/heads/$release_branch"
+          else
+            echo "::error::main and $release_branch have diverged; a human has to reconcile them."
+            exit 1
+          fi
