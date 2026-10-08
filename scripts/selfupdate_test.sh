@@ -1,9 +1,8 @@
 #!/bin/bash
 
 # selfupdate_test.sh
-# selfupdate 回归：版本数据解析 → 已是最新时的短路 → 真实的端到端自更新
-# 最后一步会真的按 configdata 的 update_command 把安装目录更新一遍，
-# 所以放在 CI 的最后执行。
+# selfupdate 回归：版本数据解析 → 已是最新时的短路 → 跨大版本被拒绝 → 同大版本的端到端自更新
+# 最后一步会真的把安装目录更新一遍，所以放在 CI 的最后执行。
 
 set -e
 
@@ -124,15 +123,10 @@ fi
 rm -f "$LOG_FILE"
 
 # ==========================================
-# 3. 端到端自更新（真的会改动安装目录，放最后）
+# 3. 跨大版本必须被拒绝（3.0 起的新规则）
 # ==========================================
 
-echo "========== end-to-end selfupdate =========="
-
-if ! bash -n "$SELFUPDATE_SH"; then
-    echo -e "${RED_BOLD}🌊 FAIL: selfupdate.sh has a syntax error${RESET}"
-    FAILED=$((FAILED + 1))
-fi
+echo "========== cross-major selfupdate is refused =========="
 
 python3 - "$VERSION_FILE" << 'PYEOF'
 import json
@@ -148,49 +142,76 @@ RC=0
 python3 "$WAVE_BIN" selfupdate > "$LOG_FILE" 2>&1 || RC=$?
 cat "$LOG_FILE"
 
-if [[ "$RC" -ne 0 ]]; then
-    echo -e "${RED_BOLD}🌊 FAIL: selfupdate exited with $RC${RESET}"
+if [[ "$RC" -ne 0 ]] && grep -q 'cannot cross major versions' "$LOG_FILE"; then
+    echo -e "${GREEN}🌊 OK: cross-major selfupdate refused${RESET}"
+else
+    echo -e "${RED_BOLD}🌊 FAIL: expected a cross-major refusal (exit $RC)${RESET}"
     FAILED=$((FAILED + 1))
 fi
 rm -f "$LOG_FILE"
 
-# VERSION.json 必须变成远端声明的版本号（这一步同时证明 selfupdate.sh 真的跑过）
-if python3 - "$VERSION_FILE" << 'PYEOF'
-import json
-import re
-import subprocess
-import sys
-
-url = "https://raw.githubusercontent.com/MacWaveOrg/configdata/main/versiondata/latest_version"
-result = subprocess.run(['curl', '-fsSL', '--max-time', '60', url], capture_output=True, text=True)
-if result.returncode != 0:
-    print(f'🌊 Error: cannot fetch the version data ({result.returncode})')
-    sys.exit(1)
-
-match = re.search(r'version:\s*"([^"]+)"', result.stdout)
-if not match:
-    print('🌊 Error: the version data has no version field')
-    sys.exit(1)
-
-expected = match.group(1)
-with open(sys.argv[1], 'r') as handle:
-    actual = json.load(handle).get('version')
-
-if actual != expected:
-    print(f'🌊 Error: VERSION.json is {actual}, expected {expected}')
-    sys.exit(1)
-
-print(f'🌊 VERSION.json updated to {actual}')
-PYEOF
-then
-    echo -e "${GREEN}🌊 OK: end-to-end selfupdate${RESET}"
+if [[ "$(python3 -c "import json; print(json.load(open('$VERSION_FILE'))['version'])")" == "0.1" ]]; then
+    echo -e "${GREEN}🌊 OK: VERSION.json untouched after the refusal${RESET}"
 else
-    echo -e "${RED_BOLD}🌊 FAIL: VERSION.json was not updated to the published version${RESET}"
+    echo -e "${RED_BOLD}🌊 FAIL: VERSION.json changed despite the refusal${RESET}"
     FAILED=$((FAILED + 1))
 fi
 
 # ==========================================
-# 4. 清单里列出的文件必须都落到了安装目录
+# 4. 同大版本的端到端自更新（真的会改动安装目录，放最后）
+# ==========================================
+
+echo "========== end-to-end selfupdate =========="
+
+if ! bash -n "$SELFUPDATE_SH"; then
+    echo -e "${RED_BOLD}🌊 FAIL: selfupdate.sh has a syntax error${RESET}"
+    FAILED=$((FAILED + 1))
+fi
+
+# 线上版本形如 x.0 时，「同大版本且更旧」的版本并不存在（x.0 已是该大版本的最低版本），
+# 所以这里直接给 selfupdate.sh 指定一个同大版本、更高的目标版本号，走完真实的更新流程
+# （读文件清单 → 下载文件 → 写 VERSION.json）。
+PUBLISHED="$(curl -fsSL --max-time 60 "https://raw.githubusercontent.com/MacWaveOrg/configdata/main/versiondata/latest_version" \
+    | sed -n 's/^version:[[:space:]]*"\(.*\)"/\1/p' | head -n 1)"
+
+if [[ -z "$PUBLISHED" ]]; then
+    echo -e "${RED_BOLD}🌊 FAIL: cannot read the published version${RESET}"
+    FAILED=$((FAILED + 1))
+else
+    INSTALLED="$PUBLISHED"
+    TARGET="$(python3 -c 'import sys; parts = sys.argv[1].split("."); parts[-1] = str(int(parts[-1]) + 1); print(".".join(parts))' "$PUBLISHED")"
+
+    python3 - "$VERSION_FILE" "$INSTALLED" << 'PYEOF'
+import json
+import sys
+
+with open(sys.argv[1], 'w') as handle:
+    json.dump({"version": sys.argv[2], "components": {"installer": sys.argv[2], "parser": sys.argv[2]}},
+              handle, indent=2)
+PYEOF
+
+    LOG_FILE="$(mktemp)"
+    RC=0
+    MACWAVE_UPDATE_VERSION="$TARGET" MACWAVE_UPDATE_BRANCH=main bash "$SELFUPDATE_SH" > "$LOG_FILE" 2>&1 || RC=$?
+    cat "$LOG_FILE"
+
+    if [[ "$RC" -ne 0 ]]; then
+        echo -e "${RED_BOLD}🌊 FAIL: selfupdate.sh exited with $RC${RESET}"
+        FAILED=$((FAILED + 1))
+    fi
+    rm -f "$LOG_FILE"
+
+    # VERSION.json 必须变成目标版本号（这一步同时证明 selfupdate.sh 真的跑过）
+    if [[ "$(python3 -c "import json; print(json.load(open('$VERSION_FILE'))['version'])")" == "$TARGET" ]]; then
+        echo -e "${GREEN}🌊 OK: end-to-end selfupdate ($INSTALLED -> $TARGET)${RESET}"
+    else
+        echo -e "${RED_BOLD}🌊 FAIL: VERSION.json was not updated to $TARGET${RESET}"
+        FAILED=$((FAILED + 1))
+    fi
+fi
+
+# ==========================================
+# 5. 清单里列出的文件必须都落到了安装目录
 #    2.4 就是漏在这一点上：代码里加了 pkg/linker.py，
 #    但 selfupdate.sh 自带的文件清单没同步，自更新后 wave link 直接 ImportError。
 # ==========================================
@@ -237,7 +258,7 @@ fi
 rm -f "$FILES_INFO_TMP" "$PARSER_TMP"
 
 # ==========================================
-# 5. wave.py 里每个命令都要有对应的模块文件
+# 6. wave.py 里每个命令都要有对应的模块文件
 #    这一条独立于清单：即使清单漏写，只要 wave.py 引用了就会报出来
 # ==========================================
 
