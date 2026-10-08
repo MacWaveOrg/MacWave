@@ -24,13 +24,13 @@ if "字符串"含有 "@"
  elif "字符串"含有"--ver"
      def "--ver"后面的一个空格后面到"下一个出现的空格"前面的字符串为"ParsePkgVersion"
  else:
-     读取f"https://raw.githubusercontent.com/MacWaveOrg/MacWave/infosource/pkg/pkginfo_{Arch}/{ParsePkgName}"通过GitHub API返回的JSON
+     读取f"https://api.github.com/repos/MacWaveOrg/infosource/contents/pkg/pkginfo_{Arch}/{ParsePkgName}?ref=main"通过GitHub API返回的JSON
      提取"@"后面的内容为版本号并排除掉"common"
      调用pkgversiobparser.py来获取到最终的最新版本号
      def 此版本为"ParserPkgVersion"
 
 # 版本号检查:
-读取文件f"https://raw.githubusercontent.com/MacWaveOrg/MacWave/infosource/pkg/pkginfo_{Arch}/{ParserPkgName}/{ParserPkgName}@{ParsePkgVersion}"
+读取文件f"https://raw.githubusercontent.com/MacWaveOrg/infosource/main/pkg/pkginfo_{Arch}/{ParserPkgName}/{ParserPkgName}@{ParsePkgVersion}"
     if 产生错误码
         if (输入的字符串含有"-v" or 输入的字符串含有"--verbose"
             输出详细错误返回内容

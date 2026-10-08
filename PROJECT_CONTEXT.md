@@ -4,8 +4,8 @@
 技术栈：Python + Shell。
 
 - `main` 与版本分支（当前的 `2.4`）：程序代码，两者保持同步
-- `configdata` 分支：版本数据（`versiondata/latest_version` 给 `wave selfupdate` 判断有没有新版本，`versiondata/files_info` 是要更新的文件清单）
-- `infosource` 分支：纯数据（包与依赖的元数据、下载地址、校验值）
+- `MacWaveOrg/configdata` 仓库的 `main` 分支：版本数据（`versiondata/latest_version` 给 `wave selfupdate` 判断有没有新版本，`versiondata/files_info` 是要更新的文件清单）
+- `MacWaveOrg/infosource` 仓库的 `main` 分支：纯数据（包与依赖的元数据、下载地址、校验值），依赖数据在 `deps/` 目录下
 
 ---
 
@@ -94,7 +94,7 @@ BASE_DIR/{lib,pkg,surfboard}/                 程序文件自身
 ~/.config/macwave_config/{config.json,VERSION.json}     用户级安装的配置
 ```
 
-## 四、数据源（`infosource` 分支）
+## 四、数据源（`MacWaveOrg/infosource` 仓库）
 
 软件包：
 
@@ -106,8 +106,8 @@ pkg/pkginfo_{arch}/{包名}/_{包名}@{版本号}    url / sha256 / deps
 依赖：
 
 ```
-surfboard/depsinfo_{arch}/{依赖名}/_{依赖名}@common     dep_name / des / hom / lic / aut
-surfboard/depsinfo_{arch}/{依赖名}/_{依赖名}@{版本号}     url / sha256 / deps
+deps/depsinfo_{arch}/{依赖名}/_{依赖名}@common     dep_name / des / hom / lic / aut
+deps/depsinfo_{arch}/{依赖名}/_{依赖名}@{版本号}     url / sha256 / deps
 ```
 
 - `{arch}` 为 `arm64` 或 `amd64`
@@ -124,7 +124,7 @@ deps: "gettext@0.21.0"
 - 依赖引用格式强制 `依赖名@版本号`，不合规直接报错退出
 - 依赖名/版本在 `depsinfo_{arch}/` 里找不到时报错退出
 
-## 五、数据源（`configdata` 分支的 `updatedata/`）
+## 五、数据源（`MacWaveOrg/configdata` 仓库的 `updatedata/`）
 
 当某个版本**改动了目录结构**（例如 2.5 把用户级安装的配置从 `/opt/macwave_config` 挪到 `~/.config/macwave_config`）时，`install.sh` 与 `selfupdate.sh` 会在下载程序文件之前执行一段**数据驱动**的迁移：
 
@@ -138,7 +138,7 @@ updatedata/{版本号}/transfer_commands      Y/y 时执行这个脚本（bash -
 - 执行迁移脚本前会 `export MACWAVE_INSTALL_DIR`（安装目录）/ `MACWAVE_CONFIG_DIR`（配置目录）/ `MACWAVE_TARGET_VERSION`，脚本据此**自己判断要不要搬**（例如只对用户级安装迁移）
 - **迁移会搬走配置目录，所以迁移后必须重新解析**：`selfupdate.sh` 会再解析一次（否则 `VERSION.json` 会被写回旧位置）；`selfupdate.py` 的升级后复核也用 `version_file()` 每次重新解析（否则会误报「更新没有完成」）。`configpaths.py` 的模块级常量只在**进程启动时**解析一次，跨迁移的复核不能用它
 - ⚠️ **从 2.5 之前的版本升级必须用 `install.sh`**：2.5 之前发布的 `selfupdate.py` 把 `VERSION_FILE` 写死在 `/opt/macwave_config/VERSION.json`，配置被搬走后升级完的复核会读不到、**误报失败**（其实升级成功了）。2.5 及以后没有这个问题，可以正常用 `wave selfupdate`
-- 以后目录结构再变，只需在 configdata 加 `updatedata/{新版本}/` 这两个文件，**不用改任何代码**
+- 以后目录结构再变，只需在 configdata 仓库加 `updatedata/{新版本}/` 这两个文件，**不用改任何代码**
 
 ## 六、关键机制
 
@@ -179,7 +179,7 @@ updatedata/{版本号}/transfer_commands      Y/y 时执行这个脚本（bash -
 | --- | --- | --- |
 | 1 | `lib/wave.py` | 读 `base_dir`，把 `lib/`、`pkg/`、`surfboard/` 注入 `sys.path`；按 `COMMANDS` 字典把 `install` 分发给 `pkginstaller.handle_install("wave install wget@1.25.0")` |
 | 2 | `pkg/pkginstaller.py` | 解析下载参数（`-v` / `-C` / `--skip-ssl` / `--limit-rate` / `--proxy`，白名单校验）；解析包名与架构 |
-| 3 | `pkg/pkginstaller.py` | 定版本：`@版本号` → `--ver` → 都没有则调 `fetch_max_version()`（GitHub API，带 `?ref=infosource`） |
+| 3 | `pkg/pkginstaller.py` | 定版本：`@版本号` → `--ver` → 都没有则调 `fetch_max_version()`（GitHub API，`MacWaveOrg/infosource` 仓库的 main，带 `?ref=main`） |
 | 4 | `pkg/pkginstaller.py` | 拉 `_wget@common`，解析出 `bin_name`（缺失即报错） |
 | 5 | `pkg/pkginstaller.py` | 拉 `_wget@1.25.0`，解析出 `url` / `sha256` / **`deps`**（多行，向上回溯的 DSL 解析）；校验 `url` 必须是 https |
 | 6 | `pkg/pkginstaller.py` | `download_file()` 下载到 `downloads/tmp/`（rich 进度条、`.partial` + 断点续传、限速、代理、30 秒超时后询问重试），完成后去掉 `.partial` 后缀 |
