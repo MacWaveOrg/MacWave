@@ -246,3 +246,21 @@ BASE_DIR/links/                  wget@1.25.0，以及每个依赖 bin/ 下可执
 ```
 
 卸载时的逆向动作见「六、关键机制」第 3、4 条：先删自己的标记，某个依赖再无任何标记时才连同它的依赖一起级联删除。
+
+---
+
+## 九、新增版本分支（如 `3.1`）时要改的地方
+
+`main` 与「发布分支」互为镜像，而**发布分支由数据决定**：`MacWaveOrg/configdata` 的 `versiondata/latest_version` 里的 `branch` 字段（现为 `3.0`）。`.github/workflows/sync-release-branch.yml` 会随之把两边保持同步（只做快进，分叉则报错交给人工），**这个工作流本身不用改**。
+
+新开一个版本分支时只需要：
+
+| # | 改哪里 | 改成什么 |
+| --- | --- | --- |
+| 1 | `MacWaveOrg/configdata` 的 `versiondata/latest_version` | `branch` 指向新分支（新分支成为发布线时），`version` / `release_date` / `build_number` 一并更新 |
+| 2 | `.github/workflows/format-test.yml` | 把新分支名加进 `on.push.branches` 与 `on.pull_request.branches` |
+| 3 | `PROJECT_CONTEXT.md` 开头的「版本分支（当前的 `3.0`）」 | 改成新分支 |
+| 4 | `README.md` / `README.zh-Hans.md` 的 `Latest Version` / `最新版本` | 正式发布时更新 |
+| 5 | 站点 `index.html`（`MacWaveOrg/Pages`，以及 `gh-pages`） | 版本行的版本号 |
+
+镜像只认 configdata 声明的那一个发布分支，所以 `2.3` / `2.4` / `2.5` 这类历史分支不会被碰到。
