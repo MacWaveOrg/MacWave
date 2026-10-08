@@ -4,7 +4,7 @@
 # Re-downloads every MacWave code file and refreshes VERSION.json in the
 # active config dir (/opt/macwave_config or ~/.config/macwave_config).
 # Invoked by `wave selfupdate` through the update_command field in
-# configdata/versiondata/latest_version, or directly:
+# the configdata repository's versiondata/latest_version, or directly:
 #   bash lib/selfupdate.sh [branch]
 
 set -e
@@ -25,7 +25,8 @@ RESET='\033[0m'
 REPO="MacWaveOrg/MacWave"
 BRANCH="${MACWAVE_UPDATE_BRANCH:-${1:-main}}"
 BASE_URL="https://raw.githubusercontent.com/$REPO/$BRANCH"
-VERSION_DATA_URL="https://raw.githubusercontent.com/$REPO/configdata/versiondata/latest_version"
+CONFIGDATA_URL="https://raw.githubusercontent.com/MacWaveOrg/configdata/main"
+VERSION_DATA_URL="$CONFIGDATA_URL/versiondata/latest_version"
 
 # 配置目录：系统级优先，其次用户级（与 lib/configpaths.py 的规则一致）
 # 迁移可能把配置搬到用户级位置，所以做成函数，迁移之后要再解析一次。
@@ -135,13 +136,13 @@ echo "🌊 Updating MacWave to $VERSION"
 # 版本目录结构变更迁移（configdata/updatedata/{版本号}）
 # ==========================================
 #
-# configdata 的 updatedata/{版本号}/dir_structure_change 只有**一个字符**：
+# configdata 仓库的 updatedata/{版本号}/dir_structure_change 只有**一个字符**：
 #     Y/y → 该版本改变了目录结构，执行同目录下的 transfer_commands 完成迁移
 #     N/n → 没有改变，跳过（文件不存在也按「没有改变」处理）
 # 目标版本号用这次要升级到的版本（上面刚确定的 $VERSION）。
 # 迁移可能把配置搬到用户级位置，所以执行完要重新解析一次配置目录。
 
-UPDATEDATA_URL="https://raw.githubusercontent.com/$REPO/configdata/updatedata/$VERSION"
+UPDATEDATA_URL="$CONFIGDATA_URL/updatedata/$VERSION"
 
 DIR_STRUCTURE_CHANGE="$(curl -fsSL --max-time 30 "$UPDATEDATA_URL/dir_structure_change" 2>/dev/null | tr -d '[:space:]')" || DIR_STRUCTURE_CHANGE=""
 
@@ -174,7 +175,7 @@ fi
 # 文件清单（configdata/versiondata/files_info）
 # ==========================================
 #
-# 要更新哪些文件不再写死在本脚本里，而是去 configdata 分支读一份清单。
+# 要更新哪些文件不再写死在本脚本里，而是去 configdata 仓库读一份清单。
 # 清单内容**只表示仓库里的路径**，写法：
 #
 #     /                      单独一个 / 表示安装根（等价于 BASE_DIR）
@@ -188,7 +189,7 @@ fi
 # 唯一的特例：lib/wave.py 装成可执行的 lib/wave（它是 PATH 里的入口名）。
 # 以后新增文件只要改 configdata 的这份清单，不用再动本脚本。
 
-FILES_INFO_URL="https://raw.githubusercontent.com/$REPO/configdata/versiondata/files_info"
+FILES_INFO_URL="$CONFIGDATA_URL/versiondata/files_info"
 FILES_INFO_TMP="$(mktemp)"
 
 cleanup_files_info() {
@@ -211,7 +212,7 @@ for attempt in $(seq 1 "$FILES_INFO_ATTEMPTS"); do
 done
 
 if [[ "$FILES_INFO_OK" != "true" ]]; then
-    echo -e "${RED_BOLD}🌊 Error: Cannot fetch versiondata/files_info from the configdata branch.${RESET}"
+    echo -e "${RED_BOLD}🌊 Error: Cannot fetch versiondata/files_info from the configdata repository.${RESET}"
     echo -e "${RED_BOLD}🌊 Nothing was updated. Check your network or proxy, then try again.${RESET}"
     exit 1
 fi

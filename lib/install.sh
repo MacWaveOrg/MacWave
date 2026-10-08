@@ -312,7 +312,7 @@ fi
 # 文件清单（configdata/versiondata/files_info）
 # ==========================================
 #
-# 要下载哪些文件不写死在本脚本里，而是去 configdata 分支读一份清单，
+# 要下载哪些文件不写死在本脚本里，而是去 configdata 仓库读一份清单，
 # 这样新增文件只要改那份清单，不必再同步修改安装脚本与自更新脚本。
 # 清单内容**只表示仓库里的路径**，写法：
 #
@@ -326,10 +326,10 @@ fi
 # 每个文件都从 "$BASE_URL/<仓库路径>" 下载，落到 "$BASE_DIR" 下的同名位置。
 # 唯一的特例：lib/wave.py 装成可执行的 lib/wave（它是 PATH 里的入口名）。
 #
-# 这一步刻意放在「建目录 / 写配置 / 清旧版」之前：连不上 configdata 就直接退出，
+# 这一步刻意放在「建目录 / 写配置 / 清旧版」之前：连不上 configdata 仓库就直接退出，
 # 不会留下一个配置已写好、文件却一个都没下的半成品安装。
 
-CONFIGDATA_URL="https://raw.githubusercontent.com/MacWaveOrg/MacWave/configdata"
+CONFIGDATA_URL="https://raw.githubusercontent.com/MacWaveOrg/configdata/main"
 FILES_INFO_URL="$CONFIGDATA_URL/versiondata/files_info"
 FILES_INFO_TMP="$(mktemp)"
 FILES_INFO_ATTEMPTS=3
@@ -353,7 +353,7 @@ for attempt in $(seq 1 "$FILES_INFO_ATTEMPTS"); do
 done
 
 if [[ "$FILES_INFO_OK" != "true" ]]; then
-    echo -e "${RED_BOLD}🌊 Error: Cannot fetch versiondata/files_info from the configdata branch.${RESET}"
+    echo -e "${RED_BOLD}🌊 Error: Cannot fetch versiondata/files_info from the configdata repository.${RESET}"
     echo -e "${RED_BOLD}🌊 Nothing was installed. Check your network or proxy, then run the installer again.${RESET}"
     exit 1
 fi
@@ -409,11 +409,11 @@ run_cmd chmod 755 "$CONFIG_DIR"
 # 版本目录结构变更迁移（configdata/updatedata/{版本号}）
 # ==========================================
 #
-# configdata 的 updatedata/{版本号}/dir_structure_change 只有**一个字符**：
+# configdata 仓库的 updatedata/{版本号}/dir_structure_change 只有**一个字符**：
 #     Y/y → 该版本改变了目录结构，执行同目录下的 transfer_commands 完成迁移
 #     N/n → 没有改变，跳过（文件不存在也按「没有改变」处理）
 # 目标版本号就是本脚本的 MACWAVE_VERSION（正在安装的这个版本）。
-# 迁移逻辑全部由 configdata 里的脚本提供，以后目录结构再变只改 configdata，
+# 迁移逻辑全部由 configdata 仓库里的脚本提供，以后目录结构再变只改 configdata，
 # 不用再动这个脚本。
 
 UPDATEDATA_URL="$CONFIGDATA_URL/updatedata/$MACWAVE_VERSION"

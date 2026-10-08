@@ -14,12 +14,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 审计需要 infosource 分支的数据。直接检出本地副本，不走 api.github.com：
+      # 审计需要 infosource 仓库的数据。直接检出本地副本，不走 api.github.com：
       # 未认证只有 60 次/小时，而 Runner 共用出口 IP，很容易被限流。
       - name: Checkout infosource data
         uses: actions/checkout@v4
         with:
-          ref: infosource
+          repository: MacWaveOrg/infosource
+          ref: main
           path: infosource-data
 
       - name: Setup Python
@@ -74,7 +75,7 @@ jobs:
         run: |
           bash scripts/link_test.sh
 
-      # 会真的按 configdata 的 update_command 更新一遍安装目录，所以放最后
+      # 会真的按 configdata 仓库的 update_command 更新一遍安装目录，所以放最后
       - name: Run selfupdate test
         run: |
           bash scripts/selfupdate_test.sh

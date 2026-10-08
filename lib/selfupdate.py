@@ -23,7 +23,7 @@ RESET = '\033[0m'
 
 from configpaths import VERSION_FILE_NAME, config_dir_candidates, find_config_dir
 
-VERSION_DATA_URL = "https://raw.githubusercontent.com/MacWaveOrg/MacWave/configdata/versiondata/latest_version"
+VERSION_DATA_URL = "https://raw.githubusercontent.com/MacWaveOrg/configdata/main/versiondata/latest_version"
 FETCH_TIMEOUT = 30
 UPDATE_TIMEOUT = 1800
 
@@ -80,7 +80,7 @@ def version_key(value):
 
 
 def version_file():
-    # 配置目录可能在上一次升级里被迁移（见 configdata 的 updatedata/），
+    # 配置目录可能在上一次升级里被迁移（见 configdata 仓库的 updatedata/），
     # 所以每次都重新解析一遍，不要用模块级常量。
     config_dir = find_config_dir()
     if config_dir is not None:

@@ -124,7 +124,7 @@ COMMAND_HELP = {
     },
     "selfupdate": {
         "usage": "wave selfupdate",
-        "desc": "Update MacWave itself to the version published in the configdata branch.",
+        "desc": "Update MacWave itself to the version published in the configdata repository.",
         "flags": [],
         "examples": ["wave selfupdate"],
     },

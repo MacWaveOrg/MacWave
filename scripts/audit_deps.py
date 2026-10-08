@@ -30,14 +30,15 @@ RESET = '\033[0m'
 
 # -------------------- 常量 --------------------
 
-BRANCH = "infosource"
-RAW_BASE = f"https://raw.githubusercontent.com/MacWaveOrg/MacWave/{BRANCH}"
-TREE_API = f"https://api.github.com/repos/MacWaveOrg/MacWave/git/trees/{BRANCH}?recursive=1"
+DATA_REPO = "MacWaveOrg/infosource"
+BRANCH = "main"
+RAW_BASE = f"https://raw.githubusercontent.com/{DATA_REPO}/{BRANCH}"
+TREE_API = f"https://api.github.com/repos/{DATA_REPO}/git/trees/{BRANCH}?recursive=1"
 CONFIG_FILES = (
     Path("/opt/macwave_config/config.json"),          # 系统级优先
     Path.home() / ".config" / "macwave_config" / "config.json",
 )
-DATA_GROUPS = ("pkg", "surfboard")
+DATA_GROUPS = ("pkg", "deps")
 REF_PATTERN = re.compile(r'^[^@\s,]+@[^@\s,]+$')
 MACHO_MAGIC = ('cffaedfe', 'cefaedfe', 'feedfacf', 'feedface', 'cafebabe', 'bebafeca')
 SYSTEM_PREFIXES = ('/usr/lib/', '/System/', '/Library/Apple/')
@@ -123,10 +124,10 @@ def macho_refs(path):
 
 
 def split_data_path(path):
-    # surfboard/depsinfo_arm64/gettext/_gettext@0.21.0 -> ("dep", "arm64", "gettext@0.21.0")
+    # deps/depsinfo_arm64/gettext/_gettext@0.21.0 -> ("dep", "arm64", "gettext@0.21.0")
     parts = path.split("/")
     group = parts[0]
-    kind = "dep" if group == "surfboard" else "pkg"
+    kind = "dep" if group == "deps" else "pkg"
     arch = parts[1].split("info_", 1)[1]
     return kind, arch, os.path.basename(path).lstrip("_")
 
@@ -215,7 +216,7 @@ def load_remote_data():
         fail(f"Cannot fetch the data tree from GitHub: {error}\n"
              "🌊 With no token, api.github.com allows only 60 requests per hour and CI runners share their "
              "IP, so this is often a rate limit. Set GH_TOKEN, or pass --data-dir with a local checkout "
-             "of the 'infosource' branch.")
+             "of the 'infosource' repository.")
     except (ValueError, KeyError):
         fail(f"Cannot parse the data tree returned by GitHub ({TREE_API}).")
 
@@ -227,7 +228,7 @@ def load_remote_data():
             if path.split("/")[0] in DATA_GROUPS:
                 paths.append(path)
 
-    print(f"🌊 Fetching {len(paths)} data file(s) from branch '{BRANCH}'...")
+    print(f"🌊 Fetching {len(paths)} data file(s) from {DATA_REPO}@{BRANCH}...")
     try:
         with ThreadPoolExecutor(max_workers=8) as pool:
             contents = list(pool.map(fetch_text, [f"{RAW_BASE}/{quote(path)}" for path in paths]))
@@ -244,7 +245,7 @@ def resolve_data(data_dir):
             fail(f"Data directory not found: {root}")
         return load_local_data(root)
 
-    # 在 infosource 分支上直接读本地，否则从 GitHub 拉取
+    # 在数据仓库的本地检出里直接读，否则从 GitHub 拉取
     repo_root = Path(__file__).resolve().parent.parent
     for group in DATA_GROUPS:
         if any((repo_root / group).glob("*info_*")):
@@ -306,8 +307,8 @@ def audit_data(files, check_urls=False):
             refs += 1
 
             dep_name, _, dep_version = dep_ref.partition("@")
-            common_path = f"surfboard/depsinfo_{arch}/{dep_name}/_{dep_name}@common"
-            version_path = f"surfboard/depsinfo_{arch}/{dep_name}/_{dep_name}@{dep_version}"
+            common_path = f"deps/depsinfo_{arch}/{dep_name}/_{dep_name}@common"
+            version_path = f"deps/depsinfo_{arch}/{dep_name}/_{dep_name}@{dep_version}"
             if common_path not in common_paths:
                 problems.append(f"{label}: depsinfo 缺少 {dep_name} 的 @common")
             if version_path not in files:
@@ -404,7 +405,7 @@ def audit_edges(files, base_dir, arch):
             checked += 1
 
             # 以数据里的声明为准，数据缺失时退回已安装的 _DEPS
-            data_path = f"surfboard/depsinfo_{arch}/{name}/_{name}@{version}"
+            data_path = f"deps/depsinfo_{arch}/{name}/_{name}@{version}"
             if data_path in files:
                 declared = {ref.partition("@")[0] for ref in get_deps(parse_fields(files[data_path]))}
             else:
@@ -437,10 +438,10 @@ def audit_edges(files, base_dir, arch):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Audit MacWave dependency data (infosource) and the installed dependency edges.")
+        description="Audit MacWave dependency data (infosource repo) and the installed dependency edges.")
     parser.add_argument("mode", nargs="?", default="all", choices=["data", "edges", "all"],
                         help="data: 只查数据；edges: 只查本机依赖边；all: 两者都查（默认）")
-    parser.add_argument("--data-dir", help="infosource 检出的目录（默认：本地有就用，否则从 GitHub 拉取）")
+    parser.add_argument("--data-dir", help="infosource 数据仓库检出的目录（默认：本地有就用，否则从 GitHub 拉取）")
     parser.add_argument("--base-dir", help="MacWave 安装目录（默认按系统级 → 用户级读 config.json）")
     parser.add_argument("--arch", choices=["arm64", "amd64"], help="目标架构（默认本机架构）")
     parser.add_argument("--check-urls", action="store_true",
