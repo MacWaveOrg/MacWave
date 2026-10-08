@@ -3,7 +3,7 @@
 面向 macOS / Linux 软件开发者的包管理器，主要托管 iOS/iPadOS 相关软件包。
 技术栈：Python + Shell。
 
-- `main` 与版本分支（当前的 `2.4`）：程序代码，两者保持同步
+- `main` 与版本分支（当前的 `3.0`）：程序代码，两者保持同步
 - `MacWaveOrg/configdata` 仓库的 `main` 分支：版本数据（`versiondata/latest_version` 给 `wave selfupdate` 判断有没有新版本，`versiondata/files_info` 是要更新的文件清单）
 - `MacWaveOrg/infosource` 仓库的 `main` 分支：纯数据（包与依赖的元数据、下载地址、校验值），依赖数据在 `deps/` 目录下
 
