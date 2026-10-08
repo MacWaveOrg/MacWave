@@ -133,6 +133,44 @@ fi
 echo "🌊 Updating MacWave to $VERSION"
 
 # ==========================================
+# 大版本守卫（跨大版本不允许 selfupdate）
+# ==========================================
+#
+# 每个大版本的第一个版本、以及任何跨大版本升级，都必须用 install.sh 完整安装：
+# 这类升级通常同时改仓库与目录结构，selfupdate 只适合同大版本内的小版本升级。
+# selfupdate.sh 是从「目标分支」拉下来执行的，守卫放在这里，以后每个大版本自带的
+# selfupdate.sh 都会带上它，规则自动生效，不必逐版本写死在 configdata 里。
+
+CURRENT_VERSION="$(python3 - "$VERSION_FILE" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1]) as handle:
+        print(json.load(handle).get("version", ""))
+except Exception:
+    print("")
+PY
+)"
+
+major_of() {
+    # 取版本号里第一段数字当大版本号："2.6.1" -> "2"，"3.0" -> "3"
+    python3 -c 'import re, sys
+match = re.search(r"[0-9]+", sys.argv[1])
+print(match.group(0) if match else "")' "$1"
+}
+
+CURRENT_MAJOR="$(major_of "$CURRENT_VERSION")"
+TARGET_MAJOR="$(major_of "$VERSION")"
+
+if [[ -n "$CURRENT_MAJOR" && -n "$TARGET_MAJOR" && "$CURRENT_MAJOR" != "$TARGET_MAJOR" ]]; then
+    echo -e "${RED_BOLD}🌊 Error: selfupdate cannot cross major versions ($CURRENT_VERSION -> $VERSION).${RESET}" >&2
+    echo -e "${RED_BOLD}🌊 A new major version must be installed with install.sh:${RESET}" >&2
+    echo -e "${YELLOW}   /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/install.sh)\"${RESET}" >&2
+    exit 1
+fi
+
+# ==========================================
 # 版本目录结构变更迁移（configdata/updatedata/{版本号}）
 # ==========================================
 #

@@ -183,9 +183,10 @@ scenario_install_dirs() {
         "$(tree_base_dir "$FAKE_HOME/.config/macwave_config/config.json")" "$FAKE_HOME/.local/macwave"
     check "选项 1 入口可执行" \
         "$([[ -x "$FAKE_HOME/.local/macwave/lib/wave" ]] && echo yes || echo no)" "yes"
-    check "选项 1 VERSION.json 版本与脚本一致" \
+    check "选项 1 VERSION.json 版本与 configdata 一致" \
         "$(tree_version "$FAKE_HOME/.config/macwave_config/VERSION.json")" \
-        "$(sed -n 's/^MACWAVE_VERSION="\(.*\)"$/\1/p' "$OFFLINE_INSTALLER")"
+        "$(sed -n 's/^version:[[:space:]]*"\(.*\)"$/\1/p' \
+            "$SANDBOX_DIR/mirror/configdata/versiondata/latest_version" | head -n 1)"
     check "选项 1 写入了 PATH" "$(count_in "$FAKE_HOME/.zshrc" "$FAKE_HOME/.local/macwave")" "1"
     check "选项 1 不碰系统级配置" \
         "$([[ -e /opt/macwave_config ]] && echo yes || echo no)" "no"
@@ -508,6 +509,16 @@ else
             done
         done
     } > "$SANDBOX_DIR/mirror/configdata/versiondata/files_info"
+
+    # install.sh 还会从 configdata 读版本号与代码来源分支，一并生成一份
+    {
+        echo 'version: "0.0.0"'
+        echo 'release_date: "2026-01-01"'
+        echo 'build_number: "000A0000"'
+        echo 'branch: "main"'
+        echo 'update_command: <<< true >>>'
+    } > "$SANDBOX_DIR/mirror/configdata/versiondata/latest_version"
+
     echo -e "${YELLOW}🌊 configdata branch not found; generated files_info from the repo tree.${RESET}"
     echo -e "${YELLOW}🌊 Set MACWAVE_CONFIGDATA=<path> to test the real one.${RESET}"
 fi
