@@ -27,7 +27,7 @@ from configpaths import load_base_dir
 BASE_DIR = load_base_dir()
 DOWNLOAD_TMP = BASE_DIR / "downloads" / "tmp"
 
-DEPSINFO_BASE = "https://raw.githubusercontent.com/MacWaveOrg/MacWave/infosource/surfboard"
+DEPSINFO_BASE = "https://raw.githubusercontent.com/MacWaveOrg/infosource/main/deps"
 TAGGER_SCRIPT = Path(__file__).resolve().parent / "tagger.sh"
 TRANSFER_SCRIPT = Path(__file__).resolve().parent / "transfer.sh"
 

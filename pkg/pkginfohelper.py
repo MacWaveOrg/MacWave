@@ -63,10 +63,10 @@ def parse_pkg_from_bin(dirname):
 
 def fetch_remote_versions(pkg_name, arch):
     
-    # 通过 GitHub API 遍历 infosource 中的版本文件，返回所有可安装版本号列表。
-    # API 必须显式带 ref=infosource，否则查到默认分支（main）会 404。
+    # 通过 GitHub API 遍历数据仓库中的版本文件，返回所有可安装版本号列表。
+    # 数据在 MacWaveOrg/infosource 仓库的 main 分支。
     
-    api_url = f"https://api.github.com/repos/MacWaveOrg/MacWave/contents/pkg/pkginfo_{arch}/{pkg_name}?ref=infosource"
+    api_url = f"https://api.github.com/repos/MacWaveOrg/infosource/contents/pkg/pkginfo_{arch}/{pkg_name}?ref=main"
     try:
         resp = requests.get(api_url, timeout=30)
         if resp.status_code != 200:
@@ -86,9 +86,9 @@ def fetch_remote_versions(pkg_name, arch):
 
 def fetch_remote_info(pkg_name, arch):
     
-    # 从 infosource 拉取 @common 文件，返回描述信息。
+    # 从数据仓库拉取 @common 文件，返回描述信息。
     
-    common_url = f"https://raw.githubusercontent.com/MacWaveOrg/MacWave/infosource/pkg/pkginfo_{arch}/{pkg_name}/_{pkg_name}@common"
+    common_url = f"https://raw.githubusercontent.com/MacWaveOrg/infosource/main/pkg/pkginfo_{arch}/{pkg_name}/_{pkg_name}@common"
     try:
         resp = requests.get(common_url, timeout=30)
         if resp.status_code != 200:
@@ -128,12 +128,11 @@ def handle_list():
 
 def handle_search(query):
     
-    # 远程搜索 infosource 分支下所有包名，匹配查询词。
+    # 远程搜索数据仓库 main 分支下所有包名，匹配查询词。
     
     arch = get_arch()
 
-    # API 必须显式带 ref=infosource，否则查到默认分支（main）会 404
-    api_url = f"https://api.github.com/repos/MacWaveOrg/MacWave/contents/pkg/pkginfo_{arch}?ref=infosource"
+    api_url = f"https://api.github.com/repos/MacWaveOrg/infosource/contents/pkg/pkginfo_{arch}?ref=main"
 
     try:
         resp = requests.get(api_url, timeout=30)
