@@ -14,7 +14,7 @@ Linux? View [LinuxWave](https://github.com/LinuxWaveOrg/LinuxWave)
 macOS Sonoma14 and above
 ## 🌊 Latest Version
 
-3.0, Release on 2026-10-08
+3.0.1, Release on 2026-10-09
 
 ## 🌊 What is MacWave?
 
@@ -61,8 +61,9 @@ bash install.sh --silent --dir-option=1
 `--silent` (`-S`) answers the directory menu and the agreement automatically. It
 needs passwordless sudo, or root, when the chosen directory requires privilege.
 `--dir-option=N` picks menu entry `N` (1-4 on Intel, 1-3 on Apple silicon); for the
-custom entry, append the path after `=`, as in `--dir-option=4=/opt/my-macwave`. Run
-`install.sh --help` for the list.
+custom entry, append the path after `=`, as in `--dir-option=4=/opt/my-macwave`, or just
+pass the path on its own, as in `--dir-option=~/my-macwave`. Run `install.sh --help` for
+the list.
 
 > **Mind where the options go.** Writing
 > `/bin/bash -c "$(curl ...)" --silent` makes `--silent` the script name (`$0`), so

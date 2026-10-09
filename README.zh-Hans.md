@@ -14,7 +14,7 @@ Linux 用户？请看 [LinuxWave](https://github.com/LinuxWaveOrg/LinuxWave)
 macOS Sonoma 14 及以上
 ## 🌊 最新版本
 
-3.0，发布于 2026-10-08
+3.0.1，发布于 2026-10-09
 
 ## 🌊 MacWave 是什么？
 
@@ -60,8 +60,8 @@ bash install.sh --silent --dir-option=1
 
 `--silent`（`-S`）会自动应答目录菜单与许可协议；当选中的目录需要提权时，它要求免密 sudo
 或以 root 运行。`--dir-option=N` 免菜单直接选定第 `N` 项（Intel 机器为 1-4，Apple 芯片为
-1-3）；自定义项要在 `=` 之后附上路径，例如 `--dir-option=4=/opt/my-macwave`。完整参数列表
-可运行 `install.sh --help` 查看。
+1-3）；自定义项要附上路径，写成 `--dir-option=4=/opt/my-macwave`，或直接写 `--dir-option=~/my-macwave`。
+完整参数列表可运行 `install.sh --help` 查看。
 
 > **注意参数的位置。** 写成
 > `/bin/bash -c "$(curl ...)" --silent` 会让 `--silent` 变成脚本名（`$0`），从而被静默丢弃；

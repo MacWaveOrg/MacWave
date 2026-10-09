@@ -198,6 +198,22 @@ scenario_install_dirs() {
     check "自定义目录安装树就位" "$([[ -d "$FAKE_HOME/my-macwave" ]] && echo yes || echo no)" "yes"
     check "自定义目录的配置落在用户级" \
         "$(tree_base_dir "$FAKE_HOME/.config/macwave_config/config.json")" "$FAKE_HOME/my-macwave"
+
+    # --dir-option=<路径> 简写：省掉菜单号码，直接给目录（等同自定义项）
+    reset_state
+    install_run --silent "--dir-option=$FAKE_HOME/shorthand-macwave"
+    check "简写 --dir-option=<路径> 安装成功" "$?" "0"
+    check "简写安装树就位" "$([[ -d "$FAKE_HOME/shorthand-macwave" ]] && echo yes || echo no)" "yes"
+    check "简写配置落在用户级" \
+        "$(tree_base_dir "$FAKE_HOME/.config/macwave_config/config.json")" "$FAKE_HOME/shorthand-macwave"
+
+    # 路径带空格：需要用户自己加引号，其余照常
+    reset_state
+    install_run --silent "--dir-option=$FAKE_HOME/space dir"
+    check "空格路径安装成功" "$?" "0"
+    check "空格路径安装树就位" "$([[ -d "$FAKE_HOME/space dir" ]] && echo yes || echo no)" "yes"
+    check "空格路径配置落在用户级" \
+        "$(tree_base_dir "$FAKE_HOME/.config/macwave_config/config.json")" "$FAKE_HOME/space dir"
 }
 
 scenario_cli_errors() {

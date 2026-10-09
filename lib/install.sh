@@ -148,6 +148,8 @@ Options:
                           --dir-option the default (option 1) is used.
                           Requires passwordless sudo when privilege is needed.
       --dir-option=N      Pick menu entry N without prompting (1-$CUSTOM_OPTION).
+      --dir-option=DIR    Use DIR as the installation directory (shorthand for
+                          --dir-option=$CUSTOM_OPTION=DIR).
       --dir-option=N=DIR  Pick entry N and, for the custom entry ($CUSTOM_OPTION), use DIR
                           as the installation directory.
   -h, --help              Show this help.
@@ -159,6 +161,7 @@ Examples:
   install.sh --silent --dir-option=1
   install.sh -S --dir-option=2
   install.sh --silent --dir-option=$CUSTOM_OPTION=/opt/my-macwave
+  install.sh --silent --dir-option=/opt/my-macwave
 
 Running it straight from the repository (options go after '--'):
   /bin/bash -c "\$(curl -fsSL <url>)" -- --silent --dir-option=1
@@ -172,7 +175,9 @@ while [[ $# -gt 0 ]]; do
             ;;
         --dir-option=*)
             _value="${1#--dir-option=}"
-            if [[ "$_value" == *=* ]]; then
+            # 只有 N=DIR（前缀是数字）才拆分；--dir-option=<路径> 里若本身带 '='，
+            # 整条按路径处理，不会被误拆。
+            if [[ "$_value" == *=* && "${_value%%=*}" =~ ^[0-9]+$ ]]; then
                 CLI_DIR_OPTION="${_value%%=*}"
                 CLI_CUSTOM_DIR="${_value#*=}"
             else
@@ -203,9 +208,11 @@ case "$0" in
         ;;
 esac
 
+# --dir-option=<路径> 是 --dir-option=<自定义项>=<路径> 的简写：值不是数字时，
+# 直接把该值当作自定义安装目录。
 if [[ -n "$CLI_DIR_OPTION" && ! "$CLI_DIR_OPTION" =~ ^[0-9]+$ ]]; then
-    echo -e "${RED_BOLD}🌊 Error: --dir-option must be a number, got '$CLI_DIR_OPTION'.${RESET}" >&2
-    exit 1
+    CLI_CUSTOM_DIR="$CLI_DIR_OPTION"
+    CLI_DIR_OPTION="$CUSTOM_OPTION"
 fi
 
 if [[ -n "$CLI_DIR_OPTION" ]] && [[ "$CLI_DIR_OPTION" -lt 1 || "$CLI_DIR_OPTION" -gt "$CUSTOM_OPTION" ]]; then
