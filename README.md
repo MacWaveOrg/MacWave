@@ -22,15 +22,16 @@ MacWave is a **package manager** that runs on **macOS/Linux**, designed to host 
 
 ## 🌊 Why MacWave
 
-1. **One command, install common packages.** No more scattered download links.
-2. **Versioned storage.** Every binary is stored as `package@version`, so multiple versions can coexist without conflicting with system tools.
-3. **Optional unversioned links.** `wave link <package>` creates a plain `package` shortcut pointing at the highest installed version, and it re-points itself whenever you install or remove versions.
-4. **No cache, always up to date.** Package metadata is fetched live from the `MacWaveOrg/infosource` repository.
-5. **10 archive formats, CI-verified.** Supports no-extension binaries, `.zip`, `.tar.gz`, `.tar.bz2`, `.tar.xz`, `.tar`, `.gz`, `.xz`, `.bz2`, `.conda`.
-6. **Verify first, extract later.** SHA256 is checked before extraction.
-7. **Resumable downloads.** Interrupted? Resume with `-C`.
-8. **Lightweight and transparent.** Pure Python + Shell. No heavy runtime, no hidden behavior.
-9. **Automatically manage dependencies.** Support for software packages with dependencies, using reference counting and automatic dependency management, with no need to handle dependencies manually.
+1. **Lightweight design, saves disk space.** Files are pulled by the install script instead of cloning the repository, saving your disk space.
+2. **One command, install common packages.** No more scattered download links.
+3. **Versioned storage.** Every binary is stored as `package@version`, so multiple versions can coexist without conflicting with system tools.
+4. **Optional unversioned links.** `wave link <package>` creates a plain `package` shortcut pointing at the highest installed version, and it re-points itself whenever you install or remove versions.
+5. **No cache, always up to date.** Package metadata is fetched live from the `MacWaveOrg/infosource` repository.
+6. **10 archive formats, CI-verified.** Supports no-extension binaries, `.zip`, `.tar.gz`, `.tar.bz2`, `.tar.xz`, `.tar`, `.gz`, `.xz`, `.bz2`, `.conda`.
+7. **Verify first, extract later.** SHA256 is checked before extraction.
+8. **Resumable downloads.** Interrupted? Resume with `-C`.
+9. **Lightweight and transparent.** Pure Python + Shell. No heavy runtime, no hidden behavior.
+10. **Automatically manage dependencies.** Support for software packages with dependencies, using reference counting and automatic dependency management, with no need to handle dependencies manually.
 
 ## 🌊 Install MacWave
 
