@@ -40,20 +40,18 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      # actions/python-versions 里目前只有 3.15 的 rc（没有 3.15.0 正式版），
-      # setup-python 取不到："The version '3.15' ... was not found"。
-      # Homebrew 有现成的 3.15.0 bottle，装完用 venv 隔离，免得撞上
-      # Homebrew Python 的 PEP 668 externally-managed 限制。
-      - name: Setup Python 3.15 (Homebrew + venv)
+      # 3.15 这条线得自己装：actions/python-versions 里还没有 3.15.0 正式版
+      # （setup-python 报 "The version '3.15' ... was not found"），runner 自带的
+      # Homebrew 也还不认识 python@3.15（No available formula）。改用 uv 拉
+      # python-build-standalone 的 3.15.0，它会把装好的解释器放到 PATH 最前。
+      - name: Setup Python 3.15 (uv / python-build-standalone)
         if: matrix.python-version == '3.15'
-        run: |
-          brew install python@3.15
-          "/opt/homebrew/opt/python@3.15/bin/python3.15" -m venv "$RUNNER_TEMP/venv315"
-          echo "$RUNNER_TEMP/venv315/bin" >> "$GITHUB_PATH"
-          "$RUNNER_TEMP/venv315/bin/python3" -VV
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: '3.15'
 
       - name: Install Python dependencies
-        run: pip install requests packaging rich
+        run: python3 -m pip install requests packaging rich
 
       - name: Setup MacWave config
         run: |
@@ -132,17 +130,16 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      # 与上面的 format-test 同因：setup-python 还没有 3.15.0 正式版可用。
-      - name: Setup Python 3.15 (Homebrew + venv)
+      # 与上面的 format-test 同因：setup-python 与 runner 的 Homebrew 都拿不到
+      # 3.15.0 正式版，所以交给 uv（python-build-standalone）。
+      - name: Setup Python 3.15 (uv / python-build-standalone)
         if: matrix.python-version == '3.15'
-        run: |
-          brew install python@3.15
-          "/opt/homebrew/opt/python@3.15/bin/python3.15" -m venv "$RUNNER_TEMP/venv315"
-          echo "$RUNNER_TEMP/venv315/bin" >> "$GITHUB_PATH"
-          "$RUNNER_TEMP/venv315/bin/python3" -VV
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: '3.15'
 
       - name: Install Python dependencies
-        run: pip install requests packaging rich
+        run: python3 -m pip install requests packaging rich
 
       # 步骤级 timeout 低于 job 级：超时是"步骤失败"，这样下面的 always() 仍会上传日志
       - name: Run randomized regression

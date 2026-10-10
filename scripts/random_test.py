@@ -806,6 +806,12 @@ def maybe_illegal_arg(rng):
     return rng.choice(ILLEGAL_FLAGS) if rng.random() < ILLEGAL_ARG_PROBABILITY else None
 
 
+def uninstall_token(plan):
+    """卸载要用 bin_name：安装目录是 bin/<bin_name>@<版本>，
+    包名和 bin_name 不一定相同（例如 choma -> ChOma）。"""
+    return f"{plan.bin_name}@{plan.version}" if plan.specified else plan.bin_name
+
+
 def phase_install_cycle(wave, rng, plans, checks):
     banner("阶段 1：随机软件包 install → 校验")
     installed = []
@@ -1057,7 +1063,7 @@ def run_skip_ssl_case(wave, plan, checks):
         if not verify_installed(wave, plan, checks, label):
             ok = False
         # 每次装完都卸掉，下一轮才是干净的首次安装
-        wave.run(["uninstall", plan.token])
+        wave.run(["uninstall", uninstall_token(plan)])
     return ok
 
 
@@ -1234,7 +1240,7 @@ def phase_command_battery(wave, rng, checks, installed, links):
 def phase_uninstall_cycle(wave, rng, installed_plans, checks):
     banner("阶段 3：随机软件包 uninstall")
     for plan in installed_plans:
-        argv = ["uninstall", plan.token]
+        argv = ["uninstall", uninstall_token(plan)]
         if rng.random() < 0.3:
             argv.append(random_flag(rng, "-v", "--verbose"))
         illegal = maybe_illegal_arg(rng)
