@@ -60,7 +60,7 @@ def print_custom_help():
     print(f"  {CYAN}--proxy{RESET} {YELLOW}string{RESET}        Specify an HTTP/HTTPS proxy (e.g., http://127.0.0.1:8080)")
     print(f"  {CYAN}--skip-ssl{RESET}            Skip SSL certificate verification (insecure)")
     print(f"  {CYAN}--limit-rate{RESET} {YELLOW}string{RESET}   Limit download speed (e.g., 200K, 1M, 5M)")
-    print(f"  {CYAN}--ver{RESET} {YELLOW}string{RESET}          Install a specific version of the package")
+    print(f"  {CYAN}--ver{RESET} {YELLOW}string{RESET}          Install a specific version (install only; --ver=1.0 works too)")
     print()
     print(f"{PURPLE}Special Flags:{RESET}")
     print(f"  {GREEN}wave install <pkgname>@<version>{RESET}   Download certain version(s) of a package")

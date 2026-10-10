@@ -294,6 +294,7 @@ mw_create_link() {
 
     local links_dir="$base_dir/links"
     local link_path="$links_dir/$link_name@$version"
+    mw_assert_inside "$link_path"
 
     mkdir -p "$links_dir"
 
@@ -356,6 +357,21 @@ mw_tag_has_marks() {
     tagger_has_any "$dir"
 }
 
+# -------------------- 路径安全兜底 --------------------
+
+mw_assert_inside() {
+    # 目标路径必须落在 BASE_DIR 之内。Python 侧已经校验过输入字符，
+    # 这里再兜一层，避免将来有别的调用方绕过校验。
+    local path="$1"
+    case "$path" in
+        "$MW_BASE_DIR"/*) return 0 ;;
+        *)
+            echo -e "${RED_BOLD}🌊 Error: Refusing to write outside ${MW_BASE_DIR}: ${path}${RESET}" >&2
+            exit 1
+            ;;
+    esac
+}
+
 # -------------------- 通用安装流程 --------------------
 
 mw_install_artifact() {
@@ -367,6 +383,7 @@ mw_install_artifact() {
     local install_mode="${3:-binary}"
 
     mw_parse_info "$info_str"
+    mw_assert_inside "$MW_TARGET_DIR"
 
     local unzip_script="$MW_BASE_DIR/pkg/pkgunzip.sh"
     if [[ ! -f "$unzip_script" ]]; then

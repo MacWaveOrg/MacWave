@@ -21,7 +21,7 @@ RESET = '\033[0m'
 
 # -------------------- 配置加载 --------------------
 
-from configpaths import load_base_dir
+from configpaths import assert_inside, load_base_dir
 
 
 BASE_DIR = load_base_dir()
@@ -205,10 +205,12 @@ def download_dependency(dep_url, dep_display_name, config, input_string):
     DOWNLOAD_TMP.mkdir(parents=True, exist_ok=True)
     original_filename = dep_url.split("/")[-1]
     temp_path = DOWNLOAD_TMP / f"{original_filename}.partial"
+    assert_inside(temp_path, DOWNLOAD_TMP, "dependency download path")
 
     download_file(dep_url, temp_path, config, input_string, dep_display_name)
 
     final_path = DOWNLOAD_TMP / original_filename
+    assert_inside(final_path, DOWNLOAD_TMP, "dependency download path")
     temp_path.rename(final_path)
 
     return original_filename

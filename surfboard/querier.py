@@ -13,7 +13,7 @@ RESET = '\033[0m'
 
 # -------------------- 配置加载 --------------------
 
-from configpaths import load_base_dir
+from configpaths import assert_inside, load_base_dir, require_safe_token
 
 
 BASE_DIR = load_base_dir()
@@ -26,6 +26,7 @@ def dep_owner_dir(dep_name):
 
     # 依赖名目录，同一依赖的所有版本都放在这里。
 
+    dep_name = require_safe_token(dep_name, "dependency name")
     return DEPS_DIR / dep_name
 
 
@@ -33,7 +34,11 @@ def dep_dir(dep_name, dep_version):
 
     # 依赖具体版本的安装目录。
 
-    return dep_owner_dir(dep_name) / f"{dep_name}@{dep_version}"
+    dep_name = require_safe_token(dep_name, "dependency name")
+    dep_version = require_safe_token(dep_version, "dependency version")
+    path = DEPS_DIR / dep_name / f"{dep_name}@{dep_version}"
+    assert_inside(path, DEPS_DIR, "dependency path")
+    return path
 
 
 def is_installed(dep_name, dep_version):

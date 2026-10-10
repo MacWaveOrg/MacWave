@@ -20,7 +20,7 @@ RESET = '\033[0m'
 
 # -------------------- 配置加载 --------------------
 
-from configpaths import load_base_dir
+from configpaths import assert_inside, load_base_dir, require_safe_token
 
 
 BASE_DIR = load_base_dir()
@@ -76,6 +76,7 @@ def save_installed(installed):
 def find_installed_versions(pkg_name):
     # 扫描 bin 目录（2.2 起为 <包名>@<版本号> 目录），
     # 返回该包所有已安装版本（降序，排除 .bak 备份）
+    pkg_name = require_safe_token(pkg_name, "package name")
     if not BIN_DIR.exists():
         return []
     prefix = f"{pkg_name}@"
@@ -192,10 +193,18 @@ def remove_dependency(artifact_dir, depender_kind, depender_name, depender_versi
 def remove_one(pkg_name, version, installed):
     # 删除单个 <包名>@<版本号>（bin 下的目录 + links 下的软链接，含 .bak），
     # 并同步 installed.json
+    pkg_name = require_safe_token(pkg_name, "package name")
+    version = require_safe_token(version, "package version")
+
     target = BIN_DIR / f"{pkg_name}@{version}"
     backup = BIN_DIR / f"{pkg_name}@{version}.bak"
     link = LINKS_DIR / f"{pkg_name}@{version}"
     backup_link = LINKS_DIR / f"{pkg_name}@{version}.bak"
+
+    # 要递归删除的路径必须先确认落在安装目录里
+    for path, root in ((target, BIN_DIR), (backup, BIN_DIR),
+                       (link, LINKS_DIR), (backup_link, LINKS_DIR)):
+        assert_inside(path, root, "uninstall path")
 
     record = installed.get(pkg_name)
     if record and record.get("version") == version and record.get("binary_path"):

@@ -17,7 +17,7 @@ RESET = '\033[0m'
 
 # -------------------- 配置加载 --------------------
 
-from configpaths import load_base_dir
+from configpaths import load_base_dir, require_safe_token
 
 
 def github_api_headers(url):
@@ -77,6 +77,7 @@ def fetch_remote_versions(pkg_name, arch):
     # 通过 GitHub API 遍历数据仓库中的版本文件，返回所有可安装版本号列表。
     # 数据在 MacWaveOrg/infosource 仓库的 main 分支。
     
+    pkg_name = require_safe_token(pkg_name, "package name")
     api_url = f"https://api.github.com/repos/MacWaveOrg/infosource/contents/pkg/pkginfo_{arch}/{pkg_name}?ref=main"
     try:
         resp = requests.get(api_url, timeout=30, headers=github_api_headers(api_url))
@@ -99,6 +100,7 @@ def fetch_remote_info(pkg_name, arch):
     
     # 从数据仓库拉取 @common 文件，返回描述信息。
     
+    pkg_name = require_safe_token(pkg_name, "package name")
     common_url = f"https://raw.githubusercontent.com/MacWaveOrg/infosource/main/pkg/pkginfo_{arch}/{pkg_name}/_{pkg_name}@common"
     try:
         resp = requests.get(common_url, timeout=30)

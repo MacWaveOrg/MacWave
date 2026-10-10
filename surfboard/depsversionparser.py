@@ -5,6 +5,8 @@
 
 import sys
 
+from configpaths import require_safe_token
+
 # -------------------- 颜色定义 --------------------
 
 RED_BOLD = '\033[1;31m'
@@ -46,7 +48,9 @@ def parse_dep_ref(dep_ref):
         print(f"{RED_BOLD}🌊 Expected format: {{dep}}@{{version}}{RESET}")
         sys.exit(1)
 
-    return dep_name, dep_version
+    # 依赖名与版本号来自远端数据，之后要拼进目录路径，统一过白名单
+    return (require_safe_token(dep_name, "dependency name"),
+            require_safe_token(dep_version, "dependency version"))
 
 
 def parse_dep_refs(dep_refs):

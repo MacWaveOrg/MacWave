@@ -21,7 +21,7 @@ RESET = '\033[0m'
 
 # -------------------- 配置加载 --------------------
 
-from configpaths import load_base_dir
+from configpaths import assert_inside, load_base_dir, require_safe_token
 
 
 BASE_DIR = load_base_dir()
@@ -42,6 +42,7 @@ except ImportError:
 
 def installed_versions(name):
     # bin/{名称}@{版本号}/ 里的版本号列表（名称即 `wave list` 显示的那个）
+    name = require_safe_token(name, "package name")
     versions = []
     if not BIN_DIR.is_dir():
         return versions
@@ -72,6 +73,7 @@ def installed_packages():
 
 def linked_version(name):
     # links/{名称} 当前指向哪个版本；没链接、或指向别的名字时返回 None
+    name = require_safe_token(name, "package name")
     link = LINKS_DIR / name
     if not link.is_symlink():
         return None
@@ -108,9 +110,12 @@ def unversioned_links():
 
 def create_link(name, version):
     # 建立或重指 links/{名称}；已存在（含悬空链接）先删掉再建
+    name = require_safe_token(name, "package name")
+    version = require_safe_token(version, "package version")
     LINKS_DIR.mkdir(parents=True, exist_ok=True)
 
     link = LINKS_DIR / name
+    assert_inside(link, LINKS_DIR, "link path")
     if link.is_symlink() or link.exists():
         link.unlink()
 
@@ -119,7 +124,9 @@ def create_link(name, version):
 
 
 def remove_link(name):
+    name = require_safe_token(name, "package name")
     link = LINKS_DIR / name
+    assert_inside(link, LINKS_DIR, "link path")
     if link.is_symlink() or link.exists():
         link.unlink()
         return True
