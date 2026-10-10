@@ -6,7 +6,7 @@
 #   1. 每次随机挑一个「安装目录方案」（含 33% 概率的自定义方案 ~/test dir），
 #      自己把脚本部署进去，跑完无论成败都清理干净。
 #   2. 从 infosource 的 pkginfo_<arch> 里随机抽 10~20 个软件包（必含 wget），
-#      下载体积超过 40MB 的包重抽；逐个 install → 校验 → uninstall。
+#      下载体积超过 200MB 的包重抽；逐个 install → 校验 → uninstall。
 #   3. 指定版本号 / 不指定版本号各占一半，但两组都必须落在 [5, 15] 内，否则重抽。
 #      指定版本号的包里，1~2 个给「不存在的版本」，1~2 个给「非法版本」，其余正常。
 #   4. 三种特殊模式各至少一次：-C 断点续传（随机打断 0~3 次，含进度条渲染）、
@@ -18,7 +18,7 @@
 #   6. 5 个非法命令；裸 -h/--help/-V/--version 以及它们带非法参数的形式。
 #   7. 任何命令都可能有 10% 概率被插入非法参数。
 #   8. 等效参数的长/短形式随机（-h/--help、-V/--version、-a/--all、-C/--continue、-v/--verbose）。
-#   9. 随机池排除 test_* 测试夹具；单个产物体积上限 40MB。
+#   9. 随机池排除 test_* 测试夹具；单个产物体积上限 200MB。
 #
 # 安全约束：只清理本次运行亲手创建的目录；已存在的配置目录（可能是一份真实安装）
 # 与已存在的非空安装目录一律拒绝覆盖并直接报错。
@@ -55,7 +55,8 @@ except ImportError:
 
 PKG_COUNT_MIN = 10
 PKG_COUNT_MAX = 20
-MAX_ARTIFACT_BYTES = 40 * 1024 * 1024        # 超过这个体积的包重抽
+MAX_ARTIFACT_MB = 200                        # 单个产物体积上限（MB）
+MAX_ARTIFACT_BYTES = MAX_ARTIFACT_MB * 1024 * 1024   # 超过这个体积的包重抽
 SPECIFIED_MIN = 5                            # 「指定版本号」的包数下限
 SPECIFIED_MAX = 15                           # 「指定版本号」的包数上限
 CUSTOM_DIR_PROBABILITY = 0.33                # 抽到 `~/test dir` 的概率
@@ -95,6 +96,8 @@ HEARTBEAT_SECONDS = 30                       # 长命令心跳间隔
 PTY_FEED_SECONDS = 2.0                       # pty 里定期喂空行，避免 wave 的 input() 没人应答而挂死
 RESUME_MIN_ARTIFACT = 5 * 1024 * 1024        # 断点续传挑体积够大的包
 SKIP_SSL_MAX_ARTIFACT = 3 * 1024 * 1024      # --skip-ssl 挑小包，跑两遍不拖时间
+LIMIT_RATE_MAX_ARTIFACT = 20 * 1024 * 1024   # --limit-rate 挑中小包：上限放宽到 200MB 后，
+                                             # 400K 的限速下大包一个用例就要十分钟以上
 LIMIT_RATE_MIN_ARTIFACT = 2 * 1024 * 1024    # 限速测试挑够大的包才测得出速度
 
 REPO_DIR = Path(__file__).resolve().parent.parent
@@ -510,7 +513,7 @@ class PackagePlan:
 
 def select_packages(rng, catalog, report, count_override=None, explicit=None,
                     prober=None, include_test=False):
-    """抽 10~20 个包，必含 wget，超过 40MB 的重抽。
+    """抽 10~20 个包，必含 wget，超过 200MB 的重抽。
 
     test_* 是 format_test.sh 的测试夹具，默认不进随机池。
     """
@@ -547,7 +550,7 @@ def select_packages(rng, catalog, report, count_override=None, explicit=None,
         size = prober.size(url, label=name) if prober else None
         plan.artifact_bytes = size
         if size is not None and size > MAX_ARTIFACT_BYTES:
-            report.skip(f"package {name}", f"{size / 1048576:.1f}MB > 40MB，重抽")
+            report.skip(f"package {name}", f"{size / 1048576:.1f}MB > {MAX_ARTIFACT_MB}MB，重抽")
             continue
         plans.append(plan)
 
@@ -1388,7 +1391,7 @@ def parse_args():
     parser.add_argument("--include-test-packages", action="store_true",
                         help="把 test_* 测试夹具也放进随机池")
     parser.add_argument("--no-size-probe", action="store_true",
-                        help="跳过 HEAD 探体积（离线自测用，40MB 上限失效）")
+                        help="跳过 HEAD 探体积（离线自测用，体积上限失效）")
     parser.add_argument("--log-file", help="把整轮日志同时写一份到该文件（CI 用它上传 artifact）")
     parser.add_argument("--limit-rate", default="400K", help="--limit-rate 用的速率")
     parser.add_argument("--transfer-interrupt-probability", type=float,
