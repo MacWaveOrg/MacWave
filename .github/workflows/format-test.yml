@@ -10,6 +10,12 @@ on:
 jobs:
   format-test:
     runs-on: macos-latest
+    strategy:
+      # 3.14 与 3.15 各跑一条线；一条挂了不要取消另一条，否则看不出是哪个版本的问题
+      fail-fast: false
+      matrix:
+        # 3.14 是环境下限（.conda 需要 compression.zstd），3.15 是上游最新正式版
+        python-version: ['3.14', '3.15']
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -26,8 +32,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          # .conda 包需要 Python 3.14 的 compression.zstd
-          python-version: '3.14'
+          python-version: ${{ matrix.python-version }}
 
       - name: Install Python dependencies
         run: pip install requests packaging rich
@@ -79,3 +84,37 @@ jobs:
       - name: Run selfupdate test
         run: |
           bash scripts/selfupdate_test.sh
+
+  # 随机化端到端回归：每次抽 10~20 个包 + 随机参数/随机打断 + 固定命令覆盖。
+  # 自带安装目录挑选、部署与清理，所以不需要上面那一套 sudo 配置。
+  # 注意：search/info/不带版本的 install 会打 api.github.com，未认证只有 60 次/小时，
+  # Runner 共用出口 IP 时可能被限流；被测到限流的用例会记为 SKIP 而不是失败。
+  random-test:
+    runs-on: macos-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.14', '3.15']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Checkout infosource data
+        uses: actions/checkout@v4
+        with:
+          repository: MacWaveOrg/infosource
+          ref: main
+          path: infosource-data
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Python dependencies
+        run: pip install requests packaging rich
+
+      - name: Run randomized regression
+        run: |
+          python3 scripts/random_test.py --infosource infosource-data
