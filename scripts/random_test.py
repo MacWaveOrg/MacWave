@@ -41,6 +41,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -85,7 +86,13 @@ LIMIT_RATE_OVERALL_TOLERANCE = 1.25
 RESUME_INTERRUPT_ROUNDS = (0, 3)             # -C 的随机打断次数范围
 RESUME_MIN_SECONDS = 2.0                     # 至少下这么久才允许打断（避开元数据阶段）
 TRANSFER_INTERRUPT_PROBABILITY = 0.05        # Mach-O 重定向中途打断的概率
-RESUME_MIN_BYTES = 1 * 1024 * 1024           # 断点续传：至少下了这么多才打断
+RESUME_MIN_BYTES = 512 * 1024                # 断点续传：至少下了这么多才打断
+RESUME_RATE_LIMIT = "300K"                   # 断点续传时故意限速，否则下载太快根本来不及打断
+
+SIZE_PROBE_TIMEOUT = 8                       # 单次 HEAD 超时
+SIZE_PROBE_BUDGET_SECONDS = 60               # 探体积总预算；用尽就按「体积未知」放行
+HEARTBEAT_SECONDS = 30                       # 长命令心跳间隔
+PTY_FEED_SECONDS = 2.0                       # pty 里定期喂空行，避免 wave 的 input() 没人应答而挂死
 RESUME_MIN_ARTIFACT = 5 * 1024 * 1024        # 断点续传挑体积够大的包
 SKIP_SSL_MAX_ARTIFACT = 3 * 1024 * 1024      # --skip-ssl 挑小包，跑两遍不拖时间
 LIMIT_RATE_MIN_ARTIFACT = 2 * 1024 * 1024    # 限速测试挑够大的包才测得出速度
@@ -397,22 +404,89 @@ def max_version(versions):
         sys.path.pop(0)
 
 
-def artifact_size(url):
-    """HEAD 探体积；探不到返回 None（按「不确定」处理，不无限重抽）。"""
-    try:
-        if requests is not None:
-            response = requests.head(url, allow_redirects=True, timeout=30)
-            length = response.headers.get("Content-Length")
-            if length is None or response.status_code >= 400:
-                return None
-            return int(length)
-        import urllib.request
-        request = urllib.request.Request(url, method="HEAD")
-        with urllib.request.urlopen(request, timeout=30) as response:
-            length = response.headers.get("Content-Length")
-            return int(length) if length else None
-    except Exception:
-        return None
+class Tee:
+    """同时写原 stdout 与日志文件；CI 里靠它把整轮日志落盘给 artifact 上传。"""
+
+    def __init__(self, *streams):
+        self.streams = streams
+
+    def write(self, data):
+        for stream in self.streams:
+            stream.write(data)
+            stream.flush()
+        return len(data)
+
+    def flush(self):
+        for stream in self.streams:
+            stream.flush()
+
+    def isatty(self):
+        return False
+
+
+def start_heartbeat(label, interval=HEARTBEAT_SECONDS):
+    """长命令期间定期打点，避免 CI 日志出现无法解释的长时间空白。"""
+    stop = threading.Event()
+    started = time.monotonic()
+
+    def beat():
+        while not stop.wait(interval):
+            print(f"  … still running: {label} ({time.monotonic() - started:.0f}s)", flush=True)
+
+    thread = threading.Thread(target=beat, daemon=True)
+    thread.start()
+    return stop
+
+
+class SizeProber:
+    """HEAD 探体积，带缓存、短超时和总预算。
+
+    预算用尽或探测失败都返回 None（按「体积未知」放行）——宁可跑慢一点，
+    也不能像最初那样在 CI 里静默等几十分钟。
+    """
+
+    def __init__(self, timeout=SIZE_PROBE_TIMEOUT, budget=SIZE_PROBE_BUDGET_SECONDS):
+        self.timeout = timeout
+        self.budget = budget
+        self.spent = 0.0
+        self.cache = {}
+        self.exhausted = False
+
+    def size(self, url, label=""):
+        if url in self.cache:
+            return self.cache[url]
+
+        if self.spent >= self.budget:
+            if not self.exhausted:
+                self.exhausted = True
+                print(f"🌊 探体积预算 {self.budget:.0f}s 用尽，剩余包按「体积未知」放行", flush=True)
+            self.cache[url] = None
+            return None
+
+        started = time.monotonic()
+        size = self._probe(url)
+        elapsed = time.monotonic() - started
+        self.spent += elapsed
+        self.cache[url] = size
+        shown = f"{size / 1048576:.1f}MB" if size is not None else "未知"
+        print(f"🌊 probing {label or url}: {shown} ({elapsed:.1f}s)", flush=True)
+        return size
+
+    def _probe(self, url):
+        try:
+            if requests is not None:
+                response = requests.head(url, allow_redirects=True, timeout=self.timeout)
+                length = response.headers.get("Content-Length")
+                if length is None or response.status_code >= 400:
+                    return None
+                return int(length)
+            import urllib.request
+            request = urllib.request.Request(url, method="HEAD")
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                length = response.headers.get("Content-Length")
+                return int(length) if length else None
+        except Exception:
+            return None
 
 
 # -------------------- 计划（选择 + 参数生成） --------------------
@@ -435,7 +509,7 @@ class PackagePlan:
 
 
 def select_packages(rng, catalog, report, count_override=None, explicit=None,
-                    probe_sizes=True, include_test=False):
+                    prober=None, include_test=False):
     """抽 10~20 个包，必含 wget，超过 40MB 的重抽。
 
     test_* 是 format_test.sh 的测试夹具，默认不进随机池。
@@ -469,7 +543,8 @@ def select_packages(rng, catalog, report, count_override=None, explicit=None,
         name = candidates.pop()
         attempts += 1
         plan = make_plan(name, catalog[name])
-        size = artifact_size(plan.versions[max_version(plan.versions)][0]) if probe_sizes else None
+        url = plan.versions[max_version(plan.versions)][0]
+        size = prober.size(url, label=name) if prober else None
         plan.artifact_bytes = size
         if size is not None and size > MAX_ARTIFACT_BYTES:
             report.skip(f"package {name}", f"{size / 1048576:.1f}MB > 40MB，重抽")
@@ -519,23 +594,23 @@ def assign_versions(rng, plans, report):
     return plans
 
 
-def assign_modes(rng, plans, report):
-    """三种特殊模式各至少一次，各自挑合适的包。"""
+def assign_modes(rng, plans, prober):
+    """三种特殊模式各至少一次，各自挑合适的包。体积走 prober 的缓存，不会重复探测。"""
     remaining = [plan for plan in plans if not plan.bogus]
     rng.shuffle(remaining)
 
     def take(predicate, mode, description):
         for plan in remaining:
             size = plan.artifact_bytes
-            if size is None:
-                size = artifact_size(plan.versions[max_version(plan.versions)][0])
+            if size is None and prober is not None:
+                size = prober.size(plan.versions[max_version(plan.versions)][0], label=plan.name)
                 plan.artifact_bytes = size
             if size is not None and predicate(size):
                 plan.mode = mode
                 remaining.remove(plan)
                 print(f"🌊 {mode}: {plan.name} ({size / 1048576:.1f}MB)")
                 return True
-        report.skip(f"special mode {mode}", description)
+        print(f"🌊 跳过特殊模式 {mode}：{description}", flush=True)
         return False
 
     take(lambda size: size >= RESUME_MIN_ARTIFACT, "resume", "没有 ≥5MB 的包可做断点续传")
@@ -553,24 +628,60 @@ class Wave:
         self.report = report
         self.limit_rate = limit_rate
         self.entry = REPO_DIR / "lib" / "wave.py"
+        self.commands = 0
+
+    def _begin(self, argv):
+        self.commands += 1
+        label = f"wave {' '.join(argv)}"
+        print(f"▶ [{self.commands}] {label}", flush=True)
+        return label
+
+    def _end(self, label, returncode, started, output=""):
+        mark = "✔" if returncode == 0 else "✘"
+        print(f"{mark} {label} rc={returncode} ({time.monotonic() - started:.1f}s)", flush=True)
+        if returncode != 0 and output:
+            tail = " | ".join(line.strip() for line in output.splitlines() if line.strip())[-300:]
+            print(f"    输出尾部: {tail}", flush=True)
 
     def run(self, argv, timeout=1800, stdin=None, env_extra=None):
+        label = self._begin(argv)
         env = self.layout.env
         if env_extra:
             env.update(env_extra)
-        return subprocess.run(
-            [sys.executable, str(self.entry), *argv],
-            input=stdin, capture_output=True, text=True, timeout=timeout, env=env)
+        started = time.monotonic()
+        stop = start_heartbeat(label)
+        try:
+            result = subprocess.run(
+                [sys.executable, str(self.entry), *argv],
+                input=stdin, capture_output=True, text=True, timeout=timeout, env=env)
+        except subprocess.TimeoutExpired:
+            print(f"  ✘ {label} 超时（{timeout}s）", flush=True)
+            raise
+        finally:
+            stop.set()
+        self._end(label, result.returncode, started, (result.stdout or "") + (result.stderr or ""))
+        return result
 
     def partial_path(self, url):
         return self.layout.partial_dir / (url.split("/")[-1] + ".partial")
 
     def run_inline(self, argv, timeout=30):
-        return subprocess.run(argv, capture_output=True, text=True, timeout=timeout,
-                              env=self.layout.env)
+        label = f"binary {Path(argv[0]).name} {' '.join(argv[1:])}".strip()
+        started = time.monotonic()
+        result = subprocess.run(argv, capture_output=True, text=True, timeout=timeout,
+                                env=self.layout.env)
+        self._end(label, result.returncode, started, (result.stdout or "") + (result.stderr or ""))
+        return result
 
     def run_in_pty(self, argv, timeout=1800, on_tick=None, tick=0.25, interrupt_when=None):
-        """在 pty 里跑 wave，这样 rich 的进度条才会真正渲染；可中途发 SIGINT。"""
+        """在 pty 里跑 wave，这样 rich 的进度条才会真正渲染；可中途发 SIGINT。
+
+        期间定期往 pty 喂一个空行：wave 在下载失败时会 input() 问是否重试，
+        pty 里没人应答会一直阻塞到 timeout，那是最难排查的一种"挂死"。
+        """
+        label = self._begin(argv)
+        started = time.monotonic()
+        stop = start_heartbeat(label)
         master, slave = pty.openpty()
         env = self.layout.env
         env["COLUMNS"] = "100"
@@ -579,8 +690,9 @@ class Wave:
                                 env=env, start_new_session=True, close_fds=True)
         os.close(slave)
         chunks = []
-        deadline = time.monotonic() + timeout
+        deadline = started + timeout
         next_tick = time.monotonic()
+        next_feed = time.monotonic() + PTY_FEED_SECONDS
         interrupted = False
         try:
             while True:
@@ -601,6 +713,12 @@ class Wave:
                     except Exception:
                         pass
                     next_tick = now + tick
+                if now >= next_feed:
+                    try:
+                        os.write(master, b"\n")
+                    except OSError:
+                        pass
+                    next_feed = now + PTY_FEED_SECONDS
                 if interrupt_when and proc.poll() is None and interrupt_when():
                     os.killpg(proc.pid, signal.SIGINT)
                     interrupted = True
@@ -618,6 +736,7 @@ class Wave:
                     break
         finally:
             os.close(master)
+            stop.set()
             try:
                 proc.wait(timeout=10)
             except subprocess.TimeoutExpired:
@@ -625,6 +744,7 @@ class Wave:
                 proc.wait()
 
         output = "".join(chunks)
+        self._end(label, proc.returncode or 0, started, output)
         return PtyResult(output, proc.returncode or 0,
                          bool(PROGRESS_PATTERN.search(output)), interrupted)
 
@@ -633,15 +753,25 @@ class Wave:
 
 
 TRACEBACK = "Traceback (most recent call last)"
-RATE_LIMIT_MARKERS = ("API rate limit exceeded", "rate limit", "HTTP 403")
+# 这些标记说明是 api.github.com 的问题（未认证 60 次/小时），不是 MacWave 的 bug
+API_FAILURE_MARKERS = ("API rate limit exceeded", "rate limit", "HTTP 403", "HTTP 429",
+                       "Cannot fetch package list")
 
 
 def no_traceback(output):
     return TRACEBACK not in output
 
 
-def is_rate_limited(output):
-    return any(marker.lower() in output.lower() for marker in RATE_LIMIT_MARKERS)
+def is_rate_limited(result):
+    """接受 CompletedProcess / PtyResult / 字符串，判断是不是 GitHub API 侧的问题。"""
+    if isinstance(result, str):
+        text = result
+    elif hasattr(result, "as_result"):
+        text = result.as_result.stdout or ""
+    else:
+        text = (getattr(result, "stdout", "") or "") + (getattr(result, "stderr", "") or "")
+    lowered = text.lower()
+    return any(marker.lower() in lowered for marker in API_FAILURE_MARKERS)
 
 
 def describe(result):
@@ -697,8 +827,8 @@ def phase_install_cycle(wave, rng, plans, checks):
         if plan.bogus:
             # 负向用例：不存在的版本 / 非法版本都必须干净失败
             result = wave.run(argv)
-            if is_rate_limited(describe(result)):
-                checks.skip(label, "被 GitHub 限流，跳过断言")
+            if is_rate_limited(result):
+                checks.skip(label, "GitHub API 侧失败（限流/403），跳过断言")
                 continue
             checks.check(f"{label}（{plan.bogus}）: 退出码非 0", result.returncode != 0,
                          describe(result))
@@ -733,8 +863,8 @@ def phase_install_cycle(wave, rng, plans, checks):
 def run_plain_install(wave, plan, checks):
     label = f"install {plan.token}"
     result = wave.run(["install", plan.token])
-    if is_rate_limited(describe(result)):
-        checks.skip(label, "被 GitHub 限流")
+    if is_rate_limited(result):
+        checks.skip(label, "GitHub API 侧失败（限流/403），跳过断言")
         return False
     expect(checks, result, 0, label,
            must_contain=("Successfully installed",),
@@ -771,7 +901,7 @@ def binary_runs(wave, plan, checks, label):
             checks.warn(f"{label}: 执行 {plan.bin_name} {extra} 失败", str(error))
             continue
         text = result.stdout + result.stderr
-        if "dyld" in text or "Library not loaded" in text:
+        if has_dyld_error(text):
             checks.fail(f"{label}: {plan.bin_name} 有未解析的动态库", text[:200])
             return False
         if result.returncode == 0:
@@ -816,8 +946,8 @@ def run_transfer_interrupt_case(wave, plan, checks):
 
     # 恢复：再装一次必须完全正确
     recovery = wave.run(["install", plan.token])
-    if is_rate_limited(describe(recovery)):
-        checks.skip(f"{label} → 重新 install", "被 GitHub 限流")
+    if is_rate_limited(recovery):
+        checks.skip(f"{label} → 重新 install", "GitHub API 侧失败（限流/403）")
         return False
     expect(checks, recovery, 0, f"{label} → 重新 install",
            must_contain=("Successfully installed",))
@@ -863,8 +993,10 @@ def run_resume_case(wave, rng, plan, checks):
     for index in range(rounds):
         start_size = partial.stat().st_size if partial.exists() else 0
         started = time.monotonic()
+        # 打断轮故意限速：不限速时 12MB 的包不到 1 秒就下完了，根本来不及打断
+        # （上一轮 CI 就是这样，计划打断 1 次，实际 0 次）。
         result = wave.run_in_pty(
-            ["install", plan.token, flag],
+            ["install", plan.token, flag, "--limit-rate", RESUME_RATE_LIMIT],
             interrupt_when=lambda: (partial.exists()
                                     and partial.stat().st_size >= start_size + RESUME_MIN_BYTES
                                     and time.monotonic() - started >= RESUME_MIN_SECONDS),
@@ -1090,8 +1222,8 @@ def phase_command_battery(wave, rng, checks, installed, links):
             label = f"wave {' '.join(argv)}"
             result = wave.run(argv, timeout=300)
             apply_link_state(cmd, argv, installed, links)
-            if is_rate_limited(describe(result)):
-                checks.skip(label, "被 GitHub 限流")
+            if is_rate_limited(result):
+                checks.skip(label, "GitHub API 侧失败（限流/403），跳过断言")
                 continue
             expect(checks, result, expected_rc, label, must_contain=must_contain)
 
@@ -1190,6 +1322,19 @@ def describe_text(text):
     return " | ".join(line.strip() for line in text.splitlines() if line.strip())[:300]
 
 
+# dyld 的报错有固定形状。不能只搜 "dyld"：像 ipsw 这种工具自带 dyld 子命令，
+# 它的 --help 输出里就有这个词，会把正常安装误判成"未解析动态库"。
+DYLD_ERROR_MARKERS = ("Library not loaded:", "Reason: image not found", "Symbol not found:",
+                      "not loaded from")
+
+
+def has_dyld_error(text):
+    if any(marker in text for marker in DYLD_ERROR_MARKERS):
+        return True
+    return any(line.startswith("dyld:") or line.startswith("dyld[")
+               for line in text.splitlines())
+
+
 # -------------------- 主流程 --------------------
 
 
@@ -1208,6 +1353,7 @@ def parse_args():
                         help="把 test_* 测试夹具也放进随机池")
     parser.add_argument("--no-size-probe", action="store_true",
                         help="跳过 HEAD 探体积（离线自测用，40MB 上限失效）")
+    parser.add_argument("--log-file", help="把整轮日志同时写一份到该文件（CI 用它上传 artifact）")
     parser.add_argument("--limit-rate", default="400K", help="--limit-rate 用的速率")
     parser.add_argument("--transfer-interrupt-probability", type=float,
                         default=TRANSFER_INTERRUPT_PROBABILITY,
@@ -1215,40 +1361,52 @@ def parse_args():
     return parser.parse_args()
 
 
+def print_plan(plans):
+    banner("计划")
+    for plan in plans:
+        version = plan.version if plan.specified else "(latest)"
+        size = f"{plan.artifact_bytes / 1048576:.1f}MB" if plan.artifact_bytes else "?"
+        bogus = f" [{plan.bogus}]" if plan.bogus else ""
+        print(f"  {plan.name:<14} {str(version):<24} {size:>8}  mode={plan.mode:<10}{bogus}",
+              flush=True)
+
+
 def main():
     args = parse_args()
     global TRANSFER_INTERRUPT_PROBABILITY
     TRANSFER_INTERRUPT_PROBABILITY = args.transfer_interrupt_probability
+
+    original_stdout = sys.stdout
+    log_handle = None
+    if args.log_file:
+        log_handle = open(args.log_file, "a", buffering=1, encoding="utf-8")
+        sys.stdout = Tee(original_stdout, log_handle)
+
     seed = args.seed if args.seed is not None else random.randrange(2 ** 31)
     rng = random.Random(seed)
-    print(f"🌊 MacWave random regression (seed={seed})")
-    print(f"🌊 复现：--seed {seed}")
+    print(f"🌊 MacWave random regression (seed={seed})", flush=True)
+    print(f"🌊 复现：--seed {seed}", flush=True)
 
     checks = Report()
     layout = choose_layout(rng, config_dir_override=args.config_dir)
     try:
         source = locate_infosource(args.infosource)
         arch = detect_arch()
-        print(f"🌊 infosource: {source} (arch: {arch})")
+        print(f"🌊 infosource: {source} (arch: {arch})", flush=True)
         catalog = load_catalog(source, arch)
-        print(f"🌊 候选包 {len(catalog)} 个")
+        print(f"🌊 候选包 {len(catalog)} 个", flush=True)
 
+        prober = None if args.no_size_probe else SizeProber()
         explicit = args.packages.split(",") if args.packages else None
         plans = select_packages(rng, catalog, checks, args.count, explicit,
-                                probe_sizes=not args.no_size_probe,
-                                include_test=args.include_test_packages)
+                                prober=prober, include_test=args.include_test_packages)
         assign_versions(rng, plans, checks)
         if not args.dry_run:
-            assign_modes(rng, plans, checks)
+            assign_modes(rng, plans, prober)
+        print_plan(plans)
 
         if args.dry_run:
-            banner("计划（dry-run）")
-            for plan in plans:
-                version = plan.version if plan.specified else "(latest)"
-                bogus = f" [{plan.bogus}]" if plan.bogus else ""
-                print(f"  {plan.name:<14} {str(version):<24} mode={plan.mode:<10}{bogus}")
-            print("")
-            print(f"🌊 dry-run 结束：{len(plans)} 个包，未执行任何 wave 命令")
+            print(f"🌊 dry-run 结束：{len(plans)} 个包，未执行任何 wave 命令", flush=True)
             return 0
 
         setup_environment(layout)
@@ -1260,23 +1418,32 @@ def main():
         phase_uninstall_cycle(wave, rng, installed, checks)
         phase_global_invariants(wave, checks)
         phase_illegal_and_help(wave, rng, checks)
+        print_summary(seed, layout, checks)
     except Exception as error:
-        print(f"🌊 Error: 随机回归无法继续：{error}")
+        print(f"🌊 Error: 随机回归无法继续：{error}", flush=True)
         checks.fail("run", str(error))
+        print_summary(seed, layout, checks)
     finally:
         cleanup(layout, keep=args.keep)
+        if log_handle is not None:
+            sys.stdout.flush()
+            sys.stdout = original_stdout
+            log_handle.close()
 
-    banner("结果")
-    print(f"🌊 seed={seed}  layout={layout.name}")
-    print(f"🌊 PASS {checks.passed} / FAIL {len(checks.failed)} / "
-          f"WARN {len(checks.warned)} / SKIP {len(checks.skipped)}")
-    for label, detail in checks.failed:
-        print(f"  ✗ {label}" + (f"  <- {detail}" if detail else ""))
-    for label, detail in checks.warned:
-        print(f"  ! {label}" + (f"  <- {detail}" if detail else ""))
-    for label, detail in checks.skipped:
-        print(f"  - {label}" + (f"  <- {detail}" if detail else ""))
     return 1 if checks.failed else 0
+
+
+def print_summary(seed, layout, checks):
+    banner("结果")
+    print(f"🌊 seed={seed}  layout={layout.name}", flush=True)
+    print(f"🌊 PASS {checks.passed} / FAIL {len(checks.failed)} / "
+          f"WARN {len(checks.warned)} / SKIP {len(checks.skipped)}", flush=True)
+    for label, detail in checks.failed:
+        print(f"  ✗ {label}" + (f"  <- {detail}" if detail else ""), flush=True)
+    for label, detail in checks.warned:
+        print(f"  ! {label}" + (f"  <- {detail}" if detail else ""), flush=True)
+    for label, detail in checks.skipped:
+        print(f"  - {label}" + (f"  <- {detail}" if detail else ""), flush=True)
 
 
 if __name__ == "__main__":

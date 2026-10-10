@@ -26,6 +26,18 @@ RESET = '\033[0m'
 from configpaths import VERSION_FILE, load_base_dir
 
 
+def github_api_headers(url):
+    # api.github.com 未认证只有 60 次/小时，CI Runner / 办公网常常整栋楼共用一个出口 IP，
+    # 很容易被限流（表现是 "Cannot fetch package list."）。有 token 就带上；
+    # 只发给 api.github.com，raw.githubusercontent.com 与各下载站都不带。
+    if "api.github.com" not in url:
+        return {}
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if not token:
+        return {}
+    return {"Authorization": f"Bearer {token}"}
+
+
 def get_version():
     if VERSION_FILE.exists():
         try:
@@ -358,7 +370,7 @@ def fetch_max_version(package_name, arch):
     # 数据在 MacWaveOrg/infosource 仓库的 main 分支
     api_url = f"https://api.github.com/repos/MacWaveOrg/infosource/contents/pkg/pkginfo_{arch}/{package_name}?ref=main"
     try:
-        response = requests.get(api_url, timeout=30)
+        response = requests.get(api_url, timeout=30, headers=github_api_headers(api_url))
         if response.status_code != 200:
             print(f"{RED_BOLD}🌊 Error: Cannot fetch package list.{RESET}")
             print(f"{RED_BOLD}🌊 URL: {api_url}{RESET}")

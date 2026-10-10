@@ -19,6 +19,17 @@ RESET = '\033[0m'
 
 from configpaths import load_base_dir
 
+
+def github_api_headers(url):
+    # 与 pkg/pkginstaller.py 一致：有 token 就只给 api.github.com 带上，
+    # 缓解未认证 60 次/小时的限流。
+    if "api.github.com" not in url:
+        return {}
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if not token:
+        return {}
+    return {"Authorization": f"Bearer {token}"}
+
 BASE_DIR = load_base_dir()
 BIN_DIR = BASE_DIR / "bin"
 
@@ -68,7 +79,7 @@ def fetch_remote_versions(pkg_name, arch):
     
     api_url = f"https://api.github.com/repos/MacWaveOrg/infosource/contents/pkg/pkginfo_{arch}/{pkg_name}?ref=main"
     try:
-        resp = requests.get(api_url, timeout=30)
+        resp = requests.get(api_url, timeout=30, headers=github_api_headers(api_url))
         if resp.status_code != 200:
             return []
         file_list = resp.json()
@@ -135,7 +146,7 @@ def handle_search(query):
     api_url = f"https://api.github.com/repos/MacWaveOrg/infosource/contents/pkg/pkginfo_{arch}?ref=main"
 
     try:
-        resp = requests.get(api_url, timeout=30)
+        resp = requests.get(api_url, timeout=30, headers=github_api_headers(api_url))
         if resp.status_code != 200:
             print(f"{RED_BOLD}🌊 Error: Cannot fetch package list.{RESET}")
             print(f"{RED_BOLD}🌊 URL: {api_url}{RESET}")

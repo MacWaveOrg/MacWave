@@ -10,6 +10,11 @@ on:
 jobs:
   format-test:
     runs-on: macos-latest
+    # api.github.com 未认证只有 60 次/小时，Runner 共用出口 IP 很容易被限流；
+    # pkg/pkginstaller.py 与 pkg/pkginfohelper.py 会在拿到 GH_TOKEN 时带上它。
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PYTHONUNBUFFERED: "1"
     strategy:
       # 3.14 与 3.15 各跑一条线；一条挂了不要取消另一条，否则看不出是哪个版本的问题
       fail-fast: false
@@ -30,9 +35,22 @@ jobs:
           path: infosource-data
 
       - name: Setup Python
+        if: matrix.python-version != '3.15'
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+
+      # actions/python-versions 里目前只有 3.15 的 rc（没有 3.15.0 正式版），
+      # setup-python 取不到："The version '3.15' ... was not found"。
+      # Homebrew 有现成的 3.15.0 bottle，装完用 venv 隔离，免得撞上
+      # Homebrew Python 的 PEP 668 externally-managed 限制。
+      - name: Setup Python 3.15 (Homebrew + venv)
+        if: matrix.python-version == '3.15'
+        run: |
+          brew install python@3.15
+          "/opt/homebrew/opt/python@3.15/bin/python3.15" -m venv "$RUNNER_TEMP/venv315"
+          echo "$RUNNER_TEMP/venv315/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/venv315/bin/python3" -VV
 
       - name: Install Python dependencies
         run: pip install requests packaging rich
@@ -87,11 +105,12 @@ jobs:
 
   # 随机化端到端回归：每次抽 10~20 个包 + 随机参数/随机打断 + 固定命令覆盖。
   # 自带安装目录挑选、部署与清理，所以不需要上面那一套 sudo 配置。
-  # 注意：search/info/不带版本的 install 会打 api.github.com，未认证只有 60 次/小时，
-  # Runner 共用出口 IP 时可能被限流；被测到限流的用例会记为 SKIP 而不是失败。
   random-test:
     runs-on: macos-latest
     timeout-minutes: 150
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PYTHONUNBUFFERED: "1"
     strategy:
       fail-fast: false
       matrix:
@@ -108,13 +127,36 @@ jobs:
           path: infosource-data
 
       - name: Setup Python
+        if: matrix.python-version != '3.15'
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
+      # 与上面的 format-test 同因：setup-python 还没有 3.15.0 正式版可用。
+      - name: Setup Python 3.15 (Homebrew + venv)
+        if: matrix.python-version == '3.15'
+        run: |
+          brew install python@3.15
+          "/opt/homebrew/opt/python@3.15/bin/python3.15" -m venv "$RUNNER_TEMP/venv315"
+          echo "$RUNNER_TEMP/venv315/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/venv315/bin/python3" -VV
+
       - name: Install Python dependencies
         run: pip install requests packaging rich
 
+      # 步骤级 timeout 低于 job 级：超时是"步骤失败"，这样下面的 always() 仍会上传日志
       - name: Run randomized regression
+        timeout-minutes: 100
         run: |
-          python3 scripts/random_test.py --infosource infosource-data
+          python3 -u scripts/random_test.py \
+            --infosource infosource-data \
+            --log-file "$RUNNER_TEMP/random-test-${{ matrix.python-version }}.log"
+
+      - name: Upload the regression log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: random-test-${{ matrix.python-version }}-log
+          path: ${{ runner.temp }}/random-test-${{ matrix.python-version }}.log
+          if-no-files-found: warn
+          retention-days: 14
