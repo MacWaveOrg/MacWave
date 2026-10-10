@@ -908,6 +908,12 @@ def binary_runs(wave, plan, checks, label):
             continue
         text = result.stdout + result.stderr
         if has_dyld_error(text):
+            mismatch = dependency_symbol_mismatch(text)
+            if mismatch:
+                symbol, library = mismatch
+                checks.warn(f"{label}: {plan.bin_name} 缺符号 {symbol}（{library} 没导出，"
+                            "疑似 infosource 包数据不匹配，非路径重定向问题）", text[:200])
+                return True
             checks.fail(f"{label}: {plan.bin_name} 有未解析的动态库", text[:200])
             return False
         if result.returncode == 0:
@@ -1155,7 +1161,8 @@ def predict(cmd, argv, installed, links):
             return 1, ("Missing search query.",)
         return 0, ()
     if cmd == "info":
-        if not words:
+        operands = [w for w in words if not w.startswith("-")]
+        if not operands or not operands[0].partition("@")[0]:
             return 1, ("Missing package name.",)
         return 0, ()
     if cmd == "selfupdate":
@@ -1339,6 +1346,29 @@ def has_dyld_error(text):
         return True
     return any(line.startswith("dyld:") or line.startswith("dyld[")
                for line in text.splitlines())
+
+
+def dependency_symbol_mismatch(text):
+    """dyld 报「符号找不到」、且缺符号的库来自 deps/ 时，判定为包数据不匹配。
+
+    库确实被装好、也指对了（否则报的是 image not found），只是它没导出那个符号：
+    例如 tmux 需要 ncurses 的新符号，而 @common 里声明的依赖版本没有它。
+    这属于 infosource 的数据问题，不是 MacWave 的路径重定向出错，所以记为警告。
+    """
+    symbol = library = None
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line.startswith("dyld") and "Symbol not found:" in line:
+            symbol = line.split("Symbol not found:", 1)[1].strip()
+        elif line.startswith("Expected in:"):
+            rest = line.split("Expected in:", 1)[1].strip()
+            # 形如 "<UUID> /path/to/lib.dylib"，路径里可能有空格，所以只剥掉 UUID
+            if rest.startswith("<") and ">" in rest:
+                rest = rest.split(">", 1)[1].strip()
+            library = rest
+    if symbol and library and "/deps/" in library:
+        return symbol, library
+    return None
 
 
 # -------------------- 主流程 --------------------

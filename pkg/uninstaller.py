@@ -20,7 +20,7 @@ RESET = '\033[0m'
 
 # -------------------- 配置加载 --------------------
 
-from configpaths import assert_inside, load_base_dir, require_safe_token
+from configpaths import assert_inside, assert_inside_entry, load_base_dir, require_safe_token
 
 
 BASE_DIR = load_base_dir()
@@ -202,9 +202,12 @@ def remove_one(pkg_name, version, installed):
     backup_link = LINKS_DIR / f"{pkg_name}@{version}.bak"
 
     # 要递归删除的路径必须先确认落在安装目录里
-    for path, root in ((target, BIN_DIR), (backup, BIN_DIR),
-                       (link, LINKS_DIR), (backup_link, LINKS_DIR)):
+    for path, root in ((target, BIN_DIR), (backup, BIN_DIR)):
         assert_inside(path, root, "uninstall path")
+
+    # 软链接只删链接本身，不能跟到 bin/ 里的目标去
+    for path, root in ((link, LINKS_DIR), (backup_link, LINKS_DIR)):
+        assert_inside_entry(path, root, "uninstall path")
 
     record = installed.get(pkg_name)
     if record and record.get("version") == version and record.get("binary_path"):

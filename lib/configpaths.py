@@ -100,14 +100,33 @@ def require_safe_token(value, what):
     return str(value)
 
 
+def _inside_failure(resolved, resolved_root, what):
+    print(f"{RED_BOLD}🌊 Error: Unsafe {what} escapes {resolved_root}: {resolved}{RESET}")
+    sys.exit(1)
+
+
 def assert_inside(path, root, what):
     # 归一化后确认路径没有跑到 root 外面（防 ../ 与软链接穿越）。
     # 只做校验、不改写调用方的路径，避免改变既有行为。
+    # **跟随**最后一段的软链接：用于会被写进去或递归删除的路径。
     resolved_root = Path(root).resolve()
     resolved = Path(path).resolve()
     if resolved != resolved_root and resolved_root not in resolved.parents:
-        print(f"{RED_BOLD}🌊 Error: Unsafe {what} escapes {resolved_root}: {resolved}{RESET}")
-        sys.exit(1)
+        _inside_failure(resolved, resolved_root, what)
+    return resolved
+
+
+def assert_inside_entry(path, root, what):
+    # 与 assert_inside 相同，但**不跟随**最后一段的软链接。links/ 下的链接本身就
+    # 是软链接，指向 bin/ 里的可执行文件：跟随过去会把"删除/重指这个链接"这种
+    # 再正常不过的操作误判成越界。只能用于"操作链接本身"、不会穿透写入的调用点。
+    resolved_root = Path(root).resolve()
+    candidate = Path(path)
+    if candidate.name in ("", ".", ".."):
+        _inside_failure(candidate, resolved_root, what)
+    resolved = candidate.parent.resolve() / candidate.name
+    if resolved != resolved_root and resolved_root not in resolved.parents:
+        _inside_failure(resolved, resolved_root, what)
     return resolved
 
 

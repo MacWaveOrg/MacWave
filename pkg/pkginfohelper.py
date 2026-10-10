@@ -245,10 +245,13 @@ def handle_info_command(input_string):
             sys.exit(1)
         handle_search(words[2])
     elif subcommand == "info":
-        if len(words) < 3:
+        # 与其他命令一致：忽略 flag（不是包名），并容忍 <包名>@<版本号> 这种写法
+        operands = [word for word in words[2:] if not word.startswith("-")]
+        pkg_name = operands[0].partition("@")[0] if operands else ""
+        if not pkg_name:
             print(f"{RED_BOLD}🌊 Error: Missing package name.{RESET}")
             sys.exit(1)
-        handle_info(words[2])
+        handle_info(pkg_name)
     else:
         print(f"{RED_BOLD}🌊 Error: Unknown subcommand '{subcommand}'.{RESET}")
         sys.exit(1)

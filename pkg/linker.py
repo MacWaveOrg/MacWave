@@ -21,7 +21,7 @@ RESET = '\033[0m'
 
 # -------------------- 配置加载 --------------------
 
-from configpaths import assert_inside, load_base_dir, require_safe_token
+from configpaths import assert_inside, assert_inside_entry, load_base_dir, require_safe_token
 
 
 BASE_DIR = load_base_dir()
@@ -115,7 +115,7 @@ def create_link(name, version):
     LINKS_DIR.mkdir(parents=True, exist_ok=True)
 
     link = LINKS_DIR / name
-    assert_inside(link, LINKS_DIR, "link path")
+    assert_inside_entry(link, LINKS_DIR, "link path")
     if link.is_symlink() or link.exists():
         link.unlink()
 
@@ -126,7 +126,7 @@ def create_link(name, version):
 def remove_link(name):
     name = require_safe_token(name, "package name")
     link = LINKS_DIR / name
-    assert_inside(link, LINKS_DIR, "link path")
+    assert_inside_entry(link, LINKS_DIR, "link path")
     if link.is_symlink() or link.exists():
         link.unlink()
         return True
