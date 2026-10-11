@@ -106,7 +106,7 @@ jobs:
 
       - name: Run dependency chain test
         run: |
-          bash scripts/deps_test.sh
+          bash scripts/deps_test.sh --infosource infosource-data
 
       - name: Run unversioned link test
         run: |
