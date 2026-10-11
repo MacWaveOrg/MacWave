@@ -219,7 +219,9 @@ while IFS= read -r file; do
         fi
 
         if [[ -z "$new_path" ]]; then
-            echo "$old_path" >> "$UNRESOLVED_FILE"
+            # 连"是哪个文件"一起记下来：只看引用名会分不清是目标文件自己引用的
+            # 还是某次重定位太早（依赖还没装）留下的
+            echo "$file|$old_path" >> "$UNRESOLVED_FILE"
             continue
         fi
 
@@ -275,27 +277,28 @@ fi
 if [[ -s "$UNRESOLVED_FILE" ]]; then
     # 分流：我们自己的树里存在同名文件 → 真的没接上（警告）；
     #       树里根本没有 → 外部/未声明的依赖，MacWave 无从接，只作提示。
-    while IFS= read -r ref; do
+    while IFS= read -r entry; do
+        ref="${entry##*|}"
         if grep -qxF "${ref##*/}" "$TREE_FILE" 2>/dev/null; then
-            echo "$ref" >> "$MISSING_FILE"
+            echo "$entry" >> "$MISSING_FILE"
         else
-            echo "$ref" >> "$EXTERNAL_FILE"
+            echo "$entry" >> "$EXTERNAL_FILE"
         fi
     done < "$UNRESOLVED_FILE"
 
     if [[ -s "$MISSING_FILE" ]]; then
         missing_count="$(wc -l < "$MISSING_FILE" | tr -d ' ')"
         echo -e "${YELLOW}🌊 Warning: $missing_count library reference(s) exist in this installation but could not be linked:${RESET}"
-        sort -u "$MISSING_FILE" | head -10 | while IFS= read -r ref; do
-            echo -e "${YELLOW}🌊   $ref${RESET}"
+        sort -u "$MISSING_FILE" | head -10 | while IFS= read -r entry; do
+            echo -e "${YELLOW}🌊   ${entry##*|}  (被 $(basename "${entry%%|*}") 引用)${RESET}"
         done
     fi
 
     if [[ -s "$EXTERNAL_FILE" ]]; then
         external_count="$(wc -l < "$EXTERNAL_FILE" | tr -d ' ')"
         echo "🌊 Note: $external_count library reference(s) not provided by any installed dependency, left unchanged:"
-        sort -u "$EXTERNAL_FILE" | head -10 | while IFS= read -r ref; do
-            echo "🌊   $ref"
+        sort -u "$EXTERNAL_FILE" | head -10 | while IFS= read -r entry; do
+            echo "🌊   ${entry##*|}  (被 $(basename "${entry%%|*}") 引用)"
         done
     fi
 fi
