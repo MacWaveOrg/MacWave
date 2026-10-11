@@ -123,4 +123,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        # 各子模块只在 __main__ 里捕获 KeyboardInterrupt，而 wave 是 import 它们再调用，
+        # 那条路径捕获不到，于是 Ctrl+C 会甩出 Python 栈回溯。这里兜一层。
+        print("\n🌊 Operation cancelled by user.")
+        sys.exit(130)
