@@ -5,6 +5,24 @@
 # Usage: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/main/lib/install.sh)"
 # Unattended: /bin/bash -c "$(curl -fsSL .../main/lib/install.sh)" -- --silent --dir-option=1
 
+# -------------------- 测试根（隔离） --------------------
+# MACWAVE_TEST 指向一个目录时，把它当作 /：HOME 和所有系统路径都挂到它下面，
+# 整条链路都落在那个目录里，完全不碰真实系统。
+# 没设置时 SYS_ROOT 为空，下面 "$SYS_ROOT/opt/..." 就还是 "/opt/..."，行为不变。
+SYS_ROOT=""
+if [[ -n "${MACWAVE_TEST:-}" ]]; then
+    _mw_root="$MACWAVE_TEST"
+    if [[ "$_mw_root" == "~"* ]]; then
+        _mw_root="${HOME}${_mw_root#\~}"
+    fi
+    mkdir -p "$_mw_root"
+    SYS_ROOT="$(cd "$_mw_root" && pwd)"
+    export HOME="$SYS_ROOT${HOME}"
+    export MACWAVE_TEST_ROOT="$SYS_ROOT"
+    mkdir -p "$HOME"
+    echo "🌊 Test root: $SYS_ROOT"
+fi
+
 set -eE
 
 # 数据仓库：版本号、代码分支与文件清单都从这里读
@@ -278,13 +296,13 @@ case "$choice" in
         BASE_DIR="$HOME/.local/macwave"
         ;;
     2)
-        BASE_DIR="/opt/macwave"
+        BASE_DIR="$SYS_ROOT/opt/macwave"
         ;;
     3)
         if [[ "$CUSTOM_OPTION" == "3" ]]; then
             resolve_custom_dir
         else
-            BASE_DIR="/usr/local/macwave"
+            BASE_DIR="$SYS_ROOT/usr/local/macwave"
         fi
         ;;
     4)
@@ -397,7 +415,7 @@ DOWNLOAD_DIR="$BASE_DIR/downloads/tmp"
 # 装到用户目录（无需 sudo）时用 ~/.config/macwave_config。
 # 读取时系统级优先，所以系统级 MacWave 总是盖过用户级的。
 if [[ "$NEED_SUDO" == "true" ]]; then
-    CONFIG_DIR="/opt/macwave_config"
+    CONFIG_DIR="$SYS_ROOT/opt/macwave_config"
 else
     CONFIG_DIR="$HOME/.config/macwave_config"
 fi

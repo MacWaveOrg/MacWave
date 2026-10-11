@@ -13,6 +13,7 @@
 # 否则才回落到 ~/.config/macwave_config —— 也就是优先跑系统级的 MacWave。
 
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -24,12 +25,56 @@ RED_BOLD = '\033[1;31m'
 RESET = '\033[0m'
 
 
+# -------------------- 测试根（隔离） --------------------
+
+def _resolve_test_root():
+    # MACWAVE_TEST 指向一个目录时，程序把这个目录当作 /：所有绝对路径都挂到它
+    # 下面，HOME 也搬进去，于是配置目录、安装目录、下载缓存全落在里面，完全不
+    # 碰真实系统。没设置时（正常使用）一切照旧。
+    raw = os.environ.get("MACWAVE_TEST")
+    if not raw:
+        return None
+
+    if raw == "~" or raw.startswith("~/"):
+        real_home = os.environ.get("HOME") or str(Path.home())
+        raw = real_home + raw[1:]
+
+    root = Path(raw)
+    if not root.is_absolute():
+        root = Path.cwd() / root
+    root = root.resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+TEST_ROOT = _resolve_test_root()
+
+if TEST_ROOT is not None:
+    # HOME 一起搬进测试根：~/.config/macwave_config、~/.local/macwave 都该隔离。
+    # 子进程（bash 脚本）继承这个 HOME，所以整条链路都在测试根里。
+    _real_home = Path(os.environ.get("HOME") or Path.home())
+    _test_home = TEST_ROOT / (_real_home.relative_to("/") if _real_home.is_absolute() else "home")
+    _test_home.mkdir(parents=True, exist_ok=True)
+    os.environ["HOME"] = str(_test_home)
+    # 给 shell 脚本用：它们拿不到 Python 的变量，只能走环境变量
+    os.environ["MACWAVE_TEST_ROOT"] = str(TEST_ROOT)
+
+
+def rooted(path):
+    # 把绝对路径映射到测试根之下；没开测试模式时原样返回。
+    # 例如 /opt/macwave_config → $MACWAVE_TEST/opt/macwave_config
+    path = Path(path)
+    if TEST_ROOT is None or not path.is_absolute():
+        return path
+    return TEST_ROOT / path.relative_to("/")
+
+
 # -------------------- 配置目录候选 --------------------
 
 CONFIG_FILE_NAME = "config.json"
 VERSION_FILE_NAME = "VERSION.json"
 
-SYSTEM_CONFIG_DIR = Path("/opt/macwave_config")
+SYSTEM_CONFIG_DIR = rooted("/opt/macwave_config")
 USER_CONFIG_DIR = Path.home() / ".config" / "macwave_config"
 
 

@@ -2,7 +2,25 @@
 # MacWave Uninstaller
 # 卸载 MacWave 及清理环境配置
 
-SYSTEM_CONFIG_DIR="/opt/macwave_config"
+# -------------------- 测试根（隔离） --------------------
+# MACWAVE_TEST 指向一个目录时，把它当作 /：HOME 和所有系统路径都挂到它下面，
+# 整条链路都落在那个目录里，完全不碰真实系统。
+# 没设置时 SYS_ROOT 为空，下面 "$SYS_ROOT/opt/..." 就还是 "/opt/..."，行为不变。
+SYS_ROOT=""
+if [[ -n "${MACWAVE_TEST:-}" ]]; then
+    _mw_root="$MACWAVE_TEST"
+    if [[ "$_mw_root" == "~"* ]]; then
+        _mw_root="${HOME}${_mw_root#\~}"
+    fi
+    mkdir -p "$_mw_root"
+    SYS_ROOT="$(cd "$_mw_root" && pwd)"
+    export HOME="$SYS_ROOT${HOME}"
+    export MACWAVE_TEST_ROOT="$SYS_ROOT"
+    mkdir -p "$HOME"
+    echo "🌊 Test root: $SYS_ROOT"
+fi
+
+SYSTEM_CONFIG_DIR="$SYS_ROOT/opt/macwave_config"
 USER_CONFIG_DIR="$HOME/.config/macwave_config"
 ARCH=$(uname -m)
 
@@ -83,10 +101,10 @@ done
 # 2. 如果读取失败（或文件不存在），把所有可能的路径都加入列表
 if [ ${#BASE_DIRS[@]} -eq 0 ]; then
     BASE_DIRS+=("$HOME/.local/macwave")
-    BASE_DIRS+=("/opt/macwave")
+    BASE_DIRS+=("$SYS_ROOT/opt/macwave")
     # Intel Mac 才有 /usr/local/macwave
     if [[ "$ARCH" == "x86_64" ]] || [[ "$ARCH" == "amd64" ]]; then
-        BASE_DIRS+=("/usr/local/macwave")
+        BASE_DIRS+=("$SYS_ROOT/usr/local/macwave")
     fi
 fi
 

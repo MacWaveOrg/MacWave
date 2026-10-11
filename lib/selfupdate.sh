@@ -25,12 +25,30 @@ RESET='\033[0m'
 REPO="MacWaveOrg/MacWave"
 BRANCH="${MACWAVE_UPDATE_BRANCH:-${1:-main}}"
 BASE_URL="https://raw.githubusercontent.com/$REPO/$BRANCH"
+# -------------------- 测试根（隔离） --------------------
+# MACWAVE_TEST 指向一个目录时，把它当作 /：HOME 和所有系统路径都挂到它下面，
+# 整条链路都落在那个目录里，完全不碰真实系统。
+# 没设置时 SYS_ROOT 为空，下面 "$SYS_ROOT/opt/..." 就还是 "/opt/..."，行为不变。
+SYS_ROOT=""
+if [[ -n "${MACWAVE_TEST:-}" ]]; then
+    _mw_root="$MACWAVE_TEST"
+    if [[ "$_mw_root" == "~"* ]]; then
+        _mw_root="${HOME}${_mw_root#\~}"
+    fi
+    mkdir -p "$_mw_root"
+    SYS_ROOT="$(cd "$_mw_root" && pwd)"
+    export HOME="$SYS_ROOT${HOME}"
+    export MACWAVE_TEST_ROOT="$SYS_ROOT"
+    mkdir -p "$HOME"
+    echo "🌊 Test root: $SYS_ROOT"
+fi
+
 CONFIGDATA_URL="https://raw.githubusercontent.com/MacWaveOrg/configdata/main"
 VERSION_DATA_URL="$CONFIGDATA_URL/versiondata/latest_version"
 
 # 配置目录：系统级优先，其次用户级（与 lib/configpaths.py 的规则一致）
 # 迁移可能把配置搬到用户级位置，所以做成函数，迁移之后要再解析一次。
-SYSTEM_CONFIG_DIR="/opt/macwave_config"
+SYSTEM_CONFIG_DIR="$SYS_ROOT/opt/macwave_config"
 USER_CONFIG_DIR="$HOME/.config/macwave_config"
 
 resolve_config_dir() {
