@@ -290,7 +290,8 @@ if [[ -s "$UNRESOLVED_FILE" ]]; then
         missing_count="$(wc -l < "$MISSING_FILE" | tr -d ' ')"
         echo -e "${YELLOW}🌊 Warning: $missing_count library reference(s) exist in this installation but could not be linked:${RESET}"
         sort -u "$MISSING_FILE" | head -10 | while IFS= read -r entry; do
-            echo -e "${YELLOW}🌊   ${entry##*|}  (被 $(basename "${entry%%|*}") 引用)${RESET}"
+            hits="$(grep -c -F "${entry##*|}|" "$MAP_FILE" 2>/dev/null || true)"
+            echo -e "${YELLOW}🌊   ${entry##*|}  (被 $(basename "${entry%%|*}") 引用，索引里同名条目 ${hits:-0})${RESET}"
         done
     fi
 
