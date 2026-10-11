@@ -158,14 +158,22 @@ run_case() {
     fi
 
     # 2. 二进制要能真正跑起来（relink 漏改会在这里以 dyld 报错暴露）
+    #    不同工具认的开关不一样：wget 用 --version，tmux 只认 -V，有的只认 --help，
+    #    所以依次试；全都不行才算失败。
     echo "========== run $PKG =========="
-    local RUN_OUT
-    local RUN_RC=0
-    RUN_OUT=$("$ARTIFACT_LINK" --version 2>&1) || RUN_RC=$?
+    local RUN_OUT=""
+    local RUN_RC=1
+    local FLAG=""
+    for TRY_FLAG in --version -V --help; do
+        FLAG="$TRY_FLAG"
+        RUN_OUT=$("$ARTIFACT_LINK" "$TRY_FLAG" 2>&1)
+        RUN_RC=$?
+        [[ "$RUN_RC" -eq 0 ]] && break
+    done
     if [[ "$RUN_RC" -eq 0 ]]; then
-        echo -e "${GREEN}🌊 OK: $PKG --version${RESET}"
+        echo -e "${GREEN}🌊 OK: $PKG $FLAG${RESET}"
     else
-        echo -e "${RED_BOLD}🌊 FAIL: $PKG --version (rc=$RUN_RC)${RESET}"
+        echo -e "${RED_BOLD}🌊 FAIL: $PKG 起不来（最后试的 $FLAG，rc=$RUN_RC）${RESET}"
         echo "$RUN_OUT" | head -12 | sed 's/^/   /'
         FAILED=$((FAILED + 1))
     fi
@@ -186,7 +194,13 @@ run_case() {
         echo "🌊 Found $MARKERS marker(s)"
     fi
 
-    # 5. 卸载，整条依赖链应被级联清理
+    # 5. 失败时先把证据留下来（卸载会把依赖树清空，之后就什么都看不到了）
+    if [[ "$FAILED" -gt "$before" ]]; then
+        echo -e "${YELLOW}🌊 诊断：$PKG 的依赖树里的库文件（含软链接指向）${RESET}"
+        find "$DEPS_DIR" -maxdepth 4 -name '*.dylib' -exec ls -la {} \; 2>/dev/null | sed 's/^/   /' | head -30
+    fi
+
+    # 6. 卸载，整条依赖链应被级联清理
     echo "========== uninstall $PKG =========="
     python3 "$WAVE_BIN" uninstall "$PKG" > /dev/null 2>&1 || true
 
@@ -206,10 +220,6 @@ run_case() {
 
     if [[ "$FAILED" -gt "$before" ]]; then
         echo -e "${RED_BOLD}🌊 $PKG: FAILED${RESET}"
-        # 失败时把依赖树里的库文件（含软链接指向）打出来，否则看不出是"没装上"
-        # 还是"装上了但索引不到"
-        echo -e "${YELLOW}🌊 诊断：$PKG 的依赖树里的库文件${RESET}"
-        find "$DEPS_DIR" -maxdepth 4 -name '*.dylib' -exec ls -la {} \; 2>/dev/null | sed 's/^/   /' | head -30
         CASE_FAILED=$((CASE_FAILED + 1))
     else
         echo -e "${GREEN}🌊 $PKG: OK${RESET}"
