@@ -66,20 +66,6 @@ map_add_file() {
     echo "$(basename "$file")|$file" >> "$MAP_FILE"
 }
 
-map_add_dir() {
-    local dir="$1"
-    if [[ ! -d "$dir" ]]; then
-        return 0
-    fi
-
-    local file
-    for file in "$dir"/*; do
-        if [[ -f "$file" ]]; then
-            map_add_file "$file"
-        fi
-    done
-}
-
 map_add_tree() {
     local root="$1"
     local file
@@ -131,24 +117,23 @@ if [[ -f "$DEPS_FILE" ]]; then
 
         dep_name="${ref%@*}"
         dep_version="${ref##*@}"
-        map_add_dir "$BASE_DIR/deps/$dep_name/$dep_name@$dep_version/lib"
+        map_add_tree "$BASE_DIR/deps/$dep_name/$dep_name@$dep_version"
     done < "$DEPS_FILE"
 fi
 
-# 3. 其余已安装依赖的 lib（兜底）
-for dep_lib in "$BASE_DIR"/deps/*/*/lib; do
-    map_add_dir "$dep_lib"
-done
-
-# 4. 记录“我们自己的树”里出现过的文件名，用于后续分流未解析引用
+# 3. 其余已安装依赖（兜底）：整棵树都进索引，不能只扫 lib/ ——
+#    依赖的解压目录未必是标准布局（例如 libcxx 的包只有 lib/ 一个顶层目录，
+#    会被当成包装目录下沉一层，库文件就落在版本目录根下而不是 lib/ 里）。
+#    这些名字同时记进"我们的树"，用于后续分流未解析引用。
 for dep_tree in "$BASE_DIR"/deps/*/*; do
     if [[ -d "$dep_tree" ]]; then
+        map_add_tree "$dep_tree"
         tree_add_tree "$dep_tree"
     fi
 done
 
 # 索引建完之后实测一下规模：光看"引用没接上"分不清是索引没建、还是查表没中
-echo "🌊 [索引] ${TARGET_DIR#"$BASE_DIR"/} map=$(wc -l < "$MAP_FILE" | tr -d ' ') tree=$(wc -l < "$TREE_FILE" | tr -d ' ') deps_lib=$(ls -d "$BASE_DIR"/deps/*/*/lib 2>/dev/null | wc -l | tr -d ' ') _DEPS=$([[ -f "$TARGET_DIR/_DEPS" ]] && echo yes || echo no)"
+echo "🌊 [索引] ${TARGET_DIR#"$BASE_DIR"/} map=$(wc -l < "$MAP_FILE" | tr -d ' ') tree=$(wc -l < "$TREE_FILE" | tr -d ' ') deps=$(ls -d "$BASE_DIR"/deps/*/* 2>/dev/null | wc -l | tr -d ' ') _DEPS=$([[ -f "$TARGET_DIR/_DEPS" ]] && echo yes || echo no)"
 
 # -------------------- 辅助函数 --------------------
 

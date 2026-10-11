@@ -215,11 +215,19 @@ mw_extract_all() {
                 exit 1
             fi
 
-            # 只有一个顶层目录时视为包装目录，下沉一层便于后续搬运
+            # 只有一个顶层目录时视为包装目录，下沉一层便于后续搬运。
+            # 但 lib/bin/include 这些是**内容目录**不是包装目录：像 libcxx 这种
+            # 包里只有 lib/ 一个顶层目录，下沉会把 lib/ 摊平掉，依赖的库就再也
+            # 不在 <dep>@<版本>/lib 下，路径替换会以为"这个库不存在"。
             local entries=("$extract_dir"/*)
             if [[ ${#entries[@]} -eq 1 && -d "${entries[0]}" ]]; then
-                echo "${entries[0]}"
-                return 0
+                case "$(basename "${entries[0]}")" in
+                    lib|bin|sbin|include|share|man|etc|libexec) ;;
+                    *)
+                        echo "${entries[0]}"
+                        return 0
+                        ;;
+                esac
             fi
 
             echo "$extract_dir"
