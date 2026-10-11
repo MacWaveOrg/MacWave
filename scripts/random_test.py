@@ -627,6 +627,17 @@ def assign_modes(rng, plans, prober):
 # -------------------- wave 调用 --------------------
 
 
+class TimeBudgetExhausted(Exception):
+    """本轮时间预算用尽：不再发起新命令，让脚本正常收尾并汇总。"""
+
+
+DEADLINE = None      # 由 --time-budget 设置；None 表示不限时
+
+
+def out_of_time():
+    return DEADLINE is not None and time.monotonic() >= DEADLINE
+
+
 class Wave:
     def __init__(self, layout, report, limit_rate):
         self.layout = layout
@@ -636,6 +647,10 @@ class Wave:
         self.commands = 0
 
     def _begin(self, argv):
+        # 每条命令都从这儿走：预算用尽就不再发起新命令，交给 main 正常汇总收尾。
+        # 靠 CI 的 timeout 兜底是会"杀死"整个 job 的，那时只能得到一个失败结论。
+        if out_of_time():
+            raise TimeBudgetExhausted("--time-budget 已用尽")
         self.commands += 1
         label = f"wave {' '.join(argv)}"
         print(f"▶ [{self.commands}] {label}", flush=True)
@@ -1403,6 +1418,8 @@ def parse_args():
                         help="跳过 HEAD 探体积（离线自测用，体积上限失效）")
     parser.add_argument("--log-file", help="把整轮日志同时写一份到该文件（CI 用它上传 artifact）")
     parser.add_argument("--limit-rate", default="400K", help="--limit-rate 用的速率")
+    parser.add_argument("--time-budget", type=float, default=0,
+                        help="本轮最多跑多少分钟（0=不限）；用尽后停止发起新命令并正常汇总")
     parser.add_argument("--transfer-interrupt-probability", type=float,
                         default=TRANSFER_INTERRUPT_PROBABILITY,
                         help="Mach-O 重定向中途打断的概率（默认 0.05；调试可设 1）")
@@ -1458,6 +1475,9 @@ def main():
             return 0
 
         setup_environment(layout)
+        global DEADLINE
+        if args.time_budget > 0:
+            DEADLINE = time.monotonic() + args.time_budget * 60
         wave = Wave(layout, checks, args.limit_rate)
 
         installed = phase_install_cycle(wave, rng, plans, checks)
@@ -1469,6 +1489,10 @@ def main():
         phase_global_invariants(wave, checks)
         phase_illegal_and_help(wave, rng, checks)
         print_summary(seed, layout, checks)
+    except TimeBudgetExhausted:
+        # 预算用尽是"这轮没跑完"，不是"回归失败"：标注清楚后照常汇总
+        print("🌊 时间预算用尽：停止发起新命令，直接汇总本轮已跑过的用例", flush=True)
+        checks.skip("time-budget", "本轮未跑完，剩余用例没有执行")
     except Exception as error:
         print(f"🌊 Error: 随机回归无法继续：{error}", flush=True)
         checks.fail("run", str(error))

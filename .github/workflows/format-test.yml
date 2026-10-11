@@ -176,6 +176,7 @@ jobs:
         run: |
           python3 -u scripts/random_test.py \
             --infosource infosource-data \
+            --time-budget 145 \
             --log-file "$RUNNER_TEMP/random-test-${{ matrix.python-version }}.log"
 
       - name: Upload the regression log
