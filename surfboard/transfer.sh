@@ -147,6 +147,9 @@ for dep_tree in "$BASE_DIR"/deps/*/*; do
     fi
 done
 
+# 索引建完之后实测一下规模：光看"引用没接上"分不清是索引没建、还是查表没中
+echo "🌊 [索引] ${TARGET_DIR#"$BASE_DIR"/} map=$(wc -l < "$MAP_FILE" | tr -d ' ') tree=$(wc -l < "$TREE_FILE" | tr -d ' ') deps_lib=$(ls -d "$BASE_DIR"/deps/*/*/lib 2>/dev/null | wc -l | tr -d ' ') _DEPS=$([[ -f "$TARGET_DIR/_DEPS" ]] && echo yes || echo no)"
+
 # -------------------- 辅助函数 --------------------
 
 is_system_path() {
