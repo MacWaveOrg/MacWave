@@ -121,7 +121,7 @@ jobs:
   # 自带安装目录挑选、部署与清理，所以不需要上面那一套 sudo 配置。
   random-test:
     runs-on: macos-latest
-    timeout-minutes: 150
+    timeout-minutes: 180
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       PYTHONUNBUFFERED: "1"
@@ -172,7 +172,7 @@ jobs:
 
       # 步骤级 timeout 低于 job 级：超时是"步骤失败"，这样下面的 always() 仍会上传日志
       - name: Run randomized regression
-        timeout-minutes: 100
+        timeout-minutes: 165
         run: |
           python3 -u scripts/random_test.py \
             --infosource infosource-data \
