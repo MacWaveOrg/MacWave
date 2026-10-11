@@ -83,11 +83,13 @@ map_add_dir() {
 map_add_tree() {
     local root="$1"
     local file
+    # 软链接也要进索引：conda 的库里 libc++.1.dylib 往往是指向 libc++.1.0.dylib
+    # 的软链接，只找 -type f 会漏掉它，引用就永远接不上（-f 会自动跳过悬空链接）。
     while IFS= read -r file; do
         if [[ -f "$file" ]]; then
             map_add_file "$file"
         fi
-    done < <(find "$root" -type f 2>/dev/null)
+    done < <(find "$root" \( -type f -o -type l \) 2>/dev/null)
 }
 
 tree_add_tree() {
@@ -96,7 +98,7 @@ tree_add_tree() {
     local file
     while IFS= read -r file; do
         echo "$(basename "$file")" >> "$TREE_FILE"
-    done < <(find "$root" -type f 2>/dev/null)
+    done < <(find "$root" \( -type f -o -type l \) 2>/dev/null)
 }
 
 map_lookup() {
