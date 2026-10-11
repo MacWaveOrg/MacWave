@@ -290,9 +290,11 @@ if [[ -s "$UNRESOLVED_FILE" ]]; then
         missing_count="$(wc -l < "$MISSING_FILE" | tr -d ' ')"
         echo -e "${YELLOW}🌊 Warning: $missing_count library reference(s) exist in this installation but could not be linked:${RESET}"
         sort -u "$MISSING_FILE" | head -10 | while IFS= read -r entry; do
-            hits="$(grep -c -F "${entry##*|}|" "$MAP_FILE" 2>/dev/null || true)"
-            echo -e "${YELLOW}🌊   ${entry##*|}  (被 $(basename "${entry%%|*}") 引用，索引里同名条目 ${hits:-0})${RESET}"
+            echo -e "${YELLOW}🌊   ${entry##*|}  (被 $(basename "${entry%%|*}") 引用)${RESET}"
         done
+        # 直接看索引里有什么：键是 basename，光看引用名判断不出来是"没建起来"还是"没这个名"
+        echo -e "${YELLOW}🌊   索引共 $(wc -l < "$MAP_FILE" | tr -d ' ') 条，前 15 条：${RESET}"
+        head -15 "$MAP_FILE" | sed "s|^|🌊     |"
     fi
 
     if [[ -s "$EXTERNAL_FILE" ]]; then
