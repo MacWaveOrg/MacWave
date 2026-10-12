@@ -206,7 +206,12 @@ def handle_download_args(input_string):
     # 1. --skip-ssl 安全询问
     if "--skip-ssl" in flags:
         print('🌊 You selected --skip-ssl, this will skip SSL certificate verification, which may cause security risks. Are you sure?')
-        confirm = input().strip()
+        try:
+            confirm = input().strip()
+        except (EOFError, KeyboardInterrupt):
+            # 非交互（CI / 脚本里 stdin 是 /dev/null）读不到答复：按拒绝处理，
+            # 也就是不跳过 SSL 校验 —— 缺省往安全的方向倒。
+            confirm = ""
         if confirm in ("Y", "y"):
             config["skip_ssl_verify"] = True
 
