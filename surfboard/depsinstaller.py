@@ -6,8 +6,10 @@
 
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -216,13 +218,19 @@ def download_dependency(dep_url, dep_display_name, config, input_string):
     return original_filename
 
 
-def transfer_paths(target_dir):
+def transfer_paths(target_dir, shared_index_dir=None):
 
     # 路径替换（Homebrew 式）：交给 surfboard/transfer.sh，
     # 把产物里 Mach-O 的动态库引用与 install name 改成 BASE_DIR 下的实际位置。
+    # shared_index_dir 由 transfer_installed_artifacts 传进来，让"全部依赖"的
+    # 兜底索引在多个 target 之间只建一次。
+
+    argv = ['bash', str(TRANSFER_SCRIPT), str(target_dir), str(BASE_DIR)]
+    if shared_index_dir:
+        argv.append(str(shared_index_dir))
 
     result = subprocess.run(
-        ['bash', str(TRANSFER_SCRIPT), str(target_dir), str(BASE_DIR)],
+        argv,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
     )
 
@@ -257,8 +265,16 @@ def transfer_installed_artifacts(*extra_dirs):
     if targets:
         print(f"🌊 Relocating Mach-O files in {len(targets)} installed artifact(s)...")
 
-    for target in targets:
-        transfer_paths(target)
+    # 兜底索引目录：多个 target 共用一个，否则每个 target 都要把全部依赖树重扫
+    # 一遍，target 一多就是 O(n²)。实测 18 个依赖时收尾会从几秒涨到 5 分钟。
+    shared_index = tempfile.mkdtemp(prefix="macwave-index-") if len(targets) > 1 else None
+
+    try:
+        for target in targets:
+            transfer_paths(target, shared_index)
+    finally:
+        if shared_index:
+            shutil.rmtree(shared_index, ignore_errors=True)
 
 
 def install_dependency_shell(dep_name, dep_version, dep_sha256, dep_display_name,

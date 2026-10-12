@@ -28,6 +28,10 @@ RESET='\033[0m'
 
 TARGET_DIR="$1"
 BASE_DIR="$2"
+# 可选：多个 target 共用的兜底索引目录。统一收尾会连续处理几十个 target，
+# 若每个都重建"全部依赖"的索引就是 O(n²)（实测 18 个依赖要跑 5 分钟）。
+# 调用方给一个目录，这里建一次、其余复用。
+SHARED_INDEX_DIR="${3:-}"
 
 if [[ -z "$TARGET_DIR" || -z "$BASE_DIR" ]]; then
     echo -e "${RED_BOLD}🌊 Error: Missing target directory or base directory.${RESET}"
@@ -50,6 +54,13 @@ done
 
 MAP_FILE="$(mktemp -t macwave-transfer)"
 TREE_FILE="$(mktemp -t macwave-tree)"
+# 共享兜底索引（可选）：调用方给了目录就指向那里的两个文件，由 build_fallback_index 建一次
+SHARED_MAP=""
+SHARED_TREE=""
+if [[ -n "$SHARED_INDEX_DIR" ]]; then
+    SHARED_MAP="$SHARED_INDEX_DIR/map"
+    SHARED_TREE="$SHARED_INDEX_DIR/tree"
+fi
 UNRESOLVED_FILE="$(mktemp -t macwave-unresolved)"
 MISSING_FILE="$(mktemp -t macwave-missing)"
 EXTERNAL_FILE="$(mktemp -t macwave-external)"
@@ -61,37 +72,65 @@ cleanup() {
 }
 trap cleanup EXIT
 
-map_add_file() {
-    local file="$1"
-    echo "$(basename "$file")|$file" >> "$MAP_FILE"
-}
-
-map_add_tree() {
-    local root="$1"
-    local file
-    # 软链接也要进索引：conda 的库里 libc++.1.dylib 往往是指向 libc++.1.0.dylib
-    # 的软链接，只找 -type f 会漏掉它，引用就永远接不上（-f 会自动跳过悬空链接）。
+index_tree() {
+    # 把整棵树登记成 "名字|绝对路径"。
+    # 只用 find + bash 内建（${file##*/} 取名字、printf 输出），并且把重定向放在
+    # 循环外：原来每行一次 $(basename) 是 fork、一次 >> 是开关文件，依赖树有上万
+    # 文件时这两项就是主要瓶颈。
+    # 软链接也要收（conda 的 libc++.1.dylib 常是指向 libc++.1.0.dylib 的链接），
+    # [[ -f ]] 会把悬空链接滤掉（macOS 的 find 不支持 -xtype）。
+    local root="$1" out="$2"
     while IFS= read -r file; do
         if [[ -f "$file" ]]; then
-            map_add_file "$file"
+            printf '%s|%s\n' "${file##*/}" "$file"
         fi
-    done < <(find "$root" \( -type f -o -type l \) 2>/dev/null)
+    done < <(find "$root" \( -type f -o -type l \) 2>/dev/null) >> "$out"
 }
 
-tree_add_tree() {
+list_tree_names() {
     # 只登记文件名，用于分辨“我们的树里有但没接上”与“根本不属于我们的库”
-    local root="$1"
-    local file
+    local root="$1" out="$2"
     while IFS= read -r file; do
-        echo "$(basename "$file")" >> "$TREE_FILE"
-    done < <(find "$root" \( -type f -o -type l \) 2>/dev/null)
+        if [[ -f "$file" ]]; then
+            printf '%s\n' "${file##*/}"
+        fi
+    done < <(find "$root" \( -type f -o -type l \) 2>/dev/null) >> "$out"
+}
+
+build_fallback_index() {
+    # 兜底索引：给了一批已安装依赖，供"引用没写在 _DEPS 里"时兜底解析。
+    # 有共享目录就在那里建一次（后续 target 直接复用）；没有就扫进自己的索引。
+    if [[ -n "$SHARED_INDEX_DIR" ]]; then
+        if [[ ! -s "$SHARED_MAP" ]]; then
+            mkdir -p "$SHARED_INDEX_DIR"
+            local tree
+            for tree in "$BASE_DIR"/deps/*/*; do
+                [[ -d "$tree" ]] && index_tree "$tree" "$SHARED_MAP"
+            done
+            for tree in "$BASE_DIR"/deps/*/*; do
+                [[ -d "$tree" ]] && list_tree_names "$tree" "$SHARED_TREE"
+            done
+        fi
+    else
+        local tree
+        for tree in "$BASE_DIR"/deps/*/*; do
+            [[ -d "$tree" ]] && index_tree "$tree" "$MAP_FILE"
+        done
+        for tree in "$BASE_DIR"/deps/*/*; do
+            [[ -d "$tree" ]] && list_tree_names "$tree" "$TREE_FILE"
+        done
+    fi
 }
 
 map_lookup() {
-    # 命中则输出绝对路径，否则返回 1
-    local name="$1"
-    local line
+    # 命中则输出绝对路径，否则返回 1。先查本 target 自己的索引（_DEPS 优先），
+    # 再查共享兜底索引。
+    local name="$1" line
     line="$(grep -m1 -F "$name|" "$MAP_FILE" 2>/dev/null || true)"
+
+    if [[ -z "$line" && -n "$SHARED_MAP" ]]; then
+        line="$(grep -m1 -F "$name|" "$SHARED_MAP" 2>/dev/null || true)"
+    fi
 
     if [[ -z "$line" ]]; then
         return 1
@@ -100,9 +139,17 @@ map_lookup() {
     echo "${line#*|}"
 }
 
+name_in_tree() {
+    # 名字是否出现在"我们自己的树"里（含共享兜底索引）
+    local name="$1"
+    grep -qxF "$name" "$TREE_FILE" 2>/dev/null && return 0
+    [[ -n "$SHARED_TREE" ]] && grep -qxF "$name" "$SHARED_TREE" 2>/dev/null && return 0
+    return 1
+}
+
 # 1. 目标目录自身
-map_add_tree "$TARGET_DIR"
-tree_add_tree "$TARGET_DIR"
+index_tree "$TARGET_DIR" "$MAP_FILE"
+list_tree_names "$TARGET_DIR" "$TREE_FILE"
 
 # 2. _DEPS 列出的依赖（优先于其它同名库）
 DEPS_FILE="$TARGET_DIR/_DEPS"
@@ -117,7 +164,7 @@ if [[ -f "$DEPS_FILE" ]]; then
 
         dep_name="${ref%@*}"
         dep_version="${ref##*@}"
-        map_add_tree "$BASE_DIR/deps/$dep_name/$dep_name@$dep_version"
+        index_tree "$BASE_DIR/deps/$dep_name/$dep_name@$dep_version" "$MAP_FILE"
     done < "$DEPS_FILE"
 fi
 
@@ -125,12 +172,8 @@ fi
 #    依赖的解压目录未必是标准布局（例如 libcxx 的包只有 lib/ 一个顶层目录，
 #    会被当成包装目录下沉一层，库文件就落在版本目录根下而不是 lib/ 里）。
 #    这些名字同时记进"我们的树"，用于后续分流未解析引用。
-for dep_tree in "$BASE_DIR"/deps/*/*; do
-    if [[ -d "$dep_tree" ]]; then
-        map_add_tree "$dep_tree"
-        tree_add_tree "$dep_tree"
-    fi
-done
+#    这一步是 O(依赖数)，统一收尾时借助共享索引只做一次。
+build_fallback_index
 
 # -------------------- 辅助函数 --------------------
 
@@ -145,21 +188,32 @@ is_system_path() {
     esac
 }
 
-is_macho() {
-    # 按魔数判断，避开 otool 对非 Mach-O 也会以 0 退出并打印一行提示的问题；
-    # 静态库（!<arch>）在此直接滤掉，它们不参与运行时加载。
-    local file="$1"
-    local magic
-    magic="$(head -c 4 "$file" 2>/dev/null | od -An -tx1 | tr -d ' \n')"
+list_macho_files() {
+    # 一次 Python 调用列出树里的 Mach-O（按魔数判断），而不是逐个文件 fork
+    # `od`/`head`：依赖树有上万文件时，光这一项的开销就超过真正的重写。
+    # 与 `find -type f` 保持一致：跳过符号链接本身（链接指向的真实文件会被处理）。
+    # 静态库（!<arch>）不参与运行时加载，同样被过滤掉。
+    local root="$1"
+    python3 - "$root" <<'PY'
+import os
+import sys
 
-    case "$magic" in
-        cffaedfe|cefaedfe|feedfacf|feedface|cafebabe|bebafeca)
-            return 0
-            ;;
-        *)
-            return 1
-            ;;
-    esac
+MAGICS = {
+    "cffaedfe", "cefaedfe", "feedfacf", "feedface", "cafebabe", "bebafeca",
+}
+
+for dirpath, _dirnames, filenames in os.walk(sys.argv[1]):
+    for name in filenames:
+        path = os.path.join(dirpath, name)
+        if os.path.islink(path):
+            continue
+        try:
+            with open(path, "rb") as handle:
+                if handle.read(4).hex() in MAGICS:
+                    print(path)
+        except OSError:
+            continue
+PY
 }
 
 # -------------------- 逐个 Mach-O 替换 --------------------
@@ -167,10 +221,6 @@ is_macho() {
 CHANGED=0
 
 while IFS= read -r file; do
-    if ! is_macho "$file"; then
-        continue
-    fi
-
     if ! otool_output="$(otool -L "$file" 2>/dev/null)"; then
         continue
     fi
@@ -239,7 +289,7 @@ while IFS= read -r file; do
         fi
         CHANGED=$((CHANGED + 1))
     fi
-done < <(find "$TARGET_DIR" -type f 2>/dev/null)
+done < <(list_macho_files "$TARGET_DIR")
 
 # -------------------- 输出 --------------------
 
@@ -264,7 +314,7 @@ if [[ -s "$UNRESOLVED_FILE" ]]; then
     #       树里根本没有 → 外部/未声明的依赖，MacWave 无从接，只作提示。
     while IFS= read -r entry; do
         ref="${entry##*|}"
-        if grep -qxF "${ref##*/}" "$TREE_FILE" 2>/dev/null; then
+        if name_in_tree "${ref##*/}"; then
             echo "$entry" >> "$MISSING_FILE"
         else
             echo "$entry" >> "$EXTERNAL_FILE"
