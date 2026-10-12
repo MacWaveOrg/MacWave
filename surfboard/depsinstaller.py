@@ -239,6 +239,8 @@ def transfer_installed_artifacts(*extra_dirs):
     # 留下 @rpath 引用导致运行时 dyld 加载失败。
     # 每个目录单独处理，解析时优先该产物自己的 lib/。
 
+    targets = []
+
     deps_root = BASE_DIR / "deps"
     if deps_root.is_dir():
         for owner_dir in sorted(deps_root.iterdir()):
@@ -246,10 +248,17 @@ def transfer_installed_artifacts(*extra_dirs):
                 continue
             for version_dir in sorted(owner_dir.iterdir()):
                 if version_dir.is_dir():
-                    transfer_paths(version_dir)
+                    targets.append(version_dir)
 
-    for extra_dir in extra_dirs:
-        transfer_paths(extra_dir)
+    targets.extend(extra_dirs)
+
+    # 这一步会逐个扫描产物里的 Mach-O（依赖多时有上万文件），不打声招呼
+    # 用户会以为卡死了。只报总进度，实际改写了几个文件由 transfer.sh 逐个报告。
+    if targets:
+        print(f"🌊 Relocating Mach-O files in {len(targets)} installed artifact(s)...")
+
+    for target in targets:
+        transfer_paths(target)
 
 
 def install_dependency_shell(dep_name, dep_version, dep_sha256, dep_display_name,
