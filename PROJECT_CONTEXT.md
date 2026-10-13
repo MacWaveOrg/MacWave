@@ -261,6 +261,6 @@ BASE_DIR/links/                  wget@1.25.0，以及每个依赖 bin/ 下可执
 | 2 | `.github/workflows/format-test.yml` | 把新分支名加进 `on.push.branches` 与 `on.pull_request.branches` |
 | 3 | `PROJECT_CONTEXT.md` 开头的「版本分支（当前的 `3.0`）」 | 改成新分支 |
 | 4 | `README.md` / `README.zh-Hans.md` 的 `Latest Version` / `最新版本` | 正式发布时更新 |
-| 5 | 站点 `index.html`（`MacWaveOrg/Pages`，以及 `gh-pages`） | 版本行的版本号 |
+| 5 | 站点 `index.html`（`MacWaveOrg/Pages`） | 版本行的版本号 |
 
 镜像只认 configdata 声明的那一个发布分支，所以 `2.3` / `2.4` / `2.5` 这类历史分支不会被碰到。
