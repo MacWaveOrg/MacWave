@@ -8,8 +8,10 @@ name: Sync main with the release branch
 # 所以以后开新分支（如 3.1）**不需要改本工作流**：把 configdata 的 branch 改成 3.1 即可。
 # 触发范围是所有分支，但脚本只碰 main 与发布分支——2.3/2.4/2.5 这类历史分支不会被误动。
 #
-# 不会自激循环：本工作流用仓库自带的 GITHUB_TOKEN 推送，而 GITHUB_TOKEN 触发的 push
-# 不会再触发工作流（GitHub 的既定行为）。
+# 分支受规则集保护（必须经 PR），而 GITHUB_TOKEN 无法进入规则集的 bypass 名单，
+# 所以推送改用 RELEASE_SYNC_TOKEN（PAT，其属主是组织管理员，在 bypass 名单里）。
+# PAT 触发的 push 会再触发一次本工作流，但那次运行会发现 main 与发布分支已经相等
+# 而直接退出，因此不会形成循环。
 
 on:
   push:
@@ -34,6 +36,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.RELEASE_SYNC_TOKEN }}
 
       - name: Fast-forward whichever side lagged
         run: |
