@@ -193,6 +193,7 @@ GitHub 不允许把 PR 作者设为审阅人。
 | `d5350d6` | 恢复两个负向测试载荷到 `test/` |
 | `030a8aa` | 索引侧把四个测试记录统一指向 `test/` |
 | `4b9ef56` | 限速峰值改为 1 秒窗口计算 |
+| `8512158` | 已安装依赖改读本地 `_DEPS`，不再回源 |
 | `3b9e4d8`（LinuxWave） | 镜像改用 PAT |
 | `7968fab`（LinuxWave） | 恢复负向测试载荷到 `test/` |
 | `3894d05`（LinuxWave infosource） | 四个测试记录改指本项目自己的载荷 |
@@ -200,3 +201,49 @@ GitHub 不允许把 PR 作者设为审阅人。
 > 平台差异：LinuxWave 侧的镜像工作流有完全相同的问题，修复方式一致（改用 PAT）；
 > 两个负向样本则应当在各自的仓库里存放，不要跨组织引用别人的文件 —— 这一轮之前
 > LinuxWave 的索引指向的就是 `MacWaveOrg/MacWave`，属于历史遗留的复制粘贴。
+
+---
+
+## 十九、已装好的依赖不该再联网：一次网络抖动让装完的包“看起来失败”
+
+**现象**：
+
+```
+🌊 Successfully installed htop@3.5.3
+🌊 Binary installed to: ~/.local/macwave/bin/htop@3.5.3/htop
+🌊 Link created at: ~/.local/macwave/links/htop@3.5.3
+🌊 Dependency ncurses@6.6 is already installed, skipping.
+🌊 Error: Cannot reach GitHub for the dependency data.
+🌊   .../deps/depsinfo_arm64/ncurses/_ncurses@6.6
+
+$ htop
+zsh: command not found: htop
+```
+
+**根因分两层。**
+
+第一层是网络：那个 URL 本身是好的（`curl` 第一次就 200），只是这条链路上
+`raw.githubusercontent.com` 会间歇性地连接重置。`fetch_text` 重试三次全失败，于是报错退出。
+
+第二层才是真正的设计问题。**依赖 `ncurses@6.6` 已经装在本地了**，代码却仍然回源取它的
+版本文件。原因写在注释里：想「顺带补齐新补上的依赖边」。这个意图没错，但它把一次纯粹的
+本地操作变成了网络依赖 —— 而网络恰好是整个安装里最不可靠的环节。
+
+后果比报错本身更糟：软件包本体、带版本号的链接都已经落盘，只有**不带版本号的链接**没建
+（那一步排在依赖安装之后）。于是命令报失败，二进制也真的不能直接用。
+
+**修复**：`8512158`，已安装的依赖优先读它自己的 `_DEPS`（装好时就写在那里），只有
+`_DEPS` 不存在时才回源 —— 那才说明上次安装真的中断了、需要补齐。
+
+**验证**：修完后同样的命令一次通过，`Relocating Mach-O files in 19 installed artifact(s)`
+之后正常建链接，`htop --version` 输出 `htop 3.5.3`。
+
+**教训**：
+
+1. **已经在本地的数据不要再走网络。** 判断顺序应当是「本地有没有 → 再考虑远端」，
+   而不是「远端是权威，所以每次都问」。
+2. **失败要落在干净的边界上。** 这次是「包已装好、链接没建」。哪怕修不了网络，至少应当
+   在依赖步骤失败时提示「包已安装，运行 `wave link <名字>` 即可」，而不是让用户面对一个
+   装完却不能用的命令。
+3. **复现要靠因果，不靠运气。** 这条只有在网络抖动时才出现；先确认 URL 可达、再读代码
+   找到那次多余的请求，才能确定不是数据缺失（记录其实一直都在）。
