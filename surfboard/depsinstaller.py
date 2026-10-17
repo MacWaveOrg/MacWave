@@ -312,6 +312,21 @@ def install_dependency_shell(dep_name, dep_version, dep_sha256, dep_display_name
 
 # -------------------- 依赖安装 --------------------
 
+def local_dep_refs(dep_dir):
+
+    # 已安装依赖自己的依赖清单（安装时写在 _DEPS 里）。
+    # 返回 None 表示文件不存在（上次安装可能中断），调用方据此决定要不要回源补齐。
+
+    deps_file = dep_dir / "_DEPS"
+    if not deps_file.exists():
+        return None
+    try:
+        text = deps_file.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    return [value for value in re.findall(r'"([^"]*)"', text) if value.strip()]
+
+
 def ensure_dependency(dep_ref, arch, config, input_string, depender, visited=None):
 
     # 安装单个依赖（已安装则直接补标记），并递归处理它自己的依赖。
@@ -335,18 +350,25 @@ def ensure_dependency(dep_ref, arch, config, input_string, depender, visited=Non
         return
     visited.add(marker)
 
-    # 已安装的依赖也要按数据检查一遍它自己的依赖：新补上的依赖边或上次中断的安装
-    # 都在这里补齐，否则运行时可能缺库（只多一次版本文件请求，不会重新下载）
+    # 已安装的依赖也要检查一遍它自己的依赖：新补上的依赖边或上次中断的安装
+    # 都在这里补齐，否则运行时可能缺库。
+    #
+    # 优先读本地的 _DEPS —— 依赖真正装好后它就在那里，不必再联网。以前这里
+    # 无条件回源取版本文件，网络一抖，一个已经装好的包就会让整条安装失败
+    # （软件包本体已经落盘，却连不带版本号的链接都没建）。
+    # 只有 _DEPS 不存在时才回源，那才说明上次安装真的中断了。
     if already_installed:
-        own_version_url = dep_version_url(dep_name, dep_version, arch)
-        status, version_text = fetch_text(own_version_url)
-        if status == 404:
-            print(f"{YELLOW}🌊 Warning: {dep_name}@{dep_version} has no version file, "
-                  f"skipping its own dependencies.{RESET}")
-            return
-        if status != 200:
-            report_service_unavailable(own_version_url, status)
-        child_refs = get_deps(parse_common_fields(version_text))
+        child_refs = local_dep_refs(target_dir)
+        if child_refs is None:
+            own_version_url = dep_version_url(dep_name, dep_version, arch)
+            status, version_text = fetch_text(own_version_url)
+            if status == 404:
+                print(f"{YELLOW}🌊 Warning: {dep_name}@{dep_version} has no version file, "
+                      f"skipping its own dependencies.{RESET}")
+                return
+            if status != 200:
+                report_service_unavailable(own_version_url, status)
+            child_refs = get_deps(parse_common_fields(version_text))
         if child_refs:
             install_dependencies(child_refs, arch, config, input_string,
                                  ("dep", dep_name, dep_version), visited)
