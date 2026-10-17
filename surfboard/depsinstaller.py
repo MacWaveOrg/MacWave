@@ -402,6 +402,18 @@ def ensure_dependency(dep_ref, arch, config, input_string, depender, visited=Non
         print(f"{RED_BOLD}🌊 Error: URL field not found.{RESET}")
         sys.exit(1)
 
+    # 依赖同样不能免检：缺校验值就拒绝，否则一个被替换的库会被静默装进运行时。
+    if not dep_sha256:
+        print(f"{RED_BOLD}🌊 Error: No SHA256 checksum for dependency {dep_name}@{dep_version}.{RESET}")
+        print(f"{RED_BOLD}🌊 Without it the download cannot be verified; refusing to install.{RESET}")
+        print(f"{RED_BOLD}🌊 This is a data defect; please report it to the administrator.{RESET}")
+        sys.exit(1)
+
+    if not re.fullmatch(r"[0-9a-f]{64}", dep_sha256):
+        print(f"{RED_BOLD}🌊 Error: Malformed SHA256 checksum for dependency {dep_name}@{dep_version}.{RESET}")
+        print(f"{RED_BOLD}🌊 Expected 64 lowercase hexadecimal characters; refusing to install.{RESET}")
+        sys.exit(1)
+
     check_dep_url(dep_url)
 
     # 4. 先递归安装它自己的依赖：路径替换时这些库必须已经在磁盘上

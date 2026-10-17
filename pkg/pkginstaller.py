@@ -510,7 +510,20 @@ def handle_install(input_string):
         print(f"{RED_BOLD}🌊 Error: URL field not found.{RESET}")
         sys.exit(1)
 
-    ParsePkgSHA256 = sha_match.group(1) if sha_match else None
+    # 没有校验值就必须拒绝安装：索引记录是信任的起点，缺了 sha256 就无法确认
+    # 下载到的内容与索引声明的一致。HTTPS 只保护传输，不保护产物。
+    if not sha_match:
+        print(f"{RED_BOLD}🌊 Error: No SHA256 checksum for {ParsePkgName}@{ParsePkgVersion}.{RESET}")
+        print(f"{RED_BOLD}🌊 Without it the download cannot be verified; refusing to install.{RESET}")
+        print(f"{RED_BOLD}🌊 This is a data defect; please report it to the administrator.{RESET}")
+        sys.exit(1)
+
+    ParsePkgSHA256 = sha_match.group(1)
+
+    if not re.fullmatch(r"[0-9a-f]{64}", ParsePkgSHA256):
+        print(f"{RED_BOLD}🌊 Error: Malformed SHA256 checksum for {ParsePkgName}@{ParsePkgVersion}.{RESET}")
+        print(f"{RED_BOLD}🌊 Expected 64 lowercase hexadecimal characters; refusing to install.{RESET}")
+        sys.exit(1)
 
     # 5.1 解析 deps 字段（写在版本文件里，可能多行），缺失视为无依赖
     dep_refs = get_deps(parse_common_fields(resp.text))

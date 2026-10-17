@@ -117,9 +117,20 @@ mw_verify_sha256() {
     local original_file="$1"
     local expected_sha256="$2"
 
+    # 没有校验值就必须拒绝安装，不能只警告后放行：索引记录本身就是信任的起点，
+    # 少了 sha256 就等于允许任何人往索引里塞一个包、或替换下载内容而无人察觉。
+    # HTTPS 只保证传输过程没被中间人改写，不保证产物与索引一致。
     if [[ -z "$expected_sha256" ]]; then
-        echo -e "${YELLOW}🌊 Warning: No SHA256 provided, skipping verification.${RESET}"
-        return 0
+        echo -e "${RED_BOLD}🌊 Error: No SHA256 checksum in the package data; refusing to install.${RESET}"
+        echo -e "${RED_BOLD}🌊 Without it the download cannot be verified.${RESET}"
+        echo -e "${RED_BOLD}🌊 This is a data defect; please report it to the administrator.${RESET}"
+        exit 1
+    fi
+
+    if [[ ! "$expected_sha256" =~ ^[0-9a-f]{64}$ ]]; then
+        echo -e "${RED_BOLD}🌊 Error: Malformed SHA256 checksum in the package data; refusing to install.${RESET}"
+        echo -e "${RED_BOLD}🌊 Expected 64 lowercase hexadecimal characters.${RESET}"
+        exit 1
     fi
 
     echo "🌊 Verifying SHA256..."
