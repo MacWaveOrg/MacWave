@@ -80,9 +80,10 @@ ILLEGAL_VERSIONS = ("not-a-version", "1.0.0-!!!", "..%2f..%2fetc%2fpasswd", "v1.
 
 ILLEGAL_FLAGS = ("--bogus", "-Z", "--no-such-flag", "-Q", "--definitely-not-a-flag")
 
-# 限速校验容差：token bucket 每次最多多放 8192 字节，采样间隔又只有 0.2s，
-# 瞬时值本就抖（实测 400K 上限下会瞬时冲到 618K/s），所以放宽到 x2；
-# 全程平均速度另有严格判定，超速仍然跑不掉。
+# 限速校验容差。瞬时值按「至少 1 秒的窗口」计算：单次 0.2s 采样差值会被 token
+# bucket 的突发放大（实测 400K 上限下曾读到 873K/s），那不是持续超速；窗口化以后
+# 突发被摊平，仍有 x2 余量。全程平均速度另有严格判定，超速仍然跑不掉。
+LIMIT_RATE_WINDOW_SECONDS = 1.0
 LIMIT_RATE_INSTANT_TOLERANCE = 2.0
 LIMIT_RATE_OVERALL_TOLERANCE = 1.25
 
@@ -1129,11 +1130,11 @@ def run_limit_rate_case(wave, plan, checks):
            must_contain=("Successfully installed",))
 
     if limit and samples:
-        steady = [rate for stamp, size, rate in samples if rate > 0]
-        peak = max(steady) if steady else 0
+        points = [(stamp, size) for stamp, size, rate in samples]
+        peak = peak_window_rate(points, LIMIT_RATE_WINDOW_SECONDS)
         checks.check(
-            f"--limit-rate {wave.limit_rate}: 瞬时未超速（峰值 {peak / 1024:.0f}K/s，"
-            f"容差 x{LIMIT_RATE_INSTANT_TOLERANCE}）",
+            f"--limit-rate {wave.limit_rate}: 瞬时未超速（{LIMIT_RATE_WINDOW_SECONDS:.0f}s 窗口峰值 "
+            f"{peak / 1024:.0f}K/s，容差 x{LIMIT_RATE_INSTANT_TOLERANCE}）",
             peak <= limit * LIMIT_RATE_INSTANT_TOLERANCE,
             f"峰值 {peak / 1024:.0f}K/s > {limit * LIMIT_RATE_INSTANT_TOLERANCE / 1024:.0f}K/s")
 
@@ -1159,6 +1160,25 @@ def parse_rate(text):
         return float(text)
     except (ValueError, IndexError):
         return None
+
+
+def peak_window_rate(points, window):
+    """samples 为 [(t, 已下载字节)]；返回所有 >= window 秒窗口里的最大平均速率。
+
+    用窗口而不是单次采样差值，是因为采样间隔本身会抖动：两个相邻采样点之间若
+    恰好跨过一次 token bucket 突发，裸差值会把 8KB 的瞬时尖峰算成几百 K/s。
+    """
+    if len(points) < 2:
+        return 0.0
+    best = 0.0
+    start = 0
+    for end in range(1, len(points)):
+        while start + 1 <= end and points[end][0] - points[start + 1][0] >= window:
+            start += 1
+        span = points[end][0] - points[start][0]
+        if span >= window:
+            best = max(best, (points[end][1] - points[start][1]) / span)
+    return best
 
 
 # -------------------- 阶段 2：固定命令覆盖 --------------------
