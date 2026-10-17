@@ -105,19 +105,27 @@ build_fallback_index() {
             mkdir -p "$SHARED_INDEX_DIR"
             local tree
             for tree in "$BASE_DIR"/deps/*/*; do
-                [[ -d "$tree" ]] && index_tree "$tree" "$SHARED_MAP"
+                if [[ -d "$tree" ]]; then
+                    index_tree "$tree" "$SHARED_MAP"
+                fi
             done
             for tree in "$BASE_DIR"/deps/*/*; do
-                [[ -d "$tree" ]] && list_tree_names "$tree" "$SHARED_TREE"
+                if [[ -d "$tree" ]]; then
+                    list_tree_names "$tree" "$SHARED_TREE"
+                fi
             done
         fi
     else
         local tree
         for tree in "$BASE_DIR"/deps/*/*; do
-            [[ -d "$tree" ]] && index_tree "$tree" "$MAP_FILE"
+            if [[ -d "$tree" ]]; then
+                index_tree "$tree" "$MAP_FILE"
+            fi
         done
         for tree in "$BASE_DIR"/deps/*/*; do
-            [[ -d "$tree" ]] && list_tree_names "$tree" "$TREE_FILE"
+            if [[ -d "$tree" ]]; then
+                list_tree_names "$tree" "$TREE_FILE"
+            fi
         done
     fi
 }
