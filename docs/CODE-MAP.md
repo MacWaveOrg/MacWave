@@ -51,6 +51,7 @@
 | `.templates/` | 运行时目录的样例，仅作参考 | 纯参考，不参与执行 |
 | `.Pseudocode/` | 早期伪代码 | **历史遗留，不要参考** |
 | `.codex/`、`.pycharm/`、`.vscode/` | 编辑器配置 | 与程序无关 |
+| `test/` | 负向测试样本的载荷（缺 sha256 / sha256 错误），由索引里的 `test_*` 包引用 | 改名或移动会立刻让对应包 404，见 `docs/CI-AND-PITFALLS.md` 第 13 条 |
 | `images/` | README 演示图 | 仅文档用 |
 | `PROJECT_CONTEXT.md` | 项目结构说明（偏实现细节） | 与本文有重叠，以本文为准 |
 | `README.md`、`README.zh-Hans.md` | 面向用户的说明 | 发版时更新版本号与包列表 |
