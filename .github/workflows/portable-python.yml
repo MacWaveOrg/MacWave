@@ -37,6 +37,8 @@ permissions:
 env:
   UPSTREAM_REPO: astral-sh/python-build-standalone
   CONFIGDATA_URL: https://raw.githubusercontent.com/MacWaveOrg/configdata/main
+  # configdata 里还没有声明时的兜底：让本工作流在 pythondata 第一次落地之前就能跑通
+  DEFAULT_PYTHON_VERSION: "3.14.13"
 
 jobs:
   resolve:
@@ -57,14 +59,15 @@ jobs:
         run: |
           set -euo pipefail
 
-          declared="$(curl -fsSL --max-time 30 "$CONFIGDATA_URL/pythondata/latest_python" \
+          # 声明可能在 configdata 里，也可能还没落地（第一次跑就是这种情况）
+          declared="$(curl -fsSL --max-time 30 "$CONFIGDATA_URL/pythondata/latest_python" 2>/dev/null \
             | sed -n 's/^version:[[:space:]]*"\(.*\)"/\1/p' | head -n 1)"
-          version="${REQUESTED:-$declared}"
+          version="${REQUESTED:-${declared:-$DEFAULT_PYTHON_VERSION}}"
           if [ -z "$version" ]; then
-            echo "::error::No version to bundle: neither an input nor a declaration in configdata."
+            echo "::error::No version to bundle."
             exit 1
           fi
-          echo "Bundling CPython $version"
+          echo "Bundling CPython $version (requested=${REQUESTED:-none}, declared=${declared:-none})"
 
           # 上游按日期打 tag，资产名形如
           #   cpython-<版本>+<tag>-<triple>-install_only.tar.gz
