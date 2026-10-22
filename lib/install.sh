@@ -667,13 +667,128 @@ if [[ "$NEED_SUDO" == "true" ]]; then
     sudo chown -R "$CURRENT_USER": "$BASE_DIR"
 fi
 
-PYTHON_BIN="$(command -v python3 || true)"
+# ==========================================
+# 便携 Python（自带解释器）
+# ==========================================
+#
+# 为什么自带：用户机器上的 python3 由 Homebrew / pyenv / 系统自带的版本轮流接管，
+# 升级一次就可能换掉解释器，而第三方依赖仍留在旧版本里 —— 3.0.5 之前真实发生过
+# 一次「系统 Python 从 3.14 升到 3.15，所有命令都报模块缺失」。
+#
+# 自带之后，「用哪个解释器」由 MacWave 自己决定，报错也就能稳定复现。
+# 数据来自 configdata 的 pythondata/latest_python，换版本不用改脚本。
+# 下载失败（网络问题）时回退到系统 python3，安装不会因此中断。
+
+portable_python_arch() {
+    case "$(uname -m)" in
+        arm64|aarch64) echo "arm64" ;;
+        x86_64|amd64)  echo "amd64" ;;
+        *)             echo "" ;;
+    esac
+}
+
+portable_python_binary() {
+    # 不同构建产物的目录布局不同，这里按常见位置逐个试探。
+    local root="$1" candidate
+    for candidate in \
+        "$root/install/bin/python3" \
+        "$root/bin/python3" \
+        "$root/python/install/bin/python3" \
+        "$root/python/bin/python3"
+    do
+        if [[ -x "$candidate" ]]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+    candidate="$(find "$root" -maxdepth 4 -type f \( -name 'python3' -o -name 'python3.*' \) -perm -u+x 2>/dev/null | head -n 1)"
+    if [[ -n "$candidate" ]]; then
+        echo "$candidate"
+        return 0
+    fi
+    return 1
+}
+
+ensure_portable_python() {
+    # 成功时把解释器路径打到 stdout，失败返回 1（调用方回退系统 python3）。
+    local base_dir="$1"
+    local arch="$2"
+    local data_url="$CONFIGDATA_URL/pythondata/latest_python"
+    local data_file version url sha target current archive actual py
+
+    [[ -n "$arch" ]] || return 1
+
+    data_file="$(mktemp -t macwave-pyver)"
+    if ! curl -fsSL --max-time 30 -o "$data_file" "$data_url" 2>/dev/null; then
+        rm -f "$data_file"
+        return 1
+    fi
+    version="$(sed -n 's/^version:[[:space:]]*"\(.*\)"/\1/p' "$data_file" | head -n 1)"
+    url="$(sed -n "s/^${arch}_url:[[:space:]]*\"\(.*\)\"/\1/p" "$data_file" | head -n 1)"
+    sha="$(sed -n "s/^${arch}_sha256:[[:space:]]*\"\(.*\)\"/\1/p" "$data_file" | head -n 1)"
+    rm -f "$data_file"
+
+    if [[ -z "$version" || -z "$url" || -z "$sha" ]]; then
+        return 1
+    fi
+
+    target="$base_dir/python/$version"
+    current="$base_dir/python/current"
+
+    if py="$(portable_python_binary "$target" 2>/dev/null)"; then
+        :
+    else
+        archive="$base_dir/downloads/tmp/portable-python-$version.tar.gz"
+        mkdir -p "$base_dir/downloads/tmp" 2>/dev/null || true
+        if ! curl -fsSL --max-time 900 -o "$archive" "$url" 2>/dev/null; then
+            rm -f "$archive"
+            return 1
+        fi
+        actual="$(shasum -a 256 "$archive" | awk '{print $1}')"
+        if [[ "$actual" != "$sha" ]]; then
+            rm -f "$archive"
+            echo -e "${RED_BOLD}🌊 Error: the bundled Python download failed its checksum check.${RESET}" >&2
+            return 1
+        fi
+        mkdir -p "$target" 2>/dev/null || true
+        if ! tar -xzf "$archive" -C "$target" 2>/dev/null; then
+            rm -f "$archive"
+            return 1
+        fi
+        rm -f "$archive"
+        py="$(portable_python_binary "$target" 2>/dev/null)" || return 1
+    fi
+
+    if ! "$py" -c 'import sys; sys.exit(0)' >/dev/null 2>&1; then
+        return 1
+    fi
+
+    mkdir -p "$base_dir/python" 2>/dev/null || true
+    ln -sfn "$version" "$current" 2>/dev/null || true
+    echo "$py"
+    return 0
+}
+
 VENV_DIR="$BASE_DIR/venv"
 VENV_PY=""
+PYTHON_BIN=""
+PYTHON_SOURCE=""
 
-if [[ -z "$PYTHON_BIN" ]]; then
-    echo -e "${RED_BOLD}🌊 Error: python3 is required but was not found in PATH.${RESET}"
-    exit 1
+BUNDLED_PY="$(ensure_portable_python "$BASE_DIR" "$(portable_python_arch)")" || BUNDLED_PY=""
+if [[ -n "$BUNDLED_PY" ]]; then
+    PYTHON_BIN="$BUNDLED_PY"
+    PYTHON_SOURCE="bundled"
+    echo "🌊 Using the bundled Python: ${BUNDLED_PY#"$BASE_DIR"/}"
+else
+    PYTHON_BIN="$(command -v python3 || true)"
+    PYTHON_SOURCE="system"
+    if [[ -z "$PYTHON_BIN" ]]; then
+        echo -e "${RED_BOLD}🌊 Error: no Python 3 interpreter is available.${RESET}"
+        echo -e "${RED_BOLD}🌊 The bundled Python could not be downloaded and python3 is not in PATH.${RESET}"
+        exit 1
+    fi
+    echo -e "${YELLOW}🌊 Warning: could not prepare the bundled Python; using $PYTHON_BIN instead.${RESET}"
+    echo -e "${YELLOW}🌊 Re-run the installer when the network is available to make this installation self-contained.${RESET}"
 fi
 
 mkdir -p "$VENV_DIR" 2>/dev/null || true
@@ -683,7 +798,7 @@ if "$PYTHON_BIN" -m venv "$VENV_DIR" >/dev/null 2>&1; then
     [[ -x "$VENV_PY" ]] || VENV_PY="$VENV_DIR/bin/python"
     echo "🌊 Private Python environment ready: ${VENV_DIR#"$BASE_DIR"/}"
 else
-    echo -e "${YELLOW}🌊 Warning: could not create a private virtualenv; falling back to the system interpreter.${RESET}"
+    echo -e "${YELLOW}🌊 Warning: could not create a private virtualenv; using the ${PYTHON_SOURCE} interpreter directly.${RESET}"
 fi
 
 if [[ -n "$VENV_PY" && -x "$VENV_PY" ]]; then
@@ -745,15 +860,25 @@ deps_ok() {
     "$1" -c 'import requests, packaging, rich' >/dev/null 2>&1
 }
 
+# 1. 私有 venv（正常情况下就是它；由自带 Python 创建）
 if deps_ok "$root_dir/venv/bin/python3"; then
     exec "$root_dir/venv/bin/python3" "$entry" "$@"
 fi
 if deps_ok "$root_dir/venv/bin/python"; then
     exec "$root_dir/venv/bin/python" "$entry" "$@"
 fi
+
+# 2. 自带的便携 Python（venv 坏掉时的第一选择；它自己也可以带依赖）
+if [ -x "$root_dir/python/current/bin/python3" ] && deps_ok "$root_dir/python/current/bin/python3"; then
+    exec "$root_dir/python/current/bin/python3" "$entry" "$@"
+fi
+
+# 3. 安装时记录的系统解释器
 if [ -n "${MACWAVE_PYTHON:-}" ] && deps_ok "$MACWAVE_PYTHON"; then
     exec "$MACWAVE_PYTHON" "$entry" "$@"
 fi
+
+# 4. 最后才用 PATH 上的 python3（wave.py 会明确指出缺哪个依赖）
 if command -v python3 >/dev/null 2>&1; then
     exec python3 "$entry" "$@"
 fi

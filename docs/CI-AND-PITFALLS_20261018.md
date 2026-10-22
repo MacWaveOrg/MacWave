@@ -376,3 +376,40 @@ $ wave linkquery jq
    `ModuleNotFoundError.name` 区分一下，否则错误信息会把排查带偏。
 3. **诊断与架构要一起做。** 只改提示，用户仍然要自己处理；只改架构，遇到别的原因
    （磁盘满、权限）时仍然没有线索。
+
+### 补充：为什么不干脆随包分发解释器（做法的由来）
+
+私有 venv 只解决了「依赖装在哪」，没解决「解释器是谁」。用户机器上的 `python3` 仍可能
+被 Homebrew、pyenv、系统自带轮流接管。要彻底消除这个变量，只能像 Homebrew 那样**自带解释器**。
+
+Homebrew 的做法值得对照（本机实测）：
+
+| 事实 | 值 |
+| --- | --- |
+| `brew` 本体 | Bash 脚本（`#!/bin/bash -pu`），不是 Ruby |
+| 自带 Ruby | `Library/Homebrew/vendor/portable-ruby/4.0.7_1`，约 37MB |
+| 指向方式 | `current` → `4.0.7_1`（版本化目录 + 符号链接，便于升级/回滚） |
+| macOS 上的选择 | **强制用自带**：`system_ruby_supported()` 在 macOS 上恒为假 |
+| Linux 上的选择 | 系统 ruby 版本够用就用系统的，否则才下载 |
+
+关键细节：macOS 自带的 `/usr/bin/ruby` 是 **2.6.10**，但 Homebrew 在 macOS 上根本不看它。
+也就是说「系统里有没有可用版本」并不是决定因素，**可重复性**才是 —— 只有固定的那份解释器
+才能保证报错可复现。
+
+MacWave 3.0.6 采用同样的取舍（macOS 式：默认自带）：
+
+```
+BASE_DIR/
+  python/<版本>/        自带的 CPython
+  python/current ->     <版本>
+  venv/                 用它创建的虚拟环境，三个依赖装在这里
+  lib/wave              启动器：venv → python/current → 记录的解析器 → PATH
+```
+
+- 数据在 `configdata/pythondata/latest_python`（version + 每架构 url/sha256），换版本不改代码
+- 下载后必须通过 sha256 校验才解包；任一环节失败就回退系统 `python3` 并给明确警告，
+  安装不会中断
+- 打包脚本：`scripts/build_portable_python.sh`（CI 里跑，产出带 sha256 的 tar.gz）
+
+**已验证（离线）**：正常下载+校验+解包、幂等复用、校验和不匹配拒绝、数据缺失拒绝、
+URL 为空拒绝，以及启动器四层优先级的实际选择。
