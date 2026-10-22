@@ -280,6 +280,15 @@ if bash -s -- "$REPO_DIR" << 'SHEOF'
 set -u
 repo="$1"
 
+# sudo 无法执行 shell 函数。write_launcher 一旦被 run_cmd 带上去，
+# 只要安装目录不在 $HOME 下就会变成 "sudo: write_launcher: command not found"，
+# 而 CI 里恰好就是那种布局 —— 这条断言比等 CI 跑十分钟便宜得多。
+if grep -qE '^[[:space:]]*run_cmd write_launcher' "$repo/lib/install.sh" "$repo/lib/selfupdate.sh"; then
+    echo "  ❌ write_launcher 被 run_cmd 调用（sudo 无法执行 shell 函数）"
+    exit 1
+fi
+echo "  ✅ write_launcher 直接调用，没有经过 run_cmd"
+
 # install.sh 与 selfupdate.sh 各带一份同名实现（谁都不能依赖对方已下载），
 # 一旦漂移就会出现「装的时候行、自更新以后不行」。这里逐字比对。
 extract() {

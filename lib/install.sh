@@ -915,20 +915,23 @@ echo "🌊 Reinstall MacWave with lib/install.sh." >&2
 exit 1
 LAUNCHER
 
-    local escaped
+    local escaped rendered
     escaped="$(printf '%s' "$recorded" | sed 's/[\\"`$]/\\&/g')"
 
     # 内容先在普通权限下生成，只有落地那几步才可能需要提权。
-    # 不能写成 run_cmd write_launcher ...：sudo 无法执行 shell 函数，
+    # 调用本函数时**不能**写 run_cmd write_launcher：sudo 无法执行 shell 函数，
     # 会遇到 "sudo: write_launcher: command not found"。
-    sed "s|#__MACWAVE_PYTHON__|MACWAVE_PYTHON=\"$escaped\"|" "$tmp" > "$target.pending"
+    rendered="$(mktemp -t macwave-launcher-out)"
+    sed "s|#__MACWAVE_PYTHON__|MACWAVE_PYTHON=\"$escaped\"|" "$tmp" > "$rendered"
     rm -f "$tmp"
+
     run_cmd mkdir -p "$(dirname "$target")"
-    run_cmd mv -f "$target.pending" "$target"
-    run_cmd chmod +x "$target"
+    run_cmd cp "$rendered" "$target"
+    run_cmd chmod 755 "$target"
+    rm -f "$rendered"
 }
 
-run_cmd write_launcher "$BASE_DIR" "$PYTHON_BIN"
+write_launcher "$BASE_DIR" "$PYTHON_BIN"
 
 # ==========================================
 # 把所有权交还给用户（下载后再次确保）
