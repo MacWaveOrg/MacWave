@@ -60,8 +60,10 @@ jobs:
           set -euo pipefail
 
           # 声明可能在 configdata 里，也可能还没落地（第一次跑就是这种情况）
+          # set -o pipefail 下，curl 的 404 会让整个赋值失败并直接退出脚本 ——
+          # 那样下面的兜底就永远走不到。这里显式吞掉失败。
           declared="$(curl -fsSL --max-time 30 "$CONFIGDATA_URL/pythondata/latest_python" 2>/dev/null \
-            | sed -n 's/^version:[[:space:]]*"\(.*\)"/\1/p' | head -n 1)"
+            | sed -n 's/^version:[[:space:]]*"\(.*\)"/\1/p' | head -n 1 || true)"
           version="${REQUESTED:-${declared:-$DEFAULT_PYTHON_VERSION}}"
           if [ -z "$version" ]; then
             echo "::error::No version to bundle."
@@ -124,7 +126,7 @@ jobs:
           amd64_sha="$(verify "$amd64_url" amd64)"
 
           # 与 configdata 现状比较：没变就不开 PR，免得每月刷一个空提交
-          current="$(curl -fsSL --max-time 30 "$CONFIGDATA_URL/pythondata/latest_python")"
+          current="$(curl -fsSL --max-time 30 "$CONFIGDATA_URL/pythondata/latest_python" 2>/dev/null || true)"
           changed=true
           if printf '%s\n' "$current" | grep -qxF "version: \"$version\"" \
              && printf '%s\n' "$current" | grep -qxF "arm64_url: \"$arm64_url\"" \
