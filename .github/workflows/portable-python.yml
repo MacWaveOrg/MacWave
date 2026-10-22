@@ -38,7 +38,7 @@ env:
   UPSTREAM_REPO: astral-sh/python-build-standalone
   CONFIGDATA_URL: https://raw.githubusercontent.com/MacWaveOrg/configdata/main
   # configdata 里还没有声明时的兜底：让本工作流在 pythondata 第一次落地之前就能跑通
-  DEFAULT_PYTHON_VERSION: "3.14.13"
+  DEFAULT_PYTHON_VERSION: "3.14.9"
 
 jobs:
   resolve:
@@ -80,9 +80,12 @@ jobs:
           resolve() {
             # resolve <triple>：打印匹配资产的下载地址，找不到返回 1
             local triple="$1"
-            local tag name
+            local tag release_id name
             for tag in $tags; do
-              name="$(gh api "repos/$UPSTREAM_REPO/releases/tags/$tag/assets?per_page=100" \
+              # /releases/tags/{tag}/assets 不存在（404）；资产要按 release id 列。
+              release_id="$(gh api "repos/$UPSTREAM_REPO/releases/tags/$tag" --jq '.id' 2>/dev/null)" || continue
+              [ -n "$release_id" ] || continue
+              name="$(gh api "repos/$UPSTREAM_REPO/releases/$release_id/assets?per_page=100" \
                 --paginate --jq '.[].name' 2>/dev/null \
                 | grep -F "cpython-$version+" \
                 | grep -F -- "-$triple-install_only.tar.gz" \

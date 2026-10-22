@@ -16,7 +16,7 @@
 # 用法：
 #   bash scripts/build_portable_python.sh                 # 打包本机架构
 #   bash scripts/build_portable_python.sh --arch arm64    # 指定架构
-#   bash scripts/build_portable_python.sh --version 3.14.13 --output dist
+#   bash scripts/build_portable_python.sh --version 3.14.9 --output dist
 #
 # 产物：
 #   dist/python-<version>-<arch>.tar.gz
@@ -36,7 +36,7 @@ YELLOW='\033[33m'
 RESET='\033[0m'
 
 UPSTREAM_REPO="astral-sh/python-build-standalone"
-PY_VERSION="3.14.13"
+PY_VERSION="3.14.9"
 ARCH=""
 OUTPUT_DIR="dist"
 
