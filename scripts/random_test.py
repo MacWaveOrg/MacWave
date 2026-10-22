@@ -16,7 +16,9 @@
 #       所以有可能留下半改写的 Mach-O——这正是要观察的。
 #   5. 固定命令覆盖：list / search / info / selfupdate / link / linkquery / unlink 各 5 次。
 #   6. 5 个非法命令；裸 -h/--help/-V/--version 以及它们带非法参数的形式。
-#   7. 任何命令都可能有 10% 概率被插入非法参数。
+#   7. 任何命令都可能有 10% 概率被插入非法参数；install 与 selfupdate 另有 25% 概率
+#      带上 --max-time，数值形式（纯数字 / s / min / min+s / h / 小数 / ms）等概率抽取，
+#      `--max-time=值` 与 `--max-time 值` 两种写法各占一半。各形式的接受与拒绝由阶段 6 兜底。
 #   8. 等效参数的长/短形式随机（-h/--help、-V/--version、-a/--all、-C/--continue、-v/--verbose）。
 #   9. 随机池排除 test_* 测试夹具；单个产物体积上限 200MB。
 #
@@ -79,6 +81,13 @@ NONEXISTENT_VERSIONS = ("999.999.999", "0.0.0-does-not-exist", "12345.6789.0")
 ILLEGAL_VERSIONS = ("not-a-version", "1.0.0-!!!", "..%2f..%2fetc%2fpasswd", "v1.2.3@beta")
 
 ILLEGAL_FLAGS = ("--bogus", "-Z", "--no-such-flag", "-Q", "--definitely-not-a-flag")
+
+# --max-time：安装与自更新都支持。25% 的命令会带上它，数值的每种形式等概率抽。
+# 各形式折算后都是 60 秒上下，既覆盖「纯数字 / s / min / min+s 组合 / h / 小数 / ms」
+# 每一种写法，又不会小到让真实下载必然超时（250ms 那种虽然合法，但装上必失败）。
+MAX_TIME_PROBABILITY = 0.25
+MAX_TIME_FORMS = ("90", "90s", "2min", "1min30s", "1h", "1.5min", "90000ms")
+MAX_TIME_ILLEGAL_FORMS = ("abc", "1x", "-5")
 
 # 限速校验容差。瞬时值按「至少 1 秒的窗口」计算：单次 0.2s 采样差值会被 token
 # bucket 的突发放大（实测 400K 上限下曾读到 873K/s），那不是持续超速；窗口化以后
@@ -827,6 +836,21 @@ def maybe_illegal_arg(rng):
     return rng.choice(ILLEGAL_FLAGS) if rng.random() < ILLEGAL_ARG_PROBABILITY else None
 
 
+def maybe_max_time(rng):
+    """按 MAX_TIME_PROBABILITY 给命令追加 --max-time，返回参数片段（可能是空列表）。
+
+    数值形式与写法都随机：`--max-time=1min` 与 `--max-time 1min` 两种都要能用，
+    数值则从 MAX_TIME_FORMS 里等概率抽 —— 纯数字、s、min、min+s 组合、h、小数、ms。
+    这里只负责「合法值」；非法值由 phase_max_time_validation 单独覆盖。
+    """
+    if rng.random() >= MAX_TIME_PROBABILITY:
+        return []
+    value = rng.choice(MAX_TIME_FORMS)
+    if rng.random() < 0.5:
+        return [f"--max-time={value}"]
+    return ["--max-time", value]
+
+
 def uninstall_token(plan):
     """卸载要用 bin_name：安装目录是 bin/<bin_name>@<版本>，
     包名和 bin_name 不一定相同（例如 choma -> ChOma）。"""
@@ -846,6 +870,9 @@ def phase_install_cycle(wave, rng, plans, checks):
             argv += ["--skip-ssl"]
         elif plan.mode == "resume":
             argv += [random_flag(rng, "-C", "--continue")]
+
+        max_time_args = maybe_max_time(rng)
+        argv += max_time_args
 
         illegal = maybe_illegal_arg(rng)
         if illegal:
@@ -879,7 +906,7 @@ def phase_install_cycle(wave, rng, plans, checks):
         elif rng.random() < TRANSFER_INTERRUPT_PROBABILITY:
             ok = run_transfer_interrupt_case(wave, plan, checks)
         else:
-            ok = run_plain_install(wave, plan, checks)
+            ok = run_plain_install(wave, plan, checks, max_time_args)
 
         if ok:
             installed.append(plan)
@@ -887,9 +914,9 @@ def phase_install_cycle(wave, rng, plans, checks):
     return installed
 
 
-def run_plain_install(wave, plan, checks):
-    label = f"install {plan.token}"
-    result = wave.run(["install", plan.token])
+def run_plain_install(wave, plan, checks, extra_args=()):
+    label = " ".join(["install", plan.token, *extra_args])
+    result = wave.run(["install", plan.token, *extra_args])
     if is_rate_limited(result):
         checks.skip(label, "GitHub API 侧失败（限流/403），跳过断言")
         return False
@@ -1275,6 +1302,9 @@ def phase_command_battery(wave, rng, checks):
                 else:
                     target = rng.choice(names)
                     argv.append(f"{target}{rng.choice(('', '@latest'))}")
+            elif cmd == "selfupdate":
+                # selfupdate 也接受 --max-time，取值来源与安装一致
+                argv += maybe_max_time(rng)
             illegal = maybe_illegal_arg(rng)
             if illegal:
                 argv.append(illegal)
@@ -1358,6 +1388,33 @@ def phase_illegal_and_help(wave, rng, checks):
         label = f"wave {flag} {illegal}"
         result = wave.run([flag, illegal], timeout=120)
         expect(checks, result, 0, label, must_contain=(needle,))
+
+
+def phase_max_time_forms(wave, checks):
+    """--max-time 的每一种数值写法都必须被接受，非法写法必须干净拒绝。
+
+    这里刻意用「缺包名」的 install 调用：它在解析完旗标、任何网络请求之前就退出，
+    所以既能证明取值被接受（报的是包名问题，而不是取值问题），又完全不联网。
+    带空格那种写法（`--max-time 1min`）在这种调用里会被当成包名，所以交给阶段 1
+    的随机用例去证 —— 那是真的装成功，比这里更有说服力。
+    """
+    banner("阶段 6：--max-time 的写法覆盖（离线）")
+    for form in MAX_TIME_FORMS:
+        label = f"wave install --max-time={form}（缺包名）"
+        result = wave.run(["install", f"--max-time={form}"], timeout=60)
+        expect(checks, result, 1, label, must_contain=("Invalid package name",),
+               must_not_contain=("cannot parse", "Traceback"))
+
+    for form in MAX_TIME_ILLEGAL_FORMS:
+        label = f"wave install jq --max-time={form}（非法取值）"
+        result = wave.run(["install", "jq", f"--max-time={form}"], timeout=60)
+        expect(checks, result, 1, label, must_contain=("cannot parse --max-time",),
+               must_not_contain=("Traceback",))
+
+    label = "wave install jq --max-time=（空值）"
+    result = wave.run(["install", "jq", "--max-time="], timeout=60)
+    expect(checks, result, 1, label, must_contain=("--max-time needs a value",),
+           must_not_contain=("Traceback",))
 
 
 # -------------------- pty 执行 --------------------
@@ -1508,6 +1565,7 @@ def main():
         phase_uninstall_cycle(wave, rng, installed, checks)
         phase_global_invariants(wave, checks)
         phase_illegal_and_help(wave, rng, checks)
+        phase_max_time_forms(wave, checks)
         print_summary(seed, layout, checks)
     except TimeBudgetExhausted:
         # 预算用尽是"这轮没跑完"，不是"回归失败"：标注清楚后照常汇总
