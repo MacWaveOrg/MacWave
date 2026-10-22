@@ -150,6 +150,7 @@ Global Flags (can be used with any command):
       --proxy string      Specify an HTTP/HTTPS proxy (e.g., http://127.0.0.1:8080)
       --skip-ssl          Skip SSL certificate verification (insecure)
       --limit-rate string Limit download speed (e.g., 200K, 1M, 5M)
+      --max-time string   Timeout for each request (e.g., 40s, 1min, 1min20s, 2h)
       --ver string        Install a specific version of the package
 
 Special Flags:

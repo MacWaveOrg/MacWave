@@ -109,6 +109,43 @@ def _parse_rate_limit(rate_str):
         return None
 
 
+DEFAULT_TIMEOUT = 30
+
+def _parse_duration(text):
+    # 把 curl 风格的时长解析成秒数：40 / 40s / 1min / 1min20s / 2h / 1m30s / 250ms。
+    # 无单位时按秒处理（与 curl 一致）。返回 None 表示格式不合法。
+    if text is None:
+        return None
+    raw = text.strip().lower()
+    if not raw:
+        return None
+
+    # 单位必须**长优先**：`1min` 若先匹配到单字母 `m`，剩下的 `in` 就无解了。
+    pattern = re.compile(r"(\d+(?:\.\d+)?)(hrs|hr|h|mins|min|ms|secs|sec|s|m)?")
+    units = {
+        None: 1, "s": 1, "sec": 1, "secs": 1,
+        "m": 60, "min": 60, "mins": 60,
+        "h": 3600, "hr": 3600, "hrs": 3600,
+        "ms": 0.001,
+    }
+
+    total = 0.0
+    position = 0
+    matched = False
+    while position < len(raw):
+        match = pattern.match(raw, position)
+        if not match or match.end() == position:
+            return None
+        value, unit = match.group(1), match.group(2)
+        total += float(value) * units.get(unit, 1)
+        position = match.end()
+        matched = True
+
+    if not matched or total <= 0:
+        return None
+    return total
+
+
 def _check_disk_space(path: Path, required_bytes: int = 10 * 1024 * 1024) -> bool:
     total, used, free = shutil.disk_usage(path)
     if free < required_bytes:
@@ -122,7 +159,7 @@ def _check_disk_space(path: Path, required_bytes: int = 10 * 1024 * 1024) -> boo
 ALLOWED_FLAGS = {
     "-v", "-C",
     "--verbose", "--skip-ssl", "--continue",
-    "--limit-rate", "--proxy", "--unlink", "--ver"
+    "--limit-rate", "--proxy", "--unlink", "--ver", "--max-time"
 }
 
 def parse_flags(input_string):
@@ -201,6 +238,7 @@ def handle_download_args(input_string):
         "resume": False,
         "limit_rate": None,
         "proxy": None,
+        "timeout": DEFAULT_TIMEOUT,
     }
 
     # 1. --skip-ssl 安全询问
@@ -228,6 +266,19 @@ def handle_download_args(input_string):
         rate_str = flag_value(input_string, "--limit-rate")
         if rate_str:
             config["limit_rate"] = _parse_rate_limit(rate_str)
+
+    # 4.1 超时（--max-time）：请求与读取两个阶段都用它，0 表示不设限
+    if "--max-time" in flags:
+        raw_timeout = flag_value(input_string, "--max-time")
+        if raw_timeout is None or raw_timeout == "":
+            print(f"{RED_BOLD}🌊 Error: --max-time needs a value, e.g. --max-time=1min.{RESET}")
+            sys.exit(1)
+        parsed_timeout = _parse_duration(raw_timeout)
+        if parsed_timeout is None:
+            print(f"{RED_BOLD}🌊 Error: cannot parse --max-time value '{raw_timeout}'.{RESET}")
+            print(f"{RED_BOLD}🌊 Use a number of seconds or a suffix like 40s, 1min, 1min20s, 2h.{RESET}")
+            sys.exit(1)
+        config["timeout"] = parsed_timeout
 
     # 5. 代理
     if "--proxy" in flags:
@@ -274,8 +325,9 @@ def download_file(url, temp_path, config, input_string, display_name):
     download_success = False
     while not download_success:
         try:
-            # 30 秒无响应即超时，交给下面的重试询问处理，避免永久挂起
-            response = requests.get(url, timeout=30, **request_kwargs)
+            # 超时同时约束「连接」与「两次读取之间」：只给一个数字时 requests 会让
+            # 两者都取该值，因此 --max-time 对「连上了但不动」的下载同样有效。
+            response = requests.get(url, timeout=config["timeout"], **request_kwargs)
 
             if response.status_code == 416:
                 download_success = True
@@ -389,7 +441,7 @@ def fetch_max_version(package_name, arch):
     # 数据在 MacWaveOrg/infosource 仓库的 main 分支
     api_url = f"https://api.github.com/repos/MacWaveOrg/infosource/contents/pkg/pkginfo_{arch}/{package_name}?ref=main"
     try:
-        response = requests.get(api_url, timeout=30, headers=github_api_headers(api_url))
+        response = requests.get(api_url, timeout=DEFAULT_TIMEOUT, headers=github_api_headers(api_url))
         if response.status_code != 200:
             print(f"{RED_BOLD}🌊 Error: Cannot fetch package list.{RESET}")
             print(f"{RED_BOLD}🌊 URL: {api_url}{RESET}")
@@ -465,7 +517,7 @@ def handle_install(input_string):
     # 4. 获取 bin_name（从 @common 文件）
     common_url = f"https://raw.githubusercontent.com/MacWaveOrg/infosource/main/pkg/pkginfo_{ARCH}/{ParsePkgName}/_{ParsePkgName}@common"
     try:
-        common_resp = requests.get(common_url, timeout=30)
+        common_resp = requests.get(common_url, timeout=config["timeout"])
         if common_resp.status_code != 200:
             print(f"{RED_BOLD}🌊 Error: Cannot fetch @common file.{RESET}")
             sys.exit(1)
@@ -485,7 +537,7 @@ def handle_install(input_string):
     # 5. 获取 URL 和 SHA256（deps 也写在该版本文件里）
     pkg_version_url = f"https://raw.githubusercontent.com/MacWaveOrg/infosource/main/pkg/pkginfo_{ARCH}/{ParsePkgName}/_{ParsePkgName}@{ParsePkgVersion}"
     try:
-        resp = requests.get(pkg_version_url, timeout=30)
+        resp = requests.get(pkg_version_url, timeout=config["timeout"])
         if resp.status_code != 200:
             if config["verbose"]:
                 print(resp.text)

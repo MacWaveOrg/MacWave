@@ -104,17 +104,33 @@ def get_deps(fields):
 
 # -------------------- 远程数据 --------------------
 
-def fetch_text(url, attempts=3):
+def request_timeout(input_string):
+    # 超时从**原始命令行**里取，与软件包安装侧用同一套规则。
+    # 这里不接收调用方解析好的对象，保证「命令怎么写的，就怎么生效」，
+    # 也避免两处解析逻辑漂移。
+    from pkginstaller import _parse_duration, flag_value
+
+    raw = flag_value(input_string, "--max-time") if input_string else None
+    if raw is None or raw == "":
+        return 30
+    parsed = _parse_duration(raw)
+    return parsed if parsed else 30
+
+
+def fetch_text(url, attempts=3, timeout=None):
 
     # 返回 (状态码, 文本)。网络异常与 5xx 会重试（GitHub raw 会间歇性地
     # 抽风，用户网络也可能抖动），404 与 200 直接返回，不浪费时间重试。
     # 重试用尽后：网络异常记状态码 0，服务端错误记最后一次的状态码。
+    #
+    # timeout 由调用方从 `--max-time` 传下来；缺省沿用 30 秒。
 
     last_status = 0
+    request_timeout = timeout if timeout else 30
 
     for _ in range(attempts):
         try:
-            response = requests.get(url, timeout=30)
+            response = requests.get(url, timeout=request_timeout)
         except Exception:
             last_status = 0
             continue
@@ -361,7 +377,7 @@ def ensure_dependency(dep_ref, arch, config, input_string, depender, visited=Non
         child_refs = local_dep_refs(target_dir)
         if child_refs is None:
             own_version_url = dep_version_url(dep_name, dep_version, arch)
-            status, version_text = fetch_text(own_version_url)
+            status, version_text = fetch_text(own_version_url, timeout=request_timeout(input_string))
             if status == 404:
                 print(f"{YELLOW}🌊 Warning: {dep_name}@{dep_version} has no version file, "
                       f"skipping its own dependencies.{RESET}")
@@ -376,7 +392,7 @@ def ensure_dependency(dep_ref, arch, config, input_string, depender, visited=Non
 
     # 2. 拉取 @common，拿依赖的真实名字（dep_name）
     common_url = dep_common_url(dep_name, arch)
-    status, common_text = fetch_text(common_url)
+    status, common_text = fetch_text(common_url, timeout=request_timeout(input_string))
     if status == 404:
         report_not_found(dep_ref)
     elif status != 200:
@@ -387,7 +403,7 @@ def ensure_dependency(dep_ref, arch, config, input_string, depender, visited=Non
 
     # 3. 拉取版本文件，拿下载地址、校验值，以及它自己的 deps
     version_url = dep_version_url(dep_name, dep_version, arch)
-    status, version_text = fetch_text(version_url)
+    status, version_text = fetch_text(version_url, timeout=request_timeout(input_string))
     if status == 404:
         report_not_found(dep_ref)
     elif status != 200:

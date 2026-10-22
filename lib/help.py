@@ -60,6 +60,7 @@ def print_custom_help():
     print(f"  {CYAN}--proxy{RESET} {YELLOW}string{RESET}        Specify an HTTP/HTTPS proxy (e.g., http://127.0.0.1:8080)")
     print(f"  {CYAN}--skip-ssl{RESET}            Skip SSL certificate verification (insecure)")
     print(f"  {CYAN}--limit-rate{RESET} {YELLOW}string{RESET}   Limit download speed (e.g., 200K, 1M, 5M)")
+    print(f"  {CYAN}--max-time{RESET} {YELLOW}string{RESET}     Timeout for each request (e.g., 40s, 1min, 1min20s, 2h)")
     print(f"  {CYAN}--ver{RESET} {YELLOW}string{RESET}          Install a specific version (install only; --ver=1.0 works too)")
     print()
     print(f"{PURPLE}Special Flags:{RESET}")
@@ -90,10 +91,12 @@ COMMAND_HELP = {
             ("--proxy <string>", "HTTP/HTTPS proxy (e.g. http://127.0.0.1:8080)"),
             ("--skip-ssl", "Skip SSL certificate verification (insecure)"),
             ("--limit-rate <string>", "Limit download speed (e.g. 200K, 1M, 5M)"),
+            ("--max-time <string>", "Timeout for each request (40s, 1min, 1min20s, 2h; bare numbers are seconds)"),
             ("--unlink", "Do not create or re-point the unversioned link"),
             ("-v, --verbose", "Enable verbose output"),
         ],
-        "examples": ["wave install jq", "wave install ffmpeg@6.1", "wave install jq --limit-rate 1M"],
+        "examples": ["wave install jq", "wave install ffmpeg@6.1", "wave install jq --limit-rate 1M",
+                     "wave install jq --max-time=1min"],
     },
     "uninstall": {
         "usage": "wave uninstall <package>[@<version>] [flags]",
