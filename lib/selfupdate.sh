@@ -201,23 +201,33 @@ fetch_to_file() {
     local runner="${4:-direct}"
     local attempts="${5:-$FETCH_ATTEMPTS}"
     local partial="$destination.macwave-part"
-    local attempt status
+    local attempt status code
 
     "$runner" mkdir -p "$(dirname "$destination")"
 
     for ((attempt = 1; attempt <= attempts; attempt++)); do
         status=0
-        "$runner" curl -fsSL --max-time "$timeout" -o "$partial" "$url" || status=$?
+        # 同时取 HTTP 状态码：curl 的退出码并不总能反映「404」。
+        # raw.githubusercontent 在 404 时常常报 (56) 收数据失败而不是 (22)，
+        # 只看退出码会把「这个文件不存在」当成网络抖动重试三次。
+        code="$("$runner" curl -fsSL --max-time "$timeout" -w '%{http_code}' \
+            -o "$partial" "$url" 2>/dev/null)" || status=$?
         if [[ "$status" -eq 0 ]]; then
             "$runner" mv -f "$partial" "$destination"
             return 0
         fi
         "$runner" rm -f "$partial" 2>/dev/null || true
 
+        case "$code" in
+            4??)
+                # 4xx 是「请求本身不对」，重试不会变好：404 就是没有这个文件。
+                return 1
+                ;;
+        esac
+
         case "$status" in
             22|23|1|2|3)
-                # 22=HTTP 4xx/5xx（404 是「没有这个文件」）、23=写盘失败、1~3=用法错误。
-                # 这些重试没有意义，直接放弃。
+                # 22=HTTP 错误、23=写盘失败、1~3=用法错误。同样不值得重试。
                 return 1
                 ;;
         esac
@@ -728,9 +738,15 @@ LAUNCHER
 
     local escaped
     escaped="$(printf '%s' "$recorded" | sed 's/[\\"`$]/\\&/g')"
-    sed "s|#__MACWAVE_PYTHON__|MACWAVE_PYTHON=\"$escaped\"|" "$tmp" > "$target"
+
+    # 内容先在普通权限下生成，只有落地那几步才可能需要提权。
+    # 不能写成 run_cmd write_launcher ...：sudo 无法执行 shell 函数，
+    # 会遇到 "sudo: write_launcher: command not found"。
+    sed "s|#__MACWAVE_PYTHON__|MACWAVE_PYTHON=\"$escaped\"|" "$tmp" > "$target.pending"
     rm -f "$tmp"
-    chmod +x "$target"
+    run_cmd mkdir -p "$(dirname "$target")"
+    run_cmd mv -f "$target.pending" "$target"
+    run_cmd chmod +x "$target"
 }
 
 if [[ -n "$PYTHON_BIN" ]]; then

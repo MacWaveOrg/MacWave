@@ -917,9 +917,15 @@ LAUNCHER
 
     local escaped
     escaped="$(printf '%s' "$recorded" | sed 's/[\\"`$]/\\&/g')"
-    sed "s|#__MACWAVE_PYTHON__|MACWAVE_PYTHON=\"$escaped\"|" "$tmp" > "$target"
+
+    # 内容先在普通权限下生成，只有落地那几步才可能需要提权。
+    # 不能写成 run_cmd write_launcher ...：sudo 无法执行 shell 函数，
+    # 会遇到 "sudo: write_launcher: command not found"。
+    sed "s|#__MACWAVE_PYTHON__|MACWAVE_PYTHON=\"$escaped\"|" "$tmp" > "$target.pending"
     rm -f "$tmp"
-    chmod +x "$target"
+    run_cmd mkdir -p "$(dirname "$target")"
+    run_cmd mv -f "$target.pending" "$target"
+    run_cmd chmod +x "$target"
 }
 
 run_cmd write_launcher "$BASE_DIR" "$PYTHON_BIN"
