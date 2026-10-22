@@ -3,7 +3,7 @@
 面向 macOS / Linux 软件开发者的包管理器，主要托管 iOS/iPadOS 相关软件包。
 技术栈：Python + Shell。
 
-- `main` 与版本分支（当前的 `3.0`）：程序代码，两者保持同步
+- `main` 与版本分支（当前的 `3.1`）：程序代码，两者保持同步
 - `MacWaveOrg/configdata` 仓库的 `main` 分支：版本数据（`versiondata/latest_version` 给 `wave selfupdate` 判断有没有新版本，`versiondata/files_info` 是要更新的文件清单）
 - `MacWaveOrg/infosource` 仓库的 `main` 分支：纯数据（包与依赖的元数据、下载地址、校验值），依赖数据在 `deps/` 目录下
 
@@ -33,7 +33,7 @@ README.md     用户文档
 | `configpaths.py` | **配置目录解析**（`find_config_dir` / `load_base_dir` / `CONFIG_FILE` / `VERSION_FILE`）：系统级 `/opt/macwave_config` 优先，其次用户级 `~/.config/macwave_config`；系统级配置损坏或缺 `base_dir` 时也回落用户级。其余模块都从这里取配置，不再各自写死路径 |
 | `configerror.py` | 启动前的环境自检：只要两处配置目录里有一处装了 MacWave 就放行；都没装且在 git 仓库里时，报错并提示用 `lib/install.sh` 正式安装 |
 | `help.py` | 帮助与版本文本：`print_custom_help`（`-h` / `--help` 的用法，命令与旗标列表与 README 的 Command Reference 对齐）、`print_version`、`print_error_help`（未知命令时先报错再打帮助）；另有 `COMMAND_HELP` 表与 `print_command_help`（`wave <命令> --help` 的子命令用法，旗标只列该 handler 白名单里真正接受的，不承诺做不到的事） |
-| `install.sh` | 官方安装脚本：选安装目录、`sudo` 提权、建运行时目录（`bin` / `links` / `deps` / `pkg` / `surfboard` / `lib` / `downloads/tmp`）、写 `config.json` / `VERSION.json`（**系统目录→`/opt/macwave_config`，用户目录→`~/.config/macwave_config`**）、**用户级安装时把 2.5 之前的旧系统级配置 `/opt/macwave_config` 迁走**（否则它会因系统级优先而盖住新配置）、**按 configdata 的 `versiondata/files_info` 清单拉取全部程序文件**（与 `selfupdate.sh` 共用同一份清单，解析逻辑也相同）、安装 Python 依赖（requests / packaging / rich）、把 `bin/` + `links/` + `lib/` 写入 PATH（升级时替换旧版只含 `bin`/`lib` 的行）、清理旧版平铺 `bin/` 文件、检查 Xcode 命令行工具（`otool` / `install_name_tool` / `codesign`）、`set -eE` 加 ERR 陷阱（中途失败时打印「安装未完成」、已下载内容可能残留的路径与重跑指引，**刻意不自动删除**）、许可协议确认**排在「安装完成」之前**（直接回车视为同意；拒绝时把安装树、配置目录与 rc 里的 PATH 一起回滚，回滚不写死 sudo）、支持批量/脚本化安装（`-S/--silent` 全程免交互，未给 `--dir-option` 时按默认的选项 1；`--dir-option=N` 免菜单直接选定，自定义项可写 `--dir-option=N=DIR`；`-h/--help`；`--silent` 需要免密 sudo，否则明确报错退出）。目录菜单按架构分叉（Intel 多一个 `/usr/local/macwave`），自定义项编号也随之变化。`MACWAVE_VERSION` 与代码来源分支都从 configdata 的 `versiondata/latest_version`（`version` / `branch`）读取，不写死在脚本里，保证「下载的代码」与「写进 VERSION.json 的版本号」对应同一版本 |
+| `install.sh` | 官方安装脚本：选安装目录、`sudo` 提权、建运行时目录（`bin` / `links` / `deps` / `pkg` / `surfboard` / `lib` / `downloads/tmp`，3.1 起还有 `python` 与 `venv`）、写 `config.json` / `VERSION.json`（**系统目录→`/opt/macwave_config`，用户目录→`~/.config/macwave_config`**）、**用户级安装时把 2.5 之前的旧系统级配置 `/opt/macwave_config` 迁走**（否则它会因系统级优先而盖住新配置）、**按 configdata 的 `versiondata/files_info` 清单拉取全部程序文件**（与 `selfupdate.sh` 共用同一份清单，解析逻辑也相同）、**自带便携 Python**（3.1 起：读 `configdata/pythondata/latest_python` 下载并校验 sha256，解到 `python/<版本>/`，`current` 指向它），用它建 `venv/` 并在其中安装依赖（requests / packaging / rich）；下载失败则回退系统 `python3` 并提示、把 `bin/` + `links/` + `lib/` 写入 PATH（升级时替换旧版只含 `bin`/`lib` 的行）、清理旧版平铺 `bin/` 文件、检查 Xcode 命令行工具（`otool` / `install_name_tool` / `codesign`）、`set -eE` 加 ERR 陷阱（中途失败时打印「安装未完成」、已下载内容可能残留的路径与重跑指引，**刻意不自动删除**）、许可协议确认**排在「安装完成」之前**（直接回车视为同意；拒绝时把安装树、配置目录与 rc 里的 PATH 一起回滚，回滚不写死 sudo）、支持批量/脚本化安装（`-S/--silent` 全程免交互，未给 `--dir-option` 时按默认的选项 1；`--dir-option=N` 免菜单直接选定，自定义项可写 `--dir-option=N=DIR`；`-h/--help`；`--silent` 需要免密 sudo，否则明确报错退出）。目录菜单按架构分叉（Intel 多一个 `/usr/local/macwave`），自定义项编号也随之变化。`MACWAVE_VERSION` 与代码来源分支都从 configdata 的 `versiondata/latest_version`（`version` / `branch`）读取，不写死在脚本里，保证「下载的代码」与「写进 VERSION.json 的版本号」对应同一版本 |
 | `uninstall.sh` | 卸载 MacWave 本体：读两处配置定位 `BASE_DIR`（都读不到则遍历候选路径，Intel 才把 `/usr/local/macwave` 算进候选）、确认后删除安装目录与两处配置目录、清掉 rc 文件里的 PATH 行、最后自删。确认从 **`/dev/tty`** 读，读不到就**中止并退 1**（删除不可逆，stdin 是 EOF 时不能当同意；无人值守请显式 `--force`）。自删有守卫：只有 `$0` 是**含本脚本标记的普通文件**时才删 —— 文档推荐的 `/bin/bash -c "$(curl ...)"` 下 `$0` 是解释器路径或 `--`，旧写法会把 `/bin/bash` 删掉。支持批量/脚本化卸载：`--force` 跳过确认、`--remove-user`（仅为与 LinuxWave 的参数兼容 —— MacWave 没有专用账号，实际不做任何事）、`-h/--help` |
 | `selfupdate.py` | `wave selfupdate`：拉 `configdata` 分支的 `versiondata/latest_version`，取其 `version` 与当前生效的 `VERSION.json` 比较（只比数字段，`2.3` == `2.3.0`）；已是最新则直接返回，否则把 `update_command` 中 `<<<` / `>>>` 之间的内容交给 `/bin/bash -c` 执行（用环境变量 `MACWAVE_UPDATE_VERSION` / `MACWAVE_UPDATE_BRANCH` 把目标版本与分支传下去）。因为 `bash -c "$(curl …)"` 在 curl 失败时仍返回 0，执行完会**回读 `VERSION.json` 复核**，没变就报错 |
 | `selfupdate.sh` | 自更新脚本，由 `latest_version` 的 `update_command` 调用（也可 `bash lib/selfupdate.sh [分支]`）：按「系统级 → 用户级」定位配置目录与 `BASE_DIR` → 拉 `configdata/versiondata/files_info`（一份**只写仓库路径**的缩进树，`/` 开头是安装根、以 `/` 结尾表示目录、`#` 开始是注释；缩进每层 4 空格，Tab 与之等价，也可行内直接写 `pkg/linker.py` 这样的完整路径）→ **用脚本内置的 `python3` 解析它**（不能做成单独的 `.py` 文件，否则新文件本身又得先被下载 —— 鸡生蛋）→ 逐个从 `$BRANCH` 下载并复位可执行位（`lib/wave.py` 特例装成可执行的 `lib/wave`；其余 `*.sh` 加 +x）→ 清掉 `__pycache__` → 重写 `VERSION.json`。**以后新增文件只改 configdata 的 files_info，不用再动本脚本** |
@@ -46,7 +46,7 @@ README.md     用户文档
 | `pkginstaller.sh` | **软件包安装入口（binary 模式）**：组装长字符串，调用通用安装核心 `depsmanager.sh` 的 `mw_install_artifact`，写 `installed.json`，输出安装结果 |
 | `pkginfohelper.py` | `list`（扫描 `bin/` 下的目录）、`search`（远程匹配包名）、`info`（本地已装版本 + 远程可装版本 + `@common` 描述） |
 | `pkgversionparser.py` | 版本号比较与排序；处理 `alpha/beta/rc` 预发布，以及 `procursus` / `macwaveteam` / `Xteam` 等特殊版本 |
-| `pkgunzip.sh` | 按扩展名解压：`zip` / `tar.gz` / `tar.bz2` / `tar.xz` / `tar` / `gz` / `bz2` / `xz` / `conda`。裸 `xz` 用 Python 标准库 `lzma`（macOS 不自带 `xz` 命令）；**`.conda` 本质是个 zip，里装两个 zstd 压缩的 tar，只取 `pkg-*.tar.zst` 那个载荷**（`info-*.tar.zst` 是元数据），用 Python 3.14 的 `compression.zstd` 解（macOS 也不自带 `zstd`）—— **所以安装要求 Python 3.14+**；`extractall` 传 `filter='tar'`，因为 3.14 默认的 `data` 过滤器会拒掉 conda 包里的符号链接 |
+| `pkgunzip.sh` | 按扩展名解压：`zip` / `tar.gz` / `tar.bz2` / `tar.xz` / `tar` / `gz` / `bz2` / `xz` / `conda`。裸 `xz` 用 Python 标准库 `lzma`（macOS 不自带 `xz` 命令）；**`.conda` 本质是个 zip，里装两个 zstd 压缩的 tar，只取 `pkg-*.tar.zst` 那个载荷**（`info-*.tar.zst` 是元数据），用 Python 3.14 的 `compression.zstd` 解（macOS 也不自带 `zstd`）—— **所以自带的 Python 必须是 3.14+**（3.1 起由 MacWave 自带，见 `pythondata`）；`extractall` 传 `filter='tar'`，因为 3.14 默认的 `data` 过滤器会拒掉 conda 包里的符号链接 |
 | `uninstaller.py` | **卸载**：扫描 `bin/` 找出该包所有版本；删除包目录与软链接；按 `_DEPS` 删除依赖标记，若某依赖已无任何标记，则连同它自己的依赖一起级联删除（递归时带 `visited` 集合，避免循环依赖 A→B→A 造成无限递归）。卸载完调 `linker` 同步不带版本号的软链接：还有别的版本就改指最高的，一个不剩就删掉；本来就没链接过的不重建（悬空链接也在这里被治好）。加 `--unlink` 则不动这个链接 —— **但如果被删的版本正好是链接当前指向的那个，会报错并拒绝执行**（绝不留下指向已卸载版本的坏链接） |
 | `linker.py` | **不带版本号的软链接**（仅限软件包，不碰依赖）：`link <名>[@latest]` / `link --all`（`-a`）建或改指链接，`unlink <名>` / `unlink --all` 删链接，`linkquery <名>` 看当前指向（输出形如 `🌊 ffmpeg@9.0`；未链接退 1，**指向已不存在的版本也报错退 1**）。`installed_versions` / `linked_version` / `is_dangling` 分别扫 `bin/`、读 `links/` 软链、判断是否悬空；重复 link 会报 `already linked` |
 
@@ -251,7 +251,7 @@ BASE_DIR/links/                  wget@1.25.0，以及每个依赖 bin/ 下可执
 
 ## 九、新增版本分支（如 `3.1`）时要改的地方
 
-`main` 与「发布分支」互为镜像，而**发布分支由数据决定**：`MacWaveOrg/configdata` 的 `versiondata/latest_version` 里的 `branch` 字段（现为 `3.0`）。`.github/workflows/sync-release-branch.yml` 会随之把两边保持同步（只做快进，分叉则报错交给人工），**这个工作流本身不用改**。
+`main` 与「发布分支」互为镜像，而**发布分支由数据决定**：`MacWaveOrg/configdata` 的 `versiondata/latest_version` 里的 `branch` 字段（现为 `3.1`）。`.github/workflows/sync-release-branch.yml` 会随之把两边保持同步（只做快进，分叉则报错交给人工），**这个工作流本身不用改**。
 
 新开一个版本分支时只需要：
 
@@ -259,7 +259,7 @@ BASE_DIR/links/                  wget@1.25.0，以及每个依赖 bin/ 下可执
 | --- | --- | --- |
 | 1 | `MacWaveOrg/configdata` 的 `versiondata/latest_version` | `branch` 指向新分支（新分支成为发布线时），`version` / `release_date` / `build_number` 一并更新 |
 | 2 | `.github/workflows/format-test.yml` | 把新分支名加进 `on.push.branches` 与 `on.pull_request.branches` |
-| 3 | `PROJECT_CONTEXT.md` 开头的「版本分支（当前的 `3.0`）」 | 改成新分支 |
+| 3 | `PROJECT_CONTEXT.md` 开头的「版本分支（当前的 `3.1`）」 | 改成新分支 |
 | 4 | `README.md` / `README.zh-Hans.md` 的 `Latest Version` / `最新版本` | 正式发布时更新 |
 | 5 | 站点 `index.html`（`MacWaveOrg/Pages`） | 版本行的版本号 |
 

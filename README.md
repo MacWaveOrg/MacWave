@@ -11,10 +11,10 @@ Linux? View [LinuxWave](https://github.com/LinuxWaveOrg/LinuxWave)
 [macwave.org](https://macwave.org)
 
 ## 🌊 Supported macOS Version
-macOS Sonoma14 and above
+macOS Sonoma 14 and above
 ## 🌊 Latest Version
 
-3.0.5, Release on 2026-10-18
+3.1.0, Release on 2026-10-22
 
 ## 🌊 What is MacWave?
 
@@ -30,7 +30,7 @@ MacWave is a **package manager** that runs on **macOS/Linux**, designed to host 
 6. **10 archive formats, CI-verified.** Supports no-extension binaries, `.zip`, `.tar.gz`, `.tar.bz2`, `.tar.xz`, `.tar`, `.gz`, `.xz`, `.bz2`, `.conda`.
 7. **Verify first, extract later.** SHA256 is checked before extraction.
 8. **Resumable downloads.** Interrupted? Resume with `-C`.
-9. **Lightweight and transparent.** Pure Python + Shell. No heavy runtime, no hidden behavior.
+9. **Lightweight and transparent.** Pure Python + Shell, with the interpreter bundled. No heavy runtime, no hidden behavior.
 10. **Automatically manage dependencies.** Support for software packages with dependencies, using reference counting and automatic dependency management, with no need to handle dependencies manually.
 
 ## 🌊 Install MacWave
@@ -43,7 +43,13 @@ In the terminal, run:
 
 (If you are using bash instead of zsh, run ```source ~/.bashrc```)
 
-**Requirements: Python (3.14 and above), Xcode Command Line Tools (14.0 and above).**
+**Requirements: macOS Sonoma 14 or later, Xcode Command Line Tools (14.0 or later).**
+
+**You do not need to install Python.** MacWave ships its own CPython under
+`<install-dir>/python/` and runs from a private environment beside it, so the
+`python3` on your PATH (Homebrew, pyenv, the system one) never affects it.
+If that bundled copy cannot be downloaded, the installer falls back to your
+system `python3` and tells you so.
 
 ### Unattended install
 

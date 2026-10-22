@@ -14,7 +14,7 @@ Linux 用户？请看 [LinuxWave](https://github.com/LinuxWaveOrg/LinuxWave)
 macOS Sonoma 14 及以上
 ## 🌊 最新版本
 
-3.0.5，发布于 2026-10-18
+3.1.0，发布于 2026-10-22
 
 ## 🌊 MacWave 是什么？
 
@@ -30,7 +30,7 @@ MacWave 是一个运行在 **macOS** 上的**包管理器**，旨在为 macOS �
 6. **支持 10 种归档格式，经 CI 验证。** 支持无扩展名二进制文件、`.zip`、`.tar.gz`、`.tar.bz2`、`.tar.xz`、`.tar`、`.gz`、`.xz`、`.bz2`、`.conda`。
 7. **先校验，后解压。** 解压前先校验 SHA256。
 8. **支持断点续传。** 下载中断了？用 `-C` 继续。
-9. **轻量透明。** 纯 Python + Shell，无重型运行时，无隐藏行为。
+9. **轻量透明。** 纯 Python + Shell，并自带解释器；无重型运行时，无隐藏行为。
 10. **自动管理依赖。** 支持带依赖的软件包，采用引用计数与自动依赖管理，无需手动处理依赖。
 
 ## 🌊 安装 MacWave
@@ -43,7 +43,12 @@ MacWave 是一个运行在 **macOS** 上的**包管理器**，旨在为 macOS �
 
 （如果你使用的是 bash 而非 zsh，请运行 ```source ~/.bashrc```）
 
-**环境要求：Python（3.14 及以上）、Xcode Command Line Tools（14.0 及以上）。**
+**环境要求：macOS Sonoma 14 及以上、Xcode Command Line Tools（14.0 及以上）。**
+
+**你不需要自己安装 Python。** MacWave 自带一份 CPython，放在
+`<安装目录>/python/` 下，并在旁边建私有运行环境；因此 PATH 上的 `python3`
+（Homebrew、pyenv、系统自带的）都不会影响它。
+若自带的那份下载失败，安装器会回退到系统的 `python3` 并明确提示。
 
 ### 无人值守安装
 
