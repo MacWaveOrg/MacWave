@@ -2,12 +2,16 @@
 
 # build_portable_python.sh
 #
-# 打出一个可以随 MacWave 分发的便携 CPython，并给出写进
+# 可选：把上游的 install_only 产物重新打成 MacWave 自己的归档，并给出写进
 # configdata/pythondata/latest_python 用的 sha256。
 #
-# 为什么需要它：MacWave 的入口是一个 sh 启动器，默认使用**自带的**解释器，
-# 这样用户机器上的 python3 由谁接管（Homebrew / pyenv / 系统自带）都不影响运行。
-# 自带解释器本身必须来自一个可重复、可校验的来源，而不是"随便从网上下一个"。
+# **主路径不是这个脚本。** install.sh / selfupdate.sh 的 portable_python_binary 已经能
+# 直接在 python/install/bin/python3 找到解释器，也就是上游 install_only 解压后的布局，
+# 所以 pythondata 直接指向上游 release 资产即可，由 .github/workflows/portable-python.yml
+# 解析地址、下载、自己算 sha256 并开 PR。少一次几十 MB 的搬运，也少一个托管位置。
+#
+# 这个脚本保留给两种情形：上游归档不可达、需要一个自己的镜像；或者要打一个上游没有的
+# 组合（例如把某个版本裁剪到只留标准库的一部分）。
 #
 # 用法：
 #   bash scripts/build_portable_python.sh                 # 打包本机架构
@@ -18,15 +22,16 @@
 #   dist/python-<version>-<arch>.tar.gz
 #   dist/python-<version>-<arch>.tar.gz.sha256
 #
-# 然后把 version / <arch>_url / <arch>_sha256 写进 configdata 的
-# pythondata/latest_python，并把压缩包作为某个 release 的附件上传。
+# 然后把 <arch>_url 指向这个归档的下载地址（例如某个 release 附件），
+# <arch>_sha256 填 .sha256 文件里的值。
 #
-# 注意：这个脚本需要联网（下载上游构建）。CI 里跑，不要在受限网络下手动跑。
+# 注意：这个脚本需要联网（下载上游构建），而且要跨架构打包时必须在对应架构的机器上
+# 跑（它会在最后真的执行一次解释器来确认可用）。CI 里跑，不要在受限网络下手动跑。
 
 set -euo pipefail
 
 RED_BOLD='\033[1;31m'
-GREEN='\032[32m'
+GREEN='\033[32m'
 YELLOW='\033[33m'
 RESET='\033[0m'
 

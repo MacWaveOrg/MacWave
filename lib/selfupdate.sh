@@ -529,6 +529,31 @@ portable_python_binary() {
     return 1
 }
 
+normalize_portable_python() {
+    # 把各种布局归一化成 <target>/bin/python3。
+    #
+    # 启动器只认 python/current/bin/python3，而上游 install_only 产物把解释器放在
+    # python/install/bin/python3 —— 不归一化的话，自带解释器在启动器第 2 层永远命中不了，
+    # 只有第 1 层的私有 venv 能救场；venv 一旦坏掉就等于没有自带解释器。
+    local target="$1"
+    local py="$2"
+    local link="$target/bin/python3"
+    local relative
+
+    mkdir -p "$target/bin" 2>/dev/null || return 0
+    if [[ "$py" == "$link" ]]; then
+        return 0
+    fi
+    if [[ "$py" != "$target"/* ]]; then
+        return 0
+    fi
+
+    # 用相对链接：整个 python/ 目录搬走以后仍然有效
+    relative="../${py#"$target"/}"
+    ln -sfn "$relative" "$link" 2>/dev/null || true
+    return 0
+}
+
 ensure_portable_python() {
     # 成功时把解释器路径打到 stdout，失败返回 1（调用方回退系统 python3）。
     local base_dir="$1"
@@ -584,6 +609,8 @@ ensure_portable_python() {
     if ! "$py" -c 'import sys; sys.exit(0)' >/dev/null 2>&1; then
         return 1
     fi
+
+    normalize_portable_python "$target" "$py"
 
     mkdir -p "$base_dir/python" 2>/dev/null || true
     ln -sfn "$version" "$current" 2>/dev/null || true

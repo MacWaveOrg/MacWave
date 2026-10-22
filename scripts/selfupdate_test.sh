@@ -271,7 +271,68 @@ else
 fi
 
 # ==========================================
-# 5. 同大版本的端到端自更新（真的会改动安装目录，放最后）
+# 5. 自带解释器：两份脚本的布局归一化必须一致，且能真的定位到解释器
+# ==========================================
+
+echo "========== portable Python layout =========="
+
+if bash -s -- "$REPO_DIR" << 'SHEOF'
+set -u
+repo="$1"
+
+# install.sh 与 selfupdate.sh 各带一份同名实现（谁都不能依赖对方已下载），
+# 一旦漂移就会出现「装的时候行、自更新以后不行」。这里逐字比对。
+extract() {
+    sed -n '/^portable_python_arch() {/,/^}/p;/^portable_python_binary() {/,/^}/p;/^normalize_portable_python() {/,/^}/p' "$1"
+}
+if ! diff <(extract "$repo/lib/install.sh") <(extract "$repo/lib/selfupdate.sh") > /dev/null; then
+    echo "  ❌ install.sh 与 selfupdate.sh 的便携 Python 逻辑不一致"
+    exit 1
+fi
+echo "  ✅ 两份脚本的探测与归一化逻辑逐字一致"
+
+# 上游 install_only 的布局是 python/install/bin/python3，而启动器只认
+# python/current/bin/python3 —— 归一化就是这条断点的桥。
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+
+mkdir -p "$work/target/python/install/bin"
+ln -s "$(command -v python3)" "$work/target/python/install/bin/python3"
+
+eval "$(extract "$repo/lib/install.sh")"
+target="$work/target"
+py="$(portable_python_binary "$target")" || { echo "  ❌ 探测不到解释器"; exit 1; }
+case "$py" in
+    "$target/python/install/bin/python3") : ;;
+    *) echo "  ❌ 探测结果不对: $py"; exit 1 ;;
+esac
+
+normalize_portable_python "$target" "$py"
+ln -sfn target "$work/current"
+if [ ! -x "$work/current/bin/python3" ]; then
+    echo "  ❌ 归一化后启动器路径仍不可用"
+    exit 1
+fi
+echo "  ✅ 归一化后 python/current/bin/python3 可用"
+
+# 重复归一化不能把链接变成自我循环（portable_python_binary 会把 bin/python3 也报出来）
+py2="$(portable_python_binary "$target")"
+normalize_portable_python "$target" "$py2"
+if [ "$(readlink "$target/bin/python3")" = "bin/python3" ]; then
+    echo "  ❌ 归一化出现自我循环"
+    exit 1
+fi
+echo "  ✅ 重复归一化仍指向真实解释器"
+SHEOF
+then
+    echo -e "${GREEN}🌊 OK: the bundled interpreter is found and the launcher path works${RESET}"
+else
+    echo -e "${RED_BOLD}🌊 FAIL: portable Python layout${RESET}"
+    FAILED=$((FAILED + 1))
+fi
+
+# ==========================================
+# 6. 同大版本的端到端自更新（真的会改动安装目录，放最后）
 # ==========================================
 
 echo "========== end-to-end selfupdate =========="
@@ -324,7 +385,7 @@ PYEOF
 fi
 
 # ==========================================
-# 5. 清单里列出的文件必须都落到了安装目录
+# 7. 清单里列出的文件必须都落到了安装目录
 #    2.4 就是漏在这一点上：代码里加了 pkg/linker.py，
 #    但 selfupdate.sh 自带的文件清单没同步，自更新后 wave link 直接 ImportError。
 # ==========================================
@@ -371,7 +432,7 @@ fi
 rm -f "$FILES_INFO_TMP" "$PARSER_TMP"
 
 # ==========================================
-# 6. wave.py 里每个命令都要有对应的模块文件
+# 8. wave.py 里每个命令都要有对应的模块文件
 #    这一条独立于清单：即使清单漏写，只要 wave.py 引用了就会报出来
 # ==========================================
 

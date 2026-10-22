@@ -22,6 +22,7 @@
 | macOS | Sonoma 14 及以上 | Sonoma 14 及以上（不变） |
 | Xcode Command Line Tools | 14.0 及以上 | 14.0 及以上（不变，`otool` / `install_name_tool` / `codesign` 要用） |
 | 磁盘占用 | — | 多出约 40–60 MB（自带的解释器），另加一个虚拟环境 |
+| 解释器来源 | — | 直连上游 python-build-standalone 的 `install_only` 产物，校验值由流水线自己算 |
 
 > 官方安装命令没有变化：
 > `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/install.sh)"`
@@ -109,6 +110,9 @@ wave selfupdate
 - **首次安装/升级需要联网下载解释器**（约 40–60 MB）。离线环境请先把对应架构的压缩包
   放到安装根目录的 `downloads/tmp/`，或先用系统 Python 完成安装再补。
 - 自带的解释器按架构分发（`arm64` / `amd64`），**不提供 universal 二进制**。
+- 解释器直接来自上游 `astral-sh/python-build-standalone` 的 `install_only` 产物。
+  好处是不需要自己托管归档；代价是上游清理旧 tag 时这些地址会失效 ——
+  `.github/workflows/portable-python.yml` 每月核对一次，失效会在用户之前暴露。
 - 升级过程对每个请求都有超时、对失败的单文件会自动重试（3 次，404 这类不重试），
   并且先写分片再 `mv`：重试期间不会把半个文件留在安装树里。中途放弃时 `VERSION.json`
   仍是旧值，网络恢复后再跑一次 `wave selfupdate` 即会继续。

@@ -1,0 +1,249 @@
+name: Portable Python
+
+# 给 configdata 的 pythondata/latest_python 填上「自带 Python」的真实地址与校验值。
+#
+# 为什么不在本地打包：上游 astral-sh/python-build-standalone 已经发布了可直接使用的
+# install_only 产物，解压后解释器就在 python/install/bin/python3 —— 这正好在
+# install.sh / selfupdate.sh 的 portable_python_binary 探测列表里。自己再 repack 一遍
+# 只是把几十 MB 在本地搬来搬去，换来的唯一好处是去掉一层目录名，而那一层已经能处理。
+#
+# 所以这里只做三件便宜的事：
+#   1. 按 pythondata 里声明的 version，逐架构找到上游对应的 install_only 资产；
+#   2. 下载并亲自算一次 sha256（不信「上游说它是多少」，也顺便证明这个地址真的能下）；
+#   3. 确认压缩包解开后确实有 python/install/bin/python3，否则装了也定位不到解释器。
+# 然后把结果写成 configdata 的 PR —— pythondata 受分支保护，不能直接推。
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "要打包的 CPython 版本（留空则读 configdata 里的声明）"
+        required: false
+      create_pr:
+        description: "把结果写成 configdata 的 PR"
+        type: boolean
+        default: true
+  schedule:
+    # 每月核对一次：上游归档被撤掉、或者校验值与声明漂移，都能提前发现
+    - cron: '0 3 1 * *'
+  push:
+    paths:
+      - 'scripts/build_portable_python.sh'
+      - '.github/workflows/portable-python.yml'
+
+permissions:
+  contents: read
+
+env:
+  UPSTREAM_REPO: astral-sh/python-build-standalone
+  CONFIGDATA_URL: https://raw.githubusercontent.com/MacWaveOrg/configdata/main
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.pick.outputs.version }}
+      arm64_url: ${{ steps.pick.outputs.arm64_url }}
+      arm64_sha256: ${{ steps.pick.outputs.arm64_sha256 }}
+      amd64_url: ${{ steps.pick.outputs.amd64_url }}
+      amd64_sha256: ${{ steps.pick.outputs.amd64_sha256 }}
+      changed: ${{ steps.pick.outputs.changed }}
+    steps:
+      - name: Pick the version to bundle
+        id: pick
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REQUESTED: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          declared="$(curl -fsSL --max-time 30 "$CONFIGDATA_URL/pythondata/latest_python" \
+            | sed -n 's/^version:[[:space:]]*"\(.*\)"/\1/p' | head -n 1)"
+          version="${REQUESTED:-$declared}"
+          if [ -z "$version" ]; then
+            echo "::error::No version to bundle: neither an input nor a declaration in configdata."
+            exit 1
+          fi
+          echo "Bundling CPython $version"
+
+          # 上游按日期打 tag，资产名形如
+          #   cpython-<版本>+<tag>-<triple>-install_only.tar.gz
+          # 从最新 tag 往回找，第一个匹配就是最新的那个构建。
+          tags="$(gh api "repos/$UPSTREAM_REPO/releases?per_page=8" --jq '.[].tag_name')"
+          echo "Recent upstream tags: $(echo "$tags" | tr '\n' ' ')"
+
+          resolve() {
+            # resolve <triple>：打印匹配资产的下载地址，找不到返回 1
+            local triple="$1"
+            local tag name
+            for tag in $tags; do
+              name="$(gh api "repos/$UPSTREAM_REPO/releases/tags/$tag/assets?per_page=100" \
+                --paginate --jq '.[].name' 2>/dev/null \
+                | grep -F "cpython-$version+" \
+                | grep -F -- "-$triple-install_only.tar.gz" \
+                | grep -v stripped \
+                | head -n 1)" || true
+              if [ -n "$name" ]; then
+                echo "https://github.com/$UPSTREAM_REPO/releases/download/$tag/$name"
+                return 0
+              fi
+            done
+            return 1
+          }
+
+          arm64_url="$(resolve aarch64-apple-darwin)" || {
+            echo "::error::No aarch64-apple-darwin install_only asset for CPython $version."
+            exit 1
+          }
+          amd64_url="$(resolve x86_64-apple-darwin)" || {
+            echo "::error::No x86_64-apple-darwin install_only asset for CPython $version."
+            exit 1
+          }
+
+          verify() {
+            # verify <url> <label>：下载、自己算校验值、确认解压后的布局能被告安装器定位到。
+            # 所有日志都走 stderr，stdout 只留校验值本身。
+            local url="$1" label="$2" archive sha
+            archive="$RUNNER_TEMP/$(basename "$url")"
+            echo "Downloading $url" >&2
+            curl -fsSL --retry 3 --retry-delay 5 --max-time 1800 -o "$archive" "$url" >&2
+            sha="$(sha256sum "$archive" | awk '{print $1}')"
+            if ! tar -tzf "$archive" | grep -qx 'python/install/bin/python3'; then
+              echo "::error::$label archive has no python/install/bin/python3; the installer could not find the interpreter." >&2
+              exit 1
+            fi
+            echo "  $label: $sha ($(du -h "$archive" | awk '{print $1}'))" >&2
+            rm -f "$archive"
+            printf '%s' "$sha"
+          }
+
+          arm64_sha="$(verify "$arm64_url" arm64)"
+          amd64_sha="$(verify "$amd64_url" amd64)"
+
+          # 与 configdata 现状比较：没变就不开 PR，免得每月刷一个空提交
+          current="$(curl -fsSL --max-time 30 "$CONFIGDATA_URL/pythondata/latest_python")"
+          changed=true
+          if printf '%s\n' "$current" | grep -qxF "version: \"$version\"" \
+             && printf '%s\n' "$current" | grep -qxF "arm64_url: \"$arm64_url\"" \
+             && printf '%s\n' "$current" | grep -qxF "arm64_sha256: \"$arm64_sha\"" \
+             && printf '%s\n' "$current" | grep -qxF "amd64_url: \"$amd64_url\"" \
+             && printf '%s\n' "$current" | grep -qxF "amd64_sha256: \"$amd64_sha\""; then
+            changed=false
+            echo "configdata already pins CPython $version; nothing to update."
+          fi
+
+          {
+            echo "### Portable Python $version"
+            echo ""
+            echo "| arch | archive | sha256 |"
+            echo "| --- | --- | --- |"
+            echo "| arm64 | \`$(basename "$arm64_url")\` | \`$arm64_sha\` |"
+            echo "| amd64 | \`$(basename "$amd64_url")\` | \`$amd64_sha\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          {
+            echo "version=$version"
+            echo "arm64_url=$arm64_url"
+            echo "arm64_sha256=$arm64_sha"
+            echo "amd64_url=$amd64_url"
+            echo "amd64_sha256=$amd64_sha"
+            echo "changed=$changed"
+          } >> "$GITHUB_OUTPUT"
+
+  update-configdata:
+    needs: resolve
+    if: needs.resolve.outputs.changed == 'true' && inputs.create_pr != false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out configdata
+        uses: actions/checkout@v4
+        with:
+          repository: MacWaveOrg/configdata
+          ref: main
+          path: configdata
+          # configdata 的分支受规则集保护，GITHUB_TOKEN 进不了 bypass，只能用 PAT
+          token: ${{ secrets.AUTOMATION_TOKEN }}
+
+      - name: Rewrite pythondata/latest_python
+        working-directory: configdata
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+          ARM64_URL: ${{ needs.resolve.outputs.arm64_url }}
+          ARM64_SHA: ${{ needs.resolve.outputs.arm64_sha256 }}
+          AMD64_URL: ${{ needs.resolve.outputs.amd64_url }}
+          AMD64_SHA: ${{ needs.resolve.outputs.amd64_sha256 }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${VERSION:-}" ]; then
+            echo "::error::Empty version; the resolve job must run first."
+            exit 1
+          fi
+
+          file=pythondata/latest_python
+          for field in version arm64_url arm64_sha256 amd64_url amd64_sha256; do
+            grep -qE "^${field}:" "$file" || {
+              echo "::error::$file has no '$field' field"
+              exit 1
+            }
+          done
+
+          set_field() {
+            # 只替换行首的字段行，不会碰到文件开头那段说明注释
+            sed -i -E "s|^$1:.*|$1: \"$2\"|" "$file"
+          }
+
+          set_field version "$VERSION"
+          set_field arm64_url "$ARM64_URL"
+          set_field arm64_sha256 "$ARM64_SHA"
+          set_field amd64_url "$AMD64_URL"
+          set_field amd64_sha256 "$AMD64_SHA"
+
+          cat "$file"
+
+      - name: Open a pull request
+        working-directory: configdata
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          ARM64_SHA: ${{ needs.resolve.outputs.arm64_sha256 }}
+          AMD64_SHA: ${{ needs.resolve.outputs.amd64_sha256 }}
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet -- pythondata/latest_python; then
+            echo "pythondata/latest_python already matches; nothing to do."
+            exit 0
+          fi
+
+          branch="automation/portable-python-$VERSION"
+          git config user.name "MacWave automation"
+          git config user.email "automation@macwave.org"
+          git checkout -b "$branch"
+          git add pythondata/latest_python
+          git commit -m "Bundle CPython ${VERSION}"
+          git push --force origin "$branch"
+
+          if gh pr list --head "$branch" --json number --jq '.[].number' | grep -q .; then
+            echo "A pull request for $branch already exists; updated it in place."
+            exit 0
+          fi
+
+          body="$RUNNER_TEMP/pr-body.md"
+          {
+            echo "Points pythondata/latest_python at the upstream python-build-standalone"
+            echo "install_only archives. They already contain python/install/bin/python3,"
+            echo "which is where the installer probes, so no repack is needed."
+            echo ""
+            echo "Verified in CI: both archives download, their sha256 was recomputed here,"
+            echo "and both contain that path."
+            echo ""
+            echo "| arch | sha256 |"
+            echo "| --- | --- |"
+            echo "| arm64 | \`$ARM64_SHA\` |"
+            echo "| amd64 | \`$AMD64_SHA\` |"
+          } > "$body"
+
+          gh pr create --base main --head "$branch" \
+            --title "Bundle CPython ${VERSION}" \
+            --body-file "$body"
