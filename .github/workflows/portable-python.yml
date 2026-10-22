@@ -168,7 +168,10 @@ jobs:
 
   update-configdata:
     needs: resolve
-    if: needs.resolve.outputs.changed == 'true' && inputs.create_pr != false
+    # GitHub 表达式里 null == false 成立，所以 push / schedule 事件下
+    # `inputs.create_pr != false` 恒为假，整条条件会把这一步跳掉。
+    # github.event.inputs 里是字符串，这样比较才是「只有显式填 false 才不建 PR」。
+    if: needs.resolve.outputs.changed == 'true' && github.event.inputs.create_pr != 'false'
     runs-on: ubuntu-latest
     steps:
       - name: Check out configdata
