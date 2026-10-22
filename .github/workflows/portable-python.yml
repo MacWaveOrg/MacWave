@@ -115,10 +115,19 @@ jobs:
             echo "Downloading $url" >&2
             curl -fsSL --retry 3 --retry-delay 5 --max-time 1800 -o "$archive" "$url" >&2
             sha="$(sha256sum "$archive" | awk '{print $1}')"
-            if ! tar -tzf "$archive" | grep -qx 'python/install/bin/python3'; then
-              echo "::error::$label archive has no python/install/bin/python3; the installer could not find the interpreter." >&2
+            listing="$RUNNER_TEMP/listing-$label.txt"
+            tar -tzf "$archive" > "$listing"
+            # 接受的布局 = install.sh 里 portable_python_binary 能探测到的那些。
+            # 允许 ./ 前缀：不同版本的上游产物在这一点上并不统一。
+            if ! grep -qE '(^|\./)(python/)?(install/)?bin/python3$' "$listing"; then
+              echo "::error::$label archive has no recognisable python3 binary; the installer could not find the interpreter." >&2
+              echo "  实际匹配到的 bin/python3* 条目：" >&2
+              grep -E 'bin/python3' "$listing" | head -5 >&2 || echo "  （一个都没有）" >&2
+              echo "  前十条目：" >&2
+              head -10 "$listing" >&2
               exit 1
             fi
+            echo "  解释器路径: $(grep -E '(^|\./)(python/)?(install/)?bin/python3$' "$listing" | head -1)" >&2
             echo "  $label: $sha ($(du -h "$archive" | awk '{print $1}'))" >&2
             rm -f "$archive"
             printf '%s' "$sha"
