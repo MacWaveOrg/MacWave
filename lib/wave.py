@@ -6,8 +6,9 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from configerror import check_environment
+from configerror import check_environment, check_dependencies
 check_environment()
+check_dependencies()
 
 
 # -------------------- 配置与模块路径 --------------------

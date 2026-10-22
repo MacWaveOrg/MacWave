@@ -11,7 +11,42 @@ from configpaths import config_dir_candidates, find_config_dir
 # -------------------- 颜色定义 --------------------
 
 RED_BOLD = '\033[1;31m'
+YELLOW = '\033[33m'
 RESET = '\033[0m'
+
+
+# -------------------- 运行期依赖 --------------------
+
+REQUIRED_MODULES = (
+    ("requests", "HTTPS 请求"),
+    ("packaging", "版本号比较"),
+    ("rich", "下载进度条"),
+)
+
+
+def check_dependencies():
+    # 在真正分发命令之前检查第三方依赖。
+    # 换过 Python 解释器（例如 Homebrew 升级 python3）之后，这些包往往还在旧
+    # 解释器下，命令会以各种奇怪的方式失败 —— 提前拦住并给出可执行的修复命令，
+    # 比让某个子模块在导入阶段报「模块不可用」清楚得多。
+
+    missing = []
+    for name, purpose in REQUIRED_MODULES:
+        try:
+            __import__(name)
+        except ImportError:
+            missing.append(f"{name}（{purpose}）")
+
+    if not missing:
+        return
+
+    print(f"{RED_BOLD}🌊 Error: Missing Python dependencies: {', '.join(missing)}.{RESET}")
+    print(f"{RED_BOLD}🌊 The current interpreter cannot run MacWave:{RESET}")
+    print(f"{YELLOW}   {sys.executable}{RESET}")
+    print(f"{RED_BOLD}🌊 Install them and try again:{RESET}")
+    print(f"{YELLOW}   python3 -m pip install --user requests packaging rich{RESET}")
+    print(f"{YELLOW}   (Homebrew's Python needs --break-system-packages){RESET}")
+    sys.exit(1)
 
 
 # -------------------- 环境检测与报错 --------------------

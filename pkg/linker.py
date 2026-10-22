@@ -33,8 +33,16 @@ LINKS_DIR = BASE_DIR / "links"
 
 try:
     from pkgversionparser import get_max_version
-except ImportError:
-    print(f"{RED_BOLD}🌊 Error: 'pkgversionparser' module is not available.{RESET}")
+except ModuleNotFoundError as error:
+    # 区分「自己的模块找不到」和「它依赖的第三方库找不到」：后者是环境问题，
+    # 报成「模块不可用」会把人往错误方向带（实际是 packaging 没装）。
+    if error.name == "pkgversionparser":
+        print(f"{RED_BOLD}🌊 Error: 'pkgversionparser' module is not available.{RESET}")
+    else:
+        print(f"{RED_BOLD}🌊 Error: Missing Python dependency '{error.name}'.{RESET}")
+        print(f"{RED_BOLD}🌊 Install the required packages and try again:{RESET}")
+        print(f"{YELLOW}   python3 -m pip install --user requests packaging rich{RESET}")
+        print(f"{YELLOW}   (Homebrew's Python needs --break-system-packages){RESET}")
     sys.exit(1)
 
 

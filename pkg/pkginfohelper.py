@@ -43,8 +43,14 @@ except ImportError:
 
 try:
     from pkgversionparser import sort_versions
-except ImportError:
-    print(f"{RED_BOLD}🌊 Error: 'pkgversionparser' module is not available.{RESET}")
+except ModuleNotFoundError as error:
+    if error.name == "pkgversionparser":
+        print(f"{RED_BOLD}🌊 Error: 'pkgversionparser' module is not available.{RESET}")
+    else:
+        print(f"{RED_BOLD}🌊 Error: Missing Python dependency '{error.name}'.{RESET}")
+        print(f"{RED_BOLD}🌊 Install the required packages and try again:{RESET}")
+        print(f"{YELLOW}   python3 -m pip install --user requests packaging rich{RESET}")
+        print(f"{YELLOW}   (Homebrew's Python needs --break-system-packages){RESET}")
     sys.exit(1)
 
 
