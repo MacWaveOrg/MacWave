@@ -154,13 +154,18 @@ Global Flags (can be used with any command):
       --proxy string      Specify an HTTP/HTTPS proxy (e.g., http://127.0.0.1:8080)
       --skip-ssl          Skip SSL certificate verification (insecure)
       --limit-rate string Limit download speed (e.g., 200K, 1M, 5M)
-      --max-time string   Timeout for each request (e.g., 40s, 1min, 1min20s, 2h)
+      --max-time string   Timeout for each request, for install and selfupdate
+                          (e.g., 40s, 1min, 1min20s, 2h; bare numbers are seconds)
       --ver string        Install a specific version of the package
 
 Special Flags:
 wave install <pkgname>@<version>   Download certain version(s) of a package
     --unlink                       Leave the unversioned link alone (install / uninstall)
     --all, -a                      Apply to every installed package (link / unlink / linkquery)
+
+Self Update:
+wave selfupdate                    Update MacWave itself
+wave selfupdate --max-time=2min    Same, but give each request two minutes
 
 Unversioned Links:
 wave link <name>                   Link a package to its highest installed version

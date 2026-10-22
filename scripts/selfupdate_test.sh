@@ -158,7 +158,120 @@ else
 fi
 
 # ==========================================
-# 4. 同大版本的端到端自更新（真的会改动安装目录，放最后）
+# 4. --max-time：时长时间解析与下载重试（离线，不碰网络）
+# ==========================================
+
+echo "========== max-time duration parsing =========="
+
+if python3 - "$SELFUPDATE_PY" "$SELFUPDATE_SH" << 'PYEOF'
+import importlib.util
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+selfupdate_py, selfupdate_sh = Path(sys.argv[1]), Path(sys.argv[2])
+sys.path.insert(0, str(selfupdate_py.parent))
+sys.path.insert(0, str(selfupdate_py.parent.parent / "pkg"))         # pkginstaller（共用时长规则）
+sys.path.insert(0, str(selfupdate_py.parent.parent / "surfboard"))  # pkginstaller 会连带 import 它
+
+spec = importlib.util.spec_from_file_location('selfupdate_module', selfupdate_py)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+# Python 侧：合法的原样留下，非法的当场拒绝
+assert module.max_time("wave selfupdate --max-time=1min") == ("1min", 60), module.max_time("wave selfupdate --max-time=1min")
+assert module.max_time("wave selfupdate --max-time 1min20s") == ("1min20s", 80)
+assert module.max_time("wave selfupdate")[0] == ""
+for bad in ("abc", "1x", "-5"):
+    try:
+        module.max_time(f"wave selfupdate --max-time={bad}")
+    except SystemExit:
+        pass
+    else:
+        raise AssertionError(f"--max-time={bad} 本应被拒绝")
+
+# shell 侧：规则必须与 Python 一致（否则同一条命令两层会算出不同超时）
+script = r'''
+source /dev/stdin <<< "$(sed -n "/^mw_seconds()/,/^}/p" "$1")"
+shift
+for value in "$@"; do
+    if out="$(mw_seconds "$value")"; then printf "%s\n" "$out"; else printf "REJECT\n"; fi
+done
+'''
+cases = ["40", "0.5h", "1h", "1hr", "2hrs", "1.5h", "1h20s", "2h30min", "40s", "1min", "1min20s",
+         "1m30s", "2h", "250ms", "1.5min", "abc", "1x", "min", "h", "1hh", "0"]
+result = subprocess.run(["bash", "-c", script, "_", str(selfupdate_sh)] + cases,
+                        capture_output=True, text=True)
+assert result.returncode == 0, result.stderr
+got = result.stdout.split()
+assert len(got) == len(cases), result.stdout
+invalid = ("abc", "1x", "min", "h", "1hh", "0")
+for value, shell_value in zip(cases, got):
+    if value in invalid:
+        assert shell_value == "REJECT", f"{value}: shell 本应拒绝，实际 {shell_value}"
+        continue
+    raw, seconds = module.max_time(f"wave selfupdate --max-time={value}")
+    assert raw == value, f"{value}: 原始文本应原样往下传，实际 {raw!r}"
+    expected = str(module.curl_seconds(seconds))
+    assert shell_value == expected, f"{value}: shell={shell_value} python={expected}"
+PYEOF
+then
+    echo -e "${GREEN}🌊 OK: --max-time parses identically in Python and in shell${RESET}"
+else
+    echo -e "${RED_BOLD}🌊 FAIL: --max-time duration parsing${RESET}"
+    FAILED=$((FAILED + 1))
+fi
+
+echo "========== downloads retry and never leave half a file =========="
+
+if bash -s -- "$SELFUPDATE_SH" << 'SHEOF'
+set -u
+
+source_file="$1"
+helper="$(mktemp)"
+trap 'rm -f "$helper"' EXIT
+
+{
+    echo 'NEED_SUDO=false'
+    echo 'YELLOW=""; RESET=""; RED_BOLD=""'
+    sed -n '/^run_cmd() {/,/^}/p' "$source_file"
+    sed -n '/^direct() {/,/^}/p' "$source_file"
+    sed -n '/^FETCH_ATTEMPTS=/,/^RETRY_DELAY=/p' "$source_file"
+    sed -n '/^fetch_to_file() {/,/^}/p' "$source_file"
+} > "$helper"
+# shellcheck disable=SC1090
+source "$helper"
+
+work="$(mktemp -d)"
+trap 'rm -f "$helper"; rm -rf "$work"' EXIT
+
+# 成功路径：落地成目标文件，不留下 .macwave-part
+if ! fetch_to_file "file://$source_file" "$work/ok.sh" 5; then
+    echo "  ❌ 本地文件下载失败"
+    exit 1
+fi
+[[ -s "$work/ok.sh" ]] || { echo "  ❌ 目标文件为空"; exit 1; }
+[[ -z "$(find "$work" -name '*.macwave-part' -print -quit)" ]] || { echo "  ❌ 残留 .macwave-part"; exit 1; }
+
+# 失败路径：本地没有这个文件，重试用尽后放弃，且不能破坏原地已有的好文件
+echo "GOOD" > "$work/keep.sh"
+if fetch_to_file "file://$work/nope/none.sh" "$work/keep.sh" 5 >/dev/null 2>&1; then
+    echo "  ❌ 不存在的文件竟然下载成功"
+    exit 1
+fi
+[[ "$(cat "$work/keep.sh")" == "GOOD" ]] || { echo "  ❌ 失败时破坏了原文件"; exit 1; }
+[[ -z "$(find "$work" -name '*.macwave-part' -print -quit)" ]] || { echo "  ❌ 失败后残留 .macwave-part"; exit 1; }
+SHEOF
+then
+    echo -e "${GREEN}🌊 OK: downloads retry, stay atomic, and give up cleanly${RESET}"
+else
+    echo -e "${RED_BOLD}🌊 FAIL: download retry / atomic write${RESET}"
+    FAILED=$((FAILED + 1))
+fi
+
+# ==========================================
+# 5. 同大版本的端到端自更新（真的会改动安装目录，放最后）
 # ==========================================
 
 echo "========== end-to-end selfupdate =========="

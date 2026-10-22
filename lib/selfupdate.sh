@@ -19,6 +19,67 @@ YELLOW='\033[33m'
 RESET='\033[0m'
 
 # ==========================================
+# 每个请求的超时
+# ==========================================
+#
+# `wave selfupdate --max-time=1min` 把这个值原样传下来（MACWAVE_MAX_TIME），
+# 本脚本自己解析 —— 中间任何一层都不替我们算好，规则只有一套。
+# 没给时按请求类型取默认值：元数据 30 秒、文件清单与单个文件 60 秒、Python 归档 900 秒。
+#
+# 为什么必须有超时：没有它，一次「连上了但不再有数据」的抖动会让自更新无限挂住，
+# 用户看到的就是一个永远不动的界面。
+
+METADATA_TIMEOUT=30
+FILE_TIMEOUT=60
+ARCHIVE_TIMEOUT=900
+
+mw_seconds() {
+    # 与 pkg/pkginstaller.py 的 _parse_duration 同一套规则：
+    # 40 / 40s / 1min / 1min20s / 2h / 1m30s / 250ms 都行，无单位按秒。
+    # 成功时打印整数秒（向上取整，至少 1 秒），格式不合法返回 1。
+    awk -v raw="$1" 'BEGIN {
+        text = tolower(raw)
+        gsub(/[ \t]/, "", text)
+        if (text == "") exit 1
+        total = 0
+        while (length(text) > 0) {
+            # 单位必须长优先：`1min` 若先匹配到单字母 `m`，剩下的 `in` 就无解了
+            if (!match(text, /^[0-9]+(\.[0-9]+)?/)) exit 1
+            number = substr(text, 1, RLENGTH)
+            text = substr(text, RLENGTH + 1)
+            if (match(text, /^(hrs|hr|h|mins|min|ms|secs|sec|s|m)/)) {
+                unit = substr(text, 1, RLENGTH)
+                text = substr(text, RLENGTH + 1)
+            } else {
+                unit = ""
+            }
+            if (unit == "" || unit == "s" || unit == "sec" || unit == "secs") factor = 1
+            else if (unit == "m" || unit == "min" || unit == "mins") factor = 60
+            else if (unit == "h" || unit == "hr" || unit == "hrs") factor = 3600
+            else if (unit == "ms") factor = 0.001
+            else exit 1
+            total += number * factor
+        }
+        if (total <= 0) exit 1
+        seconds = int(total)
+        if (seconds < total) seconds++
+        if (seconds < 1) seconds = 1
+        printf "%d\n", seconds
+    }'
+}
+
+if [[ -n "${MACWAVE_MAX_TIME:-}" ]]; then
+    if ! _user_timeout="$(mw_seconds "$MACWAVE_MAX_TIME")"; then
+        echo -e "${RED_BOLD}🌊 Error: cannot parse --max-time value '$MACWAVE_MAX_TIME'.${RESET}" >&2
+        echo -e "${RED_BOLD}🌊 Use a number of seconds or a suffix like 40s, 1min, 1min20s, 2h.${RESET}" >&2
+        exit 1
+    fi
+    METADATA_TIMEOUT="$_user_timeout"
+    FILE_TIMEOUT="$_user_timeout"
+    ARCHIVE_TIMEOUT="$_user_timeout"
+fi
+
+# ==========================================
 # 目标仓库、分支与版本
 # ==========================================
 
@@ -116,6 +177,76 @@ run_cmd() {
     fi
 }
 
+direct() {
+    "$@"
+}
+
+# ==========================================
+# 带超时与重试的下载
+# ==========================================
+#
+# 一次网络抖动不该让整个自更新前功尽弃：每个请求都有超时，失败按 curl 的退出码
+# 判断值不值得重试，并且先写 <目标>.macwave-part 再 mv ——
+# 重试期间目标位置不会出现半个文件，全部失败时原地那份好文件也不受影响。
+
+FETCH_ATTEMPTS=3
+RETRY_DELAY=2
+
+fetch_to_file() {
+    # fetch_to_file <url> <目标文件> <超时秒> [runner] [尝试次数]
+    # runner 为 run_cmd 时按安装目录的权限决定要不要 sudo。
+    local url="$1"
+    local destination="$2"
+    local timeout="$3"
+    local runner="${4:-direct}"
+    local attempts="${5:-$FETCH_ATTEMPTS}"
+    local partial="$destination.macwave-part"
+    local attempt status
+
+    "$runner" mkdir -p "$(dirname "$destination")"
+
+    for ((attempt = 1; attempt <= attempts; attempt++)); do
+        status=0
+        "$runner" curl -fsSL --max-time "$timeout" -o "$partial" "$url" || status=$?
+        if [[ "$status" -eq 0 ]]; then
+            "$runner" mv -f "$partial" "$destination"
+            return 0
+        fi
+        "$runner" rm -f "$partial" 2>/dev/null || true
+
+        case "$status" in
+            22|23|1|2|3)
+                # 22=HTTP 4xx/5xx（404 是「没有这个文件」）、23=写盘失败、1~3=用法错误。
+                # 这些重试没有意义，直接放弃。
+                return 1
+                ;;
+        esac
+
+        if ((attempt < attempts)); then
+            echo -e "${YELLOW}🌊 Retrying ($((attempt + 1))/$attempts): $url${RESET}" >&2
+            sleep "$RETRY_DELAY"
+        fi
+    done
+
+    return 1
+}
+
+fetch_text() {
+    # fetch_text <url> <超时秒>：成功时把内容打到 stdout。
+    # 先落盘再输出，重试期间不会把半截内容漏给调用方。
+    local url="$1"
+    local timeout="$2"
+    local tmp status=1
+
+    tmp="$(mktemp -t macwave-fetch)"
+    if fetch_to_file "$url" "$tmp" "$timeout"; then
+        cat "$tmp"
+        status=0
+    fi
+    rm -f "$tmp"
+    return "$status"
+}
+
 # 安装目录与配置目录未必同级：用户级安装也可能读系统级配置（系统级优先），
 # 所以配置目录单独判断权限。
 config_cmd() {
@@ -138,9 +269,9 @@ fi
 VERSION="${MACWAVE_UPDATE_VERSION:-}"
 
 if [[ -z "$VERSION" ]]; then
-    VERSION=$(curl -fsSL --max-time 30 "$VERSION_DATA_URL" \
+    VERSION="$(fetch_text "$VERSION_DATA_URL" "$METADATA_TIMEOUT" \
         | sed -n 's/^version:[[:space:]]*"\(.*\)"/\1/p' \
-        | head -n 1)
+        | head -n 1)" || true
 fi
 
 if [[ -z "$VERSION" ]]; then
@@ -200,12 +331,12 @@ fi
 
 UPDATEDATA_URL="$CONFIGDATA_URL/updatedata/$VERSION"
 
-DIR_STRUCTURE_CHANGE="$(curl -fsSL --max-time 30 "$UPDATEDATA_URL/dir_structure_change" 2>/dev/null | tr -d '[:space:]')" || DIR_STRUCTURE_CHANGE=""
+DIR_STRUCTURE_CHANGE="$(fetch_text "$UPDATEDATA_URL/dir_structure_change" "$METADATA_TIMEOUT" 2>/dev/null | tr -d '[:space:]')" || DIR_STRUCTURE_CHANGE=""
 
 if [[ "$DIR_STRUCTURE_CHANGE" == "Y" || "$DIR_STRUCTURE_CHANGE" == "y" ]]; then
     echo -e "${YELLOW}🌊 Directory structure changed in $VERSION, running migration...${RESET}"
 
-    TRANSFER_COMMANDS="$(curl -fsSL --max-time 60 "$UPDATEDATA_URL/transfer_commands" 2>/dev/null)" || TRANSFER_COMMANDS=""
+    TRANSFER_COMMANDS="$(fetch_text "$UPDATEDATA_URL/transfer_commands" "$FILE_TIMEOUT" 2>/dev/null)" || TRANSFER_COMMANDS=""
     if [[ -z "$TRANSFER_COMMANDS" ]]; then
         echo -e "${RED_BOLD}🌊 Error: Cannot fetch the migration script for $VERSION.${RESET}"
         echo -e "${RED_BOLD}🌊 Nothing was updated. Check your network, then try again.${RESET}"
@@ -256,19 +387,7 @@ trap cleanup_files_info EXIT
 
 echo "🌊 Fetching the file list..."
 
-FILES_INFO_ATTEMPTS=3
-FILES_INFO_OK=false
-for attempt in $(seq 1 "$FILES_INFO_ATTEMPTS"); do
-    if curl -fsSL --max-time 60 -o "$FILES_INFO_TMP" "$FILES_INFO_URL"; then
-        FILES_INFO_OK=true
-        break
-    fi
-    if [[ "$attempt" -lt "$FILES_INFO_ATTEMPTS" ]]; then
-        echo -e "${YELLOW}🌊 Retrying the file list ($((attempt + 1))/$FILES_INFO_ATTEMPTS)...${RESET}"
-    fi
-done
-
-if [[ "$FILES_INFO_OK" != "true" ]]; then
+if ! fetch_to_file "$FILES_INFO_URL" "$FILES_INFO_TMP" "$FILE_TIMEOUT"; then
     echo -e "${RED_BOLD}🌊 Error: Cannot fetch versiondata/files_info from the configdata repository.${RESET}"
     echo -e "${RED_BOLD}🌊 Nothing was updated. Check your network or proxy, then try again.${RESET}"
     exit 1
@@ -337,8 +456,13 @@ while IFS=$'\t' read -r repo_path local_path executable; do
     fi
 
     echo "🌊 Updating $repo_path..."
-    run_cmd mkdir -p "$(dirname "$BASE_DIR/$local_path")"
-    run_cmd curl -fsSL -o "$BASE_DIR/$local_path" "$BASE_URL/$repo_path"
+    if ! fetch_to_file "$BASE_URL/$repo_path" "$BASE_DIR/$local_path" "$FILE_TIMEOUT" run_cmd; then
+        echo -e "${RED_BOLD}🌊 Error: Cannot download $repo_path.${RESET}" >&2
+        # VERSION.json 只在全部文件到位后才写，所以版本号还是旧的：
+        # 网络恢复后再跑一次 wave selfupdate 就会从这里继续。
+        echo -e "${RED_BOLD}🌊 Nothing was recorded as updated. Check your network, then run wave selfupdate again.${RESET}" >&2
+        exit 1
+    fi
 
     if [[ "$executable" == "1" ]]; then
         run_cmd chmod +x "$BASE_DIR/$local_path"
@@ -415,7 +539,9 @@ ensure_portable_python() {
     [[ -n "$arch" ]] || return 1
 
     data_file="$(mktemp -t macwave-pyver)"
-    if ! curl -fsSL --max-time 30 -o "$data_file" "$data_url" 2>/dev/null; then
+    # 超时与重试同其他请求；install.sh 里的同名步骤固定用 30/900 秒，
+    # 因为引导安装没有命令行旗标可依。
+    if ! fetch_to_file "$data_url" "$data_file" "$METADATA_TIMEOUT"; then
         rm -f "$data_file"
         return 1
     fi
@@ -435,9 +561,9 @@ ensure_portable_python() {
         :
     else
         archive="$base_dir/downloads/tmp/portable-python-$version.tar.gz"
-        mkdir -p "$base_dir/downloads/tmp" 2>/dev/null || true
-        if ! curl -fsSL --max-time 900 -o "$archive" "$url" 2>/dev/null; then
-            rm -f "$archive"
+        # 归档几十 MB，重试一次就够，再多次也只是拖长等待
+        if ! fetch_to_file "$url" "$archive" "$ARCHIVE_TIMEOUT" direct 2; then
+            rm -f "$archive" "$archive.macwave-part"
             return 1
         fi
         actual="$(shasum -a 256 "$archive" | awk '{print $1}')"

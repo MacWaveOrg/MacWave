@@ -126,10 +126,12 @@ COMMAND_HELP = {
         "examples": ["wave info jq"],
     },
     "selfupdate": {
-        "usage": "wave selfupdate",
+        "usage": "wave selfupdate [flags]",
         "desc": "Update MacWave itself to the version published in the configdata repository.",
-        "flags": [],
-        "examples": ["wave selfupdate"],
+        "flags": [
+            ("--max-time <string>", "Timeout for each request (40s, 1min, 1min20s, 2h; bare numbers are seconds)"),
+        ],
+        "examples": ["wave selfupdate", "wave selfupdate --max-time=2min"],
     },
     "link": {
         "usage": "wave link <package>[@<version>] | wave link --all",

@@ -113,8 +113,6 @@ def main():
             else:
                 handle_unlink_command(full_input)
 
-        # 预留：query
-
         sys.exit(0)
 
     # 4. 未知输入

@@ -28,17 +28,49 @@ FETCH_TIMEOUT = 30
 UPDATE_TIMEOUT = 1800
 
 
+# -------------------- 超时 --------------------
+
+def max_time(input_string):
+    # `--max-time` 从**原始命令行**里取（规则见 pkginstaller._parse_duration），
+    # 本层只用它约束自己的请求；同一个值原样交给 selfupdate.sh，由那边再解析一次。
+    # 中间不替任何人算好，命令行怎么写就怎么生效。
+    # 返回 (原始文本, 秒数)：没有该旗标时原始文本为空、秒数取默认。
+    if not input_string:
+        return "", FETCH_TIMEOUT
+
+    from pkginstaller import _parse_duration, flag_value
+
+    raw = flag_value(input_string, "--max-time") or ""
+    if not raw:
+        return "", FETCH_TIMEOUT
+
+    seconds = _parse_duration(raw)
+    if seconds is None:
+        print(f"{RED_BOLD}🌊 Error: cannot parse --max-time value '{raw}'.{RESET}")
+        print(f"{RED_BOLD}🌊 Use a number of seconds or a suffix like 40s, 1min, 1min20s, 2h.{RESET}")
+        sys.exit(1)
+    return raw, seconds
+
+
+def curl_seconds(timeout):
+    # curl 的 --max-time 收小数，但 0 表示「不限」，所以至少给 1 秒
+    return max(1, int(round(timeout)))
+
+
 # -------------------- 版本数据 --------------------
 
-def fetch_version_data():
+def fetch_version_data(timeout=FETCH_TIMEOUT):
     # 优先用标准库；本地 Python 缺根证书（macOS 常见）时改走 curl
     try:
-        with urllib.request.urlopen(VERSION_DATA_URL, timeout=FETCH_TIMEOUT) as response:
+        with urllib.request.urlopen(VERSION_DATA_URL, timeout=timeout) as response:
             return response.read().decode()
-    except (urllib.error.URLError, UnicodeDecodeError):
+    except (urllib.error.URLError, UnicodeDecodeError, OSError):
         pass
 
-    result = subprocess.run(['curl', '-fsSL', '--max-time', str(FETCH_TIMEOUT), VERSION_DATA_URL],
+    result = subprocess.run(['curl', '-fsSL',
+                             '--max-time', str(curl_seconds(timeout)),
+                             '--retry', '2', '--retry-delay', '2', '--retry-connrefused',
+                             VERSION_DATA_URL],
                             capture_output=True, text=True)
     if result.returncode != 0:
         return None
@@ -105,9 +137,11 @@ def handle_selfupdate(input_string=""):
         print(f"{RED_BOLD}🌊 Error: MacWave is not installed. Run lib/install.sh first.{RESET}")
         sys.exit(1)
 
+    max_time_raw, timeout = max_time(input_string)
+
     print("🌊 Fetching the latest version...")
 
-    text = fetch_version_data()
+    text = fetch_version_data(timeout)
     if text is None:
         print(f"{RED_BOLD}🌊 Error: Cannot reach the MacWave version data.{RESET}")
         print(f"{RED_BOLD}🌊 {VERSION_DATA_URL}{RESET}")
@@ -138,14 +172,21 @@ def handle_selfupdate(input_string=""):
     else:
         print(f"{YELLOW}🌊 No installed version found, updating to {latest}...{RESET}")
 
-    # 分支与目标版本通过环境变量传给 selfupdate.sh，避免脚本自己去猜
+    # 分支与目标版本通过环境变量传给 selfupdate.sh，避免脚本自己去猜。
+    # --max-time 也这样传：原样传文本，让脚本自己解析（它才是真正发请求的那一层）。
     environment = dict(os.environ)
     environment["MACWAVE_UPDATE_VERSION"] = latest
     if data.get("branch"):
         environment["MACWAVE_UPDATE_BRANCH"] = data["branch"]
+    if max_time_raw:
+        environment["MACWAVE_MAX_TIME"] = max_time_raw
+
+    # 一轮更新要串行下载十几个文件，每个最多重试几次；单次超时被调大时，
+    # 整体上限也要跟着放大，否则会在一半的地方被这里杀掉。
+    overall_timeout = max(UPDATE_TIMEOUT, int(timeout) * 20)
 
     try:
-        result = subprocess.run(['/bin/bash', '-c', command], env=environment, timeout=UPDATE_TIMEOUT)
+        result = subprocess.run(['/bin/bash', '-c', command], env=environment, timeout=overall_timeout)
     except subprocess.TimeoutExpired:
         print(f"{RED_BOLD}🌊 Error: The update command timed out.{RESET}")
         sys.exit(1)
