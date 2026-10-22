@@ -197,6 +197,8 @@ GitHub 不允许把 PR 作者设为审阅人。
 | `4b9ef56` | 限速峰值改为 1 秒窗口计算 |
 | `8512158` | 已安装依赖改读本地 `_DEPS`，不再回源 |
 | `1c1d78e` | 缺校验值 / 格式非法一律拒绝安装（3.0.5） |
+| `fd594c3` | 区分「缺依赖」与「缺模块」，启动时统一检查 |
+| `44689aa` | 私有 venv + sh 启动器，入口不再依赖 PATH（3.0.6） |
 | `3b9e4d8`（LinuxWave） | 镜像改用 PAT |
 | `7968fab`（LinuxWave） | 恢复负向测试载荷到 `test/` |
 | `3894d05`（LinuxWave infosource） | 四个测试记录改指本项目自己的载荷 |
@@ -320,3 +322,57 @@ HTTPS 只保护传输过程不被中间人改写，它保护不了两件事：�
 
 值得改进的方向：文件逐个下载时对单文件做重试，而不是整体失败；以及把「哪些文件没下成」
 列出来。目前它至少是**失败得干净**，不会造成半升级状态。
+
+---
+
+## 二十一、入口写 `#!/usr/bin/env python3`：系统 Python 一升级，全线报错（3.0.6 修）
+
+**现象**：
+
+```
+$ wave linkquery jq
+🌊 Error: 'pkgversionparser' module is not available.
+```
+
+而 `wave linkquery -h` 完全正常 —— 因为帮助文本是纯字符串，不走任何版本比较逻辑。
+
+**根因是两段独立的「当时」**：
+
+- 安装时，`pip3 install requests packaging rich` 装进的是**那时候** PATH 上的 `pip3`；
+- 运行时，入口第一行是 `#!/usr/bin/env python3`，用的是**这时候** PATH 上的 `python3`。
+
+本机上 Homebrew 在 10-22 把 `python3` 从 3.14 换成了 3.15（`/opt/homebrew/bin/python3`
+的符号链接指向了新的 Cellar），而三个依赖仍留在 3.14 的 site-packages 里。两段「当时」
+不再一致，于是所有需要版本比较的命令全部失败。
+
+**为什么报错信息会骗人**：`pkgversionparser.py` 里 `from packaging.version import parse`，
+而调用方写的是 `except ImportError:` 然后报「'pkgversionparser' 模块不可用」。模块明明在，
+缺的是它依赖的第三方库 —— 报错指错了文件，排查方向整整偏了一层。
+
+**修复分两部分。**
+
+1. **诊断**（`fd594c3`）：四处导入点改成 `except ModuleNotFoundError as error`，
+   用 `error.name` 区分「自己的模块找不到」与「第三方依赖找不到」；后者直接点出包名、
+   当前解释器路径和修复命令。同时在 `wave.py` 启动时统一检查三个依赖，让**任何**命令
+   都以同样的方式失败，而不是只有碰巧用到解析器的那些。
+
+2. **架构**（`44689aa`）：不再依赖 PATH。
+   - 安装/自更新时在 `$BASE_DIR/venv` 建私有虚拟环境，三个依赖装进去；
+   - `lib/wave` 改成 `install.sh` / `selfupdate.sh` 生成的 **sh 启动器**，它解析自身路径
+     （含符号链接），按「私有 venv → 安装时记录的解释器 → PATH 上的 python3」依次尝试，
+     **并且只有能真正 `import requests, packaging, rich` 时才采用**；
+   - `lib/wave.py` 保持原名落盘，脚本本体不再设可执行位。
+
+**关于「用 pyenv 自动选版本」为什么不做**：pyenv 是用户级工具，不随 MacWave 安装；
+`pyenv global/local/shell` 随时改变 `python3` 指向，反而让同类故障更频繁；它还要求用户
+配置 shell 初始化。它解决的是「我需要多个 Python 版本」，不是「我的工具必须能找到自己
+的依赖」—— 方向不对。私有 venv 才是把两者绑在一起。
+
+**教训**：
+
+1. **自带依赖的 CLI 不能用 `#!/usr/bin/env` 指向解释器。** 入口必须自己决定用哪个解释器，
+   并且要把依赖放在自己控制的位置。
+2. **`except ImportError` 会把「依赖缺失」伪装成「模块缺失」。** 至少用
+   `ModuleNotFoundError.name` 区分一下，否则错误信息会把排查带偏。
+3. **诊断与架构要一起做。** 只改提示，用户仍然要自己处理；只改架构，遇到别的原因
+   （磁盘满、权限）时仍然没有线索。
