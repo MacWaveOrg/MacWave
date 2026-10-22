@@ -71,28 +71,27 @@ jobs:
           fi
           echo "Bundling CPython $version (requested=${REQUESTED:-none}, declared=${declared:-none})"
 
-          # 上游按日期打 tag，资产名形如
+          # 上游按日期打 tag，资产名是确定的：
           #   cpython-<版本>+<tag>-<triple>-install_only.tar.gz
-          # 从最新 tag 往回找，第一个匹配就是最新的那个构建。
-          tags="$(gh api "repos/$UPSTREAM_REPO/releases?per_page=8" --jq '.[].tag_name')"
+          # 所以既不需要 GitHub API 的 release 列表，也不需要资产清单 ——
+          # 之前那两步都踩过坑（[].tag_name 在 CI 里拿到空数组、/tags/{tag}/assets 根本不存在）。
+          # 这里只取 tag 名，然后逐个用 HEAD 探确定的 URL，第一个 200 就是最新的构建。
+          tags="$(git ls-remote --tags --refs "https://github.com/$UPSTREAM_REPO" 2>/dev/null \
+            | awk '{print $2}' | sed 's#refs/tags/##' | grep -E '^[0-9]+$' | sort -r | head -n 6)"
+          if [ -z "$tags" ]; then
+            echo "::error::Cannot list upstream tags for $UPSTREAM_REPO."
+            exit 1
+          fi
           echo "Recent upstream tags: $(echo "$tags" | tr '\n' ' ')"
 
           resolve() {
             # resolve <triple>：打印匹配资产的下载地址，找不到返回 1
             local triple="$1"
-            local tag release_id name
+            local tag url
             for tag in $tags; do
-              # /releases/tags/{tag}/assets 不存在（404）；资产要按 release id 列。
-              release_id="$(gh api "repos/$UPSTREAM_REPO/releases/tags/$tag" --jq '.id' 2>/dev/null)" || continue
-              [ -n "$release_id" ] || continue
-              name="$(gh api "repos/$UPSTREAM_REPO/releases/$release_id/assets?per_page=100" \
-                --paginate --jq '.[].name' 2>/dev/null \
-                | grep -F "cpython-$version+" \
-                | grep -F -- "-$triple-install_only.tar.gz" \
-                | grep -v stripped \
-                | head -n 1)" || true
-              if [ -n "$name" ]; then
-                echo "https://github.com/$UPSTREAM_REPO/releases/download/$tag/$name"
+              url="https://github.com/$UPSTREAM_REPO/releases/download/$tag/cpython-$version+$tag-$triple-install_only.tar.gz"
+              if curl -fsIL --max-time 60 -o /dev/null "$url" 2>/dev/null; then
+                echo "$url"
                 return 0
               fi
             done
