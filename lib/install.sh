@@ -366,7 +366,8 @@ fi
 #
 # 缩进每层 4 个空格，Tab 与 4 个空格等价，两种可以混用。
 # 每个文件都从 "$BASE_URL/<仓库路径>" 下载，落到 "$BASE_DIR" 下的同名位置。
-# 唯一的特例：lib/wave.py 装成可执行的 lib/wave（它是 PATH 里的入口名）。
+# lib/wave.py 按原名落盘；PATH 上的入口 lib/wave 由后面的 write_launcher 生成
+# （它要按私有 venv 与解释器路径决定怎么启动，不能直接复制脚本本体）。
 #
 # 这一步刻意放在「建目录 / 写配置 / 清旧版」之前：连不上 configdata 仓库就直接退出，
 # 不会留下一个配置已写好、文件却一个都没下的半成品安装。
@@ -602,7 +603,9 @@ for raw in open(sys.argv[1], encoding="utf-8"):
         repo_path = "/".join([directory for _, directory in stack] + [name])
 
     if repo_path == "lib/wave.py":
-        local_path, executable = "lib/wave", 1
+        # 入口 lib/wave 由后面的 write_launcher 生成（要按私有 venv 与解释器
+        # 决定怎么启动），所以脚本本体不设可执行位。
+        local_path, executable = repo_path, 0
     else:
         local_path, executable = repo_path, int(repo_path.endswith(".sh"))
 
@@ -644,42 +647,137 @@ while IFS=$'\t' read -r repo_path local_path executable; do
 done <<< "$FILE_ENTRIES"
 
 # ==========================================
+# Python 运行环境（私有 venv + 启动器）
+# ==========================================
+
+# 为什么不用 PATH 上的 python3 直接当入口：
+#   macOS 上 `python3` 可能指向 Homebrew 管理的版本，升级一次就换了路径，
+#   而第三方依赖仍留在旧版本的 site-packages 里。入口写死 `#!/usr/bin/env python3`
+#   就会在升级后全线报错（3.0.5 之前真实发生过）。
+#
+# 做法：
+#   1. 在安装根目录建私有 venv，把 requests / packaging / rich 装进去；
+#   2. lib/wave 变成一个 sh 启动器，按「venv → 安装时的解释器 → PATH」顺序挑选，
+#      并且只有能真正 import 到三个依赖时才使用。
+#
+# 这样系统 Python 怎么升都不会影响已安装的 MacWave。
+
+# 先确保安装树归当前用户所有：venv 与依赖都要以用户身份写入。
+if [[ "$NEED_SUDO" == "true" ]]; then
+    sudo chown -R "$CURRENT_USER": "$BASE_DIR"
+fi
+
+PYTHON_BIN="$(command -v python3 || true)"
+VENV_DIR="$BASE_DIR/venv"
+VENV_PY=""
+
+if [[ -z "$PYTHON_BIN" ]]; then
+    echo -e "${RED_BOLD}🌊 Error: python3 is required but was not found in PATH.${RESET}"
+    exit 1
+fi
+
+mkdir -p "$VENV_DIR" 2>/dev/null || true
+
+if "$PYTHON_BIN" -m venv "$VENV_DIR" >/dev/null 2>&1; then
+    VENV_PY="$VENV_DIR/bin/python3"
+    [[ -x "$VENV_PY" ]] || VENV_PY="$VENV_DIR/bin/python"
+    echo "🌊 Private Python environment ready: ${VENV_DIR#"$BASE_DIR"/}"
+else
+    echo -e "${YELLOW}🌊 Warning: could not create a private virtualenv; falling back to the system interpreter.${RESET}"
+fi
+
+if [[ -n "$VENV_PY" && -x "$VENV_PY" ]]; then
+    echo "🌊 Installing Python dependencies into the private environment..."
+    "$VENV_PY" -m pip install --quiet --upgrade pip >/dev/null 2>&1 || true
+    if ! "$VENV_PY" -m pip install --quiet requests packaging rich; then
+        echo -e "${RED_BOLD}🌊 Error: failed to install the Python dependencies.${RESET}"
+        echo -e "${RED_BOLD}🌊 Try again, or install them manually into $VENV_PY.${RESET}"
+        exit 1
+    fi
+else
+    echo "🌊 Installing Python dependencies into $PYTHON_BIN..."
+    PIP_FLAGS=(--quiet)
+    if ! "$PYTHON_BIN" -m pip install "${PIP_FLAGS[@]}" requests packaging rich 2>/dev/null; then
+        if ! "$PYTHON_BIN" -m pip install "${PIP_FLAGS[@]}" --user --break-system-packages requests packaging rich; then
+            echo -e "${RED_BOLD}🌊 Error: failed to install the Python dependencies.${RESET}"
+            exit 1
+        fi
+    fi
+fi
+
+# 生成入口启动器：把当前解释器路径烘进去，作为 venv 失效时的第二选择。
+write_launcher() {
+    local base_dir="$1"
+    local recorded="$2"
+    local target="$base_dir/lib/wave"
+    local tmp
+    tmp="$(mktemp -t macwave-launcher)"
+
+    cat > "$tmp" <<'LAUNCHER'
+#!/bin/sh
+# MacWave launcher
+# 由 install.sh / selfupdate.sh 生成，会被覆盖，请不要手工编辑。
+#
+# 选择一个**真正能 import 到依赖**的解释器来运行 lib/wave.py：
+#   1. 安装根目录下的私有 venv（与系统 Python 升级完全解耦）
+#   2. 生成这个启动器时的解释器路径
+#   3. PATH 上的 python3（最后兜底，wave.py 会给出缺少哪个依赖）
+
+set -u
+
+# 解析自身真实路径（可能经由 PATH 上的符号链接调用）
+self="$0"
+while [ -L "$self" ]; do
+    link="$(readlink "$self")"
+    case "$link" in
+        /*) self="$link" ;;
+        *)  self="$(dirname "$self")/$link" ;;
+    esac
+done
+lib_dir="$(cd -- "$(dirname -- "$self")" && pwd)" || exit 1
+root_dir="$(cd -- "$lib_dir/.." && pwd)" || exit 1
+entry="$lib_dir/wave.py"
+
+#__MACWAVE_PYTHON__
+
+deps_ok() {
+    [ -x "$1" ] || return 1
+    "$1" -c 'import requests, packaging, rich' >/dev/null 2>&1
+}
+
+if deps_ok "$root_dir/venv/bin/python3"; then
+    exec "$root_dir/venv/bin/python3" "$entry" "$@"
+fi
+if deps_ok "$root_dir/venv/bin/python"; then
+    exec "$root_dir/venv/bin/python" "$entry" "$@"
+fi
+if [ -n "${MACWAVE_PYTHON:-}" ] && deps_ok "$MACWAVE_PYTHON"; then
+    exec "$MACWAVE_PYTHON" "$entry" "$@"
+fi
+if command -v python3 >/dev/null 2>&1; then
+    exec python3 "$entry" "$@"
+fi
+
+echo "🌊 Error: no usable Python 3 interpreter was found." >&2
+echo "🌊 Reinstall MacWave with lib/install.sh." >&2
+exit 1
+LAUNCHER
+
+    local escaped
+    escaped="$(printf '%s' "$recorded" | sed 's/[\\"`$]/\\&/g')"
+    sed "s|#__MACWAVE_PYTHON__|MACWAVE_PYTHON=\"$escaped\"|" "$tmp" > "$target"
+    rm -f "$tmp"
+    chmod +x "$target"
+}
+
+run_cmd write_launcher "$BASE_DIR" "$PYTHON_BIN"
+
+# ==========================================
 # 把所有权交还给用户（下载后再次确保）
 # ==========================================
 
 if [[ "$NEED_SUDO" == "true" ]]; then
     sudo chown -R "$CURRENT_USER": "$BASE_DIR"
-fi
-
-# ==========================================
-# 安装 Python 依赖
-# ==========================================
-
-echo "🌊 Checking Python dependencies..."
-if ! python3 -c "import requests" 2>/dev/null; then
-    echo "🌊 Installing 'requests' library..."
-    pip3 install requests --quiet
-else
-    echo "🌊 'requests' library is already installed."
-fi
-
-if ! python3 -c "from packaging.version import parse" 2>/dev/null; then
-    echo "🌊 Installing 'packaging' library..."
-    pip3 install packaging --quiet
-else
-    echo "🌊 'packaging' library is already installed."
-fi
-
-if ! python3 -c "import rich" 2>/dev/null; then
-    echo "🌊 Installing 'rich' library for progress bar..."
-    if pip3 install rich --quiet; then
-        echo "🌊 'rich' installed successfully."
-    else
-        echo -e "${RED_BOLD}🌊 Warning: 'rich' installation failed. Progress bar will not be available.${RESET}"
-        echo "🌊 You can install it manually later: pip3 install rich"
-    fi
-else
-    echo "🌊 'rich' library is already installed."
 fi
 
 # ==========================================

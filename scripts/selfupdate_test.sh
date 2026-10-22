@@ -270,7 +270,7 @@ import re
 import sys
 
 base_dir = sys.argv[1]
-with open(os.path.join(base_dir, 'lib', 'wave'), encoding='utf-8') as handle:
+with open(os.path.join(base_dir, 'lib', 'wave.py'), encoding='utf-8') as handle:
     source = handle.read()
 
 block = source.split('COMMANDS = {', 1)[1].split('}', 1)[0]

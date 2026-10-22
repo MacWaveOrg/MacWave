@@ -242,7 +242,8 @@ fi
 #
 # 缩进每层 4 个空格，Tab 与 4 个空格等价，两种可以混用。
 # 每个文件都从 "$BASE_URL/<仓库路径>" 下载，落到 "$BASE_DIR" 下的同名位置。
-# 唯一的特例：lib/wave.py 装成可执行的 lib/wave（它是 PATH 里的入口名）。
+# lib/wave.py 按原名下载；PATH 上的入口 lib/wave 由 write_launcher 生成
+# （它要按私有 venv 与解释器路径决定怎么启动，不能直接复制脚本本体）。
 # 以后新增文件只要改 configdata 的这份清单，不用再动本脚本。
 
 FILES_INFO_URL="$CONFIGDATA_URL/versiondata/files_info"
@@ -307,10 +308,7 @@ for raw in open(sys.argv[1], encoding="utf-8"):
     else:
         repo_path = "/".join([directory for _, directory in stack] + [name])
 
-    if repo_path == "lib/wave.py":
-        local_path, executable = "lib/wave", 1
-    else:
-        local_path, executable = repo_path, int(repo_path.endswith(".sh"))
+    local_path, executable = repo_path, int(repo_path.endswith(".sh"))
 
     lines.append(f"{repo_path}\t{local_path}\t{executable}")
 
@@ -357,6 +355,108 @@ for cache in "$LIB_DIR/__pycache__" "$PKG_DIR/__pycache__" "$SURFBOARD_DIR/__pyc
         run_cmd rm -rf "$cache"
     fi
 done
+
+# ==========================================
+# Python 运行环境（私有 venv + 启动器）
+# ==========================================
+#
+# 每次自更新都重新确认一遍：老版本装出来的树里没有 venv，入口也还是
+# `#!/usr/bin/env python3`，一旦系统 Python 升级就会全线报错。这里补齐。
+
+PYTHON_BIN="$(command -v python3 || true)"
+VENV_DIR="$BASE_DIR/venv"
+VENV_PY=""
+
+if [[ -n "$PYTHON_BIN" ]]; then
+    if [[ ! -x "$VENV_DIR/bin/python3" && ! -x "$VENV_DIR/bin/python" ]]; then
+        mkdir -p "$VENV_DIR" 2>/dev/null || true
+        if run_cmd "$PYTHON_BIN" -m venv "$VENV_DIR" >/dev/null 2>&1; then
+            echo "🌊 Private Python environment created: ${VENV_DIR#"$BASE_DIR"/}"
+        fi
+    fi
+
+    if [[ -x "$VENV_DIR/bin/python3" ]]; then
+        VENV_PY="$VENV_DIR/bin/python3"
+    elif [[ -x "$VENV_DIR/bin/python" ]]; then
+        VENV_PY="$VENV_DIR/bin/python"
+    fi
+
+    if [[ -n "$VENV_PY" ]]; then
+        if ! "$VENV_PY" -c 'import requests, packaging, rich' >/dev/null 2>&1; then
+            echo "🌊 Installing Python dependencies into the private environment..."
+            run_cmd "$VENV_PY" -m pip install --quiet requests packaging rich >/dev/null 2>&1 || \
+                echo -e "${YELLOW}🌊 Warning: the private environment is incomplete; the launcher will fall back.${RESET}"
+        fi
+    fi
+fi
+
+write_launcher() {
+    local base_dir="$1"
+    local recorded="$2"
+    local target="$base_dir/lib/wave"
+    local tmp
+    tmp="$(mktemp -t macwave-launcher)"
+
+    cat > "$tmp" <<'LAUNCHER'
+#!/bin/sh
+# MacWave launcher
+# 由 install.sh / selfupdate.sh 生成，会被覆盖，请不要手工编辑。
+#
+# 选择一个**真正能 import 到依赖**的解释器来运行 lib/wave.py：
+#   1. 安装根目录下的私有 venv（与系统 Python 升级完全解耦）
+#   2. 生成这个启动器时的解释器路径
+#   3. PATH 上的 python3（最后兜底，wave.py 会给出缺少哪个依赖）
+
+set -u
+
+# 解析自身真实路径（可能经由 PATH 上的符号链接调用）
+self="$0"
+while [ -L "$self" ]; do
+    link="$(readlink "$self")"
+    case "$link" in
+        /*) self="$link" ;;
+        *)  self="$(dirname "$self")/$link" ;;
+    esac
+done
+lib_dir="$(cd -- "$(dirname -- "$self")" && pwd)" || exit 1
+root_dir="$(cd -- "$lib_dir/.." && pwd)" || exit 1
+entry="$lib_dir/wave.py"
+
+#__MACWAVE_PYTHON__
+
+deps_ok() {
+    [ -x "$1" ] || return 1
+    "$1" -c 'import requests, packaging, rich' >/dev/null 2>&1
+}
+
+if deps_ok "$root_dir/venv/bin/python3"; then
+    exec "$root_dir/venv/bin/python3" "$entry" "$@"
+fi
+if deps_ok "$root_dir/venv/bin/python"; then
+    exec "$root_dir/venv/bin/python" "$entry" "$@"
+fi
+if [ -n "${MACWAVE_PYTHON:-}" ] && deps_ok "$MACWAVE_PYTHON"; then
+    exec "$MACWAVE_PYTHON" "$entry" "$@"
+fi
+if command -v python3 >/dev/null 2>&1; then
+    exec python3 "$entry" "$@"
+fi
+
+echo "🌊 Error: no usable Python 3 interpreter was found." >&2
+echo "🌊 Reinstall MacWave with lib/install.sh." >&2
+exit 1
+LAUNCHER
+
+    local escaped
+    escaped="$(printf '%s' "$recorded" | sed 's/[\\"`$]/\\&/g')"
+    sed "s|#__MACWAVE_PYTHON__|MACWAVE_PYTHON=\"$escaped\"|" "$tmp" > "$target"
+    rm -f "$tmp"
+    chmod +x "$target"
+}
+
+if [[ -n "$PYTHON_BIN" ]]; then
+    run_cmd write_launcher "$BASE_DIR" "$PYTHON_BIN"
+fi
 
 # ==========================================
 # 写入新的版本号
