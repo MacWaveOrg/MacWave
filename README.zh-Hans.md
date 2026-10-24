@@ -16,7 +16,7 @@ macOS Sonoma 14 及以上
 
 3.2.0，发布于 2026-10-24
 
-## 🌊 MacWave 是什么？
+## 🌊 关于MacWave
 
 MacWave 是一个运行在 **macOS** 上的**包管理器**，旨在为 macOS 软件开发者托管常用软件包。
 
@@ -37,7 +37,7 @@ MacWave 是一个运行在 **macOS** 上的**包管理器**，旨在为 macOS �
 
 在终端中运行：
 
-```
+```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/install.sh)" && source ~/.zshrc
 ```
 
@@ -76,7 +76,7 @@ bash install.sh --silent --dir-option=1
 `uninstall.sh` 同样支持脚本化调用：`--force` 跳过确认，而确认本身需要一个终端
 （因此在 CI 里请使用 `--force`）：
 
-```
+```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/uninstall.sh)" -- --force
 ```
 
@@ -97,7 +97,7 @@ bash install.sh --silent --dir-option=1
 
 要从系统中彻底移除 MacWave，请在终端中运行以下命令：
 
-```
+```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/uninstall.sh)"
 ```
 
