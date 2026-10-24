@@ -59,7 +59,7 @@ MacWave 是一个**面向 macOS 的包管理器**，用于分发 macOS 软件开
 面向脚本与批量场景，安装器提供若干参数，全程不会停下来等待输入。
 参数放在 `--` 之后 —— `--` 会结束 bash 自身的选项：
 
-```
+```bash
 # 脚本已在本地
 bash install.sh --silent --dir-option=1
 
@@ -220,6 +220,17 @@ MacWave 由纯 Python 与 Shell 写成，没有构建步骤 —— 本仓库里�
 内部实现见 [`docs/TECHNICAL-GUIDE.md`](./docs/TECHNICAL-GUIDE.md) 与
 [`docs/CODE-MAP.md`](./docs/CODE-MAP.md)。
 
+若要阅读或修改源码，先把仓库克隆下来：
+
+```bash
+mkdir -p ~/src
+cd ~/src
+git clone https://github.com/MacWaveOrg/MacWave.git macwave
+cd macwave
+```
+
+在该目录里运行任何东西之前，请先读下面一节。
+
 ### 不要从仓库里直接运行
 
 本仓库是源码，不是安装结果。在仓库目录里运行 `wave`，或把仓库中的目录加入 `PATH`，
@@ -279,7 +290,7 @@ shallow clone 会报：
 
 每个脚本都会完整跑一遍，结果以 `PASS` 或 `FAIL` 呈现：
 
-```
+```bash
 bash scripts/configpath_test.sh    # 配置目录的解析规则
 bash scripts/format_test.sh        # 全部受支持的归档格式
 bash scripts/deps_test.sh          # 依赖安装与级联清理

@@ -61,7 +61,7 @@ system `python3` and tells you so.
 For scripts and batch use, the installer takes flags so it never waits for input.
 Options go after `--`, which ends bash's own options:
 
-```
+```bash
 # script already on disk
 bash install.sh --silent --dir-option=1
 
@@ -227,6 +227,17 @@ in this repository are the ones that run. Internals are documented in
 [`docs/TECHNICAL-GUIDE.md`](./docs/TECHNICAL-GUIDE.md) and
 [`docs/CODE-MAP.md`](./docs/CODE-MAP.md).
 
+Clone the source to read or change it:
+
+```bash
+mkdir -p ~/src
+cd ~/src
+git clone https://github.com/MacWaveOrg/MacWave.git macwave
+cd macwave
+```
+
+Read the section below before running anything from that directory.
+
 ### Do Not Run From the Clone
 
 This repository is source, not an installation. Running `wave` from inside the
@@ -288,7 +299,7 @@ counted, so removing one package does not remove a library another still uses.
 
 Each script runs end to end and reports `PASS` or `FAIL`:
 
-```
+```bash
 bash scripts/configpath_test.sh    # configuration directory resolution
 bash scripts/format_test.sh        # every supported archive format
 bash scripts/deps_test.sh          # dependency install and cascade removal
