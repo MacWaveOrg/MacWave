@@ -80,7 +80,7 @@ the list.
 `uninstall.sh` is scriptable in the same way: `--force` skips the confirmation,
 which otherwise needs a terminal (so use `--force` in CI):
 
-```
+```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/uninstall.sh)" -- --force
 ```
 
@@ -101,7 +101,7 @@ Config file is stored in (a system-level install always takes priority):
 
 To completely remove MacWave from your system, run the following command in your terminal:
 
-```
+```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/uninstall.sh)"
 ```
 
