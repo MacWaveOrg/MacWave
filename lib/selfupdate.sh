@@ -98,7 +98,14 @@ if [[ -n "${MACWAVE_TEST:-}" ]]; then
     fi
     mkdir -p "$_mw_root"
     SYS_ROOT="$(cd "$_mw_root" && pwd)"
-    export HOME="$SYS_ROOT${HOME}"
+    # 幂等：lib/configpaths.py 也会把 HOME 搬进测试根（而且先把 $MACWAVE_TEST 解析成
+    # 真实路径，所以 /var → /private/var 这类链接会被展开）。从 wave.py 一路调用下来时
+    # HOME 已经被改过一次，这里再套一层就会变成 "<根>/private/var/.../Users/<你我>"，
+    # 配置目录于是永远找不到。只在还没搬过的时候搬。
+    case "$HOME" in
+        "$SYS_ROOT"*) ;;
+        *) export HOME="$SYS_ROOT${HOME}" ;;
+    esac
     export MACWAVE_TEST_ROOT="$SYS_ROOT"
     mkdir -p "$HOME"
     echo "🌊 Test root: $SYS_ROOT"
