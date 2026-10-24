@@ -37,7 +37,7 @@ MacWave is a **package manager** that runs on **macOS/Linux**, designed to host 
 
 In the terminal, run:
 
-```
+```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/install.sh)" && source ~/.zshrc
 ```
 
@@ -80,7 +80,7 @@ the list.
 `uninstall.sh` is scriptable in the same way: `--force` skips the confirmation,
 which otherwise needs a terminal (so use `--force` in CI):
 
-```
+```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/uninstall.sh)" -- --force
 ```
 
