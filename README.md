@@ -16,7 +16,7 @@ macOS Sonoma 14 and above
 
 3.2.0, Release on 2026-10-24
 
-## 🌊 What is MacWave?
+## 🌊 About MacWave 
 
 MacWave is a **package manager** that runs on **macOS/Linux**, designed to host common software packages for macOS software developers.
 
@@ -101,7 +101,7 @@ Config file is stored in (a system-level install always takes priority):
 
 To completely remove MacWave from your system, run the following command in your terminal:
 
-```
+```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/uninstall.sh)"
 ```
 
