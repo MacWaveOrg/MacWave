@@ -41,6 +41,7 @@ def print_custom_help():
     print()
     print(f"{PURPLE}Commands:{RESET}")
     print(f"  {GREEN}install{RESET}               Install a package (latest version)")
+    print(f"  {GREEN}upgrade{RESET}               Install a package at the latest version")
     print(f"  {GREEN}uninstall{RESET}             Uninstall a package")
     print(f"  {GREEN}list{RESET}                  List installed packages")
     print(f"  {GREEN}search{RESET}                Search for a package in the index")
@@ -66,6 +67,7 @@ def print_custom_help():
     print(f"{PURPLE}Special Flags:{RESET}")
     print(f"  {GREEN}wave install <pkgname>@<version>{RESET}   Download certain version(s) of a package")
     print(f"  {CYAN}--unlink{RESET}                         Leave the unversioned link alone (install / uninstall)")
+    print(f"  {CYAN}--remove-old-version{RESET}, {CYAN}--rov{RESET}       Remove older versions after upgrading")
     print(f"  {CYAN}--all, -a{RESET}                        Apply to every installed package (link / unlink / linkquery)")
     print()
     print(f"{PURPLE}Unversioned Links:{RESET}")
@@ -97,6 +99,23 @@ COMMAND_HELP = {
         ],
         "examples": ["wave install jq", "wave install ffmpeg@6.1", "wave install jq --limit-rate 1M",
                      "wave install jq --max-time=1min"],
+    },
+    "upgrade": {
+        "usage": "wave upgrade <package> [flags]",
+        "desc": "Install the latest version of a package. Versions coexist, so the old ones "
+                "stay until --remove-old-version removes them.",
+        "flags": [
+            ("--remove-old-version, --rov", "Also remove the versions that are older than the one "
+                                            "just installed"),
+            ("-C, --continue", "Resume an interrupted download (like curl -C -)"),
+            ("--proxy <string>", "HTTP/HTTPS proxy (e.g. http://127.0.0.1:8080)"),
+            ("--skip-ssl", "Skip SSL certificate verification (insecure)"),
+            ("--limit-rate <string>", "Limit download speed (e.g. 200K, 1M, 5M)"),
+            ("--max-time <string>", "Timeout for each request (40s, 1min, 1min20s, 2h; bare numbers are seconds)"),
+            ("-v, --verbose", "Enable verbose output"),
+        ],
+        "examples": ["wave upgrade jq", "wave upgrade jq --remove-old-version",
+                     "wave upgrade jq --rov --max-time=2min"],
     },
     "uninstall": {
         "usage": "wave uninstall <package>[@<version>] [flags]",

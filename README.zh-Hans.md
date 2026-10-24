@@ -131,6 +131,7 @@ Usage:
 
 Commands:
   install     Install a package (Latest Version)
+  upgrade     Install a package at the latest version
   uninstall   Uninstall a package
   list        List installed packages
   search      Search for a package in the index
@@ -156,6 +157,8 @@ Global Flags (can be used with any command):
 
 Special Flags:
 wave install <pkgname>@<version>   Download certain version(s) of a package
+wave upgrade <pkgname>             Take a package to the latest version
+    --remove-old-version, --rov    Remove the versions older than the one just installed
     --unlink                       Leave the unversioned link alone (install / uninstall)
     --all, -a                      Apply to every installed package (link / unlink / linkquery)
 

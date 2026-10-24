@@ -208,21 +208,52 @@ def flag_value(input_string, name):
     return None
 
 
-def first_package_token(input_string):
-    # 取第一个真正的包名（跳过 flag 和带值的旗标后面的值），
-    # 这样 `wave install --unlink wget@1.25.0` 与 `wave install wget@1.25.0 --unlink` 等价
+# 这些旗标后面跟的是一个「值」，那个值不是包名。
+# 少了 --max-time 时，`wave install --max-time 1min jq` 会把 `1min` 当成包名。
+FLAGS_TAKING_VALUE = ("--limit-rate", "--proxy", "--ver", "--max-time")
+
+
+def package_index(words):
+    # 第一个真正的包名在 words 里的下标（跳过旗标与取值位置），没有则 None。
     skip_next = False
-    for word in input_string.split()[2:]:
+    for index, word in enumerate(words):
         if skip_next:
             skip_next = False
             continue
-        if word in ("--limit-rate", "--proxy", "--ver"):
+        if word in FLAGS_TAKING_VALUE:
             skip_next = True
             continue
         if word.startswith("-"):
             continue
-        return word
+        return index
     return None
+
+
+def first_package_token(input_string):
+    # 取第一个真正的包名（跳过 flag 和带值的旗标后面的值），
+    # 这样 `wave install --unlink wget@1.25.0` 与 `wave install wget@1.25.0 --unlink` 等价
+    words = input_string.split()[2:]
+    index = package_index(words)
+    return None if index is None else words[index]
+
+
+def parse_timeout(input_string, flags):
+    # `--max-time` 的秒数；没有这个旗标时用 DEFAULT_TIMEOUT，取值不合法就报错退出。
+    # 单独提出来，是因为 upgrade 要在「下载之前」先用它去取版本列表。
+    if "--max-time" not in flags:
+        return DEFAULT_TIMEOUT
+
+    raw_timeout = flag_value(input_string, "--max-time")
+    if raw_timeout is None or raw_timeout == "":
+        print(f"{RED_BOLD}🌊 Error: --max-time needs a value, e.g. --max-time=1min.{RESET}")
+        sys.exit(1)
+
+    parsed_timeout = _parse_duration(raw_timeout)
+    if parsed_timeout is None:
+        print(f"{RED_BOLD}🌊 Error: cannot parse --max-time value '{raw_timeout}'.{RESET}")
+        print(f"{RED_BOLD}🌊 Use a number of seconds or a suffix like 40s, 1min, 1min20s, 2h.{RESET}")
+        sys.exit(1)
+    return parsed_timeout
 
 
 def handle_download_args(input_string):
@@ -267,18 +298,8 @@ def handle_download_args(input_string):
         if rate_str:
             config["limit_rate"] = _parse_rate_limit(rate_str)
 
-    # 4.1 超时（--max-time）：请求与读取两个阶段都用它，0 表示不设限
-    if "--max-time" in flags:
-        raw_timeout = flag_value(input_string, "--max-time")
-        if raw_timeout is None or raw_timeout == "":
-            print(f"{RED_BOLD}🌊 Error: --max-time needs a value, e.g. --max-time=1min.{RESET}")
-            sys.exit(1)
-        parsed_timeout = _parse_duration(raw_timeout)
-        if parsed_timeout is None:
-            print(f"{RED_BOLD}🌊 Error: cannot parse --max-time value '{raw_timeout}'.{RESET}")
-            print(f"{RED_BOLD}🌊 Use a number of seconds or a suffix like 40s, 1min, 1min20s, 2h.{RESET}")
-            sys.exit(1)
-        config["timeout"] = parsed_timeout
+    # 4.1 超时（--max-time）：请求与读取两个阶段都用它
+    config["timeout"] = parse_timeout(input_string, flags)
 
     # 5. 代理
     if "--proxy" in flags:
@@ -437,11 +458,43 @@ def download_file(url, temp_path, config, input_string, display_name):
 
 # -------------------- 获取最高版本（GitHub API） --------------------
 
-def fetch_max_version(package_name, arch):
+def detect_arch():
+    # 索引按 arm64 / amd64 分目录，目录名与 platform.machine() 并不一一对应
+    machine = platform.machine().lower()
+    if machine in ["arm64", "aarch64"]:
+        return "arm64"
+    if machine in ["x86_64", "amd64"]:
+        return "amd64"
+    print(f"{RED_BOLD}🌊 Error: Unknown Arch!{RESET}")
+    sys.exit(1)
+
+
+def package_common_url(package_name, arch):
+
+    return f"https://raw.githubusercontent.com/MacWaveOrg/infosource/main/pkg/pkginfo_{arch}/{package_name}/_{package_name}@common"
+
+
+def fetch_common_fields(package_name, arch, timeout=DEFAULT_TIMEOUT):
+    # 包名与 bin_name 不一定相同（例如 choma -> ChOma），而 bin/ 与 links/ 用的是 bin_name。
+    # 所以任何要「按名字找已安装版本」的命令都必须先读这个文件。
+    url = package_common_url(package_name, arch)
+    try:
+        response = requests.get(url, timeout=timeout)
+        if response.status_code != 200:
+            print(f"{RED_BOLD}🌊 Error: Cannot fetch @common file.{RESET}")
+            sys.exit(1)
+    except Exception as e:
+        print(f"{RED_BOLD}🌊 Error: {e}{RESET}")
+        sys.exit(1)
+
+    return parse_common_fields(response.text)
+
+
+def fetch_max_version(package_name, arch, timeout=DEFAULT_TIMEOUT):
     # 数据在 MacWaveOrg/infosource 仓库的 main 分支
     api_url = f"https://api.github.com/repos/MacWaveOrg/infosource/contents/pkg/pkginfo_{arch}/{package_name}?ref=main"
     try:
-        response = requests.get(api_url, timeout=DEFAULT_TIMEOUT, headers=github_api_headers(api_url))
+        response = requests.get(api_url, timeout=timeout, headers=github_api_headers(api_url))
         if response.status_code != 200:
             print(f"{RED_BOLD}🌊 Error: Cannot fetch package list.{RESET}")
             print(f"{RED_BOLD}🌊 URL: {api_url}{RESET}")
@@ -484,14 +537,7 @@ def handle_install(input_string):
     ParsePkgName = require_safe_token(ParsePkgName, "package name")
 
     # 2. 获取架构
-    machine = platform.machine().lower()
-    if machine in ["arm64", "aarch64"]:
-        ARCH = "arm64"
-    elif machine in ["x86_64", "amd64"]:
-        ARCH = "amd64"
-    else:
-        print(f"{RED_BOLD}🌊 Error: Unknown Arch!{RESET}")
-        sys.exit(1)
+    ARCH = detect_arch()
 
     # 3. 解析版本号（只看包名 token，避免 --proxy 里的 user:pass@host 被误认）
     ver_flag = flag_value(input_string, "--ver")
@@ -515,17 +561,7 @@ def handle_install(input_string):
     ParsePkgVersion = require_safe_token(ParsePkgVersion, "package version")
 
     # 4. 获取 bin_name（从 @common 文件）
-    common_url = f"https://raw.githubusercontent.com/MacWaveOrg/infosource/main/pkg/pkginfo_{ARCH}/{ParsePkgName}/_{ParsePkgName}@common"
-    try:
-        common_resp = requests.get(common_url, timeout=config["timeout"])
-        if common_resp.status_code != 200:
-            print(f"{RED_BOLD}🌊 Error: Cannot fetch @common file.{RESET}")
-            sys.exit(1)
-    except Exception as e:
-        print(f"{RED_BOLD}🌊 Error: {e}{RESET}")
-        sys.exit(1)
-
-    common_fields = parse_common_fields(common_resp.text)
+    common_fields = fetch_common_fields(ParsePkgName, ARCH, config["timeout"])
     bin_name = get_field(common_fields, "bin_name")
     if not bin_name:
         print(f"{RED_BOLD}🌊 Missing \"bin_name\" field, Please contact the administrator.{RESET}")

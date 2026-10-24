@@ -112,6 +112,10 @@ jobs:
         run: |
           bash scripts/link_test.sh
 
+      - name: Run upgrade test
+        run: |
+          bash scripts/upgrade_test.sh
+
       # 会真的按 configdata 仓库的 update_command 更新一遍安装目录，所以放最后
       - name: Run selfupdate test
         run: |

@@ -29,6 +29,7 @@ sys.path.insert(0, str(SURFBOARD_DIR))
 
 COMMANDS = {
     "install":    "pkginstaller",
+    "upgrade":    "upgrader",
     "uninstall":  "uninstaller",
     "list":       "pkginfohelper",
     "search":     "pkginfohelper",
@@ -87,6 +88,10 @@ def main():
         if module_name == "pkginstaller":
             from pkginstaller import handle_install
             handle_install(full_input)
+
+        elif module_name == "upgrader":
+            from upgrader import handle_upgrade
+            handle_upgrade(full_input)
 
         elif module_name == "uninstaller":
             from uninstaller import handle_uninstall
