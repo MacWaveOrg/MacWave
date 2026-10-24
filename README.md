@@ -18,20 +18,21 @@ macOS Sonoma 14 and above
 
 ## 🌊 About MacWave 
 
-MacWave is a **package manager** that runs on **macOS/Linux**, designed to host common software packages for macOS software developers.
+MacWave is a **package manager for macOS**, built to distribute the command-line tools that macOS software developers rely on. Its sibling project, LinuxWave, covers Linux.
 
 ## 🌊 Why MacWave
 
-1. **Lightweight design, saves disk space.** Files are pulled by the install script instead of cloning the repository, saving your disk space.
-2. **One command, install common packages.** No more scattered download links.
-3. **Versioned storage.** Every binary is stored as `package@version`, so multiple versions can coexist without conflicting with system tools.
-4. **Optional unversioned links.** `wave link <package>` creates a plain `package` shortcut pointing at the highest installed version, and it re-points itself whenever you install or remove versions.
-5. **No cache, always up to date.** Package metadata is fetched live from the `MacWaveOrg/infosource` repository.
-6. **10 archive formats, CI-verified.** Supports no-extension binaries, `.zip`, `.tar.gz`, `.tar.bz2`, `.tar.xz`, `.tar`, `.gz`, `.xz`, `.bz2`, `.conda`.
-7. **Verify first, extract later.** SHA256 is checked before extraction.
-8. **Resumable downloads.** Interrupted? Resume with `-C`.
-9. **Lightweight and transparent.** Pure Python + Shell, with the interpreter bundled. No heavy runtime, no hidden behavior.
-10. **Automatically manage dependencies.** Support for software packages with dependencies, using reference counting and automatic dependency management, with no need to handle dependencies manually.
+1. **Small on disk.** The installer fetches individual files rather than cloning the repository, and there is no package cache to keep in sync.
+2. **One command per package.** Common tools are installed by name, without hunting for release pages.
+3. **Versioned by design.** Every binary lives under `package@version`, so several versions coexist and none of them shadow a system tool.
+4. **Optional unversioned links.** `wave link <package>` creates a plain `package` shortcut that points at the highest installed version and re-points itself whenever versions are installed or removed.
+5. **Isolated by construction.** Everything MacWave installs stays inside its own directories; it never overwrites or links against macOS system libraries, so even a major macOS upgrade leaves it intact.
+6. **No stale metadata.** Package data is read from the `MacWaveOrg/infosource` repository at request time.
+7. **Ten archive formats, covered by CI.** Extensionless binaries, `.zip`, `.tar.gz`, `.tar.bz2`, `.tar.xz`, `.tar`, `.gz`, `.xz`, `.bz2`, and `.conda`.
+8. **Checksum before extraction.** A package whose SHA256 is missing or does not match is refused, never installed with a warning.
+9. **Resumable downloads.** An interrupted transfer continues with `-C`.
+10. **Transparent implementation.** Python and Shell only. The interpreter is bundled, so no runtime has to be installed and no behaviour is hidden behind one.
+11. **Dependencies handled for you.** Packages that need libraries declare them; MacWave installs, tracks and removes those libraries by reference count.
 
 ## 🌊 Install MacWave
 
@@ -50,6 +51,10 @@ In the terminal, run:
 `python3` on your PATH (Homebrew, pyenv, the system one) never affects it.
 If that bundled copy cannot be downloaded, the installer falls back to your
 system `python3` and tells you so.
+
+> **This repository holds source, not an installation.** Running `wave` from
+> inside a clone, or adding directories from the clone to `PATH`, fails by
+> design — see [Do Not Run From the Clone](#do-not-run-from-the-clone).
 
 ### Unattended install
 
@@ -84,7 +89,7 @@ which otherwise needs a terminal (so use `--force` in CI):
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/uninstall.sh)" -- --force
 ```
 
-## 🌊 Download Directory 
+## 🌊 Download Directory
 Installed binaries are stored in (options):    
 ```
 1. ~/.local/macwave
@@ -97,7 +102,7 @@ Config file is stored in (a system-level install always takes priority):
 1. /opt/macwave_config          system-level install (needs sudo)
 2. ~/.config/macwave_config     user-level install (no sudo)
 ```
-## Uninstall MacWave
+## 🌊 Uninstall MacWave
 
 To completely remove MacWave from your system, run the following command in your terminal:
 
@@ -209,10 +214,101 @@ palera1n      by palera1n Team
 pandoc        by John MacFarlane
 rg            by Andrew Gallant
 tmux          by Nicholas Marriott and contributors
+tree          by Steve Baker, Thomas Moore, et al.
 trollrestore  by JJTech (@JJTech0130)
 wget          by GNU Project
+yq            by Mike Farah
 zoxide        by Ajeet D'Souza
 ```
+## 🌊 For Developers
+
+MacWave is written in plain Python and Shell. There is no build step: the files
+in this repository are the ones that run. Internals are documented in
+[`docs/TECHNICAL-GUIDE.md`](./docs/TECHNICAL-GUIDE.md) and
+[`docs/CODE-MAP.md`](./docs/CODE-MAP.md).
+
+### Do Not Run From the Clone
+
+This repository is source, not an installation. Running `wave` from inside the
+clone, or adding the clone's directories to `PATH`, fails on purpose: MacWave
+needs the configuration file that `install.sh` writes, and that file records the
+installation directory and the layout of everything beside it.
+
+A full clone reports:
+
+```
+🌊 Error: MacWave is a git clone!
+```
+
+A shallow clone reports:
+
+```
+🌊 Error: MacWave is a shallow clone!
+```
+
+Both are followed by the same advice — install with `install.sh`, choose a
+directory, and use the `wave` that installs. To exercise code you are changing,
+install a throwaway copy under a temporary root, or run the scripts in
+`scripts/`, which work on whatever installation is already present.
+
+### Repositories
+
+| Repository | Holds |
+| --- | --- |
+| `MacWaveOrg/MacWave` | The program itself |
+| `MacWaveOrg/infosource` | The package index, one directory per package and architecture |
+| `MacWaveOrg/configdata` | The published version, the updater's file list, and the bundled interpreter |
+
+### Source layout
+
+| Directory | Responsibility |
+| --- | --- |
+| `lib/` | Entry point, help, configuration paths, self-update |
+| `pkg/` | Install, upgrade, uninstall, links, version parsing |
+| `surfboard/` | Dependency resolution, extraction, Mach-O relocation |
+| `scripts/` | Tests and data audits |
+
+Each command is a module with a single handler, dispatched from `lib/wave.py`.
+All Mach-O rewriting is confined to `surfboard/`.
+
+### Adding a package
+
+Records live in `infosource` under `pkg/pkginfo_<arch>/<name>/`, in two forms:
+
+- `_<name>@common` — metadata shared by every version: `des`, `hom`, `lic`,
+  `aut`, and `bin_name`, the name the binary is installed as.
+- `_<name>@<version>` — one file per version, carrying `url` and `sha256`, plus
+  `deps` when the package needs libraries MacWave must install as well.
+
+`sha256` is mandatory. A record without it is rejected rather than installed
+with a warning. Dependencies are written as `name@version` and are reference
+counted, so removing one package does not remove a library another still uses.
+
+### Running the tests
+
+Each script runs end to end and reports `PASS` or `FAIL`:
+
+```
+bash scripts/configpath_test.sh    # configuration directory resolution
+bash scripts/format_test.sh        # every supported archive format
+bash scripts/deps_test.sh          # dependency install and cascade removal
+bash scripts/link_test.sh          # versionless links
+bash scripts/upgrade_test.sh       # wave upgrade, offline
+bash scripts/selfupdate_test.sh    # self-update; ends by updating for real
+python3 scripts/random_test.py     # randomised end-to-end regression, needs network
+python3 scripts/audit_deps.py data # audit the index against the installed libraries
+```
+
+`random_test.py --dry-run` selects packages and prints the plan without touching
+the network.
+
+### Contributing
+
+Every branch is merged through a pull request with at least one approval; force
+pushes and branch deletion are blocked. Run the scripts above before opening
+one, and state which you ran. A bug report is most useful with the output of
+`wave --version`, `sw_vers`, and `uname -m`.
+
 ## 🌊 License
 
 This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.

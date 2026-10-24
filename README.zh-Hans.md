@@ -18,20 +18,21 @@ macOS Sonoma 14 及以上
 
 ## 🌊 关于MacWave
 
-MacWave 是一个运行在 **macOS** 上的**包管理器**，旨在为 macOS 软件开发者托管常用软件包。
+MacWave 是一个**面向 macOS 的包管理器**，用于分发 macOS 软件开发者日常依赖的命令行工具。Linux 由兄弟项目 LinuxWave 覆盖。
 
 ## 🌊 为什么选择 MacWave
 
-1. **轻量化设计，节约磁盘空间。** 采用安装脚本拉取文件的安装方式代替 clone，节约你的磁盘空间。
-2. **一条命令，安装常用软件包。** 不再需要到处寻找下载链接。
-3. **强制 @version。** 每个二进制文件都以 `package@version` 形式存储，因此多个版本可以共存，且不会与系统工具冲突。
-4. **可选的免版本号链接。** `wave link <软件包>` 会创建一个不带版本号的 `软件包` 快捷方式，指向已安装的最高版本，并在你安装或卸载版本时自动改指。
-5. **无缓存，始终最新。** 软件包元数据实时从 `MacWaveOrg/infosource` 仓库获取。
-6. **支持 10 种归档格式，经 CI 验证。** 支持无扩展名二进制文件、`.zip`、`.tar.gz`、`.tar.bz2`、`.tar.xz`、`.tar`、`.gz`、`.xz`、`.bz2`、`.conda`。
-7. **先校验，后解压。** 解压前先校验 SHA256。
-8. **支持断点续传。** 下载中断了？用 `-C` 继续。
-9. **轻量透明。** 纯 Python + Shell，并自带解释器；无重型运行时，无隐藏行为。
-10. **自动管理依赖。** 支持带依赖的软件包，采用引用计数与自动依赖管理，无需手动处理依赖。
+1. **占用小。** 安装器按文件拉取，而不是 clone 整个仓库；也不保留需要同步的软件包缓存。
+2. **一条命令装一个软件包。** 常用工具按名字安装，不必再逐个寻找发布页。
+3. **版本化存储。** 每个二进制文件都存放在 `package@version` 之下，多个版本可以共存，且都不会遮蔽系统工具。
+4. **可选的免版本号链接。** `wave link <软件包>` 会创建一个不带版本号的 `软件包` 快捷方式，指向已安装的最高版本；安装或卸载版本时，它会自动改指。
+5. **天然隔离。** MacWave 安装的一切都留在自己的目录中，绝不覆盖或链接 macOS 系统库，因此即使跨越大版本升级 macOS，环境依然完整可用。
+6. **元数据不会过期。** 软件包数据在请求时从 `MacWaveOrg/infosource` 仓库读取。
+7. **十种归档格式，均由 CI 覆盖。** 无扩展名二进制文件、`.zip`、`.tar.gz`、`.tar.bz2`、`.tar.xz`、`.tar`、`.gz`、`.xz`、`.bz2` 与 `.conda`。
+8. **先校验，后解压。** 缺少 SHA256 或校验不符的软件包会被拒绝，绝不「给出警告后照常安装」。
+9. **支持断点续传。** 传输中断后可用 `-C` 继续。
+10. **实现透明。** 只用 Python 与 Shell，并自带解释器 —— 无需另装运行时，行为也没有藏在运行时里。
+11. **依赖自动处理。** 需要库的软件包会在记录中声明；MacWave 按引用计数安装、追踪并移除这些库。
 
 ## 🌊 安装 MacWave
 
@@ -50,16 +51,19 @@ MacWave 是一个运行在 **macOS** 上的**包管理器**，旨在为 macOS �
 （Homebrew、pyenv、系统自带的）都不会影响它。
 若自带的那份下载失败，安装器会回退到系统的 `python3` 并明确提示。
 
+> **本仓库存放的是源码，不是安装结果。** 在 clone 里运行 `wave`、或把 clone 中的目录
+> 加入 `PATH`，都会按设计失败 —— 见[不要从仓库里直接运行](#不要从仓库里直接运行)。
+
 ### 无人值守安装
 
 面向脚本与批量场景，安装器提供若干参数，全程不会停下来等待输入。
 参数放在 `--` 之后 —— `--` 会结束 bash 自身的选项：
 
 ```
-# script already on disk
+# 脚本已在本地
 bash install.sh --silent --dir-option=1
 
-# straight from the repository
+# 直接从仓库执行
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/install.sh)" \
   -- --silent --dir-option=2
 ```
@@ -85,15 +89,15 @@ bash install.sh --silent --dir-option=1
 ```
 1. ~/.local/macwave
 2. /opt/macwave
-3. /usr/local/macwave (Only Intel Mac)
-4. Custom
+3. /usr/local/macwave（仅 Intel Mac）
+4. 自定义
 ```
 配置文件存储于（系统级安装始终优先）：
 ```
-1. /opt/macwave_config          system-level install (needs sudo)
-2. ~/.config/macwave_config     user-level install (no sudo)
+1. /opt/macwave_config          系统级安装（需要 sudo）
+2. ~/.config/macwave_config     用户级安装（无需 sudo）
 ```
-## 卸载 MacWave
+## 🌊 卸载 MacWave
 
 要从系统中彻底移除 MacWave，请在终端中运行以下命令：
 
@@ -204,10 +208,96 @@ palera1n      by palera1n Team
 pandoc        by John MacFarlane
 rg            by Andrew Gallant
 tmux          by Nicholas Marriott and contributors
+tree          by Steve Baker, Thomas Moore, et al.
 trollrestore  by JJTech (@JJTech0130)
 wget          by GNU Project
+yq            by Mike Farah
 zoxide        by Ajeet D'Souza
 ```
+## 🌊 面向开发者
+
+MacWave 由纯 Python 与 Shell 写成，没有构建步骤 —— 本仓库里的文件就是实际运行的代码。
+内部实现见 [`docs/TECHNICAL-GUIDE.md`](./docs/TECHNICAL-GUIDE.md) 与
+[`docs/CODE-MAP.md`](./docs/CODE-MAP.md)。
+
+### 不要从仓库里直接运行
+
+本仓库是源码，不是安装结果。在仓库目录里运行 `wave`，或把仓库中的目录加入 `PATH`，
+都会**按设计**失败：MacWave 依赖 `install.sh` 写出的配置文件，而该文件记录了安装目录
+以及其旁各部分的布局。
+
+完整的 clone 会报：
+
+```
+🌊 Error: MacWave is a git clone!
+```
+
+shallow clone 会报：
+
+```
+🌊 Error: MacWave is a shallow clone!
+```
+
+两者之后都会给出同样的建议：用 `install.sh` 安装、选择目录，然后使用安装出来的
+`wave`。若要验证正在修改的代码，请在临时根目录下安装一份丢弃副本，或直接运行
+`scripts/` 下的脚本 —— 它们作用于当前已有的那份安装。
+
+### 仓库分工
+
+| 仓库 | 存放内容 |
+| --- | --- |
+| `MacWaveOrg/MacWave` | 程序本体 |
+| `MacWaveOrg/infosource` | 软件包索引，每个软件包、每种架构各一个目录 |
+| `MacWaveOrg/configdata` | 已发布的版本、自更新的文件清单、自带的解释器 |
+
+### 源码结构
+
+| 目录 | 职责 |
+| --- | --- |
+| `lib/` | 入口、帮助、配置路径、自更新 |
+| `pkg/` | 安装、升级、卸载、链接、版本号解析 |
+| `surfboard/` | 依赖解析、解压、Mach-O 重定位 |
+| `scripts/` | 测试与数据审计 |
+
+每个命令都是一个模块，各自只有一个处理函数，由 `lib/wave.py` 统一分派。
+所有 Mach-O 改写都集中在 `surfboard/`。
+
+### 收录一个软件包
+
+记录放在 `infosource` 的 `pkg/pkginfo_<架构>/<软件包名>/` 下，分两类文件：
+
+- `_<软件包名>@common` —— 所有版本共用的元数据：`des`、`hom`、`lic`、`aut`，
+  以及 `bin_name`，即二进制文件安装后的名字。
+- `_<软件包名>@<版本号>` —— 每个版本一个文件，包含 `url` 与 `sha256`；当这个软件包
+  需要 MacWave 一并安装的库时，再加上 `deps`。
+
+`sha256` 是必填项。缺少它的记录会被拒绝安装，而不是给出警告后照常安装。
+依赖写成 `name@version` 并采用引用计数，因此移除一个软件包不会连带删掉其他软件包
+仍在使用的库。
+
+### 运行测试
+
+每个脚本都会完整跑一遍，结果以 `PASS` 或 `FAIL` 呈现：
+
+```
+bash scripts/configpath_test.sh    # 配置目录的解析规则
+bash scripts/format_test.sh        # 全部受支持的归档格式
+bash scripts/deps_test.sh          # 依赖安装与级联清理
+bash scripts/link_test.sh          # 不含版本号的软链接
+bash scripts/upgrade_test.sh       # wave upgrade（离线）
+bash scripts/selfupdate_test.sh    # 自更新，最后一步会真的更新一遍
+python3 scripts/random_test.py     # 随机化端到端回归，需要联网
+python3 scripts/audit_deps.py data # 用已装的库审计索引数据
+```
+
+`random_test.py --dry-run` 只挑选软件包并打印计划，不访问网络。
+
+### 参与贡献
+
+所有分支都经由 PR 合入，且至少需要一次批准；禁止强制推送与删除分支。
+提交 PR 前请先运行上表中的测试，并说明运行了哪些。报告缺陷时，请附上
+`wave --version`、`sw_vers` 与 `uname -m` 的输出。
+
 ## 🌊 许可证
 
 本项目基于 **MIT 许可证** 发布 —— 详见 [LICENSE](LICENSE) 文件。
