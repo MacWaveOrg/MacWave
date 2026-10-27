@@ -752,6 +752,20 @@ ensure_portable_python() {
 
     [[ -n "$arch" ]] || return 1
 
+    # 先看本机是否已经有一份能用的解释器：有就直接用，一个网络请求都不发。
+    # 自更新每次都会走到这里，而为了确认一份早就装好的解释器去联网 ——
+    # 网络不好时就是「卡在某一行不动」的来源（取版本数据要重试，最长一两分钟没有输出）。
+    for candidate in "$base_dir/python/current" "$base_dir"/python/*/; do
+        [[ -d "$candidate" ]] || continue
+        if py="$(portable_python_binary "$candidate" 2>/dev/null)" \
+           && "$py" -c 'import sys; sys.exit(0)' >/dev/null 2>&1; then
+            echo "$py"
+            return 0
+        fi
+    done
+
+    # 本机没有，才去版本数据里找该下哪个。进度写 stderr：stdout 是返回值通道。
+    echo "🌊 Fetching the bundled Python definition..." >&2
     data_file="$(mktemp -t macwave-pyver)"
     if ! curl -fsSL --max-time 30 -o "$data_file" "$data_url" 2>/dev/null; then
         rm -f "$data_file"
@@ -772,6 +786,7 @@ ensure_portable_python() {
     if py="$(portable_python_binary "$target" 2>/dev/null)"; then
         :
     else
+        echo "🌊 Downloading the bundled Python $version (about 26 MB)..." >&2
         archive="$base_dir/downloads/tmp/portable-python-$version.tar.gz"
         mkdir -p "$base_dir/downloads/tmp" 2>/dev/null || true
         if ! curl -fsSL --max-time 900 -o "$archive" "$url" 2>/dev/null; then
@@ -827,6 +842,7 @@ else
     echo -e "${YELLOW}🌊 Re-run the installer when the network is available to make this installation self-contained.${RESET}"
 fi
 
+echo "🌊 Creating the private Python environment..."
 mkdir -p "$VENV_DIR" 2>/dev/null || true
 
 if "$PYTHON_BIN" -m venv "$VENV_DIR" >/dev/null 2>&1; then
@@ -839,15 +855,18 @@ fi
 
 if [[ -n "$VENV_PY" && -x "$VENV_PY" ]]; then
     echo "🌊 Installing Python dependencies into the private environment..."
-    "$VENV_PY" -m pip install --quiet --upgrade pip >/dev/null 2>&1 || true
-    if ! "$VENV_PY" -m pip install --quiet requests packaging rich; then
+    # pip 默认会无限等下去，网络不好时看上去就是卡死。给它超时与重试，
+    # 并说明这一步可能要一会儿，免得用户以为程序挂了。
+    echo "🌊 Installing Python dependencies into the private environment (this can take a minute)..."
+    "$VENV_PY" -m pip install --quiet --disable-pip-version-check --timeout 30 --retries 2 --upgrade pip >/dev/null 2>&1 || true
+    if ! "$VENV_PY" -m pip install --quiet --disable-pip-version-check --timeout 30 --retries 2 requests packaging rich; then
         echo -e "${RED_BOLD}🌊 Error: failed to install the Python dependencies.${RESET}"
         echo -e "${RED_BOLD}🌊 Try again, or install them manually into $VENV_PY.${RESET}"
         exit 1
     fi
 else
     echo "🌊 Installing Python dependencies into $PYTHON_BIN..."
-    PIP_FLAGS=(--quiet)
+    PIP_FLAGS=(--quiet --disable-pip-version-check --timeout 30 --retries 2)
     if ! "$PYTHON_BIN" -m pip install "${PIP_FLAGS[@]}" requests packaging rich 2>/dev/null; then
         if ! "$PYTHON_BIN" -m pip install "${PIP_FLAGS[@]}" --user --break-system-packages requests packaging rich; then
             echo -e "${RED_BOLD}🌊 Error: failed to install the Python dependencies.${RESET}"

@@ -582,6 +582,20 @@ ensure_portable_python() {
 
     [[ -n "$arch" ]] || return 1
 
+    # 先看本机是否已经有一份能用的解释器：有就直接用，一个网络请求都不发。
+    # 自更新每次都会走到这里，而为了确认一份早就装好的解释器去联网 ——
+    # 网络不好时就是「卡在某一行不动」的来源（取版本数据要重试，最长一两分钟没有输出）。
+    for candidate in "$base_dir/python/current" "$base_dir"/python/*/; do
+        [[ -d "$candidate" ]] || continue
+        if py="$(portable_python_binary "$candidate" 2>/dev/null)" \
+           && "$py" -c 'import sys; sys.exit(0)' >/dev/null 2>&1; then
+            echo "$py"
+            return 0
+        fi
+    done
+
+    # 本机没有，才去版本数据里找该下哪个。进度写 stderr：stdout 是返回值通道。
+    echo "🌊 Fetching the bundled Python definition..." >&2
     data_file="$(mktemp -t macwave-pyver)"
     # 超时与重试同其他请求；install.sh 里的同名步骤固定用 30/900 秒，
     # 因为引导安装没有命令行旗标可依。
@@ -604,6 +618,7 @@ ensure_portable_python() {
     if py="$(portable_python_binary "$target" 2>/dev/null)"; then
         :
     else
+        echo "🌊 Downloading the bundled Python $version (about 26 MB)..." >&2
         archive="$base_dir/downloads/tmp/portable-python-$version.tar.gz"
         # 归档几十 MB，重试一次就够，再多次也只是拖长等待
         if ! fetch_to_file "$url" "$archive" "$ARCHIVE_TIMEOUT" direct 2; then
@@ -657,6 +672,7 @@ fi
 
 if [[ -n "$PYTHON_BIN" ]]; then
     if [[ ! -x "$VENV_DIR/bin/python3" && ! -x "$VENV_DIR/bin/python" ]]; then
+        echo "🌊 Creating the private Python environment..."
         mkdir -p "$VENV_DIR" 2>/dev/null || true
         if run_cmd "$PYTHON_BIN" -m venv "$VENV_DIR" >/dev/null 2>&1; then
             echo "🌊 Private Python environment created: ${VENV_DIR#"$BASE_DIR"/}"
@@ -671,8 +687,11 @@ if [[ -n "$PYTHON_BIN" ]]; then
 
     if [[ -n "$VENV_PY" ]]; then
         if ! "$VENV_PY" -c 'import requests, packaging, rich' >/dev/null 2>&1; then
-            echo "🌊 Installing Python dependencies into the private environment..."
-            run_cmd "$VENV_PY" -m pip install --quiet requests packaging rich >/dev/null 2>&1 || \
+            # pip 默认会无限等下去，网络不好时看上去就是卡死。给它超时与重试，
+            # 并说明这一步可能要一会儿，免得用户以为程序挂了。
+            echo "🌊 Installing Python dependencies into the private environment (this can take a minute)..."
+            run_cmd "$VENV_PY" -m pip install --quiet --disable-pip-version-check \
+                --timeout 30 --retries 2 requests packaging rich >/dev/null 2>&1 || \
                 echo -e "${YELLOW}🌊 Warning: the private environment is incomplete; the launcher will fall back.${RESET}"
         fi
     fi

@@ -292,23 +292,26 @@ echo "  ✅ write_launcher 直接调用，没有经过 run_cmd"
 # 测试根的 HOME 重写必须是幂等的。lib/configpaths.py 会先把 HOME 搬进测试根，
 # 若 shell 脚本再无条件套一层，HOME 会变成 "<根>/private/var/.../Users/<你>"，
 # 配置目录永远找不到 —— 这正是「用 MACWAVE_TEST 跑真实 selfupdate」失败的原因。
-work_home="$(mktemp -d)"
+# 脚本会把测试根解析成物理路径（macOS 上 /var 指向 /private/var），
+# 所以期望值也要用物理路径，否则这条断言会被符号链接本身骗过去。
+work_home_real="$(mktemp -d)"
+work_home="$(cd "$work_home_real" && pwd -P)"
 for source_file in "$repo/lib/install.sh" "$repo/lib/selfupdate.sh"; do
     block="$(sed -n '/^SYS_ROOT=""/,/^fi$/p' "$source_file")"
     # 第一遍：HOME 在外面，应当被搬进测试根
-    first="$(MACWAVE_TEST="$work_home" HOME=/Users/example bash -c "$block"$'\nprintf %s "$HOME"' 2>/dev/null | tail -1)"
+    first="$(MACWAVE_TEST="$work_home_real" HOME=/Users/example bash -c "$block"$'\nprintf %s "$HOME"' 2>/dev/null | tail -1)"
     case "$first" in
-        "$work_home"*) : ;;
+        "$work_home"|"$work_home"/*) : ;;
         *) echo "  ❌ $(basename "$source_file"): HOME 没有被搬进测试根（$first）"; exit 1 ;;
     esac
     # 第二遍：HOME 已经在测试根里，不能再套一层
-    second="$(MACWAVE_TEST="$work_home" HOME="$first" bash -c "$block"$'\nprintf %s "$HOME"' 2>/dev/null | tail -1)"
+    second="$(MACWAVE_TEST="$work_home_real" HOME="$first" bash -c "$block"$'\nprintf %s "$HOME"' 2>/dev/null | tail -1)"
     if [ "$second" != "$first" ]; then
         echo "  ❌ $(basename "$source_file"): HOME 被重复前缀（$first -> $second）"
         exit 1
     fi
 done
-rm -rf "$work_home"
+rm -rf "$work_home_real"
 echo "  ✅ 测试根的 HOME 重写是幂等的"
 
 # install.sh 与 selfupdate.sh 各带一份同名实现（谁都不能依赖对方已下载），
