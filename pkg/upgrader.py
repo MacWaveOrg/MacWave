@@ -5,7 +5,7 @@
 # `wave upgrade <package>`：把已装或未装的包带到索引里的最新版本。
 #
 # 因为支持多版本共存，install 一个新版本不会动旧的，所以「升级」需要额外的收尾动作 ——
-# 这就是 `--remove-old-version`（别名 `--rov`）存在的原因：
+# 这就是 `--remove-old-version` 及其别名存在的原因：
 #   - 只有一个旧版本：直接移除；
 #   - 多个旧版本：先问「全部移除？」，答 N 就像 uninstall 那样列出来让用户挑。
 #
@@ -25,21 +25,41 @@ RESET = '\033[0m'
 # upgrade 只做「装到最新」，这两个旗标与它的语义冲突，直接拒绝而不是静默忽略：
 # --ver 会让「升级」变成「装某个指定版本」；--unlink 会让链接留在旧版本上，
 # 而随后清理旧版本正好会把那个链接指坏。两条都请用户改用对应的命令。
+# 「同时移除旧版本」的四种写法完全等价。长参数之所以给了三个，是因为
+# -version 与 -versions 单复数都记不牢，索性都认；--rov 是它们的缩写。
+# 短参数 -X 是刻意选的：R 要留给 recurse / reverse / rollback，X 没有别的含义，
+# 而且形状像「删除」的叉。
+REMOVE_OLD_LONG = ("--remove-old-version", "--remove-old-versions", "--rov")
+REMOVE_OLD_SHORT = "X"
+
+# 需要记下来、但不属于「删除旧版本」的写法，留着给将来扩展
 REJECTED_FLAGS = {
     "--ver": "Use 'wave install <package>@<version>' to install a specific version",
     "--unlink": "Run 'wave link <package>@<version>' afterwards to choose the linked version",
 }
 
-REMOVE_OLD_FLAGS = ("--remove-old-version", "--rov")
 
 def split_input(input_string):
-    """把 upgrade 专属旗标剥掉，返回 (剩余词, 是否要求移除旧版本)。"""
+    """把 upgrade 专属旗标剥掉，返回 (剩余词, 是否要求移除旧版本)。
+
+    -X 既认单独出现的写法，也认混在短旗标簇里的写法（-Xv 等于 -X -v），
+    与 pkginstaller.parse_flags 把 -abc 拆成 -a -b -c 的规则保持一致。
+    """
     remove_old = False
     kept = []
     for word in input_string.split()[2:]:
-        if word in REMOVE_OLD_FLAGS:
+        if word in REMOVE_OLD_LONG:
             remove_old = True
             continue
+        # 单个 - 开头（且不是 --）：可能是 -X，也可能是 -Xv 这种簇
+        if word.startswith("-") and not word.startswith("--") and len(word) > 1:
+            letters = word[1:]
+            if REMOVE_OLD_SHORT in letters:
+                remove_old = True
+                letters = letters.replace(REMOVE_OLD_SHORT, "")
+                if not letters:
+                    continue
+                word = "-" + letters
         kept.append(word)
     return kept, remove_old
 

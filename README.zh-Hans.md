@@ -14,7 +14,7 @@ Linux 用户？请看 [LinuxWave](https://github.com/LinuxWaveOrg/LinuxWave)
 macOS Sonoma 14 及以上
 ## 🌊 最新版本
 
-3.2.0，发布于 2026-10-24
+3.2.1，发布于 2026-10-27
 
 ## 🌊 关于MacWave
 
@@ -161,8 +161,11 @@ Global Flags (can be used with any command):
 
 Special Flags:
 wave install <pkgname>@<version>   Download certain version(s) of a package
-wave upgrade <pkgname>             Take a package to the latest version
-    --remove-old-version, --rov    Remove the versions older than the one just installed
+wave upgrade <pkgname>             把软件包更新到最新版本
+    --remove-old-version           移除比刚装上的版本更旧的版本
+    --remove-old-versions          同 --remove-old-version
+    --rov                          同 --remove-old-version
+    -X                             同 --remove-old-version
     --unlink                       Leave the unversioned link alone (install / uninstall)
     --all, -a                      Apply to every installed package (link / unlink / linkquery)
 

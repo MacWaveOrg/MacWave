@@ -67,7 +67,8 @@ def print_custom_help():
     print(f"{PURPLE}Special Flags:{RESET}")
     print(f"  {GREEN}wave install <pkgname>@<version>{RESET}   Download certain version(s) of a package")
     print(f"  {CYAN}--unlink{RESET}                         Leave the unversioned link alone (install / uninstall)")
-    print(f"  {CYAN}--remove-old-version{RESET}, {CYAN}--rov{RESET}       Remove older versions after upgrading")
+    print(f"  {CYAN}--remove-old-version{RESET}, {CYAN}--remove-old-versions{RESET},")
+    print(f"  {CYAN}--rov{RESET}, {CYAN}-X{RESET}                       Remove older versions after upgrading (all four are the same)")
     print(f"  {CYAN}--all, -a{RESET}                        Apply to every installed package (link / unlink / linkquery)")
     print()
     print(f"{PURPLE}Unversioned Links:{RESET}")
@@ -103,10 +104,12 @@ COMMAND_HELP = {
     "upgrade": {
         "usage": "wave upgrade <package> [flags]",
         "desc": "Install the latest version of a package. Versions coexist, so the old ones "
-                "stay until --remove-old-version removes them.",
+                "stay until one of the remove-old flags removes them.",
         "flags": [
-            ("--remove-old-version, --rov", "Also remove the versions that are older than the one "
-                                            "just installed"),
+            ("--remove-old-version", "Also remove the versions older than the one just installed"),
+            ("--remove-old-versions", "Same as --remove-old-version"),
+            ("--rov", "Same as --remove-old-version"),
+            ("-X", "Same as --remove-old-version"),
             ("-C, --continue", "Resume an interrupted download (like curl -C -)"),
             ("--proxy <string>", "HTTP/HTTPS proxy (e.g. http://127.0.0.1:8080)"),
             ("--skip-ssl", "Skip SSL certificate verification (insecure)"),
@@ -115,7 +118,7 @@ COMMAND_HELP = {
             ("-v, --verbose", "Enable verbose output"),
         ],
         "examples": ["wave upgrade jq", "wave upgrade jq --remove-old-version",
-                     "wave upgrade jq --rov --max-time=2min"],
+                     "wave upgrade jq -X", "wave upgrade jq --rov --max-time=2min"],
     },
     "uninstall": {
         "usage": "wave uninstall <package>[@<version>] [flags]",

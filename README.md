@@ -14,7 +14,7 @@ Linux? View [LinuxWave](https://github.com/LinuxWaveOrg/LinuxWave)
 macOS Sonoma 14 and above
 ## 🌊 Latest Version
 
-3.2.0, Release on 2026-10-24
+3.2.1, Release on 2026-10-27
 
 ## 🌊 About MacWave 
 
@@ -167,7 +167,10 @@ Global Flags (can be used with any command):
 Special Flags:
 wave install <pkgname>@<version>   Download certain version(s) of a package
 wave upgrade <pkgname>             Take a package to the latest version
-    --remove-old-version, --rov    Remove the versions older than the one just installed
+    --remove-old-version           Remove the versions older than the one just installed
+    --remove-old-versions          Same as --remove-old-version
+    --rov                          Same as --remove-old-version
+    -X                             Same as --remove-old-version
     --unlink                       Leave the unversioned link alone (install / uninstall)
     --all, -a                      Apply to every installed package (link / unlink / linkquery)
 

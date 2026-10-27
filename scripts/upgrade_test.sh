@@ -62,15 +62,31 @@ from pkginstaller import first_package_token, package_index
 failures = []
 
 # upgrade 专属旗标必须被剥掉，且不参与包名判断
+# 四种写法必须完全等价
 for command, expected in [
     ("wave upgrade jq", (["jq"], False)),
+    ("wave upgrade jq --remove-old-version", (["jq"], True)),
+    ("wave upgrade jq --remove-old-versions", (["jq"], True)),
     ("wave upgrade jq --rov", (["jq"], True)),
-    ("wave upgrade --remove-old-version jq", (["jq"], True)),
+    ("wave upgrade jq -X", (["jq"], True)),
+    ("wave upgrade -X jq", (["jq"], True)),
+    # 短旗标簇里也要认：-Xv 等于 -X -v，-vX 同理
+    ("wave upgrade jq -Xv", (["jq", "-v"], True)),
+    ("wave upgrade jq -vX", (["jq", "-v"], True)),
     ("wave upgrade --max-time=1min jq --rov", (["--max-time=1min", "jq"], True)),
+    ("wave upgrade --max-time 1min jq -X", (["--max-time", "1min", "jq"], True)),
 ]:
     actual = upgrader.split_input(command)
     if actual != expected:
         failures.append(f"split_input({command!r}) -> {actual}, expected {expected}")
+
+# 四种写法必须指向同一件事：剥掉旗标后剩下的词一模一样
+variants = ["--remove-old-version", "--remove-old-versions", "--rov", "-X"]
+stripped = {v: upgrader.split_input(f"wave upgrade jq {v}") for v in variants}
+if len({tuple(words) for words, _ in stripped.values()}) != 1:
+    failures.append(f"四种写法剥出的词不一致: {stripped}")
+if not all(flag for _, flag in stripped.values()):
+    failures.append(f"有写法没能被识别成「移除旧版本」: {stripped}")
 
 # --max-time 的空格写法：值不能被当成包名（install 与 upgrade 共用这一条）
 for words, expected in [
@@ -181,7 +197,9 @@ run_case() {
 }
 
 run_case "未安装时不清理任何东西" "" "jq --rov" "" "jq@1.7.1"
-run_case "只有一个旧版本：直接移除" "1.6" "jq --rov" "" "jq@1.7.1"
+for flag in --remove-old-version --remove-old-versions --rov -X; do
+    run_case "只有一个旧版本，用 $flag 移除" "1.6" "jq $flag" "" "jq@1.7.1"
+done
 run_case "多个旧版本答 Y：全部移除" "1.6 1.5 1.4" "jq --rov" "y
 " "jq@1.7.1"
 run_case "多个旧版本答 N 后挑第 1、3 个" "1.6 1.5 1.4" "jq --rov" "n
