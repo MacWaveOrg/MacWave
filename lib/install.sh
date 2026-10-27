@@ -16,13 +16,15 @@ if [[ -n "${MACWAVE_TEST:-}" ]]; then
         _mw_root="${HOME}${_mw_root#\~}"
     fi
     mkdir -p "$_mw_root"
-    SYS_ROOT="$(cd "$_mw_root" && pwd)"
-    # 幂等：lib/configpaths.py 也会把 HOME 搬进测试根（而且先把 $MACWAVE_TEST 解析成
-    # 真实路径，所以 /var → /private/var 这类链接会被展开）。从 wave.py 一路调用下来时
-    # HOME 已经被改过一次，这里再套一层就会变成 "<根>/private/var/.../Users/<你我>"，
-    # 配置目录于是永远找不到。只在还没搬过的时候搬。
-    case "$HOME" in
-        "$SYS_ROOT"*) ;;
+    # 物理路径：macOS 上 /var 是指向 /private/var 的符号链接，这里若用逻辑路径，
+    # 与下面比较用的 HOME（configpaths 已经 resolve 过）对不上，前缀判断就会失效。
+    SYS_ROOT="$(cd "$_mw_root" && pwd -P)"
+    # 幂等：lib/configpaths.py 也会把 HOME 搬进测试根。从 wave.py 一路调用下来时
+    # HOME 已经被改过一次，这里再套一层就会变成 "<根><根>/Users/<你>"，配置目录于是
+    # 永远找不到。两边都取物理路径再比较，才不会被 /var 与 /private/var 骗过去。
+    _mw_home_real="$(cd "$HOME" 2>/dev/null && pwd -P)" || _mw_home_real="$HOME"
+    case "$_mw_home_real" in
+        "$SYS_ROOT"|"$SYS_ROOT"/*) ;;
         *) export HOME="$SYS_ROOT${HOME}" ;;
     esac
     export MACWAVE_TEST_ROOT="$SYS_ROOT"
