@@ -67,8 +67,9 @@ def print_custom_help():
     print(f"{PURPLE}Special Flags:{RESET}")
     print(f"  {GREEN}wave install <pkgname>@<version>{RESET}   Download certain version(s) of a package")
     print(f"  {CYAN}--unlink{RESET}                         Leave the unversioned link alone (install / uninstall)")
-    print(f"  {CYAN}--remove-old-version{RESET}, {CYAN}--remove-old-versions{RESET},")
-    print(f"  {CYAN}--rov{RESET}, {CYAN}-X{RESET}                       Remove older versions after upgrading (all four are the same)")
+    # 四种写法逐行列全，并在同一列对齐，避免续行看起来像另一个旗标
+    print(f"  {CYAN}--remove-old-version{RESET}             Remove older versions after upgrading")
+    print(f"  {CYAN}--remove-old-versions{RESET}, {CYAN}--rov{RESET}, {CYAN}-X{RESET} Same as --remove-old-version")
     print(f"  {CYAN}--all, -a{RESET}                        Apply to every installed package (link / unlink / linkquery)")
     print()
     print(f"{PURPLE}Unversioned Links:{RESET}")
