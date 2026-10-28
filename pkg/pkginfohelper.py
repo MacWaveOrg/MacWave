@@ -18,6 +18,7 @@ RESET = '\033[0m'
 # -------------------- 配置加载 --------------------
 
 from configpaths import load_base_dir, require_safe_token
+import domains
 
 
 def github_api_headers(url):
@@ -80,19 +81,18 @@ def parse_pkg_from_bin(dirname):
 
 def fetch_remote_versions(pkg_name, arch):
     
-    # 通过 GitHub API 遍历数据仓库中的版本文件，返回所有可安装版本号列表。
-    # 数据在 MacWaveOrg/infosource 仓库的 main 分支。
+    # 通过索引列出可安装版本，返回所有可安装版本号列表。
+    # 默认走 GitHub API 读 infosource，设了索引镜像时读镜像自己的清单
+    # （见 domains.index_list_url）。
     
     pkg_name = require_safe_token(pkg_name, "package name")
-    api_url = f"https://api.github.com/repos/MacWaveOrg/infosource/contents/pkg/pkginfo_{arch}/{pkg_name}?ref=main"
+    api_url = domains.index_list_url(arch, pkg_name)
     try:
         resp = requests.get(api_url, timeout=30, headers=github_api_headers(api_url))
         if resp.status_code != 200:
             return []
-        file_list = resp.json()
         versions = []
-        for item in file_list:
-            fname = item["name"]
+        for fname in domains.listing_names(resp.text):
             if fname.endswith("@common"):
                 continue
             if "@" in fname:
@@ -107,7 +107,7 @@ def fetch_remote_info(pkg_name, arch):
     # 从数据仓库拉取 @common 文件，返回描述信息。
     
     pkg_name = require_safe_token(pkg_name, "package name")
-    common_url = f"https://raw.githubusercontent.com/MacWaveOrg/infosource/main/pkg/pkginfo_{arch}/{pkg_name}/_{pkg_name}@common"
+    common_url = f"{domains.api_domain()}/pkg/pkginfo_{arch}/{pkg_name}/_{pkg_name}@common"
     try:
         resp = requests.get(common_url, timeout=30)
         if resp.status_code != 200:
@@ -147,11 +147,12 @@ def handle_list():
 
 def handle_search(query):
     
-    # 远程搜索数据仓库 main 分支下所有包名，匹配查询词。
+    # 远程搜索索引里的所有包名，匹配查询词。
+    # 默认走 GitHub API 读 infosource，设了索引镜像时读镜像自己的清单。
     
     arch = get_arch()
 
-    api_url = f"https://api.github.com/repos/MacWaveOrg/infosource/contents/pkg/pkginfo_{arch}?ref=main"
+    api_url = domains.index_list_url(arch)
 
     try:
         resp = requests.get(api_url, timeout=30, headers=github_api_headers(api_url))
@@ -163,10 +164,7 @@ def handle_search(query):
         print(f"{RED_BOLD}🌊 Error: {e}{RESET}")
         sys.exit(1)
 
-    all_packages = []
-    for item in resp.json():
-        if item["type"] == "dir":
-            all_packages.append(item["name"])
+    all_packages = [name for name in domains.listing_names(resp.text, dirs_only=True) if name]
 
     query_lower = query.lower()
     matches = [p for p in all_packages if query_lower in p.lower()]

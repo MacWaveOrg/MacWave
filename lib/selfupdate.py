@@ -22,8 +22,8 @@ RESET = '\033[0m'
 # -------------------- 常量 --------------------
 
 from configpaths import VERSION_FILE_NAME, config_dir_candidates, find_config_dir
+import domains
 
-VERSION_DATA_URL = "https://raw.githubusercontent.com/MacWaveOrg/configdata/main/versiondata/latest_version"
 FETCH_TIMEOUT = 30
 UPDATE_TIMEOUT = 1800
 
@@ -59,10 +59,10 @@ def curl_seconds(timeout):
 
 # -------------------- 版本数据 --------------------
 
-def fetch_version_data(timeout=FETCH_TIMEOUT):
+def fetch_text(url, timeout=FETCH_TIMEOUT):
     # 优先用标准库；本地 Python 缺根证书（macOS 常见）时改走 curl
     try:
-        with urllib.request.urlopen(VERSION_DATA_URL, timeout=timeout) as response:
+        with urllib.request.urlopen(url, timeout=timeout) as response:
             return response.read().decode()
     except (urllib.error.URLError, UnicodeDecodeError, OSError):
         pass
@@ -70,11 +70,15 @@ def fetch_version_data(timeout=FETCH_TIMEOUT):
     result = subprocess.run(['curl', '-fsSL',
                              '--max-time', str(curl_seconds(timeout)),
                              '--retry', '2', '--retry-delay', '2', '--retry-connrefused',
-                             VERSION_DATA_URL],
+                             url],
                             capture_output=True, text=True)
     if result.returncode != 0:
         return None
     return result.stdout
+
+
+def fetch_version_data(timeout=FETCH_TIMEOUT):
+    return fetch_text(domains.selfupdate_version_url(), timeout)
 
 
 def parse_version_data(text):
@@ -144,7 +148,7 @@ def handle_selfupdate(input_string=""):
     text = fetch_version_data(timeout)
     if text is None:
         print(f"{RED_BOLD}🌊 Error: Cannot reach the MacWave version data.{RESET}")
-        print(f"{RED_BOLD}🌊 {VERSION_DATA_URL}{RESET}")
+        print(f"{RED_BOLD}🌊 {domains.selfupdate_version_url()}{RESET}")
         sys.exit(1)
 
     data = parse_version_data(text)

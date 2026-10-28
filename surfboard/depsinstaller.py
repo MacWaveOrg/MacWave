@@ -24,12 +24,15 @@ RESET = '\033[0m'
 # -------------------- 配置加载 --------------------
 
 from configpaths import assert_inside, load_base_dir
+import domains
 
 
 BASE_DIR = load_base_dir()
 DOWNLOAD_TMP = BASE_DIR / "downloads" / "tmp"
 
-DEPSINFO_BASE = "https://raw.githubusercontent.com/MacWaveOrg/infosource/main/deps"
+# 依赖的元数据（depsinfo_*）属于索引，跟着 MACWAVE_API_DOMAIN 走；
+# 依赖的二进制包本身才跟 MACWAVE_DEPS_DOMAIN 走（见 domains.dep_url）。
+DEPSINFO_BASE = f"{domains.api_domain()}/deps"
 TAGGER_SCRIPT = Path(__file__).resolve().parent / "tagger.sh"
 TRANSFER_SCRIPT = Path(__file__).resolve().parent / "transfer.sh"
 
@@ -432,13 +435,17 @@ def ensure_dependency(dep_ref, arch, config, input_string, depender, visited=Non
 
     check_dep_url(dep_url)
 
+    # 真正下载的地址：设了 DEPS 域名就从 MacWave 自己的存储取，否则还是上游。
+    # 文件名沿用上游的，装完的目录结构与「从哪儿下的」无关。
+    dep_download_url = domains.dep_url(dep_name, dep_version, arch, dep_url)
+
     # 4. 先递归安装它自己的依赖：路径替换时这些库必须已经在磁盘上
     if dep_refs:
         install_dependencies(dep_refs, arch, config, input_string,
                              ("dep", dep_name, dep_version), visited)
 
     # 5. 下载 + 安装自己（安装脚本会写入 _DEPS 与依赖者标记）
-    original_filename = download_dependency(dep_url, dep_display_name, config, input_string)
+    original_filename = download_dependency(dep_download_url, dep_display_name, config, input_string)
     install_dependency_shell(dep_name, dep_version, dep_sha256, dep_display_name,
                              target_dir, dep_refs, depender, original_filename)
 

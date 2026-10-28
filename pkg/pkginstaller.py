@@ -29,6 +29,7 @@ from configpaths import (
     load_base_dir,
     require_safe_token,
 )
+import domains
 
 
 def github_api_headers(url):
@@ -471,7 +472,7 @@ def detect_arch():
 
 def package_common_url(package_name, arch):
 
-    return f"https://raw.githubusercontent.com/MacWaveOrg/infosource/main/pkg/pkginfo_{arch}/{package_name}/_{package_name}@common"
+    return f"{domains.api_domain()}/pkg/pkginfo_{arch}/{package_name}/_{package_name}@common"
 
 
 def fetch_common_fields(package_name, arch, timeout=DEFAULT_TIMEOUT):
@@ -491,8 +492,8 @@ def fetch_common_fields(package_name, arch, timeout=DEFAULT_TIMEOUT):
 
 
 def fetch_max_version(package_name, arch, timeout=DEFAULT_TIMEOUT):
-    # 数据在 MacWaveOrg/infosource 仓库的 main 分支
-    api_url = f"https://api.github.com/repos/MacWaveOrg/infosource/contents/pkg/pkginfo_{arch}/{package_name}?ref=main"
+    # 版本清单：默认走 GitHub API，设了索引镜像时读镜像自己的清单（见 domains.index_list_url）
+    api_url = domains.index_list_url(arch, package_name)
     try:
         response = requests.get(api_url, timeout=timeout, headers=github_api_headers(api_url))
         if response.status_code != 200:
@@ -500,10 +501,9 @@ def fetch_max_version(package_name, arch, timeout=DEFAULT_TIMEOUT):
             print(f"{RED_BOLD}🌊 URL: {api_url}{RESET}")
             sys.exit(1)
 
-        file_list = response.json()
+        file_list = domains.listing_names(response.text)
         versions = []
-        for item in file_list:
-            fname = item["name"]
+        for fname in file_list:
             if fname.endswith("@common"):
                 continue
             if "@" in fname:
@@ -571,7 +571,7 @@ def handle_install(input_string):
     bin_name = require_safe_token(bin_name, "bin_name")
 
     # 5. 获取 URL 和 SHA256（deps 也写在该版本文件里）
-    pkg_version_url = f"https://raw.githubusercontent.com/MacWaveOrg/infosource/main/pkg/pkginfo_{ARCH}/{ParsePkgName}/_{ParsePkgName}@{ParsePkgVersion}"
+    pkg_version_url = f"{domains.api_domain()}/pkg/pkginfo_{ARCH}/{ParsePkgName}/_{ParsePkgName}@{ParsePkgVersion}"
     try:
         resp = requests.get(pkg_version_url, timeout=config["timeout"])
         if resp.status_code != 200:
@@ -616,7 +616,7 @@ def handle_install(input_string):
     # 5.1 解析 deps 字段（写在版本文件里，可能多行），缺失视为无依赖
     dep_refs = get_deps(parse_common_fields(resp.text))
 
-    # 6. 简单 URL 检查，避免低级错误
+    # 6. 简单 URL 检查，避免低级错误（检查的是索引里记录的上游地址）
     if not ParsePkgURL.startswith("https://"):
         if ParsePkgURL.startswith("http://"):
             print(f"{RED_BOLD}🌊 ParsePkgURL using HTTP! That's insecure, Please contact the administrator.{RESET}")
@@ -625,13 +625,17 @@ def handle_install(input_string):
             print(f"{RED_BOLD}🌊 ParsePkgURL Invalid, Please contact the administrator.{RESET}")
             sys.exit(1)
 
+    # 6.1 真正下载的地址：设了 Bottle 域名就从 MacWave 自己的存储取，否则还是上游。
+    #     文件名沿用上游的，所以装完的目录结构与「从哪儿下的」无关。
+    PkgDownloadURL = domains.bottle_url(ParsePkgName, ParsePkgVersion, ARCH, ParsePkgURL)
+
     # 7. 下载
     original_filename = ParsePkgURL.split("/")[-1]
     DOWNLOAD_TMP.mkdir(parents=True, exist_ok=True)
     temp_path = DOWNLOAD_TMP / f"{original_filename}.partial"
     assert_inside(temp_path, DOWNLOAD_TMP, "download path")
 
-    download_file(ParsePkgURL, temp_path, config, input_string, bin_name)
+    download_file(PkgDownloadURL, temp_path, config, input_string, bin_name)
 
     # 8. 删掉 .partial 后缀
     final_download_path = DOWNLOAD_TMP / original_filename
