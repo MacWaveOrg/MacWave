@@ -180,7 +180,53 @@ curl -fsSL https://mirror.repohub.top/MacWave/bottle/jq/jq%401.7.1.arm64 | shasu
 # 与 infosource 里 _jq@1.7.1 的 sha256 应当逐字相同
 ```
 
-## 第八步：让 MacWave 用它
+## 第八步：首次安装就走镜像
+
+前面几节假设 MacWave 已经装好了。但首次安装时用户还没有 `~/.zshrc` 里的那几行，所以要把变量
+写在**同一条命令的前面**：
+
+```bash
+MACWAVE_CORE_DOMAIN=https://mirror.repohub.top/MacWave/core \
+MACWAVE_SELFUPDATE_DOMAIN=https://mirror.repohub.top/MacWave/selfupdate \
+MACWAVE_PYTHON_DOMAIN=https://mirror.repohub.top/MacWave/selfupdate \
+/bin/bash -c "$(curl -fsSL https://mirror.repohub.top/MacWave/core/lib/install.sh)"
+```
+
+这里出现了另外两个变量，含义与前面不同：
+
+| 变量 | 取什么 | 镜像要承载 |
+| --- | --- | --- |
+| `MACWAVE_CORE_DOMAIN` | MacWave 自身的代码（`lib/`、`pkg/`、`surfboard/`） | `<根>/MacWave/core/<分支>/…` |
+| `MACWAVE_PYTHON_DOMAIN` | 自带 CPython 的清单 | `<根>/MacWave/selfupdate/pythondata/latest_python` |
+
+`core/` 的形状有个坑：客户端按 **`<CORE_DOMAIN>/<分支>/<路径>`** 取文件
+（`BASE_URL="$CORE_URL/$BRANCH"`），所以分支名必须是一层真实目录：
+
+```
+MacWave/core/4.0/lib/wave.py        ← 正确
+MacWave/core/lib/wave.py            ← 错误，缺了分支这一层，会 404
+```
+
+在镜像服务器上按分支铺：
+
+```bash
+for branch in 4.0 3.2; do
+  git clone --depth 1 --branch "$branch" https://github.com/MacWaveOrg/MacWave \
+    "/www/wwwroot/mirror.repohub.top/MacWave/core/$branch"
+  rm -rf "/www/wwwroot/mirror.repohub.top/MacWave/core/$branch/.git"
+done
+```
+
+⚠️ 但这里有个现实问题：**MacWave 自身的代码更新频率高**，而 `core/` 是 git 克隆的副本，
+不会自动跟着走。镜像它意味着你要定期重新拉取，否则用户拿到的是旧代码。
+
+**所以我的建议是：`core` 保持官方地址，不去镜像它。** 它只有几百 KB、只在下
+载 MacWave 本身时请求一次，不是慢的主要来源——真正大的是 `bottle` 的几十到几百 MB。
+绝大多数用户只需要镜像 `bottle` 和 `deps`。
+
+## 第九步：让已装好的 MacWave 用它
+
+已经装好、只是下载慢的情况。三行写进 `~/.zshrc`：
 
 ```bash
 export MACWAVE_BOTTLE_DOMAIN=https://mirror.repohub.top/MacWave/bottle
@@ -188,9 +234,55 @@ export MACWAVE_DEPS_DOMAIN=https://mirror.repohub.top/MacWave/deps
 export MACWAVE_SELFUPDATE_DOMAIN=https://mirror.repohub.top/MacWave/selfupdate
 ```
 
-写进 `~/.zshrc` 长期生效。
+写进 `~/.zshrc` 长期生效，然后 `source ~/.zshrc`。
 
 前两个变量的值里带 `/bottle` 与 `/deps`，因为镜像根目录下就是这两棵子树。想再镜像自更新数据的话，把 `MacWaveOrg/Selfupdate` 的内容放到 `.../selfupdate/`，第三个变量才需要设。
+
+验证真的走了镜像：
+
+```bash
+curl -sI "$MACWAVE_BOTTLE_DOMAIN/jq/jq%401.8.2.arm64" | head -1
+# 期望 HTTP/2 200
+wave install jq
+```
+
+## 第十步：切回官方地址
+
+**用户迟早会问这个。** 两种方式，效果不同：
+
+| 方式 | 命令 | 何时失效 |
+| --- | --- | --- |
+| **改配置（推荐）** | 从 `~/.zshrc` 删掉那几行 `export`，再 `source ~/.zshrc` | 永久 |
+| **临时关掉** | `unset MACWAVE_BOTTLE_DOMAIN MACWAVE_DEPS_DOMAIN MACWAVE_SELFUPDATE_DOMAIN` | 只影响当前终端，新开窗口又回来 |
+
+确认已切回：
+
+```bash
+echo "${MACWAVE_BOTTLE_DOMAIN:-(未设置 → 用官方地址)}"
+```
+
+**一个变量都不设 = 与 3.x 完全相同的地址。** 这就是默认值仍指向官方源的原因：不设就是原样。
+
+**可以只镜像一部分。** 三个变量互相独立，没设的那个继续用官方地址。例如只镜像二进制、自更新仍走官方：
+
+```bash
+export MACWAVE_BOTTLE_DOMAIN=https://mirror.repohub.top/MacWave/bottle
+export MACWAVE_DEPS_DOMAIN=https://mirror.repohub.top/MacWave/deps
+# 不设 MACWAVE_SELFUPDATE_DOMAIN
+```
+
+## 哪些操作受这些变量影响
+
+| 操作 | 受镜像变量影响 | 说明 |
+| --- | --- | --- |
+| `wave install <包>` | ✅ | 二进制走 `BOTTLE` / `DEPS` |
+| `wave upgrade <包>` | ✅ | 同上 |
+| `wave selfupdate` | ✅ | 版本数据与文件清单走 `SELFUPDATE` |
+| `wave search` / `wave info` | ⚠️ 部分 | 索引走 `API`；但「列版本」目前仍走 `api.github.com` |
+| `curl … install.sh` 首次安装 | ❌ | 除非按第十步把变量写在命令前 |
+| `git clone` 源码 | ❌ | git 不认这些变量 |
+
+最后一行最容易误会：**`MACWAVE_*_DOMAIN` 只管 MacWave 自己发的请求**，管不到 `git` 和 `curl` 的下载。
 
 ## 可选的第三块：自更新数据
 
