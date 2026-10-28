@@ -107,7 +107,58 @@ esac
 # 内层：已经在沙箱里，跑场景
 # ==========================================================
 
+# 安装器会在安装根目录下建一个私有 venv，然后往里 pip install 三个依赖。
+# 沙箱没有网络，pip 必然失败，而安装器（正确地）把「依赖装不上」当作安装失败 ——
+# 于是这个测试曾经有 16 项一直红着，看起来像安装器坏了。
+#
+# 这里先把 venv 建好，并带上 --system-site-packages：这样它能看见系统里已有的
+# requests / packaging / rich（测试开头已经确认它们在），安装器那句
+# `import requests, packaging, rich` 就通过，不再触发 pip。
+# 这只是测试侧的铺垫，安装器本身的行为一点没改。
+seed_venv() {
+    local base_dir="$1"
+    [[ -n "$base_dir" ]] || return 0
+    [[ -x "$base_dir/venv/bin/python3" ]] && return 0
+    mkdir -p "$base_dir" 2>/dev/null || return 0
+    python3 -m venv --system-site-packages "$base_dir/venv" >/dev/null 2>&1 || true
+}
+
+# 从 --dir-option 的参数推出安装根目录，好把 venv 预先放到正确的位置。
+base_dir_for_args() {
+    local arg value
+    for arg in "$@"; do
+        case "$arg" in
+            --dir-option=1) echo "$FAKE_HOME/.local/macwave"; return 0 ;;
+            --dir-option=2) echo "${SYS_ROOT}/opt/macwave"; return 0 ;;
+            --dir-option=3)
+                # 第 3 项在 Intel 上是 /usr/local/macwave，在 Apple 芯片上是自定义项
+                if [[ "$(uname -m)" == "x86_64" || "$(uname -m)" == "amd64" ]]; then
+                    echo "${SYS_ROOT}/usr/local/macwave"
+                fi
+                return 0 ;;
+            --dir-option=*)
+                value="${arg#--dir-option=}"
+                case "$value" in
+                    */*|=*)
+                        # 形式 1：<菜单号>=<路径>
+                        if [[ "$value" == *=* ]]; then
+                            echo "${value#*=}"
+                        else
+                            # 形式 2：直接给路径（不带菜单号）
+                            echo "$value"
+                        fi
+                        return 0 ;;
+                esac
+                return 0 ;;
+        esac
+    done
+    # 没给 --dir-option 时，--silent 走第 1 项
+    echo "$FAKE_HOME/.local/macwave"
+    return 0
+}
+
 install_run() {
+    seed_venv "$(base_dir_for_args "$@")"
     /bin/bash -c "$(cat "$OFFLINE_INSTALLER")" -- "$@" > "$OUT" 2>&1
     return $?
 }
