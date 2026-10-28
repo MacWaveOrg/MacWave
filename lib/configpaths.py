@@ -69,6 +69,48 @@ def rooted(path):
     return TEST_ROOT / path.relative_to("/")
 
 
+# -------------------- 代理（--proxy 的全局生效） --------------------
+#
+# `wave install jq --proxy http://proxy:8080` 里的这个参数，以前只影响「下载包体」
+# 那一步，取索引、取 @common、取依赖元数据、search/info、自更新全都绕过它 ——
+# 于是内网用户会卡在 "Cannot fetch @common file" 上，而字节一个都没下到。
+#
+# 与其逐个改造调用点（requests.get 有十来处，还有 bash 子脚本里的 curl），
+# 不如把值写进进程环境：requests（trust_env 默认开）、urllib、curl 都读环境变量，
+# 于是这条命令的**所有**请求都自动走代理，子进程也一并继承。
+#
+# 这是刻意的「全局」语义：命令行上写了 --proxy，这条命令就不该有任何请求绕过它。
+
+PROXY_ENV_VARS = ("HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY",
+                  "https_proxy", "http_proxy", "all_proxy")
+
+
+def proxy_value_from(argv):
+    # 从命令行里取 --proxy 的值；支持 `--proxy X` 与 `--proxy=X`，没有则返回 ""。
+    tokens = list(argv)
+    for index, token in enumerate(tokens):
+        if token == "--proxy":
+            return tokens[index + 1] if index + 1 < len(tokens) else ""
+        if token.startswith("--proxy="):
+            return token[len("--proxy="):]
+    return ""
+
+
+def apply_proxy_from_command_line(argv):
+    # 校验协议后写进环境变量。不合法的值交给原来的解析路径去报错（这里只跳过），
+    # 免得同一条命令在两处报出不同的错。
+    value = proxy_value_from(argv).strip()
+    if not value:
+        return ""
+
+    if not value.startswith(("http://", "https://", "socks5://")):
+        return ""
+
+    for name in PROXY_ENV_VARS:
+        os.environ[name] = value
+    return value
+
+
 # -------------------- 配置目录候选 --------------------
 
 CONFIG_FILE_NAME = "config.json"

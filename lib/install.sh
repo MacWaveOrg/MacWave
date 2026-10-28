@@ -432,10 +432,36 @@ fi
 CONFIG_FILE="$CONFIG_DIR/config.json"
 VERSION_FILE="$CONFIG_DIR/VERSION.json"
 
+MW_OPTIONAL_RESULT=""
+
+mw_try() {
+    # mw_try <命令...>：跑一个「失败也无所谓」的命令，stdout 存进 MW_OPTIONAL_RESULT。
+    # 失败时不惊动 ERR trap —— 否则用户会先看到「Installation did not finish」，
+    # 几百行之后再看到「Installation complete!」，比不提示更糟。
+    #
+    # 旗标必须在**命令替换的整个生命周期内**保持设置：`set -E` 让 ERR trap 传进
+    # 子 shell，而子 shell 退出时如果那条命令返回非零，trap 照样会响。所以赋值写进
+    # 本函数内部，而不是让调用方写 `X="$(mw_try ...)"`。
+    local output
+    MW_FAILURE_HANDLED=1
+    output="$("$@")" && MW_OPTIONAL_RESULT="$output" || MW_OPTIONAL_RESULT=""
+    unset MW_FAILURE_HANDLED
+    return 0
+}
+
 # 中途失败时给出明确指引。刻意**不自动删除**已下载的内容：升级安装时
 # 删掉安装树会把用户原有的可用安装一起毁掉，重跑安装器才是安全的做法。
 install_failed() {
     local code=$?
+
+    # 有些失败是**预期之内**的：自带解释器取不到时会回落到系统 python3，
+    # 安装照常完成。那些地方用 mw_try 包着，会临时立这个旗标，
+    # 于是这里不报「安装未完成」—— 否则用户看到的是「安装失败」接着
+    # 「Installation complete!」，比没有提示更糟。
+    if [[ -n "${MW_FAILURE_HANDLED:-}" ]]; then
+        return 0
+    fi
+
     echo "" >&2
     echo -e "${RED_BOLD}🌊 Installation did not finish (exit $code).${RESET}" >&2
     echo "🌊 Nothing was removed. Files already downloaded may be left in:" >&2
@@ -825,7 +851,8 @@ VENV_PY=""
 PYTHON_BIN=""
 PYTHON_SOURCE=""
 
-BUNDLED_PY="$(ensure_portable_python "$BASE_DIR" "$(portable_python_arch)")" || BUNDLED_PY=""
+mw_try ensure_portable_python "$BASE_DIR" "$(portable_python_arch)"
+BUNDLED_PY="$MW_OPTIONAL_RESULT"
 if [[ -n "$BUNDLED_PY" ]]; then
     PYTHON_BIN="$BUNDLED_PY"
     PYTHON_SOURCE="bundled"
