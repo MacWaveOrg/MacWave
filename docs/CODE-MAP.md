@@ -64,7 +64,8 @@
 
 | 文件 | 职责 | 关键点 |
 | --- | --- | --- |
-| `wave.py` | 唯一入口。读配置、注入模块路径、按命令表分发 | 命令分发**之前**先拦下各命令的帮助请求，交给 `help.py`。否则各处理函数不认识帮助旗标，会出现「安装命令报错」「列表命令静默忽略」「自更新真的开始更新」三种坏结果 |
+| `domains.py` | **所有对外地址的唯一来源**。七个 `MACWAVE_*_DOMAIN` 环境变量、默认值、校验与归一化都在这里 | 边界归一化：`rstrip("/")` 去掉末尾斜杠，于是 13 处拼接点可以无条件写 `f"{domain}/…"`。默认值仍是 3.x 的地址，不设变量即行为不变。与两份 shell 脚本的同名块由 `scripts/check_domain_defaults.py` 比对，漂移会失败 |
+| `wave.py` | 唯一入口。读配置、注入模块路径、按命令表分发 | 命令分发**之前**先拦下各命令的帮助请求，交给 `help.py`。否则各处理函数不认识帮助旗标，会出现「安装命令报错」「列表命令静默忽略」「自更新真的开始更新」三种坏结果。同样在分发之前把 `--proxy` 写进 `HTTPS_PROXY` 等环境变量 —— `requests`、`urllib` 与子脚本里的 `curl` 都读环境变量，一处生效、全部覆盖 |
 | `wave`（生成） | **不在仓库里**：`install.sh` / `selfupdate.sh` 生成的最外层入口，是一个 sh 启动器 | 按「私有 venv → 安装时记录的解释器 → PATH 上的 python3」挑选**真正能 import 依赖**的解释器，再 exec `wave.py`。改入口逻辑要同时改两个脚本里的 `write_launcher` |
 | `configpaths.py` | 配置目录解析的唯一来源 | 系统级优先、损坏则回落用户级。另提供「路径必须位于根目录内」的安全校验，防止配置被篡改后写到任意位置 |
 | `configerror.py` | 启动自检：机器上到底装没装 | 两处配置有一处有效就放行；都没装且当前在 git 仓库里时，报错并引导用安装脚本 |
@@ -138,6 +139,11 @@
 | `sandbox_test.sh` | 安装器/卸载器在系统沙箱里跑，宿主除沙箱外零写入，且离线 |
 | `configpath_test.sh` | 配置目录解析的优先级与容错回落 |
 | `audit_deps.py` | 数据审计：检查数据完整性，或把已装产物的实际动态库引用与声明对比 |
+| `domains_test.sh` | 地址层：默认值、环境变量覆盖与校验、`url` 只在 `--install-from-source` 下被读、两份 shell 脚本的域名块与 `domains.py` 是否一致。纯离线，所以放在需联网的测试之前 |
+| `check_domain_defaults.py` | 只做一件事：比对 `domains.py` 与两份 shell 脚本里的域名默认值。三处同源，靠脚本盯着 |
+| `sync_payloads.py` | 把索引里登记的产物取回本地并按 4.0 的命名摆好，落盘前核对索引里的 sha256。`--source payload` 时从我们自己的 Release 取（给镜像站同步用） |
+| `publish_payloads.py` | 把上一步的结果发布到 `Bottle` / `Deps` 的 Release：tag 是包名，只增不删，同名同大小跳过 |
+| `backfill_file_field.py` | 数据迁移：给 3.x 的版本记录补上 4.0 需要的 `file` 字段（取 `url` 末段，与 3.x 实际用过的名字一致）。幂等 |
 
 **所有测试共享的隔离机制**：设置 `MACWAVE_TEST` 指向一个临时目录后，安装器、卸载器与相关脚本会把该目录当作系统根，家目录也挂到它下面。危险操作必须用它。
 
@@ -147,6 +153,8 @@
 | --- | --- |
 | `format-test.yml` | 在多个 Python 版本上跑格式与回归；分支列表里包含若干历史分支 |
 | `sync-release-branch.yml` | 主分支与发布分支的自动镜像，只做快进，分叉即报错 |
+| `portable-python.yml` | 上游有了新的 CPython 时更新 `Selfupdate` 的 `pythondata/latest_python`：下载、算 sha256、确认压缩包里真有解释器 |
+| `sync-payloads.yml` | 抓上游产物 → 核对索引里的 sha256 → 发布到 `Bottle` / `Deps` 的 Release，再回读比对。**必须跑在 GitHub 托管的 Runner 上**：从大陆访问 `github.com` 实测三次里两次连 TCP 都建不起来 |
 
 镜像工作流用**属于组织管理员的令牌**推送，因为机器人身份无法进入分支保护的豁免名单。它触发的第二次运行会发现两侧已相等而退出，不构成循环。
 

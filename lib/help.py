@@ -153,7 +153,7 @@ COMMAND_HELP = {
     },
     "selfupdate": {
         "usage": "wave selfupdate [flags]",
-        "desc": "Update MacWave itself to the version published in the configdata repository.",
+        "desc": "Update MacWave itself to the version published in the self-update repository.",
         "flags": [
             ("--max-time <string>", "Timeout for each request (40s, 1min, 1min20s, 2h; bare numbers are seconds)"),
         ],

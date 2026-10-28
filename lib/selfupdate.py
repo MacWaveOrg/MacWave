@@ -141,7 +141,7 @@ def version_key(value):
 
 
 def version_file():
-    # 配置目录可能在上一次升级里被迁移（见 configdata 仓库的 updatedata/），
+    # 配置目录可能在上一次升级里被迁移（见自更新数据仓库的 updatedata/），
     # 所以每次都重新解析一遍，不要用模块级常量。
     config_dir = find_config_dir()
     if config_dir is not None:
