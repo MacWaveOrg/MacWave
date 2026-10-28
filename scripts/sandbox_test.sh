@@ -5,7 +5,7 @@
 # 宿主除了沙箱目录以外的地方一个字节都不会被写。
 #
 # 做法：
-#   1. 在临时目录里搭一份离线镜像，只把 BASE_URL / SELFUPDATE_URL 两行改成
+#   1. 在临时目录里搭一份离线镜像，只把 BASE_URL / SELFUPDATE_URL / PYTHON_URL 三行改成
 #      file:// 路径，因此整个过程**不需要网络**；
 #   2. 用 macOS 自带的 sandbox-exec 起一个「默认拒绝、只允许写沙箱目录」的沙箱，
 #      在里头跑安装 / 卸载的各种路径，逐条断言。
@@ -186,7 +186,7 @@ scenario_install_dirs() {
     check "选项 1 VERSION.json 版本与 configdata 一致" \
         "$(tree_version "$FAKE_HOME/.config/macwave_config/VERSION.json")" \
         "$(sed -n 's/^version:[[:space:]]*"\(.*\)"$/\1/p' \
-            "$SANDBOX_DIR/mirror/configdata/versiondata/latest_version" | head -n 1)"
+            "$SANDBOX_DIR/mirror/selfupdate/versiondata/latest_version" | head -n 1)"
     check "选项 1 写入了 PATH" "$(count_in "$FAKE_HOME/.zshrc" "$FAKE_HOME/.local/macwave")" "1"
     check "选项 1 不碰系统级配置" \
         "$([[ -e /opt/macwave_config ]] && echo yes || echo no)" "no"
@@ -497,21 +497,21 @@ echo "🌊 Nothing outside this directory will be written."
 echo ""
 
 # ---------- 1. 离线镜像 ----------
-mkdir -p "$SANDBOX_DIR/mirror/base" "$SANDBOX_DIR/mirror/configdata"
+mkdir -p "$SANDBOX_DIR/mirror/base" "$SANDBOX_DIR/mirror/selfupdate"
 tar -C "$REPO_DIR" -cf - \
     --exclude=.git --exclude=.github --exclude=.templates \
     --exclude=.vscode --exclude=.codex --exclude=.pycharm \
     --exclude=__pycache__ --exclude=.DS_Store . \
     | tar -C "$SANDBOX_DIR/mirror/base" -xf -
 
-CONFIGDATA_SRC="${MACWAVE_CONFIGDATA:-$(dirname "$REPO_DIR")/configdata}"
-if [[ -f "$CONFIGDATA_SRC/versiondata/files_info" ]]; then
-    tar -C "$CONFIGDATA_SRC" -cf - --exclude=.git --exclude=.DS_Store . \
-        | tar -C "$SANDBOX_DIR/mirror/configdata" -xf -
-    echo "🌊 Using the real files_info from $CONFIGDATA_SRC"
+SELFUPDATE_SRC="${MACWAVE_SELFUPDATE:-$(dirname "$REPO_DIR")/configdata}"
+if [[ -f "$SELFUPDATE_SRC/versiondata/files_info" ]]; then
+    tar -C "$SELFUPDATE_SRC" -cf - --exclude=.git --exclude=.DS_Store . \
+        | tar -C "$SANDBOX_DIR/mirror/selfupdate" -xf -
+    echo "🌊 Using the real files_info from $SELFUPDATE_SRC"
 else
     # 没有 configdata 分支时按仓库结构生成一份，好让脚本在单分支检出下也能跑
-    mkdir -p "$SANDBOX_DIR/mirror/configdata/versiondata"
+    mkdir -p "$SANDBOX_DIR/mirror/selfupdate/versiondata"
     {
         echo "/"
         for d in lib pkg surfboard; do
@@ -524,7 +524,7 @@ else
                 echo "        $base"
             done
         done
-    } > "$SANDBOX_DIR/mirror/configdata/versiondata/files_info"
+    } > "$SANDBOX_DIR/mirror/selfupdate/versiondata/files_info"
 
     # install.sh 还会从 configdata 读版本号与代码来源分支，一并生成一份
     {
@@ -533,21 +533,28 @@ else
         echo 'build_number: "000A0000"'
         echo 'branch: "main"'
         echo 'update_command: <<< true >>>'
-    } > "$SANDBOX_DIR/mirror/configdata/versiondata/latest_version"
+    } > "$SANDBOX_DIR/mirror/selfupdate/versiondata/latest_version"
 
-    echo -e "${YELLOW}🌊 configdata branch not found; generated files_info from the repo tree.${RESET}"
-    echo -e "${YELLOW}🌊 Set MACWAVE_CONFIGDATA=<path> to test the real one.${RESET}"
+    echo -e "${YELLOW}🌊 self-update data not found; generated files_info from the repo tree.${RESET}"
+    echo -e "${YELLOW}🌊 Set MACWAVE_SELFUPDATE=<path> to test the real one.${RESET}"
 fi
 
 # 只改两行 URL，其余与真实安装器逐字节一致
+# 三个数据来源都要指向离线镜像：
+#   BASE_URL      MacWave 自身文件
+#   SELFUPDATE_URL 版本数据、文件清单、迁移脚本、冻结的更新脚本
+#   PYTHON_URL    自带解释器的清单
+# 漏掉任何一个，沙箱里那一步就会去访问真实网络，被 sandbox-exec 拦掉，
+# 于是失败原因看起来像「安装器坏了」，实际是测试自己没隔离干净。
 sed -e "s|^BASE_URL=.*|BASE_URL=\"file://$SANDBOX_DIR/mirror/base\"|" \
-    -e "s|^SELFUPDATE_URL=.*|SELFUPDATE_URL=\"file://$SANDBOX_DIR/mirror/configdata\"|" \
+    -e "s|^SELFUPDATE_URL=.*|SELFUPDATE_URL=\"file://$SANDBOX_DIR/mirror/selfupdate\"|" \
+    -e "s|^PYTHON_URL=.*|PYTHON_URL=\"file://$SANDBOX_DIR/mirror/selfupdate\"|" \
     "$REPO_DIR/lib/install.sh" > "$SANDBOX_DIR/install-offline.sh"
 cp "$REPO_DIR/lib/uninstall.sh" "$SANDBOX_DIR/source-uninstall.sh"
 cp "${BASH_SOURCE[0]}" "$SANDBOX_DIR/sandbox_test.sh"
 
-if [[ "$(diff <(sed -e 's|^BASE_URL=.*|X|' -e 's|^SELFUPDATE_URL=.*|Y|' "$REPO_DIR/lib/install.sh") \
-               <(sed -e 's|^BASE_URL=.*|X|' -e 's|^SELFUPDATE_URL=.*|Y|' "$SANDBOX_DIR/install-offline.sh") \
+if [[ "$(diff <(sed -e 's|^BASE_URL=.*|X|' -e 's|^SELFUPDATE_URL=.*|Y|' -e 's|^PYTHON_URL=.*|Z|' "$REPO_DIR/lib/install.sh") \
+               <(sed -e 's|^BASE_URL=.*|X|' -e 's|^SELFUPDATE_URL=.*|Y|' -e 's|^PYTHON_URL=.*|Z|' "$SANDBOX_DIR/install-offline.sh") \
           | wc -l | tr -d ' ')" != "0" ]]; then
     echo -e "${RED_BOLD}🌊 Error: the offline installer differs from lib/install.sh beyond the URLs.${RESET}"
     exit 1

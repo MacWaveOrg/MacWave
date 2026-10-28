@@ -102,15 +102,47 @@ Config file is stored in (a system-level install always takes priority):
 1. /opt/macwave_config          system-level install (needs sudo)
 2. ~/.config/macwave_config     user-level install (no sudo)
 ```
-## 🌊 Mirrors (4.0 and later)
-Every address MacWave uses can be replaced with an environment variable, so a mirror is configuration rather than a command (there is deliberately no `wave mirror`):
+## 🌊 Using a Mirror (4.0 and later)
+Every address MacWave contacts is configurable, so switching mirrors is a set of environment variables rather than a command — there is deliberately no `wave mirror`, the same way Homebrew has no `brew mirror`.
+
+**This matters most in mainland China**, where `github.com` is often unreachable rather than merely slow. Measured from one such connection: two out of three attempts failed to open a TCP connection within 20 seconds, while domestic mirrors answered in 37–78 ms.
+
+### Switch to a mirror
 ```bash
-export MACWAVE_API_DOMAIN=https://mirror.example.com/macwave/index
-export MACWAVE_BOTTLE_DOMAIN=https://mirror.example.com/macwave/bottles
-export MACWAVE_DEPS_DOMAIN=https://mirror.example.com/macwave/deps
-export MACWAVE_SELFUPDATE_DOMAIN=https://mirror.example.com/macwave/selfupdate
+export MACWAVE_BOTTLE_DOMAIN=https://mirror.example.cn/macwave/bottle
+export MACWAVE_DEPS_DOMAIN=https://mirror.example.cn/macwave/deps
 ```
-Unset variables keep using the official addresses, so a partial mirror is fine. `MACWAVE_BOTTLE_DOMAIN` and `MACWAVE_DEPS_DOMAIN` have no default: 4.0 downloads prebuilt binaries from MacWave's own storage instead of from upstream, and refuses to install rather than silently falling back when that storage is not configured. See the [technical guide](docs/TECHNICAL-GUIDE.md) for the full table.
+Put those two lines in `~/.zshrc` so they apply to every shell. Everything else keeps using the official addresses, so a mirror only needs to carry what it mirrors.
+
+### The full set
+| Variable | What it fetches | Default |
+| --- | --- | --- |
+| `MACWAVE_BOTTLE_DOMAIN` | prebuilt packages | GitHub Releases |
+| `MACWAVE_DEPS_DOMAIN` | dependency libraries | GitHub Releases |
+| `MACWAVE_API_DOMAIN` | package index | `infosource` on raw.githubusercontent |
+| `MACWAVE_SELFUPDATE_DOMAIN` | self-update data | `Selfupdate` on raw.githubusercontent |
+| `MACWAVE_PYTHON_DOMAIN` | the bundled interpreter | `Selfupdate` on raw.githubusercontent |
+| `MACWAVE_CORE_DOMAIN` | MacWave's own files | `MacWave` on raw.githubusercontent |
+| `MACWAVE_PKG_SOURCECODE_DOMAIN` | package source (reserved) | — |
+
+A variable's value is the part **before** the package name: the client appends `/<package>/<package>@<version>.<arch><ext>` to the bottle and deps prefixes, and `/pkg/…`, `/deps/…`, `/versiondata/…` to the others. Trailing slashes are stripped, so either form works.
+
+### Check it before trusting it
+```bash
+curl -o /dev/null -w '%{speed_download} B/s\n' \
+  "$MACWAVE_BOTTLE_DOMAIN/jq/jq%401.8.2.arm64"
+```
+If that downloads quickly and `wave install jq` succeeds, the mirror is good. Every artifact is verified against the SHA-256 recorded in the index, so a mirror that serves altered bytes fails loudly instead of installing something unexpected.
+
+### Corporate networks
+A proxy is a different problem from a slow mirror: there the connection is blocked, not distant. Pass `--proxy` and it applies to **every** request the command makes, not just the payload download:
+```bash
+wave install jq --proxy http://proxy.corp:3128
+```
+Setting `HTTPS_PROXY` in the environment has the same effect and covers commands you forget to pass the flag to.
+
+### Running your own mirror
+A mirror is a static file tree, so `nginx`, an object bucket or any file server will do — no special software and no database. Setup steps, including the two `Cache-Control` lines worth adding, are in [docs/MIRROR-SETUP.md](docs/MIRROR-SETUP.md).
 
 ## 🌊 Uninstall MacWave
 

@@ -97,15 +97,47 @@ bash install.sh --silent --dir-option=1
 1. /opt/macwave_config          系统级安装（需要 sudo）
 2. ~/.config/macwave_config     用户级安装（无需 sudo）
 ```
-## 🌊 镜像站（4.0 起）
-MacWave 用到的每个地址都能用环境变量替换，所以镜像是配置而不是命令（刻意没有 `wave mirror`）：
+## 🌊 使用镜像站（4.0 起）
+MacWave 用到的每个地址都能替换，所以换镜像是一组环境变量而不是命令 —— 刻意没有 `wave mirror`，就像 Homebrew 没有 `brew mirror`。
+
+**这件事对国内用户最要紧**：`github.com` 常常不是慢，而是连不上。从一条国内线路实测：三次里两次在 20 秒内连 TCP 都没建立，而同一时刻国内镜像站 37~78 毫秒就返回了。
+
+### 换成镜像站
 ```bash
-export MACWAVE_API_DOMAIN=https://mirror.example.com/macwave/index
-export MACWAVE_BOTTLE_DOMAIN=https://mirror.example.com/macwave/bottles
-export MACWAVE_DEPS_DOMAIN=https://mirror.example.com/macwave/deps
-export MACWAVE_SELFUPDATE_DOMAIN=https://mirror.example.com/macwave/selfupdate
+export MACWAVE_BOTTLE_DOMAIN=https://mirror.example.cn/macwave/bottle
+export MACWAVE_DEPS_DOMAIN=https://mirror.example.cn/macwave/deps
 ```
-没设的变量继续用官方地址，所以只镜像一部分也没问题。`MACWAVE_BOTTLE_DOMAIN` 与 `MACWAVE_DEPS_DOMAIN` 没有默认值：4.0 的预编译二进制从 MacWave 自己的存储取，不再取上游；没配这两个变量时会拒绝安装，而不是悄悄回落到上游。完整表格见[技术文档](docs/TECHNICAL-GUIDE.md)。
+把这两行写进 `~/.zshrc`，每个终端都会生效。其余地址继续用官方源，所以镜像站只需要镜像它承载的那部分内容。
+
+### 全部变量
+| 变量 | 取什么 | 默认 |
+| --- | --- | --- |
+| `MACWAVE_BOTTLE_DOMAIN` | 预编译软件包 | GitHub Releases |
+| `MACWAVE_DEPS_DOMAIN` | 依赖库 | GitHub Releases |
+| `MACWAVE_API_DOMAIN` | 软件包索引 | raw.githubusercontent 上的 `infosource` |
+| `MACWAVE_SELFUPDATE_DOMAIN` | 自更新数据 | raw.githubusercontent 上的 `Selfupdate` |
+| `MACWAVE_PYTHON_DOMAIN` | 自带解释器 | raw.githubusercontent 上的 `Selfupdate` |
+| `MACWAVE_CORE_DOMAIN` | MacWave 自身文件 | raw.githubusercontent 上的 `MacWave` |
+| `MACWAVE_PKG_SOURCECODE_DOMAIN` | 软件包源码（预留） | — |
+
+变量的值是**包名之前那一段**：客户端会往 bottle / deps 的地址后接 `/<包名>/<包名>@<版本>.<架构><扩展名>`，往其他地址后接 `/pkg/…`、`/deps/…`、`/versiondata/…`。末尾斜杠会被自动去掉，写不写都行。
+
+### 先验证再用
+```bash
+curl -o /dev/null -w '%{speed_download} B/s\n' \
+  "$MACWAVE_BOTTLE_DOMAIN/jq/jq%401.8.2.arm64"
+```
+能快速下载、并且 `wave install jq` 成功，说明镜像可用。每个产物都会用索引里记录的 SHA-256 校验，所以镜像即使下发了被篡改的字节也会明确失败，而不是悄悄装进系统。
+
+### 公司内网
+这和「镜像慢」是两个问题：内网是**连不上**，不是距离远。加 `--proxy`，它会作用于这条命令的**所有**请求，而不只是下载包体那一步：
+```bash
+wave install jq --proxy http://proxy.corp:3128
+```
+在环境里设 `HTTPS_PROXY` 效果相同，而且能覆盖你忘记加旗标的命令。
+
+### 自己架镜像站
+镜像站就是一棵静态文件树，`nginx`、对象存储或任何文件服务器都行 —— 不需要特殊软件，也不需要数据库。搭建步骤（含建议加的两行 `Cache-Control`）见 [docs/MIRROR-SETUP.md](docs/MIRROR-SETUP.md)。
 
 ## 🌊 卸载 MacWave
 
