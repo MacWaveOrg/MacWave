@@ -4,7 +4,7 @@
 # Re-downloads every MacWave code file and refreshes VERSION.json in the
 # active config dir (/opt/macwave_config or ~/.config/macwave_config).
 # Invoked by `wave selfupdate` through the update_command field in
-# the configdata repository's versiondata/latest_version, or directly:
+# the self-update repository's versiondata/latest_version, or directly:
 #   bash lib/selfupdate.sh [branch]
 
 set -e
@@ -50,9 +50,9 @@ mw_domain() {
 # MacWave 自身文件（后面再拼 /<分支>/<路径>）
 CORE_URL="$(mw_domain MACWAVE_CORE_DOMAIN "${MACWAVE_CORE_DOMAIN:-https://raw.githubusercontent.com/MacWaveOrg/MacWave}")"
 # 自更新数据：版本号、文件清单、目录迁移脚本
-SELFUPDATE_URL="$(mw_domain MACWAVE_SELFUPDATE_DOMAIN "${MACWAVE_SELFUPDATE_DOMAIN:-https://raw.githubusercontent.com/MacWaveOrg/configdata/main}")"
+SELFUPDATE_URL="$(mw_domain MACWAVE_SELFUPDATE_DOMAIN "${MACWAVE_SELFUPDATE_DOMAIN:-https://raw.githubusercontent.com/MacWaveOrg/Selfupdate/main}")"
 # 自带 CPython 的清单
-PYTHON_URL="$(mw_domain MACWAVE_PYTHON_DOMAIN "${MACWAVE_PYTHON_DOMAIN:-https://raw.githubusercontent.com/MacWaveOrg/configdata/main}")"
+PYTHON_URL="$(mw_domain MACWAVE_PYTHON_DOMAIN "${MACWAVE_PYTHON_DOMAIN:-https://raw.githubusercontent.com/MacWaveOrg/Selfupdate/main}")"
 
 # ==========================================
 # 每个请求的超时
@@ -341,7 +341,7 @@ echo "🌊 Updating MacWave to $VERSION"
 # 每个大版本的第一个版本、以及任何跨大版本升级，都必须用 install.sh 完整安装：
 # 这类升级通常同时改仓库与目录结构，selfupdate 只适合同大版本内的小版本升级。
 # selfupdate.sh 是从「目标分支」拉下来执行的，守卫放在这里，以后每个大版本自带的
-# selfupdate.sh 都会带上它，规则自动生效，不必逐版本写死在 configdata 里。
+# selfupdate.sh 都会带上它，规则自动生效，不必逐版本写死在数据里。
 
 CURRENT_VERSION="$(python3 - "$VERSION_FILE" <<'PY'
 import json
@@ -415,7 +415,7 @@ if [[ "$DIR_STRUCTURE_CHANGE" == "Y" || "$DIR_STRUCTURE_CHANGE" == "y" ]]; then
 fi
 
 # ==========================================
-# 文件清单（configdata/versiondata/files_info）
+# 文件清单（版本数据里的 files_info，缺省为 versiondata/files_info）
 # ==========================================
 #
 # 要更新哪些文件不再写死在本脚本里，而是去自更新仓库读一份清单。
@@ -431,7 +431,7 @@ fi
 # 每个文件都从 "$BASE_URL/<仓库路径>" 下载，落到 "$BASE_DIR" 下的同名位置。
 # lib/wave.py 按原名下载；PATH 上的入口 lib/wave 由 write_launcher 生成
 # （它要按私有 venv 与解释器路径决定怎么启动，不能直接复制脚本本体）。
-# 以后新增文件只要改 configdata 的这份清单，不用再动本脚本。
+# 以后新增文件只要改这份清单，不用再动本脚本。
 
 # 清单位置：4.0 每个版本一份（版本数据里的 files_info 字段，由 selfupdate.py 传下来），
 # 3.x 的数据没有那个字段，于是回落到共用的 versiondata/files_info。

@@ -1,0 +1,129 @@
+name: Sync payloads
+
+# 抓上游产物 → 校验 sha256 → 发布到 Bottle / Deps 的 Release。
+#
+# 为什么必须在 GitHub Actions 里跑：上游（github.com）从大陆网络经常连不上
+# （实测三次里两次连 TCP 都建不起来），而 Runner 就在 GitHub 机房内，不存在
+# 国际出口问题。任何跑在大陆机器上的同步脚本都会反复失败，重试也救不了。
+#
+# 发布之后的链路是：
+#   GitHub Releases  →  香港镜像站（国际链路，正常）  →  大陆用户（20~50ms）
+#
+# 需要 secret: MACWAVE_RELEASE_TOKEN
+#   一个有 MacWaveOrg 下 Bottle 与 Deps 仓库 contents:write 的 PAT。
+#   GITHUB_TOKEN 不行 —— 分支保护与跨仓库写入都进不去。
+
+on:
+  workflow_dispatch:
+    inputs:
+      kinds:
+        description: "Which payloads to sync"
+        type: choice
+        options: [both, bottle, deps]
+        default: both
+      only:
+        description: "Comma separated package names (empty = all)"
+        default: ""
+      publish:
+        description: "Upload to Releases (uncheck to only download and verify)"
+        type: boolean
+        default: true
+  schedule:
+    # 每周一 03:17 UTC：把新增的索引记录补进 Release。只增不删，所以可以放心重复跑。
+    - cron: "17 3 * * 1"
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+
+    env:
+      GH_TOKEN: ${{ secrets.MACWAVE_RELEASE_TOKEN }}
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - name: Checkout MacWave
+        uses: actions/checkout@v4
+
+      # 索引是纯数据，直接检出本地副本，不走 api.github.com（未认证只有 60 次/小时）。
+      - name: Checkout infosource
+        uses: actions/checkout@v4
+        with:
+          repository: MacWaveOrg/infosource
+          ref: main
+          path: infosource-data
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install requests
+        run: python3 -m pip install --quiet requests
+
+      - name: Resolve inputs
+        id: opts
+        run: |
+          # schedule 触发时 inputs 为空，用默认值
+          kinds="${{ github.event.inputs.kinds }}"
+          only="${{ github.event.inputs.only }}"
+          publish="${{ github.event.inputs.publish }}"
+
+          case "$kinds" in
+            bottle|deps) ;;
+            *) kinds="bottle,deps" ;;
+          esac
+          [ -z "$publish" ] && publish="true"
+
+          echo "kinds=$kinds" >> "$GITHUB_OUTPUT"
+          echo "only=$only" >> "$GITHUB_OUTPUT"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          echo "🌊 kinds=$kinds only=${only:-<all>} publish=$publish"
+
+      - name: Fetch upstream payloads and verify checksums
+        run: |
+          python3 scripts/sync_payloads.py \
+            --infosource infosource-data \
+            --out staging \
+            --kinds "${{ steps.opts.outputs.kinds }}" \
+            --only "${{ steps.opts.outputs.only }}" \
+            --jobs 6
+
+      - name: Show what was fetched
+        run: |
+          echo "🌊 $(find staging -type f | wc -l | tr -d ' ') file(s), $(du -sh staging | cut -f1)"
+          find staging -type f | head -20
+
+      - name: Publish to Releases
+        if: steps.opts.outputs.publish == 'true'
+        run: |
+          python3 scripts/publish_payloads.py \
+            --staging staging \
+            --kinds "${{ steps.opts.outputs.kinds }}" \
+            --only "${{ steps.opts.outputs.only }}" \
+            --write
+
+      # 回读验证：从刚发布的 Release 把文件拉回来，与暂存目录逐字节比对。
+      # 这一步能抓住「上传成功但内容不对」——比如资产名被 GitHub 改写、
+      # 或者 URL 里 @ 的编码在服务端解不出来。
+      - name: Verify by downloading back
+        if: steps.opts.outputs.publish == 'true'
+        run: |
+          python3 scripts/sync_payloads.py \
+            --infosource infosource-data \
+            --out verified \
+            --kinds "${{ steps.opts.outputs.kinds }}" \
+            --only "${{ steps.opts.outputs.only }}" \
+            --source payload \
+            --jobs 4
+
+          echo "🌊 comparing staging with verified"
+          diff -r staging verified && echo "🌊 identical"
+
+      # 香港镜像站可以用这个产物同步，不必逐个访问 Release。
+      - name: Upload mirror tree as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mirror-tree
+          path: staging
+          retention-days: 7

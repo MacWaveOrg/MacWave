@@ -615,25 +615,26 @@ def handle_install(input_string):
     # 5.1 解析 deps 字段（写在版本文件里，可能多行），缺失视为无依赖
     dep_refs = get_deps(parse_common_fields(resp.text))
 
-    # 6. 下载地址与文件名交给 domains.resolve_payload 决定。
+    # 6. 从哪儿取、文件叫什么，交给 domains.resolve_payload 决定。
     #
-    #    4.0 只从 Bottle 存储取二进制，地址与文件名都由约定拼出来
-    #    （pkg/pkginfo_<架构>/<名字>/<名字>@<版本><扩展名>），url 字段全程不读 ——
-    #    它留着是给人和 2.x-3.x 看的上游线索。
-    #    唯一的例外是 --install-from-source：绕开 Bottle 直接装上游那份，
-    #    这时文件名与格式只能回来问 url。
-    PkgDownloadURL, original_filename = domains.resolve_payload(
+    #    4.0 从 GHCR 取（一个包一个仓库名，版本即 tag，架构在 OCI index 里），
+    #    url 字段全程不读 —— 它留着是给人和 2.x-3.x 看的上游线索。
+    #    唯一的例外是 --install-from-source：绕开 registry 直接装上游那份。
+    payload = domains.resolve_payload(
         "bottle", ParsePkgName, ParsePkgVersion, ARCH,
         upstream_filename=file_match.group(1) if file_match else "",
         upstream_url=url_match.group(1) if url_match else "",
         from_source=config.get("install_from_source", False))
+
+    # 文件名会被当路径用，来自远端数据，必须过白名单
+    original_filename = require_safe_token(payload["filename"], "file name")
 
     # 7. 下载
     DOWNLOAD_TMP.mkdir(parents=True, exist_ok=True)
     temp_path = DOWNLOAD_TMP / f"{original_filename}.partial"
     assert_inside(temp_path, DOWNLOAD_TMP, "download path")
 
-    download_file(PkgDownloadURL, temp_path, config, input_string, bin_name)
+    download_file(payload["url"], temp_path, config, input_string, bin_name)
 
     # 8. 删掉 .partial 后缀
     final_download_path = DOWNLOAD_TMP / original_filename

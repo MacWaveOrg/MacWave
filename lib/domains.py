@@ -25,6 +25,7 @@
 import json
 import os
 import sys
+from urllib.parse import quote
 
 
 # -------------------- 颜色定义 --------------------
@@ -57,12 +58,13 @@ DESCRIPTION = {
 
 DEFAULTS = {
     "api":        "https://raw.githubusercontent.com/MacWaveOrg/infosource/main",
-    # 空 = 还没搬过来：仍然用索引记录里的 url 字段，也就是 3.x 的行为
-    "bottle":     "",
-    "deps":       "",
+    # 默认指向 GitHub Releases：它的下载路径 /<tag>/<资产> 与静态镜像的 /<包名>/<文件> 同形，
+    # 所以国内镜像站只要 rsync 出同一棵树即可。指向仓库文件会被 git 的 100 MiB 硬限拦住。
+    "bottle":     "https://github.com/MacWaveOrg/Bottle/releases/download",
+    "deps":       "https://github.com/MacWaveOrg/Deps/releases/download",
     "core":       "https://raw.githubusercontent.com/MacWaveOrg/MacWave",
-    "python":     "https://raw.githubusercontent.com/MacWaveOrg/configdata/main",
-    "selfupdate": "https://raw.githubusercontent.com/MacWaveOrg/configdata/main",
+    "python":     "https://raw.githubusercontent.com/MacWaveOrg/Selfupdate/main",
+    "selfupdate": "https://raw.githubusercontent.com/MacWaveOrg/Selfupdate/main",
     # 预留：源码包的位置定了以后再接上
     "sourcecode": "",
 }
@@ -206,24 +208,29 @@ def listing_names(text, dirs_only=False):
 
 # -------------------- 二进制包（Bottle / Deps） --------------------
 #
-# 4.0 的二进制**只从这两个域名取**，索引里的 url 字段平时一概不读 ——
-# 那个字段留给 --install-from-source（绕开存储直接回上游）以及 2.x-3.x。
+# 4.0 的二进制不再取自上游，而是取自我们自己的存储。存储形态的选择标准只有一条：
+# **国内镜像站要能用 rsync + nginx 原样提供**（清华 / 中科大 / 阿里镜像的都是普通文件树），
+# 这是「国内连 GitHub 慢」的唯一实际解法。
 #
-# 存放布局刻意照抄 infosource 的目录形状，只把文件名前面那个下划线去掉：
+# 所以地址形状被刻意设计成「域名之后是一条纯文件路径」：
 #
-#   infosource 的记录                          Bottle / Deps 里的产物
-#   pkg/pkginfo_<架构>/<名字>/_<名字>@<版本>      pkg/pkginfo_<架构>/<名字>/<名字>@<版本><扩展名>
-#   deps/depsinfo_<架构>/<名字>/_<名字>@<版本>     deps/depsinfo_<架构>/<名字>/<名字>@<版本><扩展名>
+#   <域名>/<包名>/<包名>@<版本>.<架构><扩展名>
 #
-# 这样「索引里的第 N 条」与「存储里的第 N 个文件」一眼对得上，镜像站也可以原样
-# 复制这棵树，不必再维护第二套路径规则。
+# 默认域名指向 GitHub Releases，它的下载路径恰好也是 /<tag>/<资产>：
 #
-# 字节**原样搬运**，不重打包：校验值因此与上游公布的一致（能直接用官方 SHA256），
-# 也不存在「重打包后内容与上游不同」这种只能靠信任解释的问题。代价是扩展名不统一，
-# 所以扩展名取自索引的 file 字段（就是上游那份文件的名字），客户端只改名字不改内容。
-# 文件名叫 <名字>@<版本> + 上游的扩展名，版本因此不必单独占一层目录。
+#   默认：https://github.com/MacWaveOrg/Bottle/releases/download/jq/jq%401.7.1.arm64
+#   镜像：https://mirror.example.cn/macwave/bottle/jq/jq%401.7.1.arm64
+#                                                     ↑ 域名之后完全相同
 #
-# 没有扩展名的上游产物（裸可执行文件）扩展名就是空串，客户端因此把它当裸二进制处理。
+# 于是换镜像只是换一个环境变量，镜像站不需要理解任何协议。
+#
+# 为什么用 Releases 而不是仓库里的文件：git 有 100 MiB 单文件硬限，而 ollama 已有
+# 172.9 MB 的产物；Releases 单文件上限 2 GiB，且官方明确不限制总量与下载带宽。
+#
+# 字节**原样搬运，不重打包**：校验值因此与上游一致，可直接用官方 SHA256。
+# 代价是压缩格式不统一，所以扩展名取自索引的 file 字段（上游那份文件的名字）。
+#
+# 架构必须写进文件名：arm64 与 amd64 是两条同名同版本的索引记录，去掉架构就会撞名。
 
 # 多段扩展名要先试，否则 `.tar.gz` 会被当成 `.gz`
 ARCHIVE_SUFFIXES = (".tar.gz", ".tar.bz2", ".tar.xz", ".tar.zst", ".tar.z",
@@ -236,7 +243,7 @@ def require_domain(kind):
     value = domain(kind)
     if not value:
         print(f"{RED_BOLD}🌊 Error: {ENV_NAME[kind]} is not set.{RESET}")
-        print(f"{RED_BOLD}🌊 MacWave 4.0 downloads {DESCRIPTION[kind]} from its own storage; "
+        print(f"{RED_BOLD}🌊 MacWave 4.0 downloads {DESCRIPTION[kind]} from its own mirror; "
               f"set {ENV_NAME[kind]} to that address.{RESET}")
         sys.exit(1)
     return value
@@ -251,25 +258,22 @@ def payload_suffix(upstream_filename):
     return ""
 
 
-def payload_filename(name, version, upstream_filename):
-    # `<名字>@<版本>` + 上游扩展名：与索引记录同名，只去掉前导下划线。
-    return f"{name}@{version}{payload_suffix(upstream_filename)}"
+def payload_filename(name, version, arch, upstream_filename):
+    # <包名>@<版本>.<架构><扩展名>。落盘也用它，因为 pkgunzip.sh 靠扩展名选解压器。
+    return f"{name}@{version}.{arch}{payload_suffix(upstream_filename)}"
 
 
-def payload_path(kind, name, arch, filename):
-    # kind = "bottle" → pkg/pkginfo_<架构>/…；kind = "deps" → deps/depsinfo_<架构>/…
-    if kind == "bottle":
-        directory = f"pkg/pkginfo_{arch}"
-    else:
-        directory = f"deps/depsinfo_{arch}"
-    return f"{require_domain(kind)}/{directory}/{name}/{filename}"
+def payload_url(kind, name, filename):
+    # 域名之后只有 <包名>/<文件名>，好让静态镜像原样复制这棵树。
+    # 文件名里的 @ 与 + 必须编码（GitHub 给的规范地址就是 %40 / %2B），
+    # nginx 会把 %40 解码回 @ 去找文件，所以禁态镜像无需任何特殊处理。
+    return f"{require_domain(kind)}/{name}/{quote(filename)}"
 
 
 def resolve_payload(kind, name, version, arch, upstream_filename, upstream_url, from_source):
-    # 唯一决定「下载哪个地址、文件叫什么」的地方，软件包与依赖共用。
+    # 唯一决定「从哪儿取、文件叫什么」的地方，软件包与依赖共用。
     #
-    #   from_source=False（默认）：地址由约定拼出来，文件名是 <名字>@<版本><扩展名>；
-    #                              url 一个字都不看。
+    #   from_source=False（默认）：从我们自己的存储取，url 一个字都不看。
     #   from_source=True（--install-from-source）：回到 3.x 的做法 ——
     #                              读 url，直接回上游取，按 URL 末段命名。
     if from_source:
@@ -287,17 +291,20 @@ def resolve_payload(kind, name, version, arch, upstream_filename, upstream_url, 
                 print(f"{RED_BOLD}🌊 ParsePkgURL Invalid, Please contact the administrator.{RESET}")
             sys.exit(1)
 
-        return upstream_url, upstream_url.split("/")[-1]
+        return {"transport": "https", "url": upstream_url,
+                "filename": upstream_url.split("/")[-1]}
 
     if not upstream_filename:
         print(f"{RED_BOLD}🌊 Error: No file field for {name}@{version}.{RESET}")
-        print(f"{RED_BOLD}🌊 MacWave 4.0 stores one file per index record and needs its "
-              f"name to know the archive format.{RESET}")
+        print(f"{RED_BOLD}🌊 MacWave 4.0 mirrors the upstream bytes verbatim, so the index "
+              f"must name the file to tell zip from tar.gz from a bare executable.{RESET}")
         print(f"{RED_BOLD}🌊 This is a data defect; please report it to the administrator.{RESET}")
         sys.exit(1)
 
-    filename = payload_filename(name, version, upstream_filename)
-    return payload_path(kind, name, arch, filename), filename
+    filename = payload_filename(name, version, arch, upstream_filename)
+    return {"transport": "https",
+            "url": payload_url(kind, name, filename),
+            "filename": filename}
 
 
 # -------------------- 自更新 --------------------

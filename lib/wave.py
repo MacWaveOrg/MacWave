@@ -74,6 +74,13 @@ def main():
 
     # 3. 命令分发
     if FirstWord in COMMANDS:
+        # `--proxy` 必须对这条命令的**所有**请求生效，不只是下载包体那一步。
+        # 做法是把值写进进程环境（HTTPS_PROXY 等），因为 requests（trust_env 默认开）、
+        # urllib 与 bash 子脚本里的 curl 都读环境变量 —— 一处生效，全部覆盖。
+        # 这一步放在分发之前：任何 handler 及其子进程都继承这份环境。
+        from configpaths import apply_proxy_from_command_line
+        apply_proxy_from_command_line(words)
+
         # `wave <command> -h|--help`：打印该命令自己的用法后退出。
         # 必须在这里拦下：各 handler 的旗标白名单里没有 --help，
         # 否则它会被当作未知旗标忽略（selfupdate 甚至直接开始自更新）。

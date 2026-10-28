@@ -23,7 +23,7 @@ RESET = '\033[0m'
 
 # -------------------- 配置加载 --------------------
 
-from configpaths import assert_inside, load_base_dir
+from configpaths import assert_inside, load_base_dir, require_safe_token
 import domains
 
 
@@ -203,18 +203,20 @@ def add_depender_tag(dep_path, depender):
         sys.exit(result.returncode)
 
 
-def download_dependency(dep_url, dep_display_name, config, input_string):
+def download_dependency(payload, dep_name, dep_version, arch, dep_display_name,
+                        config, input_string):
 
     # 复用软件包的下载函数，进度条格式保持一致。
+    # payload 由 domains.resolve_payload 给出：要么从 GHCR 取，要么回上游取。
 
     from pkginstaller import download_file
 
     DOWNLOAD_TMP.mkdir(parents=True, exist_ok=True)
-    original_filename = dep_url.split("/")[-1]
+    original_filename = require_safe_token(payload["filename"], "file name")
     temp_path = DOWNLOAD_TMP / f"{original_filename}.partial"
     assert_inside(temp_path, DOWNLOAD_TMP, "dependency download path")
 
-    download_file(dep_url, temp_path, config, input_string, dep_display_name)
+    download_file(payload["url"], temp_path, config, input_string, dep_display_name)
 
     final_path = DOWNLOAD_TMP / original_filename
     assert_inside(final_path, DOWNLOAD_TMP, "dependency download path")
@@ -414,10 +416,9 @@ def ensure_dependency(dep_ref, arch, config, input_string, depender, visited=Non
         print(f"{RED_BOLD}🌊 Expected 64 lowercase hexadecimal characters; refusing to install.{RESET}")
         sys.exit(1)
 
-    # 与软件包同一套规则：4.0 只从 Deps 存储取，地址与文件名都由约定拼出来
-    # （deps/depsinfo_<架构>/<名字>/<名字>@<版本><扩展名>）；
+    # 与软件包同一套规则：4.0 从 GHCR 取（版本即 tag，架构在 OCI index 里）；
     # 只有 --install-from-source 才会去读 url（直接回上游装）。
-    dep_download_url, dep_filename = domains.resolve_payload(
+    payload = domains.resolve_payload(
         "deps", dep_name, dep_version, arch,
         upstream_filename=get_field(version_fields, "file") or "",
         upstream_url=get_field(version_fields, "url") or "",
@@ -429,7 +430,8 @@ def ensure_dependency(dep_ref, arch, config, input_string, depender, visited=Non
                              ("dep", dep_name, dep_version), visited)
 
     # 5. 下载 + 安装自己（安装脚本会写入 _DEPS 与依赖者标记）
-    original_filename = download_dependency(dep_download_url, dep_display_name, config, input_string)
+    original_filename = download_dependency(payload, dep_name, dep_version, arch,
+                                            dep_display_name, config, input_string)
     install_dependency_shell(dep_name, dep_version, dep_sha256, dep_display_name,
                              target_dir, dep_refs, depender, original_filename)
 

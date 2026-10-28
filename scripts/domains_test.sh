@@ -35,13 +35,13 @@ checks = [
     ("依赖索引", f"{domains.api_domain()}/deps/depsinfo_arm64/libidn2/_libidn2@common",
      "https://raw.githubusercontent.com/MacWaveOrg/infosource/main/deps/depsinfo_arm64/libidn2/_libidn2@common"),
     ("版本数据", domains.selfupdate_version_url(),
-     "https://raw.githubusercontent.com/MacWaveOrg/configdata/main/versiondata/latest_version"),
+     "https://raw.githubusercontent.com/MacWaveOrg/Selfupdate/main/versiondata/latest_version"),
     ("文件清单", domains.selfupdate_files_url(),
-     "https://raw.githubusercontent.com/MacWaveOrg/configdata/main/versiondata/files_info"),
+     "https://raw.githubusercontent.com/MacWaveOrg/Selfupdate/main/versiondata/files_info"),
     ("迁移脚本", domains.selfupdate_updatedata_url("3.2.1", "dir_structure_change"),
-     "https://raw.githubusercontent.com/MacWaveOrg/configdata/main/updatedata/3.2.1/dir_structure_change"),
+     "https://raw.githubusercontent.com/MacWaveOrg/Selfupdate/main/updatedata/3.2.1/dir_structure_change"),
     ("解释器清单", domains.python_manifest_url(),
-     "https://raw.githubusercontent.com/MacWaveOrg/configdata/main/pythondata/latest_python"),
+     "https://raw.githubusercontent.com/MacWaveOrg/Selfupdate/main/pythondata/latest_python"),
     ("列版本", domains.index_list_url("arm64", "jq"),
      "https://api.github.com/repos/MacWaveOrg/infosource/contents/pkg/pkginfo_arm64/jq?ref=main"),
     ("列软件包", domains.index_list_url("arm64"),
@@ -103,10 +103,9 @@ else
 fi
 
 echo
-echo "========== 3. 平时不读 url，只有 --install-from-source 才读 =========="
+echo "========== 3. 默认从自己的存储取，只有 --install-from-source 才读 url =========="
 
-if PYTHONPATH="$LIB_DIR" MACWAVE_BOTTLE_DOMAIN="https://bottles.example.com" \
-     MACWAVE_DEPS_DOMAIN="https://deps.example.com" python3 - << 'PY'
+if PYTHONPATH="$LIB_DIR" python3 - << 'PY'
 import domains
 
 ok = True
@@ -120,111 +119,91 @@ def check(label, got, want):
         ok = False
 
 
-# 3.1 目录形状照抄 infosource（去掉前导下划线），版本写在文件名里
-url, name = domains.resolve_payload(
-    "bottle", "jq", "1.7.1", "arm64",
-    upstream_filename="jq-macos-arm64", upstream_url="", from_source=False)
-check("bottle url", url, "https://bottles.example.com/pkg/pkginfo_arm64/jq/jq@1.7.1")
-check("bottle name", name, "jq@1.7.1")
-
-# 3.2 字节原样搬运：扩展名跟着上游走，文件名只换前缀
-url, name = domains.resolve_payload(
-    "bottle", "jq", "1.7.1", "arm64",
-    upstream_filename="jq-1.7.1-macos.zip", upstream_url="", from_source=False)
-check("zip url", url, "https://bottles.example.com/pkg/pkginfo_arm64/jq/jq@1.7.1.zip")
-check("zip name", name, "jq@1.7.1.zip")
-
-# 3.3 多段扩展名要完整保留，不能被截成 .gz
-_, name = domains.resolve_payload(
-    "deps", "libidn2", "2.3.7", "arm64",
-    upstream_filename="libidn2-2.3.7-darwin-arm64.tar.gz", upstream_url="", from_source=False)
-check("multi-part suffix", name, "libidn2@2.3.7.tar.gz")
-
-# 3.4 裸可执行文件没有扩展名，这是合法情况（安装器按裸二进制处理）
-url, name = domains.resolve_payload(
-    "bottle", "choma", "1.0", "amd64",
-    upstream_filename="ChOma", upstream_url="", from_source=False)
-check("bare name", name, "choma@1.0")
-check("bare url", url, "https://bottles.example.com/pkg/pkginfo_amd64/choma/choma@1.0")
-
-# 3.5 依赖走 deps/depsinfo_<架构>
-url, _ = domains.resolve_payload(
-    "deps", "libidn2", "2.3.7", "arm64",
-    upstream_filename="libidn2.tar.gz", upstream_url="", from_source=False)
-check("deps url", url, "https://deps.example.com/deps/depsinfo_arm64/libidn2/libidn2@2.3.7.tar.gz")
-
-# 3.6 记录里有 url 也不看：地址里不能出现上游主机名
-url, _ = domains.resolve_payload(
+# 3.1 默认从我们自己的存储取，url 一个字都不读
+payload = domains.resolve_payload(
     "bottle", "jq", "1.7.1", "arm64",
     upstream_filename="jq-macos-arm64",
     upstream_url="https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-macos-arm64",
     from_source=False)
-check("no upstream host", "github.com" in url, False)
+check("transport", payload["transport"], "https")
+check("文件名带架构", payload["filename"], "jq@1.7.1.arm64")
+check("地址形状", payload["url"],
+      "https://github.com/MacWaveOrg/Bottle/releases/download/jq/jq%401.7.1.arm64")
+check("不出现上游主机", "github.com/jqlang" in payload["url"], False)
 
-# 3.7 --install-from-source：回到 3.x 的做法，读 url、按末段命名
-url, name = domains.resolve_payload(
-    "bottle", "jq", "1.7.1", "arm64",
-    upstream_filename="", upstream_url="https://github.com/o/r/releases/download/1.7.1/jq.zip",
+# 3.2 两个架构不撞名（arm64 / amd64 是同名同版本的两条索引记录）
+amd = domains.resolve_payload("bottle", "jq", "1.7.1", "amd64",
+                              upstream_filename="jq-macos-arm64", upstream_url="",
+                              from_source=False)
+check("amd64 文件名", amd["filename"], "jq@1.7.1.amd64")
+check("两架构不同名", amd["filename"] != payload["filename"], True)
+
+# 3.3 扩展名跟随上游（字节原样搬运，落盘要带对后缀供解压器识别）
+payload = domains.resolve_payload("bottle", "jq", "1.7.1", "arm64",
+                                  upstream_filename="jq-1.7.1.zip", upstream_url="",
+                                  from_source=False)
+check("zip 后缀", payload["filename"], "jq@1.7.1.arm64.zip")
+
+# 3.4 多段扩展名完整保留，不能被截成 .gz
+payload = domains.resolve_payload("deps", "libidn2", "2.3.7", "arm64",
+                                  upstream_filename="libidn2-darwin.tar.gz", upstream_url="",
+                                  from_source=False)
+check("多段后缀", payload["filename"], "libidn2@2.3.7.arm64.tar.gz")
+check("依赖专用仓库", payload["url"].split("/releases")[0],
+      "https://github.com/MacWaveOrg/Deps")
+
+# 3.5 裸可执行文件没有扩展名，合法
+payload = domains.resolve_payload("bottle", "choma", "1.0", "amd64",
+                                  upstream_filename="ChOma", upstream_url="",
+                                  from_source=False)
+check("裸二进制", payload["filename"], "choma@1.0.amd64")
+
+# 3.6 --install-from-source 回到 3.x 的做法：读 url、按末段命名
+payload = domains.resolve_payload(
+    "bottle", "jq", "1.7.1", "arm64", upstream_filename="",
+    upstream_url="https://github.com/o/r/releases/download/1.7.1/jq.zip",
     from_source=True)
-check("from-source url", url, "https://github.com/o/r/releases/download/1.7.1/jq.zip")
-check("from-source name", name, "jq.zip")
+check("from-source url", payload["url"],
+      "https://github.com/o/r/releases/download/1.7.1/jq.zip")
+check("from-source 文件名", payload["filename"], "jq.zip")
+
+# 3.7 重建后缀原样保留（多版本共存靠它区分同一版本的不同产物）
+payload = domains.resolve_payload("bottle", "jq", "1.7.1-1", "arm64",
+                                  upstream_filename="jq.tar.gz", upstream_url="",
+                                  from_source=False)
+check("重建后缀", payload["filename"], "jq@1.7.1-1.arm64.tar.gz")
 
 raise SystemExit(0 if ok else 1)
 PY
 then
-    pass "目录形状照抄索引，扩展名跟随上游，url 默认不读"
+    pass "地址形状、架构不撞名、扩展名、from-source 全部符合预期"
 else
-    fail "地址拼法不对"
+    fail "payload 规则不对"
 fi
 
 echo
-echo "========== 4. 缺数据或缺域名必须报错，不能悄悄回落 =========="
+echo "========== 4. 缺数据必须报错，不能悄悄回落 =========="
 
-# 没有 file 字段 → 报错（否则不知道是什么格式，不能猜）
-if PYTHONPATH="$LIB_DIR" MACWAVE_BOTTLE_DOMAIN="https://b.example.com" python3 - << 'PY' > /dev/null 2>&1
+# 没有 file 字段 → 报错（否则不知道压缩格式）
+if PYTHONPATH="$LIB_DIR" python3 - << 'PY' > /dev/null 2>&1
 import domains
-domains.resolve_payload("bottle", "jq", "1.7.1", "arm64",
-                        upstream_filename="", upstream_url="https://x/jq.tar.gz",
-                        from_source=False)
+domains.resolve_payload("bottle", "jq", "1.7.1", "arm64", upstream_filename="",
+                        upstream_url="https://x/jq.tar.gz", from_source=False)
 PY
 then
-    fail "缺 file 字段却装了下去"
+    fail "缺 file 字段却继续了"
 else
     pass "缺 file 字段 → 报错"
 fi
 
-# 没设 Bottle 域名 → 报错（4.0 没有别的来源，也不回上游）
-if PYTHONPATH="$LIB_DIR" python3 - << 'PY' > /dev/null 2>&1
-import domains
-domains.resolve_payload("bottle", "jq", "1.7.1", "arm64",
-                        upstream_filename="jq.tar.gz", upstream_url="", from_source=False)
-PY
-then
-    fail "没设 Bottle 域名却装了下去"
-else
-    pass "没设 Bottle 域名 → 报错"
-fi
-
-# 没设 Deps 域名同样报错
-if PYTHONPATH="$LIB_DIR" python3 - << 'PY' > /dev/null 2>&1
-import domains
-domains.resolve_payload("deps", "libidn2", "2.3.7", "arm64",
-                        upstream_filename="libidn2.tar.gz", upstream_url="", from_source=False)
-PY
-then
-    fail "没设 Deps 域名却装了下去"
-else
-    pass "没设 Deps 域名 → 报错"
-fi
-
 # --install-from-source 但记录里没有 url → 报错
-if PYTHONPATH="$LIB_DIR" MACWAVE_BOTTLE_DOMAIN="https://bottles.example.com" python3 - << 'PY' > /dev/null 2>&1
+if PYTHONPATH="$LIB_DIR" python3 - << 'PY' > /dev/null 2>&1
 import domains
-domains.resolve_payload("bottle", "jq", "1.7.1", "arm64",
-                        upstream_filename="jq.tar.gz", upstream_url="", from_source=True)
+domains.resolve_payload("bottle", "jq", "1.7.1", "arm64", upstream_filename="jq.tar.gz",
+                        upstream_url="", from_source=True)
 PY
 then
-    fail "缺 url 却按 from-source 装了下去"
+    fail "缺 url 却按 from-source 继续了"
 else
     pass "--install-from-source 缺 url → 报错"
 fi
@@ -239,6 +218,19 @@ then
     fail "from-source 接受了明文 http"
 else
     pass "--install-from-source 仍拒绝明文 http"
+fi
+
+# 默认值被清空时必须报错（防守性路径：正常使用不会走到，但代码里必须挡得住）
+if PYTHONPATH="$LIB_DIR" python3 - << 'PY' > /dev/null 2>&1
+import domains
+domains.DEFAULTS["bottle"] = ""
+domains.resolve_payload("bottle", "jq", "1.7.1", "arm64",
+                        upstream_filename="jq.tar.gz", upstream_url="", from_source=False)
+PY
+then
+    fail "没有可用域名却继续了"
+else
+    pass "域名缺失 → 报错（不回落到上游）"
 fi
 
 echo "========== 5. 旗标解析 =========="
