@@ -23,7 +23,7 @@ RESET = '\033[0m'
 
 # -------------------- 配置加载 --------------------
 
-from configpaths import assert_inside, load_base_dir, require_safe_token
+from configpaths import assert_inside, load_base_dir
 import domains
 
 
@@ -414,16 +414,14 @@ def ensure_dependency(dep_ref, arch, config, input_string, depender, visited=Non
         print(f"{RED_BOLD}🌊 Expected 64 lowercase hexadecimal characters; refusing to install.{RESET}")
         sys.exit(1)
 
-    # 与软件包同一套规则：4.0 只从 Deps 存储取，文件名由索引的 file 字段给出；
+    # 与软件包同一套规则：4.0 只从 Deps 存储取，地址与文件名都由约定拼出来
+    # （deps/depsinfo_<架构>/<名字>/<名字>@<版本><扩展名>）；
     # 只有 --install-from-source 才会去读 url（直接回上游装）。
     dep_download_url, dep_filename = domains.resolve_payload(
         "deps", dep_name, dep_version, arch,
-        filename=get_field(version_fields, "file") or "",
+        upstream_filename=get_field(version_fields, "file") or "",
         upstream_url=get_field(version_fields, "url") or "",
         from_source=config.get("install_from_source", False))
-
-    # 文件名会被当路径用，来自远端数据，必须过白名单
-    require_safe_token(dep_filename, "file name")
 
     # 4. 先递归安装它自己的依赖：路径替换时这些库必须已经在磁盘上
     if dep_refs:

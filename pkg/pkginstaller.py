@@ -617,18 +617,16 @@ def handle_install(input_string):
 
     # 6. 下载地址与文件名交给 domains.resolve_payload 决定。
     #
-    #    4.0 只从 Bottle 存储取二进制，文件名由索引的 file 字段给出，
-    #    url 字段全程不读 —— 它留着是给人和 2.x-3.x 看的上游线索。
+    #    4.0 只从 Bottle 存储取二进制，地址与文件名都由约定拼出来
+    #    （pkg/pkginfo_<架构>/<名字>/<名字>@<版本><扩展名>），url 字段全程不读 ——
+    #    它留着是给人和 2.x-3.x 看的上游线索。
     #    唯一的例外是 --install-from-source：绕开 Bottle 直接装上游那份，
     #    这时文件名与格式只能回来问 url。
-    PkgDownloadURL, pkg_filename = domains.resolve_payload(
+    PkgDownloadURL, original_filename = domains.resolve_payload(
         "bottle", ParsePkgName, ParsePkgVersion, ARCH,
-        filename=file_match.group(1) if file_match else "",
+        upstream_filename=file_match.group(1) if file_match else "",
         upstream_url=url_match.group(1) if url_match else "",
         from_source=config.get("install_from_source", False))
-
-    # 文件名会被当路径用，来自远端数据，必须过白名单
-    original_filename = require_safe_token(pkg_filename, "file name")
 
     # 7. 下载
     DOWNLOAD_TMP.mkdir(parents=True, exist_ok=True)

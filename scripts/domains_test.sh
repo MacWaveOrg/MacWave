@@ -111,57 +111,81 @@ import domains
 
 ok = True
 
-# 3.1 记录里没有 url，照样能装：地址完全由 file 决定
+
+def check(label, got, want):
+    global ok
+    if got != want:
+        print(f"    {label}: {got}")
+        print(f"    want{' ' * (len(label) - 4)}: {want}")
+        ok = False
+
+
+# 3.1 目录形状照抄 infosource（去掉前导下划线），版本写在文件名里
 url, name = domains.resolve_payload(
     "bottle", "jq", "1.7.1", "arm64",
-    filename="jq-1.7.1-macos-arm64.tar.gz", upstream_url="", from_source=False)
-if url != "https://bottles.example.com/jq/1.7.1/arm64/jq-1.7.1-macos-arm64.tar.gz" or name != "jq-1.7.1-macos-arm64.tar.gz":
-    print(f"    bottle: {url} / {name}")
-    ok = False
+    upstream_filename="jq-macos-arm64", upstream_url="", from_source=False)
+check("bottle url", url, "https://bottles.example.com/pkg/pkginfo_arm64/jq/jq@1.7.1")
+check("bottle name", name, "jq@1.7.1")
 
-# 3.2 就算给了 url 也不看：地址里不能出现上游主机名
+# 3.2 字节原样搬运：扩展名跟着上游走，文件名只换前缀
 url, name = domains.resolve_payload(
     "bottle", "jq", "1.7.1", "arm64",
-    filename="jq-1.7.1-macos-arm64.tar.gz",
-    upstream_url="https://github.com/stedolan/jq/releases/download/jq-1.7.1/jq-other-name.zip",
-    from_source=False)
-if "github.com" in url or name != "jq-1.7.1-macos-arm64.tar.gz":
-    print(f"    平时读了 url: {url} / {name}")
-    ok = False
+    upstream_filename="jq-1.7.1-macos.zip", upstream_url="", from_source=False)
+check("zip url", url, "https://bottles.example.com/pkg/pkginfo_arm64/jq/jq@1.7.1.zip")
+check("zip name", name, "jq@1.7.1.zip")
 
-# 3.3 --install-from-source：回到 3.x 的做法，读 url、按末段命名
-url, name = domains.resolve_payload(
-    "bottle", "jq", "1.7.1", "arm64",
-    filename="", upstream_url="https://github.com/o/r/releases/download/1.7.1/jq.zip",
-    from_source=True)
-if url != "https://github.com/o/r/releases/download/1.7.1/jq.zip" or name != "jq.zip":
-    print(f"    from-source: {url} / {name}")
-    ok = False
-
-# 3.4 依赖同一套规则
-url, name = domains.resolve_payload(
+# 3.3 多段扩展名要完整保留，不能被截成 .gz
+_, name = domains.resolve_payload(
     "deps", "libidn2", "2.3.7", "arm64",
-    filename="libidn2-2.3.7.tar.gz", upstream_url="", from_source=False)
-if url != "https://deps.example.com/libidn2/2.3.7/arm64/libidn2-2.3.7.tar.gz":
-    print(f"    deps: {url}")
-    ok = False
+    upstream_filename="libidn2-2.3.7-darwin-arm64.tar.gz", upstream_url="", from_source=False)
+check("multi-part suffix", name, "libidn2@2.3.7.tar.gz")
+
+# 3.4 裸可执行文件没有扩展名，这是合法情况（安装器按裸二进制处理）
+url, name = domains.resolve_payload(
+    "bottle", "choma", "1.0", "amd64",
+    upstream_filename="ChOma", upstream_url="", from_source=False)
+check("bare name", name, "choma@1.0")
+check("bare url", url, "https://bottles.example.com/pkg/pkginfo_amd64/choma/choma@1.0")
+
+# 3.5 依赖走 deps/depsinfo_<架构>
+url, _ = domains.resolve_payload(
+    "deps", "libidn2", "2.3.7", "arm64",
+    upstream_filename="libidn2.tar.gz", upstream_url="", from_source=False)
+check("deps url", url, "https://deps.example.com/deps/depsinfo_arm64/libidn2/libidn2@2.3.7.tar.gz")
+
+# 3.6 记录里有 url 也不看：地址里不能出现上游主机名
+url, _ = domains.resolve_payload(
+    "bottle", "jq", "1.7.1", "arm64",
+    upstream_filename="jq-macos-arm64",
+    upstream_url="https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-macos-arm64",
+    from_source=False)
+check("no upstream host", "github.com" in url, False)
+
+# 3.7 --install-from-source：回到 3.x 的做法，读 url、按末段命名
+url, name = domains.resolve_payload(
+    "bottle", "jq", "1.7.1", "arm64",
+    upstream_filename="", upstream_url="https://github.com/o/r/releases/download/1.7.1/jq.zip",
+    from_source=True)
+check("from-source url", url, "https://github.com/o/r/releases/download/1.7.1/jq.zip")
+check("from-source name", name, "jq.zip")
 
 raise SystemExit(0 if ok else 1)
 PY
 then
-    pass "默认只认 file，--install-from-source 才回到 url"
+    pass "目录形状照抄索引，扩展名跟随上游，url 默认不读"
 else
-    fail "url 读取规则不对"
+    fail "地址拼法不对"
 fi
 
 echo
-echo "========== 4. 缺数据时必须报错，不能悄悄回落 =========="
+echo "========== 4. 缺数据或缺域名必须报错，不能悄悄回落 =========="
 
-# 没有 file 字段 → 报错（而不是回头去读 url）
-if PYTHONPATH="$LIB_DIR" MACWAVE_BOTTLE_DOMAIN="https://bottles.example.com" python3 - << 'PY' > /dev/null 2>&1
+# 没有 file 字段 → 报错（否则不知道是什么格式，不能猜）
+if PYTHONPATH="$LIB_DIR" MACWAVE_BOTTLE_DOMAIN="https://b.example.com" python3 - << 'PY' > /dev/null 2>&1
 import domains
 domains.resolve_payload("bottle", "jq", "1.7.1", "arm64",
-                        filename="", upstream_url="https://x/jq.tar.gz", from_source=False)
+                        upstream_filename="", upstream_url="https://x/jq.tar.gz",
+                        from_source=False)
 PY
 then
     fail "缺 file 字段却装了下去"
@@ -169,11 +193,11 @@ else
     pass "缺 file 字段 → 报错"
 fi
 
-# 没设 Bottle 域名 → 报错（4.0 没有别的来源）
+# 没设 Bottle 域名 → 报错（4.0 没有别的来源，也不回上游）
 if PYTHONPATH="$LIB_DIR" python3 - << 'PY' > /dev/null 2>&1
 import domains
 domains.resolve_payload("bottle", "jq", "1.7.1", "arm64",
-                        filename="jq.tar.gz", upstream_url="", from_source=False)
+                        upstream_filename="jq.tar.gz", upstream_url="", from_source=False)
 PY
 then
     fail "没设 Bottle 域名却装了下去"
@@ -181,11 +205,23 @@ else
     pass "没设 Bottle 域名 → 报错"
 fi
 
+# 没设 Deps 域名同样报错
+if PYTHONPATH="$LIB_DIR" python3 - << 'PY' > /dev/null 2>&1
+import domains
+domains.resolve_payload("deps", "libidn2", "2.3.7", "arm64",
+                        upstream_filename="libidn2.tar.gz", upstream_url="", from_source=False)
+PY
+then
+    fail "没设 Deps 域名却装了下去"
+else
+    pass "没设 Deps 域名 → 报错"
+fi
+
 # --install-from-source 但记录里没有 url → 报错
 if PYTHONPATH="$LIB_DIR" MACWAVE_BOTTLE_DOMAIN="https://bottles.example.com" python3 - << 'PY' > /dev/null 2>&1
 import domains
 domains.resolve_payload("bottle", "jq", "1.7.1", "arm64",
-                        filename="jq.tar.gz", upstream_url="", from_source=True)
+                        upstream_filename="jq.tar.gz", upstream_url="", from_source=True)
 PY
 then
     fail "缺 url 却按 from-source 装了下去"
@@ -197,7 +233,7 @@ fi
 if PYTHONPATH="$LIB_DIR" python3 - << 'PY' > /dev/null 2>&1
 import domains
 domains.resolve_payload("bottle", "jq", "1.7.1", "arm64",
-                        filename="", upstream_url="http://x/jq.tar.gz", from_source=True)
+                        upstream_filename="", upstream_url="http://x/jq.tar.gz", from_source=True)
 PY
 then
     fail "from-source 接受了明文 http"
@@ -205,7 +241,6 @@ else
     pass "--install-from-source 仍拒绝明文 http"
 fi
 
-echo
 echo "========== 5. 旗标解析 =========="
 
 # --install-from-source 不带值，所以不能进 FLAGS_TAKING_VALUE，
