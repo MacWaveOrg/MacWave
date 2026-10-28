@@ -63,6 +63,7 @@ def print_custom_help():
     print(f"  {CYAN}--limit-rate{RESET} {YELLOW}string{RESET}   Limit download speed (e.g., 200K, 1M, 5M)")
     print(f"  {CYAN}--max-time{RESET} {YELLOW}string{RESET}     Timeout for each request (e.g., 40s, 1min, 1min20s, 2h)")
     print(f"  {CYAN}--ver{RESET} {YELLOW}string{RESET}          Install a specific version (install only; --ver=1.0 works too)")
+    print(f"  {CYAN}--install-from-source{RESET}     Download from the upstream URL instead of MacWave's own store")
     print()
     print(f"{PURPLE}Special Flags:{RESET}")
     print(f"  {GREEN}wave install <pkgname>@<version>{RESET}   Download certain version(s) of a package")
@@ -97,10 +98,12 @@ COMMAND_HELP = {
             ("--limit-rate <string>", "Limit download speed (e.g. 200K, 1M, 5M)"),
             ("--max-time <string>", "Timeout for each request (40s, 1min, 1min20s, 2h; bare numbers are seconds)"),
             ("--unlink", "Do not create or re-point the unversioned link"),
+            ("--install-from-source", "Download from the upstream URL in the index instead of "
+                                      "MacWave's own bottle store (dependencies follow the same rule)"),
             ("-v, --verbose", "Enable verbose output"),
         ],
         "examples": ["wave install jq", "wave install ffmpeg@6.1", "wave install jq --limit-rate 1M",
-                     "wave install jq --max-time=1min"],
+                     "wave install jq --max-time=1min", "wave install jq --install-from-source"],
     },
     "upgrade": {
         "usage": "wave upgrade <package> [flags]",

@@ -7,6 +7,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.request
 
@@ -79,6 +80,30 @@ def fetch_text(url, timeout=FETCH_TIMEOUT):
 
 def fetch_version_data(timeout=FETCH_TIMEOUT):
     return fetch_text(domains.selfupdate_version_url(), timeout)
+
+
+def run_script(url, environment, fetch_timeout, overall_timeout):
+    # 4.0 的更新脚本按版本冻结在自更新仓库里。先落到临时文件再执行，
+    # 而不是 `bash -c "$(curl ...)"`：这样脚本里的行号与 ${BASH_SOURCE[0]} 都还有意义，
+    # 出错时能看到具体哪一行，不必再靠猜。
+    print(f"🌊 Fetching the update script for this version...")
+
+    text = fetch_text(url, fetch_timeout)
+    if text is None:
+        print(f"{RED_BOLD}🌊 Error: Cannot fetch the update script.{RESET}")
+        print(f"{RED_BOLD}🌊 {url}{RESET}")
+        sys.exit(1)
+
+    handle, path = tempfile.mkstemp(prefix="macwave-selfupdate-", suffix=".sh")
+    try:
+        with os.fdopen(handle, "w") as stream:
+            stream.write(text)
+        return subprocess.run(['/bin/bash', path], env=environment, timeout=overall_timeout)
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
 
 
 def parse_version_data(text):
@@ -166,10 +191,12 @@ def handle_selfupdate(input_string=""):
 
     print("🌊 Fetching the new version information")
 
+    # 3.x 的数据把整条更新命令写在 update_command 里；4.0 改成按版本冻结的脚本
+    # （selfupdate/selfupdate_<版本>.sh），数据里不再带命令。两种都认，先看字段。
     command = data.get("update_command", "")
+    script_url = ""
     if not command:
-        print(f"{RED_BOLD}🌊 Error: The version data has no 'update_command' field.{RESET}")
-        sys.exit(1)
+        script_url = domains.selfupdate_script_url(latest, data.get("selfupdate_script", ""))
 
     if current:
         print(f"🌊 Updating MacWave from {current} to {latest}...")
@@ -182,6 +209,9 @@ def handle_selfupdate(input_string=""):
     environment["MACWAVE_UPDATE_VERSION"] = latest
     if data.get("branch"):
         environment["MACWAVE_UPDATE_BRANCH"] = data["branch"]
+    if data.get("files_info"):
+        # 4.0 每个版本一份文件清单；3.x 的数据没有这个字段，脚本自己回落到共用清单
+        environment["MACWAVE_UPDATE_FILES_INFO"] = data["files_info"]
     if max_time_raw:
         environment["MACWAVE_MAX_TIME"] = max_time_raw
 
@@ -190,7 +220,11 @@ def handle_selfupdate(input_string=""):
     overall_timeout = max(UPDATE_TIMEOUT, int(timeout) * 20)
 
     try:
-        result = subprocess.run(['/bin/bash', '-c', command], env=environment, timeout=overall_timeout)
+        if command:
+            result = subprocess.run(['/bin/bash', '-c', command], env=environment,
+                                    timeout=overall_timeout)
+        else:
+            result = run_script(script_url, environment, timeout, overall_timeout)
     except subprocess.TimeoutExpired:
         print(f"{RED_BOLD}🌊 Error: The update command timed out.{RESET}")
         sys.exit(1)

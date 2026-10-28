@@ -23,7 +23,7 @@ RESET = '\033[0m'
 
 # -------------------- 配置加载 --------------------
 
-from configpaths import assert_inside, load_base_dir
+from configpaths import assert_inside, load_base_dir, require_safe_token
 import domains
 
 
@@ -176,20 +176,6 @@ def report_service_unavailable(url, status=0):
         print(f"{RED_BOLD}🌊 Error: Cannot reach GitHub for the dependency data.{RESET}")
     print(f"{RED_BOLD}🌊   {url}{RESET}")
     print(f"{RED_BOLD}🌊 This is usually a network hiccup. Check your network or proxy, then run the command again.{RESET}")
-    sys.exit(1)
-
-
-def check_dep_url(dep_url):
-
-    # 与软件包一致：依赖地址同样强制 https
-
-    if dep_url.startswith("https://"):
-        return
-
-    if dep_url.startswith("http://"):
-        print(f"{RED_BOLD}🌊 ParsePkgURL using HTTP! That's insecure, Please contact the administrator.{RESET}")
-    else:
-        print(f"{RED_BOLD}🌊 ParsePkgURL Invalid, Please contact the administrator.{RESET}")
     sys.exit(1)
 
 
@@ -413,13 +399,8 @@ def ensure_dependency(dep_ref, arch, config, input_string, depender, visited=Non
         report_service_unavailable(version_url, status)
 
     version_fields = parse_common_fields(version_text)
-    dep_url = get_field(version_fields, "url")
     dep_sha256 = get_field(version_fields, "sha256")
     dep_refs = get_deps(version_fields)
-
-    if not dep_url:
-        print(f"{RED_BOLD}🌊 Error: URL field not found.{RESET}")
-        sys.exit(1)
 
     # 依赖同样不能免检：缺校验值就拒绝，否则一个被替换的库会被静默装进运行时。
     if not dep_sha256:
@@ -433,11 +414,16 @@ def ensure_dependency(dep_ref, arch, config, input_string, depender, visited=Non
         print(f"{RED_BOLD}🌊 Expected 64 lowercase hexadecimal characters; refusing to install.{RESET}")
         sys.exit(1)
 
-    check_dep_url(dep_url)
+    # 与软件包同一套规则：4.0 只从 Deps 存储取，文件名由索引的 file 字段给出；
+    # 只有 --install-from-source 才会去读 url（直接回上游装）。
+    dep_download_url, dep_filename = domains.resolve_payload(
+        "deps", dep_name, dep_version, arch,
+        filename=get_field(version_fields, "file") or "",
+        upstream_url=get_field(version_fields, "url") or "",
+        from_source=config.get("install_from_source", False))
 
-    # 真正下载的地址：设了 DEPS 域名就从 MacWave 自己的存储取，否则还是上游。
-    # 文件名沿用上游的，装完的目录结构与「从哪儿下的」无关。
-    dep_download_url = domains.dep_url(dep_name, dep_version, arch, dep_url)
+    # 文件名会被当路径用，来自远端数据，必须过白名单
+    require_safe_token(dep_filename, "file name")
 
     # 4. 先递归安装它自己的依赖：路径替换时这些库必须已经在磁盘上
     if dep_refs:

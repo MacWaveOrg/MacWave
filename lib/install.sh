@@ -34,9 +34,6 @@ fi
 
 set -eE
 
-# 数据仓库：版本号、代码分支与文件清单都从这里读
-CONFIGDATA_URL="https://raw.githubusercontent.com/MacWaveOrg/configdata/main"
-
 # ==========================================
 # 颜色定义
 # ==========================================
@@ -47,25 +44,64 @@ YELLOW='\033[33m'
 RESET='\033[0m'
 
 # ==========================================
-# 版本号与代码分支（从 configdata 读取，不写死在脚本里）
+# 域名（4.0：每个对外地址都能用环境变量换掉）
+# ==========================================
+#
+# 与 lib/domains.py 是同一张表，一份给 Python、一份给 shell：install.sh 是
+# `curl | bash` 直接执行的，没有本地文件可以 source，只能在这里重复一遍。
+# 默认值仍是 3.x 在用的地址，一个变量都不设时行为与 3.x 完全一致。
+#
+# 这一段必须与 lib/selfupdate.sh 逐字一致 —— scripts/domains_test.sh 有断言。
+
+mw_domain() {
+    # mw_domain <变量名> <值>：校验协议、去掉末尾斜杠，然后打印规范化后的值
+    local name="$1"
+    local value="$2"
+
+    while [[ "$value" == */ ]]; do
+        value="${value%/}"
+    done
+
+    case "$value" in
+        https://?*|file://?*) printf '%s\n' "$value"; return 0 ;;
+        # 明文 http 只给本机镜像（离线测试、本机代理）
+        http://127.0.0.1:?*|http://localhost:?*) printf '%s\n' "$value"; return 0 ;;
+    esac
+
+    echo -e "${RED_BOLD}🌊 Error: $name must be an https:// (or file://) address, got: $value${RESET}" >&2
+    exit 1
+}
+
+# MacWave 自身文件（后面再拼 /<分支>/<路径>）
+CORE_URL="$(mw_domain MACWAVE_CORE_DOMAIN "${MACWAVE_CORE_DOMAIN:-https://raw.githubusercontent.com/MacWaveOrg/MacWave}")"
+# 自更新数据：版本号、文件清单、目录迁移脚本
+SELFUPDATE_URL="$(mw_domain MACWAVE_SELFUPDATE_DOMAIN "${MACWAVE_SELFUPDATE_DOMAIN:-https://raw.githubusercontent.com/MacWaveOrg/configdata/main}")"
+# 自带 CPython 的清单
+PYTHON_URL="$(mw_domain MACWAVE_PYTHON_DOMAIN "${MACWAVE_PYTHON_DOMAIN:-https://raw.githubusercontent.com/MacWaveOrg/configdata/main}")"
+
+# ==========================================
+# 版本号与代码分支（从自更新数据读取，不写死在脚本里）
 # ==========================================
 #
 # latest_version 里的 version 是这次要安装的版本，branch 是配套的代码分支：
 # 两者一起读，保证「下载的代码」和「写进 VERSION.json 的版本号」对应同一个版本。
 
-LATEST_VERSION_DATA="$(curl -fsSL --max-time 30 "$CONFIGDATA_URL/versiondata/latest_version" 2>/dev/null)"
+LATEST_VERSION_DATA="$(curl -fsSL --max-time 30 "$SELFUPDATE_URL/versiondata/latest_version" 2>/dev/null)"
 
 MACWAVE_VERSION="$(printf '%s\n' "$LATEST_VERSION_DATA" | sed -n 's/^version:[[:space:]]*"\(.*\)"/\1/p' | head -n 1)"
 LATEST_BRANCH="$(printf '%s\n' "$LATEST_VERSION_DATA" | sed -n 's/^branch:[[:space:]]*"\(.*\)"/\1/p' | head -n 1)"
+# files_info 可选：4.0 每个版本一份清单，字段指向它在自更新仓库里的相对路径。
+# 3.x 的数据没有这个字段，于是回落到共用的 versiondata/files_info。
+LATEST_FILES_INFO="$(printf '%s\n' "$LATEST_VERSION_DATA" | sed -n 's/^files_info:[[:space:]]*"\(.*\)"/\1/p' | head -n 1)"
 
 if [[ -z "$MACWAVE_VERSION" || -z "$LATEST_BRANCH" ]]; then
-    echo -e "${RED_BOLD}🌊 Error: Cannot read the latest version from configdata.${RESET}" >&2
+    echo -e "${RED_BOLD}🌊 Error: Cannot read the latest version from the self-update data.${RESET}" >&2
     echo -e "${RED_BOLD}🌊 Check your network or proxy, then run the installer again.${RESET}" >&2
     exit 1
 fi
 
 BRANCH="$LATEST_BRANCH"
-BASE_URL="https://raw.githubusercontent.com/MacWaveOrg/MacWave/$BRANCH"
+BASE_URL="$CORE_URL/$BRANCH"
 
 # ==========================================
 # 辅助函数：将路径中的 $HOME 替换为 ~
@@ -360,10 +396,10 @@ if [[ "$NEED_SUDO" == "true" ]]; then
 fi
 
 # ==========================================
-# 文件清单（configdata/versiondata/files_info）
+# 文件清单（版本数据里的 files_info，缺省为 versiondata/files_info）
 # ==========================================
 #
-# 要下载哪些文件不写死在本脚本里，而是去 configdata 仓库读一份清单，
+# 要下载哪些文件不写死在本脚本里，而是去自更新仓库读一份清单，
 # 这样新增文件只要改那份清单，不必再同步修改安装脚本与自更新脚本。
 # 清单内容**只表示仓库里的路径**，写法：
 #
@@ -378,10 +414,14 @@ fi
 # lib/wave.py 按原名落盘；PATH 上的入口 lib/wave 由后面的 write_launcher 生成
 # （它要按私有 venv 与解释器路径决定怎么启动，不能直接复制脚本本体）。
 #
-# 这一步刻意放在「建目录 / 写配置 / 清旧版」之前：连不上 configdata 仓库就直接退出，
+# 这一步刻意放在「建目录 / 写配置 / 清旧版」之前：连不上自更新数据就直接退出，
 # 不会留下一个配置已写好、文件却一个都没下的半成品安装。
 
-FILES_INFO_URL="$CONFIGDATA_URL/versiondata/files_info"
+if [[ -n "$LATEST_FILES_INFO" ]]; then
+    FILES_INFO_URL="$SELFUPDATE_URL/${LATEST_FILES_INFO#/}"
+else
+    FILES_INFO_URL="$SELFUPDATE_URL/versiondata/files_info"
+fi
 FILES_INFO_TMP="$(mktemp)"
 FILES_INFO_ATTEMPTS=3
 
@@ -404,8 +444,19 @@ for attempt in $(seq 1 "$FILES_INFO_ATTEMPTS"); do
 done
 
 if [[ "$FILES_INFO_OK" != "true" ]]; then
-    echo -e "${RED_BOLD}🌊 Error: Cannot fetch versiondata/files_info from the configdata repository.${RESET}"
+    echo -e "${RED_BOLD}🌊 Error: Cannot fetch the file list ($FILES_INFO_URL).${RESET}"
     echo -e "${RED_BOLD}🌊 Nothing was installed. Check your network or proxy, then run the installer again.${RESET}"
+    exit 1
+fi
+
+# 4.0 起 Python 侧要 import domains。清单与代码必须一起发布：如果清单里没有它，
+# 装出来的树每条命令都会 ModuleNotFoundError。宁可在动任何东西之前停下，
+# 也不要留下一个半好用、还得靠猜的安装。
+if [[ "$MACWAVE_VERSION" =~ ^[0-9]+ ]] && (( ${MACWAVE_VERSION%%.*} >= 4 )) \
+   && ! grep -qx '[[:space:]]*domains\.py[[:space:]]*' "$FILES_INFO_TMP"; then
+    echo -e "${RED_BOLD}🌊 Error: the file list for $MACWAVE_VERSION does not contain lib/domains.py.${RESET}"
+    echo -e "${RED_BOLD}🌊 That list belongs to an older release; installing it would leave MacWave unusable.${RESET}"
+    echo -e "${RED_BOLD}🌊 Nothing was installed. Please report this to the administrator.${RESET}"
     exit 1
 fi
 
@@ -457,17 +508,17 @@ run_cmd mkdir -p "$CONFIG_DIR"
 run_cmd chmod 755 "$CONFIG_DIR"
 
 # ==========================================
-# 版本目录结构变更迁移（configdata/updatedata/{版本号}）
+# 版本目录结构变更迁移（updatedata/{版本号}）
 # ==========================================
 #
-# configdata 仓库的 updatedata/{版本号}/dir_structure_change 只有**一个字符**：
+# 自更新仓库的 updatedata/{版本号}/dir_structure_change 只有**一个字符**：
 #     Y/y → 该版本改变了目录结构，执行同目录下的 transfer_commands 完成迁移
 #     N/n → 没有改变，跳过（文件不存在也按「没有改变」处理）
 # 目标版本号就是本脚本的 MACWAVE_VERSION（正在安装的这个版本）。
-# 迁移逻辑全部由 configdata 仓库里的脚本提供，以后目录结构再变只改 configdata，
+# 迁移逻辑全部由自更新仓库里的脚本提供，以后目录结构再变只改那份数据，
 # 不用再动这个脚本。
 
-UPDATEDATA_URL="$CONFIGDATA_URL/updatedata/$MACWAVE_VERSION"
+UPDATEDATA_URL="$SELFUPDATE_URL/updatedata/$MACWAVE_VERSION"
 
 DIR_STRUCTURE_CHANGE="$(curl -fsSL --max-time 30 "$UPDATEDATA_URL/dir_structure_change" 2>/dev/null | tr -d '[:space:]')" || DIR_STRUCTURE_CHANGE=""
 
@@ -685,7 +736,7 @@ fi
 # 一次「系统 Python 从 3.14 升到 3.15，所有命令都报模块缺失」。
 #
 # 自带之后，「用哪个解释器」由 MacWave 自己决定，报错也就能稳定复现。
-# 数据来自 configdata 的 pythondata/latest_python，换版本不用改脚本。
+# 数据来自 MACWAVE_PYTHON_DOMAIN 的 pythondata/latest_python，换版本不用改脚本。
 # 下载失败（网络问题）时回退到系统 python3，安装不会因此中断。
 
 portable_python_arch() {
@@ -747,7 +798,7 @@ ensure_portable_python() {
     # 成功时把解释器路径打到 stdout，失败返回 1（调用方回退系统 python3）。
     local base_dir="$1"
     local arch="$2"
-    local data_url="$CONFIGDATA_URL/pythondata/latest_python"
+    local data_url="$PYTHON_URL/pythondata/latest_python"
     local data_file version url sha target current archive actual py
 
     [[ -n "$arch" ]] || return 1

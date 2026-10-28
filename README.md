@@ -102,6 +102,16 @@ Config file is stored in (a system-level install always takes priority):
 1. /opt/macwave_config          system-level install (needs sudo)
 2. ~/.config/macwave_config     user-level install (no sudo)
 ```
+## 🌊 Mirrors (4.0 and later)
+Every address MacWave uses can be replaced with an environment variable, so a mirror is configuration rather than a command (there is deliberately no `wave mirror`):
+```bash
+export MACWAVE_API_DOMAIN=https://mirror.example.com/macwave/index
+export MACWAVE_BOTTLE_DOMAIN=https://mirror.example.com/macwave/bottles
+export MACWAVE_DEPS_DOMAIN=https://mirror.example.com/macwave/deps
+export MACWAVE_SELFUPDATE_DOMAIN=https://mirror.example.com/macwave/selfupdate
+```
+Unset variables keep using the official addresses, so a partial mirror is fine. `MACWAVE_BOTTLE_DOMAIN` and `MACWAVE_DEPS_DOMAIN` have no default: 4.0 downloads prebuilt binaries from MacWave's own storage instead of from upstream, and refuses to install rather than silently falling back when that storage is not configured. See the [technical guide](docs/TECHNICAL-GUIDE.md) for the full table.
+
 ## 🌊 Uninstall MacWave
 
 To completely remove MacWave from your system, run the following command in your terminal:

@@ -5,7 +5,7 @@
 # 宿主除了沙箱目录以外的地方一个字节都不会被写。
 #
 # 做法：
-#   1. 在临时目录里搭一份离线镜像，只把 BASE_URL / CONFIGDATA_URL 两行改成
+#   1. 在临时目录里搭一份离线镜像，只把 BASE_URL / SELFUPDATE_URL 两行改成
 #      file:// 路径，因此整个过程**不需要网络**；
 #   2. 用 macOS 自带的 sandbox-exec 起一个「默认拒绝、只允许写沙箱目录」的沙箱，
 #      在里头跑安装 / 卸载的各种路径，逐条断言。
@@ -541,13 +541,13 @@ fi
 
 # 只改两行 URL，其余与真实安装器逐字节一致
 sed -e "s|^BASE_URL=.*|BASE_URL=\"file://$SANDBOX_DIR/mirror/base\"|" \
-    -e "s|^CONFIGDATA_URL=.*|CONFIGDATA_URL=\"file://$SANDBOX_DIR/mirror/configdata\"|" \
+    -e "s|^SELFUPDATE_URL=.*|SELFUPDATE_URL=\"file://$SANDBOX_DIR/mirror/configdata\"|" \
     "$REPO_DIR/lib/install.sh" > "$SANDBOX_DIR/install-offline.sh"
 cp "$REPO_DIR/lib/uninstall.sh" "$SANDBOX_DIR/source-uninstall.sh"
 cp "${BASH_SOURCE[0]}" "$SANDBOX_DIR/sandbox_test.sh"
 
-if [[ "$(diff <(sed -e 's|^BASE_URL=.*|X|' -e 's|^CONFIGDATA_URL=.*|Y|' "$REPO_DIR/lib/install.sh") \
-               <(sed -e 's|^BASE_URL=.*|X|' -e 's|^CONFIGDATA_URL=.*|Y|' "$SANDBOX_DIR/install-offline.sh") \
+if [[ "$(diff <(sed -e 's|^BASE_URL=.*|X|' -e 's|^SELFUPDATE_URL=.*|Y|' "$REPO_DIR/lib/install.sh") \
+               <(sed -e 's|^BASE_URL=.*|X|' -e 's|^SELFUPDATE_URL=.*|Y|' "$SANDBOX_DIR/install-offline.sh") \
           | wc -l | tr -d ' ')" != "0" ]]; then
     echo -e "${RED_BOLD}🌊 Error: the offline installer differs from lib/install.sh beyond the URLs.${RESET}"
     exit 1

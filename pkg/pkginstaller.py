@@ -160,7 +160,8 @@ def _check_disk_space(path: Path, required_bytes: int = 10 * 1024 * 1024) -> boo
 ALLOWED_FLAGS = {
     "-v", "-C",
     "--verbose", "--skip-ssl", "--continue",
-    "--limit-rate", "--proxy", "--unlink", "--ver", "--max-time"
+    "--limit-rate", "--proxy", "--unlink", "--ver", "--max-time",
+    "--install-from-source",
 }
 
 def parse_flags(input_string):
@@ -271,6 +272,9 @@ def handle_download_args(input_string):
         "limit_rate": None,
         "proxy": None,
         "timeout": DEFAULT_TIMEOUT,
+        # 4.0 只从 Bottle 存储取二进制，url 字段平时不读；
+        # 只有这个开关会让安装绕开 Bottle，直接回上游取（含依赖）。
+        "install_from_source": "--install-from-source" in flags,
     }
 
     # 1. --skip-ssl 安全询问
@@ -589,14 +593,9 @@ def handle_install(input_string):
         print(f"{RED_BOLD}🌊 Error: {e}{RESET}")
         sys.exit(1)
 
-    url_match = re.search(r'url:\s*"([^"]+)"', resp.text)
     sha_match = re.search(r'sha256:\s*"([^"]+)"', resp.text)
-
-    if url_match:
-        ParsePkgURL = url_match.group(1)
-    else:
-        print(f"{RED_BOLD}🌊 Error: URL field not found.{RESET}")
-        sys.exit(1)
+    file_match = re.search(r'file:\s*"([^"]+)"', resp.text)
+    url_match = re.search(r'url:\s*"([^"]+)"', resp.text)
 
     # 没有校验值就必须拒绝安装：索引记录是信任的起点，缺了 sha256 就无法确认
     # 下载到的内容与索引声明的一致。HTTPS 只保护传输，不保护产物。
@@ -616,21 +615,22 @@ def handle_install(input_string):
     # 5.1 解析 deps 字段（写在版本文件里，可能多行），缺失视为无依赖
     dep_refs = get_deps(parse_common_fields(resp.text))
 
-    # 6. 简单 URL 检查，避免低级错误（检查的是索引里记录的上游地址）
-    if not ParsePkgURL.startswith("https://"):
-        if ParsePkgURL.startswith("http://"):
-            print(f"{RED_BOLD}🌊 ParsePkgURL using HTTP! That's insecure, Please contact the administrator.{RESET}")
-            sys.exit(1)
-        else:
-            print(f"{RED_BOLD}🌊 ParsePkgURL Invalid, Please contact the administrator.{RESET}")
-            sys.exit(1)
+    # 6. 下载地址与文件名交给 domains.resolve_payload 决定。
+    #
+    #    4.0 只从 Bottle 存储取二进制，文件名由索引的 file 字段给出，
+    #    url 字段全程不读 —— 它留着是给人和 2.x-3.x 看的上游线索。
+    #    唯一的例外是 --install-from-source：绕开 Bottle 直接装上游那份，
+    #    这时文件名与格式只能回来问 url。
+    PkgDownloadURL, pkg_filename = domains.resolve_payload(
+        "bottle", ParsePkgName, ParsePkgVersion, ARCH,
+        filename=file_match.group(1) if file_match else "",
+        upstream_url=url_match.group(1) if url_match else "",
+        from_source=config.get("install_from_source", False))
 
-    # 6.1 真正下载的地址：设了 Bottle 域名就从 MacWave 自己的存储取，否则还是上游。
-    #     文件名沿用上游的，所以装完的目录结构与「从哪儿下的」无关。
-    PkgDownloadURL = domains.bottle_url(ParsePkgName, ParsePkgVersion, ARCH, ParsePkgURL)
+    # 文件名会被当路径用，来自远端数据，必须过白名单
+    original_filename = require_safe_token(pkg_filename, "file name")
 
     # 7. 下载
-    original_filename = ParsePkgURL.split("/")[-1]
     DOWNLOAD_TMP.mkdir(parents=True, exist_ok=True)
     temp_path = DOWNLOAD_TMP / f"{original_filename}.partial"
     assert_inside(temp_path, DOWNLOAD_TMP, "download path")

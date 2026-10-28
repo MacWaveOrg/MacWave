@@ -206,25 +206,68 @@ def listing_names(text, dirs_only=False):
 
 # -------------------- 二进制包（Bottle / Deps） --------------------
 #
-# 4.0 的存储布局还没定（GHCR 的方案另议），所以这两个函数是**唯一的占位点**：
-#   <域名>/<名字>/<版本>/<架构>/<上游文件名>
-# 定稿后只改这两个函数。没设域名时一律回落到索引里的 url 字段，
-# 于是「设不设」都不影响现在的安装。
+# 4.0 的二进制**只从这两个域名取**，索引里的 url 字段平时一概不读 ——
+# 那个字段留给 --install-from-source（绕开 Bottle 直接回上游）以及 2.x-3.x。
+#
+# 存储布局还没定（GHCR 的方案另议），所以这里只约定到「文件名由索引给出」为止：
+#   <域名>/<名字>/<版本>/<架构>/<文件名>
+# 文件名必须来自索引的 file 字段：它决定用 zip 还是 tar.gz 解压，
+# 不能靠包名硬拼。定稿后只改这两个函数。
 
-def bottle_url(package_name, package_version, arch, upstream_url):
-    base = bottle_domain()
-    if not base:
-        return upstream_url
-    filename = upstream_url.split("/")[-1]
-    return f"{base}/{package_name}/{package_version}/{arch}/{filename}"
+def require_domain(kind):
+    # 二进制没有「上游」可回落了，域名缺失就只能报错，并且说清怎么设。
+    value = domain(kind)
+    if not value:
+        print(f"{RED_BOLD}🌊 Error: {ENV_NAME[kind]} is not set.{RESET}")
+        print(f"{RED_BOLD}🌊 MacWave 4.0 downloads {DESCRIPTION[kind]} from its own storage; "
+              f"set {ENV_NAME[kind]} to that address.{RESET}")
+        sys.exit(1)
+    return value
 
 
-def dep_url(dep_name, dep_version, arch, upstream_url):
-    base = deps_domain()
-    if not base:
-        return upstream_url
-    filename = upstream_url.split("/")[-1]
-    return f"{base}/{dep_name}/{dep_version}/{arch}/{filename}"
+def bottle_url(package_name, package_version, arch, filename):
+    return f"{require_domain('bottle')}/{package_name}/{package_version}/{arch}/{filename}"
+
+
+def dep_url(dep_name, dep_version, arch, filename):
+    return f"{require_domain('deps')}/{dep_name}/{dep_version}/{arch}/{filename}"
+
+
+def resolve_payload(kind, name, version, arch, filename, upstream_url, from_source):
+    # 唯一决定「下载哪个地址、文件叫什么」的地方，软件包与依赖共用。
+    #
+    #   from_source=False（默认）：只用 file 字段拼 MacWave 自己的存储地址，
+    #                              url 一个字都不看。
+    #   from_source=True（--install-from-source）：回到 3.x 的做法 ——
+    #                              读 url，直接回上游取，按 URL 末段命名。
+    #
+    # 文件名必须带对扩展名：pkgunzip.sh 靠它选 zip / tar.gz / tar.bz2 / tar.xz，
+    # 所以它只能来自数据（file 或 url 末段），不能靠包名硬拼。
+    if from_source:
+        if not upstream_url:
+            print(f"{RED_BOLD}🌊 Error: --install-from-source needs the url field, "
+                  f"but {name}@{version} has none.{RESET}")
+            print(f"{RED_BOLD}🌊 This is a data defect; please report it to the administrator.{RESET}")
+            sys.exit(1)
+
+        if not upstream_url.startswith("https://"):
+            if upstream_url.startswith("http://"):
+                print(f"{RED_BOLD}🌊 ParsePkgURL using HTTP! That's insecure, "
+                      f"Please contact the administrator.{RESET}")
+            else:
+                print(f"{RED_BOLD}🌊 ParsePkgURL Invalid, Please contact the administrator.{RESET}")
+            sys.exit(1)
+
+        return upstream_url, upstream_url.split("/")[-1]
+
+    if not filename:
+        print(f"{RED_BOLD}🌊 Error: No file field for {name}@{version}.{RESET}")
+        print(f"{RED_BOLD}🌊 MacWave 4.0 downloads from its own storage, so the index must name the file.{RESET}")
+        print(f"{RED_BOLD}🌊 This is a data defect; please report it to the administrator.{RESET}")
+        sys.exit(1)
+
+    build = bottle_url if kind == "bottle" else dep_url
+    return build(name, version, arch, filename), filename
 
 
 # -------------------- 自更新 --------------------
@@ -248,8 +291,12 @@ def selfupdate_updatedata_url(version, filename):
     return f"{selfupdate_domain()}/updatedata/{version}/{filename}"
 
 
-def selfupdate_script_url(version):
+def selfupdate_script_url(version, entry=""):
     # 4.0：更新脚本按版本冻结，`selfupdate/selfupdate_<版本>.sh`。
+    # 版本数据里可以用 selfupdate_script 字段指向别的位置（比如换布局时不改代码）。
+    entry = (entry or "").strip().strip("/")
+    if entry:
+        return f"{selfupdate_domain()}/{entry}"
     return f"{selfupdate_domain()}/selfupdate/selfupdate_{version}.sh"
 
 

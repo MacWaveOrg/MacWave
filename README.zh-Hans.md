@@ -97,6 +97,16 @@ bash install.sh --silent --dir-option=1
 1. /opt/macwave_config          系统级安装（需要 sudo）
 2. ~/.config/macwave_config     用户级安装（无需 sudo）
 ```
+## 🌊 镜像站（4.0 起）
+MacWave 用到的每个地址都能用环境变量替换，所以镜像是配置而不是命令（刻意没有 `wave mirror`）：
+```bash
+export MACWAVE_API_DOMAIN=https://mirror.example.com/macwave/index
+export MACWAVE_BOTTLE_DOMAIN=https://mirror.example.com/macwave/bottles
+export MACWAVE_DEPS_DOMAIN=https://mirror.example.com/macwave/deps
+export MACWAVE_SELFUPDATE_DOMAIN=https://mirror.example.com/macwave/selfupdate
+```
+没设的变量继续用官方地址，所以只镜像一部分也没问题。`MACWAVE_BOTTLE_DOMAIN` 与 `MACWAVE_DEPS_DOMAIN` 没有默认值：4.0 的预编译二进制从 MacWave 自己的存储取，不再取上游；没配这两个变量时会拒绝安装，而不是悄悄回落到上游。完整表格见[技术文档](docs/TECHNICAL-GUIDE.md)。
+
 ## 🌊 卸载 MacWave
 
 要从系统中彻底移除 MacWave，请在终端中运行以下命令：

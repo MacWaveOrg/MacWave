@@ -2,9 +2,9 @@ name: Format Test
 
 on:
   push:
-    branches: [2.1.0, main, 2.2.0, 2.3, 2.4, 2.5, 3.0, 3.1, 3.2]
+    branches: [2.1.0, main, 2.2.0, 2.3, 2.4, 2.5, 3.0, 3.1, 3.2, 4.0]
   pull_request:
-    branches: [2.1.0, main, 2.2.0, 2.3, 2.4, 2.5, 3.0, 3.1, 3.2]
+    branches: [2.1.0, main, 2.2.0, 2.3, 2.4, 2.5, 3.0, 3.1, 3.2, 4.0]
   workflow_dispatch:
 
 jobs:
@@ -95,6 +95,12 @@ jobs:
       - name: Run config path test
         run: |
           bash scripts/configpath_test.sh
+
+      # 纯离线：地址怎么拼、环境变量怎么覆盖、shell 与 Python 的默认值是否一致。
+      # 放在需要联网的那些之前，地址层坏了就没必要再等网络超时。
+      - name: Run domain test
+        run: |
+          bash scripts/domains_test.sh
 
       - name: Audit dependency data
         run: |
