@@ -219,10 +219,12 @@ def listing_names(text, dirs_only=False):
 # 默认域名指向 GitHub Releases，它的下载路径恰好也是 /<tag>/<资产>：
 #
 #   默认：https://github.com/MacWaveOrg/Bottle/releases/download/jq/jq%401.7.1.arm64
-#   镜像：https://mirror.example.cn/macwave/bottle/jq/jq%401.7.1.arm64
-#                                                     ↑ 域名之后完全相同
+#   镜像：https://mirror.example.cn/MacWave/bottle/jq/jq%401.7.1.arm64
+#                                  ↑ 域名之后完全相同
 #
 # 于是换镜像只是换一个环境变量，镜像站不需要理解任何协议。
+# 镜像路径里的 MacWave/ 是为了让镜像域名能被多个产品共用（LinuxWave 将来用
+# /LinuxWave），所以它不是固定前缀，而是环境变量值的一部分。
 #
 # 为什么用 Releases 而不是仓库里的文件：git 有 100 MiB 单文件硬限，而 ollama 已有
 # 172.9 MB 的产物；Releases 单文件上限 2 GiB，且官方明确不限制总量与下载带宽。

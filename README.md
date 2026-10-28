@@ -109,10 +109,12 @@ Every address MacWave contacts is configurable, so switching mirrors is a set of
 
 ### Switch to a mirror
 ```bash
-export MACWAVE_BOTTLE_DOMAIN=https://mirror.example.cn/macwave/bottle
-export MACWAVE_DEPS_DOMAIN=https://mirror.example.cn/macwave/deps
+export MACWAVE_BOTTLE_DOMAIN=https://mirror.example.cn/MacWave/bottle
+export MACWAVE_DEPS_DOMAIN=https://mirror.example.cn/MacWave/deps
 ```
 Put those two lines in `~/.zshrc` so they apply to every shell. Everything else keeps using the official addresses, so a mirror only needs to carry what it mirrors.
+
+The `MacWave/` segment keeps a mirror's domain shareable: LinuxWave can later live at `/LinuxWave` on the same host without either product owning the root.
 
 ### The full set
 | Variable | What it fetches | Default |

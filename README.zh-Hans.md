@@ -104,10 +104,12 @@ MacWave 用到的每个地址都能替换，所以换镜像是一组环境变量
 
 ### 换成镜像站
 ```bash
-export MACWAVE_BOTTLE_DOMAIN=https://mirror.example.cn/macwave/bottle
-export MACWAVE_DEPS_DOMAIN=https://mirror.example.cn/macwave/deps
+export MACWAVE_BOTTLE_DOMAIN=https://mirror.example.cn/MacWave/bottle
+export MACWAVE_DEPS_DOMAIN=https://mirror.example.cn/MacWave/deps
 ```
 把这两行写进 `~/.zshrc`，每个终端都会生效。其余地址继续用官方源，所以镜像站只需要镜像它承载的那部分内容。
+
+路径里的 `MacWave/` 是为了让一个镜像域名能共用：以后 LinuxWave 可以放在同一台机器的 `/LinuxWave`，两边都不独占域名根。
 
 ### 全部变量
 | 变量 | 取什么 | 默认 |

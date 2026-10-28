@@ -11,13 +11,33 @@
 MacWaveOrg/Bottle · Releases      每个包一个 tag，资产名 <包名>@<版本>.<架构><扩展名>
    │  ② 香港服务器同步（国际链路，正常）
    ▼
-mirror.repohub.top               宝塔 + nginx，纯静态文件树
+mirror.repohub.top/MacWave       宝塔 + nginx，纯静态文件树
    │  ③ 大陆用户下载（20~50 ms）
    ▼
 用户机器
 ```
 
 三段的职责不能混：**抓上游只在 Actions 里做**，香港只负责「复制 + 服务」，用户的机器只读镜像。
+
+## 为什么根目录是 `MacWave/` 而不是整个域名
+
+域名顶层留给别的产品。LinuxWave 很可能也要镜像站，那时它用 `mirror.repohub.top/LinuxWave`，
+两套互不干扰：
+
+```
+/www/wwwroot/mirror.repohub.top/
+├── MacWave/          ← 本项目
+│   ├── bottle/
+│   ├── deps/
+│   └── selfupdate/
+└── LinuxWave/        ← 预留，现在不用创建
+```
+
+`LinuxWave/` 只是**预留位置**，知道有这回事即可，本文任何一步都不需要建它。将来 LinuxWave
+要镜像时，它用 `mirror.repohub.top/LinuxWave`，与这里互不干扰。
+
+所以本文所有路径都带 `MacWave/` 这一层，环境变量的值也要带上。
+**注意大小写**：目录名是 `MacWave`，首字母大写，与仓库名一致。Linux 上无所谓，但保持一致省得以后混。
 
 ## 前置条件
 
@@ -66,7 +86,7 @@ mirror.repohub.top    A    <服务器公网 IP>
 | 项 | 值 |
 | --- | --- |
 | 域名 | `mirror.repohub.top` |
-| 根目录 | `/www/wwwroot/mirror.repohub.top` |
+| 根目录 | `/www/wwwroot/mirror.repohub.top`（站点根；MacWave 的数据在它下面的 `MacWave/`） |
 | PHP 版本 | **纯静态** |
 | 数据库 | 不创建 |
 
@@ -76,12 +96,13 @@ mirror.repohub.top    A    <服务器公网 IP>
 
 ```
 /www/wwwroot/mirror.repohub.top/
-├── bottle/
-│   └── jq/
-│       └── jq@1.7.1.arm64
-└── deps/
-    └── libidn2/
-        └── libidn2@2.3.7.arm64.tar.gz
+└── MacWave/
+    ├── bottle/
+    │   └── jq/
+    │       └── jq@1.7.1.arm64
+    └── deps/
+        └── libidn2/
+            └── libidn2@2.3.7.arm64.tar.gz
 ```
 
 **这一步最容易出错**：很多压缩工具会在外面多包一层目录，解出来变成 `.../mirror/bottle/...`，于是 URL 里凭空多出 `/mirror`，全部 404。
@@ -89,8 +110,8 @@ mirror.repohub.top    A    <服务器公网 IP>
 检查方法：
 
 ```bash
-ls /www/wwwroot/mirror.repohub.top/
-# 必须直接看到 bottle 和 deps，不能再有一层目录
+ls /www/wwwroot/mirror.repohub.top/MacWave/
+# 必须直接看到 bottle 和 deps，不能再多一层 MacWave/MacWave/
 ```
 
 文件怎么来，两种方式：
@@ -105,7 +126,7 @@ git clone --depth 1 https://github.com/MacWaveOrg/infosource /tmp/infosource
 
 python3 /tmp/macwave-src/scripts/sync_payloads.py \
   --infosource /tmp/infosource \
-  --out /www/wwwroot/mirror.repohub.top \
+  --out /www/wwwroot/mirror.repohub.top/MacWave \
   --source payload \
   --jobs 6
 ```
@@ -142,29 +163,29 @@ location ~* \.(tar\.gz|tgz|zip|tar\.bz2|tar\.xz|conda)$ {
 浏览器直接打开（注意 `@` 在 URL 里写作 `%40`）：
 
 ```
-https://mirror.repohub.top/bottle/jq/jq%401.7.1.arm64
+https://mirror.repohub.top/MacWave/bottle/jq/jq%401.7.1.arm64
 ```
 
 能下载就说明镜像站可用。再量一下速度：
 
 ```bash
 curl -o /dev/null -w '速度 %{speed_download} B/s\n' \
-  https://mirror.repohub.top/bottle/jq/jq%401.7.1.arm64
+  https://mirror.repohub.top/MacWave/bottle/jq/jq%401.7.1.arm64
 ```
 
 同时确认校验值没被中间环节改坏：
 
 ```bash
-curl -fsSL https://mirror.repohub.top/bottle/jq/jq%401.7.1.arm64 | shasum -a 256
+curl -fsSL https://mirror.repohub.top/MacWave/bottle/jq/jq%401.7.1.arm64 | shasum -a 256
 # 与 infosource 里 _jq@1.7.1 的 sha256 应当逐字相同
 ```
 
 ## 第八步：让 MacWave 用它
 
 ```bash
-export MACWAVE_BOTTLE_DOMAIN=https://mirror.repohub.top/bottle
-export MACWAVE_DEPS_DOMAIN=https://mirror.repohub.top/deps
-export MACWAVE_SELFUPDATE_DOMAIN=https://mirror.repohub.top/selfupdate
+export MACWAVE_BOTTLE_DOMAIN=https://mirror.repohub.top/MacWave/bottle
+export MACWAVE_DEPS_DOMAIN=https://mirror.repohub.top/MacWave/deps
+export MACWAVE_SELFUPDATE_DOMAIN=https://mirror.repohub.top/MacWave/selfupdate
 ```
 
 写进 `~/.zshrc` 长期生效。
@@ -177,13 +198,19 @@ export MACWAVE_SELFUPDATE_DOMAIN=https://mirror.repohub.top/selfupdate
 
 ```bash
 git clone --depth 1 https://github.com/MacWaveOrg/Selfupdate \
-  /www/wwwroot/mirror.repohub.top/selfupdate
-rm -rf /www/wwwroot/mirror.repohub.top/selfupdate/.git
+  /www/wwwroot/mirror.repohub.top/MacWave/selfupdate
+rm -rf /www/wwwroot/mirror.repohub.top/MacWave/selfupdate/.git
 ```
 
 ## 常见问题
 
-**404，但文件确实在。** 九成是第四步多套了一层目录，或者 `MACWAVE_*_DOMAIN` 少了 `/bottle`、`/deps` 后缀。
+**404，但文件确实在。** 按顺序查这三条：
+
+1. 目录是不是多套了一层（`MacWave/MacWave/bottle`）：
+   `ls /www/wwwroot/mirror.repohub.top/MacWave/` 应当直接列出 `bottle`、`deps`；
+2. 环境变量是不是漏了 `MacWave`：
+   要写 `https://mirror.repohub.top/MacWave/bottle`，不是 `https://mirror.repohub.top/bottle`；
+3. 环境变量是不是又漏了 `bottle` / `deps` 后缀（客户端只往后再接 `/<包名>/<文件名>`）。
 
 **`@` 到底要不要编码。** 两种形式 nginx 都接受：`jq%401.7.1.arm64` 与 `jq@1.7.1.arm64` 指向同一个文件。客户端拼地址时会编码（与 GitHub 给出的规范地址一致）。
 
