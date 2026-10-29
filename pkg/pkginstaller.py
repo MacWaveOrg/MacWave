@@ -166,6 +166,18 @@ ALLOWED_FLAGS = {
     "--install-from-source",
 }
 
+# 只对 upgrade 有意义的参数。单列出来是为了在 install 里用错时能说清原因，
+# 而不是丢一句「illegal fields」让人自己猜。
+UPGRADE_ONLY_FLAGS = {
+    "-X", "--remove-old-version", "--remove-old-versions", "--rov",
+}
+
+# 其余命令独有的参数：用错时指到正确的那条命令（值要能直接照着敲）
+OTHER_COMMAND_FLAGS = {
+    "-a": "`wave link --all`",
+    "--all": "`wave link --all`",
+}
+
 def parse_flags(input_string):
 
     # 截取所有 "-开头"（且 - 前是空格）至下一个空格的内容。
@@ -192,11 +204,34 @@ def parse_flags(input_string):
             for ch in token[1:]:
                 flags.append(f"-{ch}")
 
-    # 白名单校验
+    # 白名单校验。报错必须点名是哪个参数、以及它是不是属于另一条命令 ——
+    # 只印「Input contains illegal fields」时，用户无从判断是自己拼错还是用错命令。
     for flag in flags:
-        if flag not in ALLOWED_FLAGS:
-            print(f"{RED_BOLD}🌊 Error: Input contains illegal fields.{RESET}")
-            sys.exit(1)
+        if flag in ALLOWED_FLAGS:
+            continue
+        # 保留 "illegal" 这个词：随机回归用它在断言里识别「参数被拒」这一类结果。
+        if flag in UPGRADE_ONLY_FLAGS:
+            package = first_package_token(input_string) or "<package>"
+            steplog.fail(
+                f"illegal option {flag} for `wave install`: "
+                f"it only applies to `wave upgrade`",
+                extra=f"you ran: {input_string.strip()}",
+                hint=[f"`{flag}` removes the older versions *after* upgrading to the latest one,",
+                      "so it needs a command that installs and prunes in one go.",
+                      "Did you mean:",
+                      f"  wave upgrade {package} {flag}"])
+        if flag in OTHER_COMMAND_FLAGS:
+            steplog.fail(
+                f"illegal option {flag} for `wave install`: "
+                f"it belongs to {OTHER_COMMAND_FLAGS[flag]}",
+                extra=f"you ran: {input_string.strip()}",
+                hint=["Did you mean:",
+                      f"  {OTHER_COMMAND_FLAGS[flag]}",
+                      f"see `{OTHER_COMMAND_FLAGS[flag].split()[1]} --help` for the rest"])
+        steplog.fail(
+            f"illegal option {flag} for `wave install`",
+            extra=f"you ran: {input_string.strip()}",
+            hint="`wave install --help` lists the flags this command accepts")
 
     return flags
 
