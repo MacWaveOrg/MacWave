@@ -300,6 +300,70 @@ rm -rf /www/wwwroot/mirror.repohub.top/MacWave/python/.git
 
 目录形状与每类数据的确切规则见 [DATA-LAYER.md](DATA-LAYER.md)。
 
+## 让镜像自己跟上上游（自动同步）
+
+手动 rsync 的问题是**会忘**：发了新版、镜像还是旧的，而客户端拿到 404 只会说「下载失败」，
+没人会来告诉你。所以同步也交给服务器自己。
+
+`MacWave/` 下五类东西来源不同，脚本按来源分别处理：
+
+| 目标 | 来源 | 处理 |
+| --- | --- | --- |
+| `infosource/` | `MacWaveOrg/infosource` 的 `main` | 浅克隆 + `rsync --delete` |
+| `selfupdate/` | `MacWaveOrg/Selfupdate` 的 `main` | 同上 |
+| `python/` | `MacWaveOrg/Python` 的 `main` | 同上 |
+| `core/<分支>/` | `MacWaveOrg/MacWave` 的对应分支 | 同上；分支表 = `configdata` 的当前发布线 + `KEEP_BRANCHES` |
+| `bottle/` `deps/` | 我们自己的 Bottle / Deps **Release** | `sync_payloads.py --source payload`，只增不删 |
+
+最后再跑一次 `build_versions_index.py` 重建 `versions` 清单 —— 客户端的「列出版本」
+靠它，漏了会表现为「没有版本可装」。
+
+三个文件在 [scripts/mirror-sync/](../scripts/mirror-sync/)：
+
+| 文件 | 作用 |
+| --- | --- |
+| `mirror-sync.sh` | 同步本体 |
+| `sync-run.sh` | cron 包装：记 `history.log`，失败建 `ALERT`、通过删 `ALERT` |
+| `sync-install.sh` | 落地 cron 行并试跑一次 |
+
+```bash
+# Mac 上
+rsync -a -e "ssh -o ControlPath=$HOME/.ssh/cm-lw" \
+  scripts/mirror-sync/ root@<服务器>:/root/mirror-sync/
+
+# 服务器上
+bash /root/mirror-sync/sync-install.sh
+```
+
+cron 定在 **03:23**，排在巡检（04:17）之前 —— 先同步再体检，体检看到的就是同步后的状态。
+
+### 三种跑法
+
+```bash
+bash /root/mirror-sync/mirror-sync.sh --dry-run       # 只看会动哪些树，不写文件
+bash /root/mirror-sync/mirror-sync.sh --no-payloads   # 只同步 git 树与清单（快）
+bash /root/mirror-sync/mirror-sync.sh                 # 全量，含产物
+```
+
+退出码 0 表示全部成功，1 表示有任何一步失败。`cron` 里默认带 `--no-payloads`：
+产物体积大、变动少，先确认 git 树这条路稳了，再决定要不要把产物也交给它。
+
+### 必须记住的四点
+
+| 点 | 为什么 |
+| --- | --- |
+| **`versions` 不能跟着 `--delete` 消失** | 它是本地生成的，上游没有。rsync 里 `--exclude versions` 保它，第 5 步再重建 |
+| **`infosource/.git` 不该留在站点里** | 索引是 `git clone` 来的，`.git` 会一并被服务；nginx 的 `location ~ /\.` 挡住它，但没必要留。同步末尾直接删 |
+| **同步失败时不能清理旧分支目录** | 发布线刚切到 `4.5`、而 `4.5` 分支还没建时，清理会把仍在服务的 `4.1` 删掉 —— 一次上游打嗝变成镜像全站不可用。脚本里只要有一个 core 分支没同步成功就跳过清理 |
+| **`bottle/deps` 只增不删** | 上游删掉一个旧包时，镜像里已有的文件不该跟着消失：客户端的索引缓存可能还指着它 |
+
+另外，产物那一步走的是 `--source payload`，即从**我们自己的 Release** 取，不打扰上游。
+它依赖 `domains.py` 的内置默认值，所以脚本开头会显式 `unset MACWAVE_*_DOMAIN` ——
+否则这台机器上残留的镜像变量会把路径指到别处，变成「从镜像同步镜像」。
+
+> **LinuxWave 暂未纳入**：它的客户端还没定稿，且缺少与之配套的 `sync_payloads`。
+> 等那边统一处理时，`mirror-sync.sh` 的结构可以直接照搬，只有 `ORG` 与产物来源要换。
+
 ## 让服务器自己盯着（日常巡检）
 
 镜像站是外部依赖：它坏了不会有任何人主动告诉你。用户那边只会看到「下载失败」，
