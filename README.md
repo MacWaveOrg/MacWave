@@ -163,8 +163,9 @@ Whatever you end up with, `wave mirror` reports the effective address for every 
 
 ### The project-run mirror (trusted users only)
 
-Besides running your own, there is **a mirror hosted by the project** for users in mainland China.
-It is not publicly listed; write to [hi@macwave.org](mailto:hi@macwave.org?subject=Request%20a%20MacWave%20mirror%20account)
+Besides running your own, there is **a mirror hosted by the project** for users in mainland China,
+listed under *Mirrors* on [macwave.org](https://macwave.org). Accounts are invite-only: write to
+[hi@macwave.org](mailto:hi@macwave.org?subject=Request%20a%20MacWave%20mirror%20account)
 to ask for a username and password.
 
 The credentials go straight into the URL:
