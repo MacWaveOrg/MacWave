@@ -17,6 +17,7 @@
 5. [数据源与记录格式](#五数据源与记录格式)
     - [5.2.1 url 不再被读取，文件名进索引](#521-40-起url-不再被读取文件名进索引)
     - [5.2.2 二进制存在哪](#522-二进制存在哪)
+    - [5.2.3 数据层的完整契约](DATA-LAYER.md)
 6. [命令参考](#六命令参考)
 7. [核心机制](#七核心机制)
 8. [自更新与版本迁移](#八自更新与版本迁移)
@@ -163,14 +164,27 @@ Apple 芯片上不提供那个 Intel 专属路径，因为该目录在新版 mac
 两段「当时」一旦不一致（例如 Homebrew 把 `python3` 从 3.14 换成 3.15），所有命令都会
 以「模块不可用」的形式失败 —— 这不是假设，是真实发生过的一次故障。
 
-3.1 起，解释器由 MacWave 自己提供：版本与各架构的下载地址、校验值放在版本数据仓库的
-`pythondata/latest_python` 里；安装与自更新会下载它、校验 sha256、解到 `python/<版本>/`，
+3.1 起，解释器由 MacWave 自己提供。4.0 把它移到独立仓库 `MacWaveOrg/Python`
+（`MACWAVE_PYTHON_DOMAIN`），分两个文件：
+
+- `pythondata/latest.toml` —— 现在该用哪个版本；
+- `pythondata/<版本>/python_url.toml` —— 各架构的上游地址与校验值，
+  形如 `[arm64] arm64_url / arm64_sha256`。
+
+安装与自更新**先读 `latest.toml`，本机已有该版本且能跑就直接用，一个字节都不下**；
+只有对不上时才读 `python_url.toml` 下载、校验 sha256、解到 `python/<版本>/`。
+先问一次是必须的：否则「本机已有 3.14.9」会让升级到「要求 3.15」的版本时永远发现不了
+自己落后。默认从我们自己的存储取那一份字节，`--install-python-from-source` 才回上游取
+（两条路径共用同一个 sha256，因为字节原样搬运、文件名取上游 URL 末段）。
+
 再用它创建私有虚拟环境。入口 `lib/wave` 是一个 sh 启动器，按「私有环境 → 自带解释器 →
 安装时记录的解析器 → PATH」依次挑选**真正能 import 到依赖**的那一个。
 
-**地址直指上游。** 这两个地址填的是 `astral-sh/python-build-standalone` 的 `install_only`
-产物，不自己重新打包：解压后解释器就在 `python/install/bin/python3`，而安装器的探测列表里
-本来就有这个位置。自己再 repack 一遍只能省掉一层目录名，却要多搬几十 MB、多维护一个托管
+**字节原样搬运，不重新打包。** `python_url.toml` 里的地址填的是
+`astral-sh/python-build-standalone` 的 `install_only` 产物：解压后解释器就在
+`python/install/bin/python3`，而安装器的探测列表里本来就有这个位置，末了还会归一化成
+`python/<版本>/bin/python3` 供启动器使用。我们自己托管的那份就是同一批字节，所以校验值
+可以共用。自己再 repack 一遍只能省掉一层目录名，却要多搬几十 MB、多维护一个托管
 位置。校验值不采信上游的自述，由流水线下载后自己算一遍，同时确认压缩包里确实有那个路径，
 然后把结果写成版本数据仓库的 PR。
 
@@ -446,13 +460,19 @@ https://github.com/MacWaveOrg/Bottle/releases/download/jq/jq%401.8.2.arm64
 
 守卫写在发布分支的更新脚本里，因此随每个新版本自动下发，不需要在数据仓库里逐版本登记规则。反过来，同一大版本内的补丁升级可以正常自更新。
 
-### 8.3 迁移机制
+### 8.3 迁移机制（3.x 与 4.0 不同）
 
-当新版本改了目录结构或配置位置，就在更新数据里标记这一点并提供迁移脚本。安装与自更新都会检查这个标记。
+4.0 起，目录结构变更的迁移**写在 `macwavedata/<版本>/update_commands.sh` 里**，
+与「下载哪些文件」用同一份脚本、同一次执行。
 
-三种情况要区分清楚：标记文件存在且为「改了」，执行迁移脚本；标记文件不存在或拉取失败，按「没改」静默跳过；标记说改了但脚本拉不到，报错退出。最后一条是为了避免半迁移 —— 那种状态比直接失败难排查得多。
+3.x 用的是另一套：`updatedata/<版本>/dir_structure_change` 单字符标记 +
+`transfer_commands` 迁移脚本，安装与自更新都要先检查标记、再决定跑不跑。这套机制在 4.0
+被合并进更新脚本，因为两者本来就该原子地一起完成 —— 文件按新结构落盘、旧位置清理掉，
+分两步做就会出现「标记说改了但脚本拉不到」那种半迁移状态。
 
-迁移脚本通过环境变量获知上下文，自行判断要不要动作。这比在脚本里写死判断条件灵活，也让同一份脚本能安全地放在多个补丁版本目录下重复执行。
+更新脚本通过环境变量获知上下文（`MACWAVE_INSTALL_DIR`、`MACWAVE_CONFIG_DIR`、
+`MACWAVE_CURRENT_VERSION` 等，完整清单见 [DATA-LAYER.md](DATA-LAYER.md)），自行判断要不要
+动作。这比在脚本里写死判断条件灵活，也让同一份脚本能安全地在多个补丁版本目录下重复执行。
 
 ### 8.4 主分支与发布分支的镜像
 
@@ -471,8 +491,8 @@ https://github.com/MacWaveOrg/Bottle/releases/download/jq/jq%401.8.2.arm64
 | `MACWAVE_BOTTLE_DOMAIN` | 预编译软件包 | 无（未设即报错） |
 | `MACWAVE_DEPS_DOMAIN` | 依赖库 | 无（未设即报错） |
 | `MACWAVE_CORE_DOMAIN` | MacWave 自身文件 | `MacWave` 的 raw 地址 |
-| `MACWAVE_PYTHON_DOMAIN` | 自带 CPython 的清单 | `configdata` 的 raw 地址 |
-| `MACWAVE_SELFUPDATE_DOMAIN` | 自更新数据 | `configdata` 的 raw 地址 |
+| `MACWAVE_PYTHON_DOMAIN` | 自带 CPython | `Python` 仓库的 raw 地址 |
+| `MACWAVE_SELFUPDATE_DOMAIN` | 自更新数据 | `Selfupdate` 仓库的 raw 地址 |
 | `MACWAVE_PKG_SOURCECODE_DOMAIN` | 软件包源码 | 无（预留，暂未使用） |
 
 三个要点：
@@ -481,6 +501,11 @@ https://github.com/MacWaveOrg/Bottle/releases/download/jq/jq%401.8.2.arm64
   （`scripts/domains_test.sh` 逐字比对 11 个拼出来的地址）。
 - **Bottle / Deps 没有回落**。缺域名就停下并说明怎么设，不会悄悄回到上游 ——
   那等于把 4.0 要解决的三个问题又带回来，而且没人察觉。
+
+  默认值指向 GitHub Releases 而不是仓库文件：git 有 100 MiB 单文件硬限，而已有
+  172.9 MB 的产物；Releases 单文件上限 2 GiB，且不限制总量与带宽。它的下载路径
+  `/<tag>/<资产>` 与静态镜像的 `/<包名>/<文件名>` 同形，所以国内镜像只要 `rsync`
+  出同一棵树，不需要理解任何协议。
 - **版本清单是唯一不能简单镜像的东西**：它走 `api.github.com`，与索引不是一台机器。
   设了 `MACWAVE_API_DOMAIN` 时改读镜像自己的 `<路径>/versions`（一行一个名字），
   没设时仍用 GitHub API。
@@ -627,10 +652,10 @@ Python 与 shell 各有一份实现（`lib/domains.py` 与两份脚本里的 `mw
 | 配置解析模块 | 解析两处配置目录，系统级优先并容错回落 |
 | 启动自检模块 | 判断是否真的装好了，没装时给出安装指引 |
 | 帮助模块 | 用法、版本、未知命令提示与子命令帮助 |
-| 安装脚本 | 选目录、建目录、写配置、按清单拉文件、配置 PATH、处理迁移 |
+| 安装脚本 | 选目录、建目录、写配置、取 `update_commands.sh` 执行、配置 PATH |
 | 卸载脚本 | 定位安装、确认、清理目录与 PATH、自删 |
 | 自更新入口 | 比对版本、执行更新命令、复核结果 |
-| 自更新脚本 | 定位环境、拉清单、逐文件更新、处理迁移 |
+| 自更新脚本 | 定位环境、取 `update_commands.sh` 执行、清缓存、备好解释器与启动器、写版本文件 |
 | 安装编排 | 解析参数、定版本、取元数据、下载、编排依赖、收尾链接 |
 | 安装核心 | 校验、解压、按形态落盘、建链接、写依赖清单 |
 | 解压模块 | 按扩展名分派，含 conda 特殊格式 |

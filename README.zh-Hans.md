@@ -118,11 +118,13 @@ export MACWAVE_DEPS_DOMAIN=https://mirror.example.cn/MacWave/deps
 | `MACWAVE_DEPS_DOMAIN` | 依赖库 | GitHub Releases |
 | `MACWAVE_API_DOMAIN` | 软件包索引 | raw.githubusercontent 上的 `infosource` |
 | `MACWAVE_SELFUPDATE_DOMAIN` | 自更新数据 | raw.githubusercontent 上的 `Selfupdate` |
-| `MACWAVE_PYTHON_DOMAIN` | 自带解释器 | raw.githubusercontent 上的 `Selfupdate` |
+| `MACWAVE_PYTHON_DOMAIN` | 自带解释器 | raw.githubusercontent 上的 `Python` |
 | `MACWAVE_CORE_DOMAIN` | MacWave 自身文件 | raw.githubusercontent 上的 `MacWave` |
 | `MACWAVE_PKG_SOURCECODE_DOMAIN` | 软件包源码（预留） | — |
 
-变量的值是**包名之前那一段**：客户端会往 bottle / deps 的地址后接 `/<包名>/<包名>@<版本>.<架构><扩展名>`，往其他地址后接 `/pkg/…`、`/deps/…`、`/versiondata/…`。末尾斜杠会被自动去掉，写不写都行。
+变量的值是**包名之前那一段**：客户端会往 bottle / deps 的地址后接 `/<包名>/<包名>@<版本>.<架构><扩展名>`，往其他地址后接 `/pkg/…`、`/macwavedata/…`、`/pythondata/…`。末尾斜杠会被自动去掉，写不写都行。
+
+每类数据的确切文件树与命名规则见 [docs/DATA-LAYER.md](docs/DATA-LAYER.md)。
 
 ### 先验证再用
 ```bash

@@ -123,11 +123,13 @@ The `MacWave/` segment keeps a mirror's domain shareable: LinuxWave can later li
 | `MACWAVE_DEPS_DOMAIN` | dependency libraries | GitHub Releases |
 | `MACWAVE_API_DOMAIN` | package index | `infosource` on raw.githubusercontent |
 | `MACWAVE_SELFUPDATE_DOMAIN` | self-update data | `Selfupdate` on raw.githubusercontent |
-| `MACWAVE_PYTHON_DOMAIN` | the bundled interpreter | `Selfupdate` on raw.githubusercontent |
+| `MACWAVE_PYTHON_DOMAIN` | the bundled interpreter | `Python` on raw.githubusercontent |
 | `MACWAVE_CORE_DOMAIN` | MacWave's own files | `MacWave` on raw.githubusercontent |
 | `MACWAVE_PKG_SOURCECODE_DOMAIN` | package source (reserved) | — |
 
-A variable's value is the part **before** the package name: the client appends `/<package>/<package>@<version>.<arch><ext>` to the bottle and deps prefixes, and `/pkg/…`, `/deps/…`, `/versiondata/…` to the others. Trailing slashes are stripped, so either form works.
+A variable's value is the part **before** the package name: the client appends `/<package>/<package>@<version>.<arch><ext>` to the bottle and deps prefixes, and `/pkg/…`, `/macwavedata/…`, `/pythondata/…` to the others.
+
+The exact tree and naming rules for each kind of data are in [docs/DATA-LAYER.md](docs/DATA-LAYER.md). Trailing slashes are stripped, so either form works.
 
 ### Check it before trusting it
 ```bash

@@ -188,7 +188,7 @@ curl -fsSL https://mirror.repohub.top/MacWave/bottle/jq/jq%401.7.1.arm64 | shasu
 ```bash
 MACWAVE_CORE_DOMAIN=https://mirror.repohub.top/MacWave/core \
 MACWAVE_SELFUPDATE_DOMAIN=https://mirror.repohub.top/MacWave/selfupdate \
-MACWAVE_PYTHON_DOMAIN=https://mirror.repohub.top/MacWave/selfupdate \
+MACWAVE_PYTHON_DOMAIN=https://mirror.repohub.top/MacWave/python \
 /bin/bash -c "$(curl -fsSL https://mirror.repohub.top/MacWave/core/lib/install.sh)"
 ```
 
@@ -197,7 +197,7 @@ MACWAVE_PYTHON_DOMAIN=https://mirror.repohub.top/MacWave/selfupdate \
 | 变量 | 取什么 | 镜像要承载 |
 | --- | --- | --- |
 | `MACWAVE_CORE_DOMAIN` | MacWave 自身的代码（`lib/`、`pkg/`、`surfboard/`） | `<根>/MacWave/core/<分支>/…` |
-| `MACWAVE_PYTHON_DOMAIN` | 自带 CPython 的清单 | `<根>/MacWave/selfupdate/pythondata/latest_python` |
+| `MACWAVE_PYTHON_DOMAIN` | 自带 CPython（独立仓库） | `<根>/MacWave/python/pythondata/…` |
 
 `core/` 的形状有个坑：客户端按 **`<CORE_DOMAIN>/<分支>/<路径>`** 取文件
 （`BASE_URL="$CORE_URL/$BRANCH"`），所以分支名必须是一层真实目录：
@@ -284,15 +284,21 @@ export MACWAVE_DEPS_DOMAIN=https://mirror.repohub.top/MacWave/deps
 
 最后一行最容易误会：**`MACWAVE_*_DOMAIN` 只管 MacWave 自己发的请求**，管不到 `git` 和 `curl` 的下载。
 
-## 可选的第三块：自更新数据
+## 可选的第三块：自更新数据与解释器
 
-自更新数据不是二进制，体积很小，直接从仓库复制即可：
+这两块不是二进制，体积很小（解释器归档除外，每架构约 26 MB），直接从仓库复制即可：
 
 ```bash
 git clone --depth 1 https://github.com/MacWaveOrg/Selfupdate \
   /www/wwwroot/mirror.repohub.top/MacWave/selfupdate
 rm -rf /www/wwwroot/mirror.repohub.top/MacWave/selfupdate/.git
+
+git clone --depth 1 https://github.com/MacWaveOrg/Python \
+  /www/wwwroot/mirror.repohub.top/MacWave/python
+rm -rf /www/wwwroot/mirror.repohub.top/MacWave/python/.git
 ```
+
+目录形状与每类数据的确切规则见 [DATA-LAYER.md](DATA-LAYER.md)。
 
 ## 常见问题
 

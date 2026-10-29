@@ -13,7 +13,7 @@
 1. [先建立三层心智模型](#一先建立三层心智模型)
 2. [程序仓库逐文件说明](#二程序仓库逐文件说明)
 3. [用户端目录详解](#三用户端目录详解)
-4. [版本数据仓库（configdata）](#四版本数据仓库configdata)
+4. [数据仓库](#四数据仓库)
 5. [包索引仓库（infosource）](#五包索引仓库infosource)
 6. [代码风格与约定](#六代码风格与约定)
 7. [跨模块接口约定](#七跨模块接口约定)
@@ -153,7 +153,7 @@
 | --- | --- |
 | `format-test.yml` | 在多个 Python 版本上跑格式与回归；分支列表里包含若干历史分支 |
 | `sync-release-branch.yml` | 主分支与发布分支的自动镜像，只做快进，分叉即报错 |
-| `portable-python.yml` | 上游有了新的 CPython 时更新 `Selfupdate` 的 `pythondata/latest_python`：下载、算 sha256、确认压缩包里真有解释器 |
+| `portable-python.yml` | 上游有了新的 CPython 时更新 `Python` 仓库的 `pythondata/<版本>/python_url.toml` 与 `pythondata/latest.toml`：下载、算 sha256、确认压缩包里真有解释器 |
 | `sync-payloads.yml` | 抓上游产物 → 核对索引里的 sha256 → 发布到 `Bottle` / `Deps` 的 Release，再回读比对。**必须跑在 GitHub 托管的 Runner 上**：从大陆访问 `github.com` 实测三次里两次连 TCP 都建不起来 |
 
 镜像工作流用**属于组织管理员的令牌**推送，因为机器人身份无法进入分支保护的豁免名单。它触发的第二次运行会发现两侧已相等而退出，不构成循环。
@@ -222,11 +222,36 @@ MacWave 装完之后，机器上会有两类目录：**代码树**（安装根�
 
 ---
 
-## 四、版本数据仓库（configdata）
+## 四、数据仓库
+
+数据仓库分两代：**3.x 用 `configdata` 一个仓库**，**4.0 拆成 `Selfupdate` + `Python`**。
+确切的文件树、命名与发布规则见 [DATA-LAYER.md](DATA-LAYER.md)，这里只讲「谁在哪」。
+
+### 4.0 的布局
+
+| 仓库 | 路径 | 作用 |
+| --- | --- | --- |
+| `Selfupdate` | `macwavedata/latest.toml` | 哪个版本是最新的（唯一入口） |
+| `Selfupdate` | `macwavedata/<版本>/update_commands.sh` | 该版本下载哪些文件、如何迁移，随版本冻结 |
+| `Python` | `pythondata/latest.toml` | 现在用哪个版本的 CPython |
+| `Python` | `pythondata/<版本>/python_url.toml` | 各架构的上游地址与校验值 |
+| `Python` | `pythondata/<版本>/<上游同名文件>` | 我们自己托管的那份字节 |
+
+`Selfupdate` 用 `MACWAVE_SELFUPDATE_DOMAIN`、`Python` 用 `MACWAVE_PYTHON_DOMAIN`。
+两者分开是因为体积与发布节奏不同：一个几十字节，一个每架构约 26 MB。
+
+`update_commands.sh` 同时取代了 3.x 的 `files_info`（缩进树清单）与 `updatedata/`
+（迁移开关与脚本）：它自己知道该下哪些文件，所以能只列变动的那些；目录结构变更的迁移
+也写在同一个脚本里。
+
+### 3.x 的 `configdata`
 
 这个仓库只有三样东西，但每一样都直接影响安装与升级。
 
 ### 4.1 目录结构
+
+> 下表是 **3.x** 的布局。4.0 不再读写这些路径，但 `configdata` 仍保留一份
+> 「4.0 锚点」，让 3.x 用户能被跨大版本守卫拦到官网去重装。
 
 | 路径 | 作用 |
 | --- | --- |
