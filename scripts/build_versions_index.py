@@ -29,13 +29,19 @@ sys.path.insert(0, str(SCRIPT_DIR.parent / "lib"))
 import domains  # noqa: E402
 from sync_payloads import read_record, records  # noqa: E402
 
-# 索引目录名 → 镜像目录名
-KIND_DIRS = {"bottle": "pkg", "deps": "deps"}
+# 索引里两个顶层目录，以及各自的架构子目录前缀。注意 deps 侧叫 depsinfo_，
+# 与 bottle 侧的 pkginfo_ 不同名 —— 这两处写错就会去不存在的路径上写文件。
+KIND_LAYOUT = {
+    "bottle": ("pkg", "pkginfo"),
+    "deps": ("deps", "depsinfo"),
+}
 
 
 def version_entry_path(infosource, kind, arch):
-    # <infosource>/pkg/pkginfo_arm64 —— 同时也是对外暴露的路径，所以直接写在这里
-    return infosource / KIND_DIRS[kind] / f"pkginfo_{arch}"
+    # <infosource>/pkg/pkginfo_arm64、<infosource>/deps/depsinfo_arm64
+    # 同时也是对外暴露的路径，所以清单直接写在这里。
+    root, prefix = KIND_LAYOUT[kind]
+    return infosource / root / f"{prefix}_{arch}"
 
 
 def collect(infosource, mirror):
@@ -101,6 +107,8 @@ def main():
             "".join(f"{name}\n" for name in sorted(packages)))
 
         for name, entries in packages.items():
+            # 包目录一定已存在（记录就在里面），但从空镜像重建时未必，统一补一次。
+            (directory / name).mkdir(parents=True, exist_ok=True)
             (directory / name / "versions").write_text(
                 "".join(f"{entry}\n" for entry in sorted(entries)))
 
