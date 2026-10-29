@@ -31,6 +31,7 @@ from configpaths import (
     require_safe_token,
 )
 import domains
+import steplog
 
 
 def github_api_headers(url):
@@ -349,6 +350,15 @@ def download_file(url, temp_path, config, input_string, display_name):
             request_kwargs["headers"] = {"Range": f"bytes={existing_size}-"}
             mode = "ab"
 
+    steplog.detail(f"GET {domains.redact_url(url)}")
+    if existing_size:
+        steplog.detail(f"断点续传：本地已有 {existing_size} 字节")
+    if config["limit_rate"]:
+        steplog.detail(f"限速 {config['limit_rate'] / 1024:.0f} KiB/s")
+    if config["proxy"]:
+        steplog.detail(f"代理 {config['proxy']}")
+    steplog.detail(f"超时 {config['timeout']}s，保存到 {temp_path.name}")
+
     download_success = False
     while not download_success:
         try:
@@ -360,13 +370,18 @@ def download_file(url, temp_path, config, input_string, display_name):
                 download_success = True
                 break
             elif response.status_code == 404:
-                print(f"{RED_BOLD}🌊 Error: ErrorCode 404 - The URL or file does not exist.{RESET}")
-                print(f"{RED_BOLD}🌊 URL: {url}{RESET}")
-                sys.exit(404)
+                steplog.fail(
+                    f"下载地址不存在：{display_name}",
+                    request=url,
+                    response="404 Not Found",
+                    hint=["镜像上缺这个产物（索引有记录但文件没同步）",
+                          "请联系管理员同步镜像；或用 --install-from-source 直接取上游"])
             elif response.status_code not in (200, 206):
-                print(f"{RED_BOLD}🌊 Error: ErrorCode {response.status_code}{RESET}")
-                print(f"{RED_BOLD}🌊 URL: {url}{RESET}")
-                sys.exit(response.status_code)
+                steplog.fail(
+                    f"下载失败：{display_name}",
+                    request=url,
+                    response=f"HTTP {response.status_code}",
+                    hint="通常是镜像暂时不可用，稍后重试；反复失败请联系管理员")
 
             # 如果服务器不支持续传
             if response.status_code == 200 and existing_size > 0:
@@ -452,12 +467,18 @@ def download_file(url, temp_path, config, input_string, display_name):
 
         except HTTPError as e:
             status_code = e.response.status_code if e.response is not None else 1
-            print(f"{RED_BOLD}🌊 Error: ErrorCode {status_code}{RESET}")
-            sys.exit(status_code)
+            steplog.fail(
+                f"下载失败：{display_name}",
+                request=url,
+                response=f"HTTP {status_code}",
+                hint="检查网络、代理（--proxy）或镜像状态后重试")
 
         except Exception as e:
-            print(f"{RED_BOLD}🌊 Error: {e}{RESET}")
-            sys.exit(1)
+            steplog.fail(
+                f"下载出错：{display_name}",
+                request=url,
+                response=str(e),
+                hint="检查网络与代理（--proxy）；证书问题可试 --skip-ssl（不安全）")
 
     return temp_path
 
@@ -484,14 +505,22 @@ def fetch_common_fields(package_name, arch, timeout=DEFAULT_TIMEOUT):
     # 包名与 bin_name 不一定相同（例如 choma -> ChOma），而 bin/ 与 links/ 用的是 bin_name。
     # 所以任何要「按名字找已安装版本」的命令都必须先读这个文件。
     url = package_common_url(package_name, arch)
+    steplog.detail(f"GET {domains.redact_url(url)}")
     try:
         response = requests.get(url, timeout=timeout)
         if response.status_code != 200:
-            print(f"{RED_BOLD}🌊 Error: Cannot fetch @common file.{RESET}")
-            sys.exit(1)
+            steplog.fail(
+                f"取不到 {package_name} 的 @common 元信息",
+                request=url,
+                response=f"HTTP {response.status_code}",
+                hint=[f"确认镜像上有这个包：`wave search {package_name}`",
+                      "确认 MACWAVE_API_DOMAIN 指向 <镜像>/MacWave/infosource"])
+    except SystemExit:
+        raise
     except Exception as e:
-        print(f"{RED_BOLD}🌊 Error: {e}{RESET}")
-        sys.exit(1)
+        steplog.fail("取 @common 元信息时出错",
+                     request=url, response=str(e),
+                     hint="检查网络或 --proxy 设置后重试")
 
     return parse_common_fields(response.text)
 
@@ -499,12 +528,19 @@ def fetch_common_fields(package_name, arch, timeout=DEFAULT_TIMEOUT):
 def fetch_max_version(package_name, arch, timeout=DEFAULT_TIMEOUT):
     # 版本清单：默认走 GitHub API，设了索引镜像时读镜像自己的清单（见 domains.index_list_url）
     api_url = domains.index_list_url(arch, package_name)
+    steplog.detail(f"GET {domains.redact_url(api_url)}")
     try:
         response = requests.get(api_url, timeout=timeout, headers=github_api_headers(api_url))
         if response.status_code != 200:
-            print(f"{RED_BOLD}🌊 Error: Cannot fetch package list.{RESET}")
-            print(f"{RED_BOLD}🌊 URL: {api_url}{RESET}")
-            sys.exit(1)
+            hint = [f"确认镜像上有这个包：`wave search {package_name}`",
+                    "确认 MACWAVE_API_DOMAIN 指向 <镜像>/MacWave/infosource"]
+            if response.status_code == 404:
+                hint.append("若清单整体缺失，需在镜像上运行 scripts/build_versions_index.py")
+            steplog.fail(
+                f"取不到 {package_name} 的版本清单",
+                request=api_url,
+                response=f"HTTP {response.status_code}",
+                hint=hint)
 
         file_list = domains.listing_names(response.text)
         versions = []
@@ -515,23 +551,55 @@ def fetch_max_version(package_name, arch, timeout=DEFAULT_TIMEOUT):
                 versions.append(fname.split("@")[1])
 
         from pkgversionparser import get_max_version
-        return get_max_version(versions)
+        chosen = get_max_version(versions)
+        steplog.detail(f"清单里 {len(versions)} 个版本，取最高 {chosen}")
+        return chosen
+    except SystemExit:
+        raise
     except Exception as e:
-        print(f"{RED_BOLD}🌊 Error: Failed to fetch version list: {e}{RESET}")
-        sys.exit(1)
+        steplog.fail("取版本清单时出错", request=api_url, response=str(e),
+                     hint="检查网络或 --proxy 设置后重试")
 
 
 # -------------------- 核心安装流程 --------------------
 
+INSTALL_STEPS = [
+    "解析命令行",
+    "解析包名",
+    "检测架构",
+    "获取版本清单",
+    "读取包元信息",
+    "读取版本记录",
+    "选择产物位置",
+    "下载",
+    "校验与安装",
+    "安装依赖",
+    "重定位与链接",
+]
+
+
 def handle_install(input_string):
     # 参数解析
+    steplog.reset()
+    steplog.plan(INSTALL_STEPS)
+
+    # 先解析旗标、打开追踪，再报第一步 —— 否则 -v 自己的这一步会被漏掉
     config = handle_download_args(input_string)
+    steplog.set_verbose(config["verbose"])
+
+    steplog.begin("解析命令行")
+    steplog.detail(f"参数 {input_string.strip() or '(空)'}")
+    steplog.detail(f"安装目录 {BASE_DIR}")
+    steplog.trace_domains()
 
     # 1. 解析包名
+    steplog.begin("解析包名")
     raw_pkg = first_package_token(input_string)
     if not raw_pkg:
-        print(f"{RED_BOLD}🌊 Error: Invalid package name{RESET}")
-        sys.exit(1)
+        steplog.fail(
+            "命令行里没有包名",
+            extra=f"你输入的是：{input_string.strip() or '(空)'}",
+            hint="用法：wave install <包名>，例如 wave install jq")
 
     if "@" in raw_pkg:
         ParsePkgName = raw_pkg.split("@")[0]
@@ -540,23 +608,31 @@ def handle_install(input_string):
 
     # 包名会同时进入 URL 与文件路径，先过白名单（剔除 / \ % @ 空白等）
     ParsePkgName = require_safe_token(ParsePkgName, "package name")
+    steplog.detail(f"包名 {ParsePkgName}")
 
     # 2. 获取架构
+    steplog.begin("检测架构")
     ARCH = detect_arch()
+    steplog.detail(f"架构 {ARCH}")
 
     # 3. 解析版本号（只看包名 token，避免 --proxy 里的 user:pass@host 被误认）
+    steplog.begin("获取版本清单")
     ver_flag = flag_value(input_string, "--ver")
     ParsePkgVersion = None
     if "@" in raw_pkg:
         if ver_flag is not None:
-            print(f"{RED_BOLD}🌊 Error: Repeated Version Number{RESET}")
-            sys.exit(1)
+            steplog.fail(
+                "包名里写了版本号，又给了 --ver，两者冲突",
+                extra=f"包名 {raw_pkg}，--ver {ver_flag}",
+                hint="只保留一处，例如 wave install jq@1.8.2 或 wave install jq --ver 1.8.2")
         ParsePkgVersion = raw_pkg.split("@", 1)[1].strip()
+        steplog.detail(f"版本由包名指定：{ParsePkgVersion}")
     elif ver_flag is not None:
         if not ver_flag:
-            print(f"{RED_BOLD}🌊 Error: Missing version number after --ver{RESET}")
-            sys.exit(1)
+            steplog.fail("--ver 后面没有跟版本号",
+                         hint="例如 wave install jq --ver 1.8.2")
         ParsePkgVersion = ver_flag
+        steplog.detail(f"版本由 --ver 指定：{ParsePkgVersion}")
     else:
         print("🌊 Fetching version info...")
         ParsePkgVersion = fetch_max_version(ParsePkgName, ARCH)
@@ -564,54 +640,76 @@ def handle_install(input_string):
 
     # 版本号同样会进 URL 与目录名：`%`、`/`、`..` 这类一律拒绝
     ParsePkgVersion = require_safe_token(ParsePkgVersion, "package version")
+    steplog.detail(f"选用版本 {ParsePkgVersion}")
 
     # 4. 获取 bin_name（从 @common 文件）
+    steplog.begin("读取包元信息")
     common_fields = fetch_common_fields(ParsePkgName, ARCH, config["timeout"])
     bin_name = get_field(common_fields, "bin_name")
     if not bin_name:
-        print(f"{RED_BOLD}🌊 Missing \"bin_name\" field, Please contact the administrator.{RESET}")
-        sys.exit(1)
+        steplog.fail(
+            f"{ParsePkgName} 的 @common 里没有 bin_name 字段",
+            request=package_common_url(ParsePkgName, ARCH),
+            response="200，但内容缺字段",
+            hint="这是索引数据缺陷，请联系管理员。")
 
     # bin_name 来自远端 @common，却要当目录名与文件名用，必须过白名单
     bin_name = require_safe_token(bin_name, "bin_name")
+    steplog.detail(f"可执行文件名 {bin_name}")
 
     # 5. 获取 URL 和 SHA256（deps 也写在该版本文件里）
+    steplog.begin("读取版本记录")
     pkg_version_url = f"{domains.api_domain()}/pkg/pkginfo_{ARCH}/{ParsePkgName}/_{ParsePkgName}@{ParsePkgVersion}"
+    steplog.detail(f"GET {domains.redact_url(pkg_version_url)}")
     try:
         resp = requests.get(pkg_version_url, timeout=config["timeout"])
         if resp.status_code != 200:
             if config["verbose"]:
                 print(resp.text)
-            elif resp.status_code == 404:
-                print(f"{RED_BOLD}🌊 Error: Can't find parse package version.\n🌊 If you certain this version is existent, Please contact the administrator.{RESET}")
-                sys.exit(1)
+            if resp.status_code == 404:
+                steplog.fail(
+                    f"镜像上没有 {ParsePkgName}@{ParsePkgVersion} 的版本记录",
+                    request=pkg_version_url,
+                    response="404 Not Found",
+                    hint=[f"运行 `wave search {ParsePkgName}` 看有哪些可用版本",
+                          "确认 MACWAVE_API_DOMAIN 指向 <镜像>/MacWave/infosource"])
             else:
-                print(f"{RED_BOLD}🌊 Error: GitHub returned HTTP {resp.status_code} for the package data.{RESET}")
-                print(f"{RED_BOLD}🌊   {pkg_version_url}{RESET}")
-                print(f"{RED_BOLD}🌊 This is usually a network hiccup. Check your network or proxy, then run the command again.{RESET}")
-                sys.exit(1)
+                steplog.fail(
+                    "读取版本记录失败",
+                    request=pkg_version_url,
+                    response=f"HTTP {resp.status_code}",
+                    hint="通常是网络或镜像暂时不可用，稍后重试；加 -v 可看到响应内容")
     except Exception as e:
-        print(f"{RED_BOLD}🌊 Error: {e}{RESET}")
-        sys.exit(1)
+        steplog.fail("读取版本记录时出错",
+                     request=pkg_version_url,
+                     response=str(e),
+                     hint="检查网络与代理设置（--proxy），或稍后重试")
 
     sha_match = re.search(r'sha256:\s*"([^"]+)"', resp.text)
     file_match = re.search(r'file:\s*"([^"]+)"', resp.text)
     url_match = re.search(r'url:\s*"([^"]+)"', resp.text)
+    steplog.detail(f"响应 200，{len(resp.text)} 字节；"
+                   f"sha256 {'有' if sha_match else '缺失'}，"
+                   f"file {'有' if file_match else '缺失'}")
 
     # 没有校验值就必须拒绝安装：索引记录是信任的起点，缺了 sha256 就无法确认
     # 下载到的内容与索引声明的一致。HTTPS 只保护传输，不保护产物。
     if not sha_match:
-        print(f"{RED_BOLD}🌊 Error: No SHA256 checksum for {ParsePkgName}@{ParsePkgVersion}.{RESET}")
-        print(f"{RED_BOLD}🌊 Without it the download cannot be verified; refusing to install.{RESET}")
-        print(f"{RED_BOLD}🌊 This is a data defect; please report it to the administrator.{RESET}")
-        sys.exit(1)
+        steplog.fail(
+            f"{ParsePkgName}@{ParsePkgVersion} 的版本记录里没有 sha256",
+            request=pkg_version_url,
+            extra=resp.text.strip()[:400],
+            hint=["没有校验值就无法确认下载内容与索引一致，因此拒绝安装",
+                  "HTTPS 只保护传输，不保护产物 —— 这是索引数据缺陷，请联系管理员"])
 
     ParsePkgSHA256 = sha_match.group(1)
 
     if not re.fullmatch(r"[0-9a-f]{64}", ParsePkgSHA256):
-        print(f"{RED_BOLD}🌊 Error: Malformed SHA256 checksum for {ParsePkgName}@{ParsePkgVersion}.{RESET}")
-        print(f"{RED_BOLD}🌊 Expected 64 lowercase hexadecimal characters; refusing to install.{RESET}")
-        sys.exit(1)
+        steplog.fail(
+            f"{ParsePkgName}@{ParsePkgVersion} 的 sha256 格式不对",
+            request=pkg_version_url,
+            extra=f"读到的是 {ParsePkgSHA256!r}",
+            hint="应为 64 位小写十六进制；这是索引数据缺陷，请联系管理员")
 
     # 5.1 解析 deps 字段（写在版本文件里，可能多行），缺失视为无依赖
     dep_refs = get_deps(parse_common_fields(resp.text))
@@ -621,6 +719,7 @@ def handle_install(input_string):
     #    4.0 从 GHCR 取（一个包一个仓库名，版本即 tag，架构在 OCI index 里），
     #    url 字段全程不读 —— 它留着是给人和 2.x-3.x 看的上游线索。
     #    唯一的例外是 --install-from-source：绕开 registry 直接装上游那份。
+    steplog.begin("选择产物位置")
     payload = domains.resolve_payload(
         "bottle", ParsePkgName, ParsePkgVersion, ARCH,
         upstream_filename=file_match.group(1) if file_match else "",
@@ -629,8 +728,14 @@ def handle_install(input_string):
 
     # 文件名会被当路径用，来自远端数据，必须过白名单
     original_filename = require_safe_filename(payload["filename"], "file name")
+    steplog.detail(f"上游文件 {file_match.group(1) if file_match else '(无 file 字段)'}")
+    steplog.detail(f"落盘文件 {original_filename}")
+    steplog.detail(f"来源 {domains.redact_url(payload['url'])}")
+    if dep_refs:
+        steplog.detail(f"依赖 {', '.join(dep_refs)}")
 
     # 7. 下载
+    steplog.begin("下载")
     DOWNLOAD_TMP.mkdir(parents=True, exist_ok=True)
     temp_path = DOWNLOAD_TMP / f"{original_filename}.partial"
     assert_inside(temp_path, DOWNLOAD_TMP, "download path")
@@ -643,8 +748,11 @@ def handle_install(input_string):
     temp_path.rename(final_download_path)
 
     # 9. 拼接长字符串并传给 pkginstaller.sh（同时带上依赖列表）
+    steplog.begin("校验与安装")
+    steplog.detail("解压、校验 sha256、落盘、重定位 Mach-O 由 pkginstaller.sh 完成")
     target_dir = BASE_DIR / "bin" / f"{bin_name}@{ParsePkgVersion}"
     assert_inside(target_dir, BASE_DIR / "bin", "install target")
+    steplog.detail(f"目标目录 {target_dir}")
     pkg_info_string = "\n".join([
         ParsePkgName,
         ParsePkgVersion,
@@ -666,18 +774,25 @@ def handle_install(input_string):
         if result.stdout.strip():
             print(result.stdout.strip())
         if result.returncode != 0:
-            sys.exit(result.returncode)
+            steplog.fail(
+                "安装 shell 阶段失败（解压 / 校验 / 落盘）",
+                extra=(result.stdout or "").strip()[-800:],
+                hint=["上面是 pkginstaller.sh 的输出，多半能直接看出原因",
+                      "若卡在 sha256，说明镜像内容与索引不一致，请联系管理员"])
     except Exception as e:
-        print(f"{RED_BOLD}🌊 Error: Failed to invoke shell script: {e}{RESET}")
-        sys.exit(1)
+        steplog.fail("无法运行 pkginstaller.sh", extra=str(e),
+                     hint="确认安装目录完整；重装可用官方安装脚本")
 
     # 10. 安装依赖（递归处理依赖的依赖，进度条与软件包一致）
     if dep_refs:
+        steplog.begin("安装依赖")
+        steplog.detail(f"共 {len(dep_refs)} 个依赖")
         install_dependencies(dep_refs, ARCH, config, input_string,
                              ("pkg", bin_name, ParsePkgVersion))
 
     # 11. 路径替换：依赖与软件包都就位后统一做一遍
     #     （必须放最后：先装的依赖可能引用后装的依赖，提前替换会解析不到）
+    steplog.begin("重定位与链接")
     transfer_installed_artifacts(target_dir)
 
     # 12. 把不带版本号的软链接指到刚装好的版本（--unlink 可跳过）

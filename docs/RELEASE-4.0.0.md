@@ -70,6 +70,95 @@ wave install jq --install-from-source
 
 仅提供长参数形式：现有短字母已被占用，且短选项一经公布便难以收回。
 
+### 包名支持非 ASCII 字符
+
+3.x 的名称校验是一张 ASCII 白名单，只接受字母、数字与 `. _ + -`。这带来两个后果：
+中文与带重音的包名一律无法安装；而 4.0 的落盘名采用 `<名字>@<版本>.<架构><扩展名>`，
+其中的 `@` 同样不在白名单内，使**所有**软件包都停在 `Unsafe file name` 处失败。
+
+4.0 改为按 Unicode 类别判定：字母（含中文所属的 `Lo` 类）、组合符号与数字放行，
+路径分隔符、空白、控制字符与 shell 元字符则因类别不符而始终被拒。
+
+防逃逸并不依赖字符表，而依赖落盘前的路径包含检查：任何目标路径在解析 `..` 与软链接
+之后必须仍位于安装目录之内，否则立即终止。字符规则只负责尽早给出清晰的报错。
+因此 `wave install ../../../etc/passwd` 这类输入在两处都会被拦下：
+
+| 输入 | 拦截位置 |
+| --- | --- |
+| `../../../etc/passwd` | 字符规则（`/` 非字母数字） |
+| `..%2f..%2fetc%2fpasswd` | 字符规则（`%` 非字母数字） |
+| `a／b`（全角斜线） | 字符规则（标点类别） |
+| `jq\n/etc/passwd` | 字符规则（控制字符，会破坏传给 shell 的换行分隔协议） |
+| 字符规则被绕过时 | 路径包含检查（解析软链接后比对安装目录） |
+
+名称同时受 128 字符与 200 字节双重限制。`NAME_MAX` 为 255 字节，而单个非 ASCII 字符
+最多占 4 字节，仅限制字符数会让较长的中文名在写入时才失败。
+
+### `-v` 逐步说明「从哪里取、做了什么」
+
+`-v` 原先只在个别分支打印内部变量。现在整条安装流程划分为 11 个步骤，`-v` 逐步列出
+实际使用的地址与判定结果：
+
+```
+🌊 [1/11] 解析命令行
+      · 参数 wave install jq -v
+      · 安装目录 ~/.local/macwave
+      --- 数据来源 ---
+      · api         环境变量  https://…/MacWave/infosource（含凭据）
+      · bottle      环境变量  https://…/MacWave/bottle（含凭据）
+      · deps        默认值  https://github.com/MacWaveOrg/Deps/releases/download
+      · core        默认值  https://raw.githubusercontent.com/MacWaveOrg/MacWave
+      …
+🌊 [4/11] 获取版本清单
+      · 清单来源：镜像自备 https://…/pkg/pkginfo_arm64/jq/versions
+      · 清单里 1 个版本，取最高 1.8.2
+🌊 [7/11] 选择产物位置
+      · 上游文件 jq-macos-arm64
+      · 落盘文件 jq@1.8.2.arm64
+      · 来源 https://…/bottle/jq/jq%401.8.2.arm64
+```
+
+「数据来源」一栏把每个域名的实际取值、来自环境变量还是默认值、是否携带凭据一并列出，
+据此可以判断某次安装究竟走了镜像，还是回落到官方地址。
+
+失败时的输出以定位问题为目的，无需阅读代码：步骤编号、请求地址、服务端响应与
+下一步建议会一并打印。**这部分信息不加 `-v` 也会输出**，`-v` 只是额外提供成功路径的
+过程细节。
+
+```
+🌊 Error: 取不到 jq 的版本清单
+🌊 请求   https://…/MacWave/infosource/pkg/pkginfo_arm64/jq/versions
+🌊 响应   HTTP 404
+🌊 位置   第 4/11 步（获取版本清单）
+🌊 下一步 确认镜像上有这个包：`wave search jq`
+🌊        确认 MACWAVE_API_DOMAIN 指向 <镜像>/MacWave/infosource
+```
+
+所有打印的地址都经过脱敏，`user:pass@` 中的密码以 `***` 代替，即使在 `-v` 下也不会
+写入终端或工单。
+
+### 帮助信息重新排版
+
+帮助中的各列原为手写空格对齐，标签长度一变即错位（实测各区块的描述起始列在 34 至 52
+之间不等）；同属旗标，颜色亦不统一（`-h, --help` 为绿色，`--proxy` 为青色）。
+
+现在按每个区块内最宽的标签计算列宽，并统一着色规则：命令名绿色、旗标青色、
+`<值>` 占位符黄色。
+
+`wave upgrade` 的旧版本清理选项统一显示为 `-X, --remove-old-versions`。单数写法
+`--remove-old-version` 与缩写 `--rov` 仍然可用，只是不再出现在帮助中，以免同一功能
+以四种写法并列展示。
+
+---
+
+## 修复的问题
+
+| 问题 | 影响 | 原因 |
+| --- | --- | --- |
+| 所有软件包均无法安装 | 阻断性 | 文件名白名单不含 `@`，而 4.0 的落盘名形如 `jq@1.8.2.arm64` |
+| 错误信息可能泄露凭据 | 安全 | 校验失败时直接打印了未经脱敏的域名原值 |
+| 带凭据的明文 HTTP 被误拒 | 测试环境 | 判断回环地址时未先剥离 `user:pass@`，取到的是用户名而非主机 |
+
 ---
 
 ## 数据格式的变更（不影响 3.x）
@@ -143,6 +232,38 @@ url: "https://github.com/…"     # 保留，但 4.0 不读
 
 国内用户可以先把变量写在同一条命令前面（详见 [MIRROR-SETUP.md](./MIRROR-SETUP.md)）。
 
+### 从 4.0.0 手动更新
+
+已装 4.0.0 的机器在 Selfupdate 数据指向本版之前，无法通过 `wave selfupdate` 获得上述
+变更。可手工覆盖下列文件（路径相对于安装目录，用户级默认为 `~/.local/macwave`，
+系统级为 `/opt/macwave`）：
+
+| 文件 | 变更 |
+| --- | --- |
+| `lib/steplog.py` | **新增**：步骤追踪与失败定位 |
+| `lib/configpaths.py` | 按 Unicode 类别校验、文件名白名单、字节上限 |
+| `lib/domains.py` | 接入追踪、错误信息脱敏、回环地址判断修正 |
+| `lib/help.py` | 帮助重新排版与统一着色 |
+| `pkg/pkginstaller.py` | `-v` 步骤接线、失败定位、文件名校验 |
+| `surfboard/depsinstaller.py` | 依赖下载的文件名校验 |
+
+```bash
+D=~/.local/macwave
+cp lib/steplog.py lib/configpaths.py lib/domains.py lib/help.py "$D/lib/"
+cp pkg/pkginstaller.py "$D/pkg/"
+cp surfboard/depsinstaller.py "$D/surfboard/"
+find "$D" -name __pycache__ -type d -prune -exec rm -rf {} +
+```
+
+最后一步不可省略：Python 会优先加载时间戳相符的字节码缓存，覆盖源文件后若不清理，
+可能仍运行旧模块。
+
+覆盖前建议先备份，出现问题时按原路径还原即可：
+
+```bash
+cp -R "$D/lib" "$D/pkg" "$D/surfboard" ~/macwave-backup/
+```
+
 ---
 
 ## 已知限制
@@ -167,11 +288,30 @@ url: "https://github.com/…"     # 保留，但 4.0 不读
 镜像站是一棵纯静态文件树，`nginx`、对象存储或任意文件服务器均可承载，
 无需数据库，亦无需专用软件。完整步骤参见 [MIRROR-SETUP.md](./MIRROR-SETUP.md)。
 
-### 版本列表依赖的索引清单尚未生成
+### 版本列表依赖的索引清单
 
 启用镜像后，「列出版本」改读镜像自备的 `versions` 清单。该清单未包含在 `infosource`
-仓库中，需另行生成；在此之前，镜像环境下的 `wave search`、`info`、`upgrade`
-无法列出可用版本，指定版本安装（如 `wave install jq@1.8.2`）不受影响。
+仓库中，需由镜像方生成：
+
+```bash
+python3 scripts/build_versions_index.py \
+    --infosource <infosource 检出目录> \
+    --mirror <镜像根目录>
+```
+
+脚本以镜像里**实际存在**的产物为准，只登记真实可取到的版本。索引中有 12 条记录
+在镜像里没有对应产物（见「本版随附的数据」），它们不会出现在清单里 —— 若登记进去，
+用户会解析出一个装不上的版本，直到下载阶段才收到 404，报错位置离原因太远。
+
+生成物为每架构一份包名清单，以及每个包一份版本清单：
+
+```
+pkg/pkginfo_<架构>/versions            一行一个包名
+pkg/pkginfo_<架构>/<包名>/versions      一行一条版本记录（_jq@1.8.2）
+deps/depsinfo_<架构>/…                同形态
+```
+
+脚本先清理旧清单再写入新清单，因此镜像中删除的产物会同步从清单消失。
 
 ---
 

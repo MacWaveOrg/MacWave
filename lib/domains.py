@@ -27,6 +27,8 @@ import os
 import sys
 from urllib.parse import quote
 
+import steplog
+
 
 # -------------------- 颜色定义 --------------------
 
@@ -78,7 +80,8 @@ LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1", "[::1]")
 # -------------------- 校验 --------------------
 
 def _fail(kind, message):
-    print(f"{RED_BOLD}🌊 Error: {ENV_NAME[kind]}: {message}{RESET}")
+    # 这里的消息会进终端与工单，凭据必须脱敏 —— 原值只在 redact_url 之后才打印
+    print(f"{RED_BOLD}🌊 Error: {ENV_NAME[kind]}: {redact_url(message)}{RESET}")
     print(f"{RED_BOLD}🌊 It should look like https://mirror.example.com/macwave "
           f"({DESCRIPTION[kind]}).{RESET}")
     sys.exit(1)
@@ -99,9 +102,12 @@ def _validate(kind, value):
     if scheme in ALLOWED_SCHEMES:
         return value
 
-    # 明文 http 只给本机镜像（测试、离线环境）；远处的镜像必须走 https
+    # 明文 http 只给本机镜像（测试、离线环境）；远处的镜像必须走 https。
+    # 先剥掉 user:pass@ 再看主机 —— 否则带凭据时 split(":")[0] 拿到的是用户名。
+    # 用 rpartition：没有 @ 时第三段才是原串（partition 会给空串）。
     if scheme == "http":
-        host = rest.split("/")[0].split(":")[0]
+        authority = rest.rpartition("@")[2]
+        host = authority.split("/")[0].split(":")[0]
         if host in LOOPBACK_HOSTS:
             return value
         _fail(kind, f"plain HTTP is only allowed for loopback mirrors: {value!r}")
@@ -177,9 +183,13 @@ def index_list_url(arch, package_name=None):
         path = f"{path}/{package_name}"
 
     if is_custom("api"):
-        return f"{api_domain()}/{path}/versions"
+        url = f"{api_domain()}/{path}/versions"
+        steplog.detail(f"清单来源：镜像自备 {redact_url(url)}")
+        return url
 
-    return f"https://api.github.com/repos/MacWaveOrg/infosource/contents/{path}?ref=main"
+    url = f"https://api.github.com/repos/MacWaveOrg/infosource/contents/{path}?ref=main"
+    steplog.detail("清单来源：GitHub API（未设 MACWAVE_API_DOMAIN）")
+    return url
 
 
 def listing_names(text, dirs_only=False):
@@ -281,10 +291,9 @@ def resolve_payload(kind, name, version, arch, upstream_filename, upstream_url, 
     #                              读 url，直接回上游取，按 URL 末段命名。
     if from_source:
         if not upstream_url:
-            print(f"{RED_BOLD}🌊 Error: --install-from-source needs the url field, "
-                  f"but {name}@{version} has none.{RESET}")
-            print(f"{RED_BOLD}🌊 This is a data defect; please report it to the administrator.{RESET}")
-            sys.exit(1)
+            steplog.fail(
+                f"{name}@{version} 没有 url 字段，无法 --install-from-source",
+                hint="这是索引数据缺陷，请联系管理员；去掉 --install-from-source 可改走镜像。")
 
         if not upstream_url.startswith("https://"):
             if upstream_url.startswith("http://"):
