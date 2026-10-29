@@ -1427,7 +1427,7 @@ def phase_max_time_forms(wave, checks):
     for form in MAX_TIME_FORMS:
         label = f"wave install --max-time={form}（缺包名）"
         result = wave.run(["install", f"--max-time={form}"], timeout=60)
-        expect(checks, result, 1, label, must_contain=("Invalid package name",),
+        expect(checks, result, 1, label, must_contain=("no package name",),
                must_not_contain=("cannot parse", "Traceback"))
 
     for form in MAX_TIME_ILLEGAL_FORMS:
