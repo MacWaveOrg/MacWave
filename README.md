@@ -315,6 +315,20 @@ cd macwave
 
 Read the section below before running anything from that directory.
 
+### Branch From the Latest Release
+
+Start every new piece of work from the newest release branch (currently `4.1`),
+not from an older one:
+
+```bash
+git switch -c 4.2 4.1
+```
+
+Older branches stay where they are — they are missing later fixes, so branching
+off one reintroduces bugs that were already solved. Release order and branch
+policy are written up in
+[`docs/RELEASE-CHECKLIST.md`](./docs/RELEASE-CHECKLIST.md).
+
 ### Do Not Run From the Clone
 
 This repository is source, not an installation. Running `wave` from inside the
