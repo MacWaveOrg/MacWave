@@ -184,11 +184,11 @@ def index_list_url(arch, package_name=None):
 
     if is_custom("api"):
         url = f"{api_domain()}/{path}/versions"
-        steplog.detail(f"清单来源：镜像自备 {redact_url(url)}")
+        steplog.detail(f"listing source: mirror-provided {redact_url(url)}")
         return url
 
     url = f"https://api.github.com/repos/MacWaveOrg/infosource/contents/{path}?ref=main"
-    steplog.detail("清单来源：GitHub API（未设 MACWAVE_API_DOMAIN）")
+    steplog.detail("listing source: GitHub API (MACWAVE_API_DOMAIN not set)")
     return url
 
 
@@ -292,8 +292,8 @@ def resolve_payload(kind, name, version, arch, upstream_filename, upstream_url, 
     if from_source:
         if not upstream_url:
             steplog.fail(
-                f"{name}@{version} 没有 url 字段，无法 --install-from-source",
-                hint="这是索引数据缺陷，请联系管理员；去掉 --install-from-source 可改走镜像。")
+                f"{name}@{version} has no url field, so --install-from-source cannot work",
+                hint="this is an index data defect; drop --install-from-source to use the mirror")
 
         if not upstream_url.startswith("https://"):
             if upstream_url.startswith("http://"):

@@ -97,41 +97,42 @@ wave install jq --install-from-source
 ### `-v` 逐步说明「从哪里取、做了什么」
 
 `-v` 原先只在个别分支打印内部变量。现在整条安装流程划分为 11 个步骤，`-v` 逐步列出
-实际使用的地址与判定结果：
+实际使用的地址与判定结果。过程行使用深蓝色（不使用暗淡效果——灰色在多数深色终端主题下
+难以辨认），全部输出为英文，便于跨语言协作与检索：
 
 ```
-🌊 [1/11] 解析命令行
-      · 参数 wave install jq -v
-      · 安装目录 ~/.local/macwave
-      --- 数据来源 ---
-      · api         环境变量  https://…/MacWave/infosource（含凭据）
-      · bottle      环境变量  https://…/MacWave/bottle（含凭据）
-      · deps        默认值  https://github.com/MacWaveOrg/Deps/releases/download
-      · core        默认值  https://raw.githubusercontent.com/MacWaveOrg/MacWave
+[1/11] parse command line
+      - args wave install jq -v
+      - install dir ~/.local/macwave
+      --- data sources ---
+      - api          env      https://…/MacWave/infosource (with credentials)
+      - bottle       env      https://…/MacWave/bottle (with credentials)
+      - deps         default  https://github.com/MacWaveOrg/Deps/releases/download
+      - core         default  https://raw.githubusercontent.com/MacWaveOrg/MacWave
       …
-🌊 [4/11] 获取版本清单
-      · 清单来源：镜像自备 https://…/pkg/pkginfo_arm64/jq/versions
-      · 清单里 1 个版本，取最高 1.8.2
-🌊 [7/11] 选择产物位置
-      · 上游文件 jq-macos-arm64
-      · 落盘文件 jq@1.8.2.arm64
-      · 来源 https://…/bottle/jq/jq%401.8.2.arm64
+[4/11] fetch version list
+      - listing source: mirror-provided https://…/pkg/pkginfo_arm64/jq/versions
+      - 1 version(s) listed, highest is 1.8.2
+[7/11] choose payload
+      - upstream file jq-macos-arm64
+      - stored file jq@1.8.2.arm64
+      - source https://…/bottle/jq/jq%401.8.2.arm64
 ```
 
-「数据来源」一栏把每个域名的实际取值、来自环境变量还是默认值、是否携带凭据一并列出，
-据此可以判断某次安装究竟走了镜像，还是回落到官方地址。
+data sources 一栏把每个域名的实际取值、来自环境变量（`env`）还是内置默认值（`default`）、
+是否携带凭据一并列出，据此可以判断某次安装究竟走了镜像，还是回落到官方地址。
 
 失败时的输出以定位问题为目的，无需阅读代码：步骤编号、请求地址、服务端响应与
 下一步建议会一并打印。**这部分信息不加 `-v` 也会输出**，`-v` 只是额外提供成功路径的
 过程细节。
 
 ```
-🌊 Error: 取不到 jq 的版本清单
-🌊 请求   https://…/MacWave/infosource/pkg/pkginfo_arm64/jq/versions
-🌊 响应   HTTP 404
-🌊 位置   第 4/11 步（获取版本清单）
-🌊 下一步 确认镜像上有这个包：`wave search jq`
-🌊        确认 MACWAVE_API_DOMAIN 指向 <镜像>/MacWave/infosource
+🌊 Error: cannot read the version list for jq
+🌊 Request   https://…/MacWave/infosource/pkg/pkginfo_arm64/jq/versions
+🌊 Response  HTTP 404
+🌊 At        step 4/11 (fetch version list)
+🌊 Next      check the package exists: `wave search jq`
+🌊           check MACWAVE_API_DOMAIN points at <mirror>/MacWave/infosource
 ```
 
 所有打印的地址都经过脱敏，`user:pass@` 中的密码以 `***` 代替，即使在 `-v` 下也不会
