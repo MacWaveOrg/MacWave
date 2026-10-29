@@ -141,6 +141,86 @@ pkg/pkginfo_<架构>/<包名>/versions        一行一条版本记录文件名
 
 ---
 
+## 三点五、LinuxWave 已经落地的形态（实测，可直接对照）
+
+这一节记录 2026-10-29 实际做出来的样子，后面的产品照这个抄就行。
+
+### 存放仓库
+
+与 MacWave 完全同构：**资产放 Release，不放仓库文件**（git 单文件 100 MiB 上限）。
+
+| 仓库 | Release 数 | 资产数 | 体积 |
+| --- | --- | --- | --- |
+| `LinuxWaveOrg/Bottle` | 23 | 69 | 493.3 MB |
+| `LinuxWaveOrg/Deps` | 15 | 30 | 93.6 MB |
+
+```
+tag    = 包名
+资产名 = <包名>@<版本>.<架构><扩展名>
+```
+
+### 扩展名不统一，这是重点
+
+`infosource` 里 99 条记录的实际格式分布：
+
+| 后缀 | 条数 | 说明 |
+| --- | --- | --- |
+| `.tar.bz2` | 38 | conda 归档为主 |
+| `.tar.gz` | 35 | GitHub Release 上游 |
+| `.conda` | 14 | conda-forge 新格式 |
+| `.zip` | 4 | |
+| **无扩展名** | 8 | 裸可执行文件：`jq-linux-amd64`、`yq_linux_arm64` 等 |
+
+所以 `file` 字段是**必需**的：只看 `url` 无法判断 `ldid_linux_x86_64` 是压缩包还是裸二进制。
+判断扩展名要用与客户端**同一份**后缀表，别自己拍脑袋 —— 漏掉 `.conda` 会让 14 个包
+的落盘名少一截，解压器选错。
+
+### 上游来源与可达性
+
+99 条里 45 个来自 GitHub Release、52 个来自 conda（`repo.continuum.io` / `conda.anaconda.org`）、
+2 个来自第三方（`ffmpeg.martin-riedl.de`）。
+
+从**国内机器**实测：
+
+| 主机 | 直连 |
+| --- | --- |
+| `github.com`、`raw.githubusercontent.com` | ❌ 连不上 |
+| `conda.anaconda.org`、`repo.continuum.io` | ✅ 可下 |
+| `ffmpeg.martin-riedl.de` | ❌ 传输中被重置 |
+
+GitHub 那 45 个走 `gh api -H "Accept: application/octet-stream"` 取，实测下载后 sha256
+与索引一致。第三方那个只能在有代理的机器上取。
+
+### 落盘形状
+
+```
+/www/wwwroot/mirror.repohub.top/LinuxWave/
+├── bottle/<包名>/<包名>@<版本>.<架构><扩展名>     69 个
+└── deps/<包名>/<包名>@<版本>.<架构><扩展名>       30 个
+```
+
+与客户端的 `<LINUXWAVE_BOTTLE_DOMAIN>/<包>/<文件>` 拼接规则一一对应。
+
+### 灌数据的流程（可复现）
+
+1. 拉 `infosource`，解析每条记录的 `sha256` / `url`；
+2. 按来源分流：GitHub 走 `gh api`，conda 走 `curl`；
+3. 每个文件下完立刻比对索引里的 `sha256`，不一致就丢弃并记账；
+4. 以 `<包名>@<版本>.<架构><扩展名>` 命名，推进 `Bottle` / `Deps` 的 Release；
+5. 上传后再从远端回读抽样校验，确认字节没被中间环节改坏；
+6. 按同样的树铺到镜像站，服务器端再跑一遍全量 sha256。
+
+**每一步都校验，且都留可重跑的命令** —— 588 MB 传一半断掉是常态。
+
+### 两个已踩过的坑
+
+| 坑 | 症状 | 处理 |
+| --- | --- | --- |
+| 记录名 `_tree@2.2.1` 已含包名，再拼 `<包名>@` 得到 `tree@tree@2.2.1.arm64` | 71 个文件全错名 | 资产名一律用 `记录名.架构+后缀`，不要重复拼包名 |
+| macOS 自带 `openrsync` 不支持 `--chown`，`bash 3.2` 在 UTF-8 locale 下 `$var` 紧贴中文会吞字节 | `arch?: unbound variable`、`RSYNC_CHOWN[@]: unbound variable` | `--chown` 先探测再决定；变量一律写 `${var}`；空数组不要直接展开 |
+
+---
+
 ## 四、接入步骤
 
 ### 第 1 步：镜像站建目录
