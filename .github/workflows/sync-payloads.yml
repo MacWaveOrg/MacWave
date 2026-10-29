@@ -99,6 +99,7 @@ jobs:
             --out staging \
             --kinds "${{ steps.opts.outputs.kinds }}" \
             --only "${{ steps.opts.outputs.only }}" \
+            --skip "test_001,test_no_sha256,test_wrong_sha256,ldid" \
             --jobs 6
 
       - name: Show what was fetched
@@ -126,6 +127,7 @@ jobs:
             --out verified \
             --kinds "${{ steps.opts.outputs.kinds }}" \
             --only "${{ steps.opts.outputs.only }}" \
+            --skip "test_001,test_no_sha256,test_wrong_sha256,ldid" \
             --source payload \
             --jobs 4
 
