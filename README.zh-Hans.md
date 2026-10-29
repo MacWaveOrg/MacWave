@@ -159,7 +159,7 @@ source ~/.zshrc
 
 ### 受信任用户专用镜像
 
-除了自己搭，还有一个**由项目维护的国内镜像**，只对受信任的用户开放，地址不公开。
+除了自己搭，还有一个**由项目维护的国内镜像**，地址列在 [macwave.org](https://macwave.org) 的「镜像站」一栏。账号只发给受信任的用户。
 需要的话写信给 [hi@macwave.org](mailto:hi@macwave.org?subject=申请%20MacWave%20镜像账号) 索取账号和密码。
 
 账号是一组用户名 + 密码，直接写进 URL：
