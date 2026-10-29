@@ -36,8 +36,29 @@ KIND_REPO = {
 }
 
 
+# GitHub 的写接口偶尔会返回 5xx 或 429。一次 30 分钟的任务不该被这种抖动整个打死：
+# 发布本身是幂等的（同名资产不覆盖、已存在就跳过），所以重试是安全的。
+TRANSIENT_MARKERS = ("HTTP 500", "HTTP 502", "HTTP 503", "HTTP 504", "HTTP 429")
+RUN_ATTEMPTS = 5
+
+
 def run(args, check=True):
-    result = subprocess.run(args, capture_output=True, text=True)
+    import time
+
+    result = None
+    for attempt in range(1, RUN_ATTEMPTS + 1):
+        result = subprocess.run(args, capture_output=True, text=True)
+        if not check or result.returncode == 0:
+            return result
+
+        transient = any(marker in result.stderr for marker in TRANSIENT_MARKERS)
+        if not transient or attempt == RUN_ATTEMPTS:
+            break
+        delay = 2 ** attempt
+        print(f"  ↩ {args[1] if len(args) > 1 else args[0]} returned a transient error; "
+              f"retrying in {delay}s ({attempt}/{RUN_ATTEMPTS - 1})")
+        time.sleep(delay)
+
     if check and result.returncode != 0:
         raise RuntimeError(f"{' '.join(args)}\n{result.stderr.strip()}")
     return result
