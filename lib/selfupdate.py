@@ -79,19 +79,26 @@ def fetch_text(url, timeout=FETCH_TIMEOUT):
 
 
 def fetch_version_data(timeout=FETCH_TIMEOUT):
-    return fetch_text(domains.selfupdate_version_url(), timeout)
+    return fetch_text(domains.selfupdate_latest_url(), timeout)
 
 
-def run_script(url, environment, fetch_timeout, overall_timeout):
-    # 4.0 的更新脚本按版本冻结在自更新仓库里。先落到临时文件再执行，
-    # 而不是 `bash -c "$(curl ...)"`：这样脚本里的行号与 ${BASH_SOURCE[0]} 都还有意义，
-    # 出错时能看到具体哪一行，不必再靠猜。
-    print(f"🌊 Fetching the update script for this version...")
+def run_script(environment, overall_timeout):
+    # 编排脚本（lib/selfupdate.sh）随安装树一起发布，文件下载由它再去取
+    # macwavedata/<版本>/update_commands.sh 完成。
+    #
+    # **必须从临时副本执行**：更新过程会覆盖 lib/selfupdate.sh 自己，而 bash 是
+    # 边读边执行的，被覆盖的正文会让运行中的脚本读到半截内容。复制一份再跑，
+    # 覆盖就发生在「已经读完的副本」之外，不影响本次执行。
+    source = os.path.join(os.path.dirname(os.path.abspath(__file__)), "selfupdate.sh")
 
-    text = fetch_text(url, fetch_timeout)
-    if text is None:
-        print(f"{RED_BOLD}🌊 Error: Cannot fetch the update script.{RESET}")
-        print(f"{RED_BOLD}🌊 {url}{RESET}")
+    print("🌊 Preparing the update script for this version...")
+
+    try:
+        with open(source, encoding="utf-8") as stream:
+            text = stream.read()
+    except OSError:
+        print(f"{RED_BOLD}🌊 Error: Cannot read the update script.{RESET}")
+        print(f"{RED_BOLD}🌊 {source}{RESET}")
         sys.exit(1)
 
     handle, path = tempfile.mkstemp(prefix="macwave-selfupdate-", suffix=".sh")
@@ -106,30 +113,14 @@ def run_script(url, environment, fetch_timeout, overall_timeout):
             pass
 
 
-def parse_version_data(text):
-    # 字段写法与 infosource 数据一致：`field: "value"`。
-    # update_command 是例外，它的值写在 <<< 和 >>> 之间，可以跨行。
-    fields = {}
-
-    command_match = re.search(r'update_command:\s*<<<(.*?)>>>', text, re.DOTALL)
-    if command_match:
-        fields['update_command'] = command_match.group(1).strip()
-        text = text[:command_match.start()] + text[command_match.end():]
-
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-        key, separator, value = line.partition(':')
-        key = key.strip()
-        if not separator or not key:
-            continue
-        value = value.strip()
-        if len(value) >= 2 and value.startswith('"') and value.endswith('"'):
-            value = value[1:-1]
-        fields[key] = value
-
-    return fields
+def version_data(text):
+    # 4.0 的版本数据是 macwavedata/latest.toml，平铺的 key = "value"。
+    # 3.x 那种「冒号 + 可选 update_command 块」的格式随 files_info 一起退休了。
+    try:
+        return domains.parse_simple_toml(text)
+    except ValueError as error:
+        print(f"{RED_BOLD}🌊 Error: The version data is not valid TOML ({error}).{RESET}")
+        sys.exit(1)
 
 
 def version_key(value):
@@ -141,7 +132,7 @@ def version_key(value):
 
 
 def version_file():
-    # 配置目录可能在上一次升级里被迁移（见自更新数据仓库的 updatedata/），
+    # 配置目录可能在上一次升级里被迁移（见 update_commands.sh 里的迁移步骤），
     # 所以每次都重新解析一遍，不要用模块级常量。
     config_dir = find_config_dir()
     if config_dir is not None:
@@ -167,16 +158,17 @@ def handle_selfupdate(input_string=""):
         sys.exit(1)
 
     max_time_raw, timeout = max_time(input_string)
+    install_python_from_source = "--install-python-from-source" in input_string.split()
 
     print("🌊 Fetching the latest version...")
 
     text = fetch_version_data(timeout)
     if text is None:
         print(f"{RED_BOLD}🌊 Error: Cannot reach the MacWave version data.{RESET}")
-        print(f"{RED_BOLD}🌊 {domains.selfupdate_version_url()}{RESET}")
+        print(f"{RED_BOLD}🌊 {domains.selfupdate_latest_url()}{RESET}")
         sys.exit(1)
 
-    data = parse_version_data(text)
+    data = version_data(text)
     latest = data.get("version", "")
     if not latest:
         print(f"{RED_BOLD}🌊 Error: The version data has no 'version' field.{RESET}")
@@ -189,15 +181,6 @@ def handle_selfupdate(input_string=""):
         print(f"{GREEN}🌊 MacWave is already up to date (current: {current}).{RESET}")
         sys.exit(0)
 
-    print("🌊 Fetching the new version information")
-
-    # 3.x 的数据把整条更新命令写在 update_command 里；4.0 改成按版本冻结的脚本
-    # （selfupdate/selfupdate_<版本>.sh），数据里不再带命令。两种都认，先看字段。
-    command = data.get("update_command", "")
-    script_url = ""
-    if not command:
-        script_url = domains.selfupdate_script_url(latest, data.get("selfupdate_script", ""))
-
     if current:
         print(f"🌊 Updating MacWave from {current} to {latest}...")
     else:
@@ -209,9 +192,9 @@ def handle_selfupdate(input_string=""):
     environment["MACWAVE_UPDATE_VERSION"] = latest
     if data.get("branch"):
         environment["MACWAVE_UPDATE_BRANCH"] = data["branch"]
-    if data.get("files_info"):
-        # 4.0 每个版本一份文件清单；3.x 的数据没有这个字段，脚本自己回落到共用清单
-        environment["MACWAVE_UPDATE_FILES_INFO"] = data["files_info"]
+    if install_python_from_source:
+        # 解释器默认从我们自己的 Python 仓库取；这个开关让 selfupdate.sh 回上游取
+        environment["MACWAVE_INSTALL_PYTHON_FROM_SOURCE"] = "1"
     if max_time_raw:
         environment["MACWAVE_MAX_TIME"] = max_time_raw
 
@@ -220,11 +203,7 @@ def handle_selfupdate(input_string=""):
     overall_timeout = max(UPDATE_TIMEOUT, int(timeout) * 20)
 
     try:
-        if command:
-            result = subprocess.run(['/bin/bash', '-c', command], env=environment,
-                                    timeout=overall_timeout)
-        else:
-            result = run_script(script_url, environment, timeout, overall_timeout)
+        result = run_script(environment, overall_timeout)
     except subprocess.TimeoutExpired:
         print(f"{RED_BOLD}🌊 Error: The update command timed out.{RESET}")
         sys.exit(1)
@@ -233,7 +212,7 @@ def handle_selfupdate(input_string=""):
         print(f"{RED_BOLD}🌊 Error: The update command failed (exit code {result.returncode}).{RESET}")
         sys.exit(1)
 
-    # update_command 是 `bash -c "$(curl ...)"` 形式，curl 失败时 bash 仍然返回 0，
+    # 下载由 update_commands.sh 完成，它可能在某些路径上吞掉非零退出码，
     # 所以这里以 VERSION.json 的实际内容为准，避免误报成功
     final = installed_version()
     if not final or version_key(final) < version_key(latest):

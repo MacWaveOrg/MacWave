@@ -77,8 +77,8 @@ CORE_URL="$(mw_domain MACWAVE_CORE_DOMAIN "${MACWAVE_CORE_DOMAIN:-https://raw.gi
 # 自更新数据：版本号、文件清单、目录迁移脚本
 SELFUPDATE_URL="$(mw_domain MACWAVE_SELFUPDATE_DOMAIN "${MACWAVE_SELFUPDATE_DOMAIN:-https://raw.githubusercontent.com/MacWaveOrg/Selfupdate/main}")"
 # 自带 CPython 的清单
-# 解释器单独一个仓库（体积与发布节奏都和自更新数据不同）
-PYTHON_DATA_URL="$(mw_domain MACWAVE_PYTHON_DATA "${MACWAVE_PYTHON_DATA:-https://raw.githubusercontent.com/MacWaveOrg/Python/main}")"
+# 解释器单独一个仓库：体积（每架构约 26 MB）与发布节奏都和自更新数据不同
+PYTHON_DATA_URL="$(mw_domain MACWAVE_PYTHON_DOMAIN "${MACWAVE_PYTHON_DOMAIN:-https://raw.githubusercontent.com/MacWaveOrg/Python/main}")"
 
 # ==========================================
 # 版本号与代码分支（从自更新数据读取，不写死在脚本里）
@@ -88,29 +88,27 @@ PYTHON_DATA_URL="$(mw_domain MACWAVE_PYTHON_DATA "${MACWAVE_PYTHON_DATA:-https:/
 # 两者一起读，保证「下载的代码」和「写进 VERSION.json 的版本号」对应同一个版本。
 #
 # 格式是 TOML 的一个子集：平铺的 `key = "value"`，允许行尾 # 注释。
-# 用 sed 而不是引 TOML 解析器，因为客户端此刻还没有 Python 环境可用。
+# 这里用 sed 而不是引 TOML 解析器，因为此刻客户端还没有可用的 Python 环境。
 
-LATEST_VERSION_DATA="$(curl -fsSL --max-time 30 "$SELFUPDATE_URL/macwavedata/latest.toml" 2>/dev/null)"
+LATEST_DATA_URL="$SELFUPDATE_URL/macwavedata/latest.toml"
+LATEST_VERSION_DATA="$(curl -fsSL --max-time 30 "$LATEST_DATA_URL" 2>/dev/null)"
 
 read_toml_string() {
-    # read_toml_string <文本> <键>：取平铺的字符串值，去掉引号与行尾注释
+    # read_toml_string <文本> <键> —— 取平铺的字符串值，去掉引号与行尾注释
     printf '%s\n' "$1" \
         | sed -n "s/^[[:space:]]*$2[[:space:]]*=[[:space:]]*\"\([^\"]*\)\".*/\1/p" \
         | head -n 1
 }
 
-LATEST_VERSION="$(read_toml_string "$LATEST_VERSION_DATA" version)"
+MACWAVE_VERSION="$(read_toml_string "$LATEST_VERSION_DATA" version)"
 LATEST_BRANCH="$(read_toml_string "$LATEST_VERSION_DATA" branch)"
 
-if [[ -z "$LATEST_VERSION" || -z "$LATEST_BRANCH" ]]; then
+if [[ -z "$MACWAVE_VERSION" || -z "$LATEST_BRANCH" ]]; then
     echo -e "${RED_BOLD}🌊 Error: Cannot read the latest version from the self-update data.${RESET}" >&2
-    echo -e "${RED_BOLD}🌊   $SELFUPDATE_URL/macwavedata/latest.toml${RESET}" >&2
+    echo -e "${RED_BOLD}🌊   $LATEST_DATA_URL${RESET}" >&2
     echo -e "${RED_BOLD}🌊 Check your network or proxy, then run the installer again.${RESET}" >&2
     exit 1
 fi
-
-# install.sh 一路用 MACWAVE_VERSION 这个名字（迁移脚本、VERSION.json 都靠它）
-MACWAVE_VERSION="$LATEST_VERSION"
 
 BRANCH="$LATEST_BRANCH"
 BASE_URL="$CORE_URL/$BRANCH"
@@ -209,7 +207,7 @@ print_dir_menu() {
 CLI_SILENT=false
 CLI_DIR_OPTION=""
 CLI_CUSTOM_DIR=""
-# 默认从我们自己的仓库取解释器；这个开关让它回上游取（与 --install-from-source 同一思路）
+# 默认从我们自己的 Python 仓库取解释器；这个开关让它回上游取
 INSTALL_PYTHON_FROM_SOURCE=""
 
 usage() {
@@ -465,6 +463,156 @@ if ! bash -n "$UPDATE_COMMANDS_TMP" 2>/dev/null; then
 fi
 
 # ==========================================
+# 创建目录
+# ==========================================
+
+INSTALL_DIR="$BASE_DIR/bin"
+LINKS_DIR="$BASE_DIR/links"
+REPO_DIR="$BASE_DIR/pkg"
+SURFBOARD_DIR="$BASE_DIR/surfboard"
+LIB_DIR="$BASE_DIR/lib"
+DEPS_DIR="$BASE_DIR/deps"
+DOWNLOAD_DIR="$BASE_DIR/downloads/tmp"
+
+# 配置文件目录：装到系统目录（需要 sudo）时用 /opt/macwave_config，
+# 装到用户目录（无需 sudo）时用 ~/.config/macwave_config。
+# 读取时系统级优先，所以系统级 MacWave 总是盖过用户级的。
+if [[ "$NEED_SUDO" == "true" ]]; then
+    CONFIG_DIR="$SYS_ROOT/opt/macwave_config"
+else
+    CONFIG_DIR="$HOME/.config/macwave_config"
+fi
+CONFIG_FILE="$CONFIG_DIR/config.json"
+VERSION_FILE="$CONFIG_DIR/VERSION.json"
+
+MW_OPTIONAL_RESULT=""
+
+mw_try() {
+    # mw_try <命令...>：跑一个「失败也无所谓」的命令，stdout 存进 MW_OPTIONAL_RESULT。
+    # 失败时不惊动 ERR trap —— 否则用户会先看到「Installation did not finish」，
+    # 几百行之后再看到「Installation complete!」，比不提示更糟。
+    #
+    # 旗标必须在**命令替换的整个生命周期内**保持设置：`set -E` 让 ERR trap 传进
+    # 子 shell，而子 shell 退出时如果那条命令返回非零，trap 照样会响。所以赋值写进
+    # 本函数内部，而不是让调用方写 `X="$(mw_try ...)"`。
+    local output
+    MW_FAILURE_HANDLED=1
+    output="$("$@")" && MW_OPTIONAL_RESULT="$output" || MW_OPTIONAL_RESULT=""
+    unset MW_FAILURE_HANDLED
+    return 0
+}
+
+# 中途失败时给出明确指引。刻意**不自动删除**已下载的内容：升级安装时
+# 删掉安装树会把用户原有的可用安装一起毁掉，重跑安装器才是安全的做法。
+install_failed() {
+    local code=$?
+
+    # 有些失败是**预期之内**的：自带解释器取不到时会回落到系统 python3，
+    # 安装照常完成。那些地方用 mw_optional 包着，会临时立这个旗标，
+    # 于是这里不报「安装未完成」—— 否则用户看到的是「安装失败」接着
+    # 「Installation complete!」，比没有提示更糟。
+    if [[ -n "${MW_FAILURE_HANDLED:-}" ]]; then
+        return 0
+    fi
+
+    echo "" >&2
+    echo -e "${RED_BOLD}🌊 Installation did not finish (exit $code).${RESET}" >&2
+    echo "🌊 Nothing was removed. Files already downloaded may be left in:" >&2
+    echo "     ${BASE_DIR:-<not chosen yet>}" >&2
+    echo "     ${CONFIG_DIR:-<not chosen yet>}" >&2
+    echo "🌊 Fix the cause (network, permissions, disk space) and run the installer again;" >&2
+    echo "🌊 a repeated install overwrites what it downloaded and is safe to rerun." >&2
+}
+trap install_failed ERR
+
+run_cmd mkdir -p "$INSTALL_DIR"
+run_cmd mkdir -p "$LINKS_DIR"
+run_cmd mkdir -p "$REPO_DIR"
+run_cmd mkdir -p "$SURFBOARD_DIR"
+run_cmd mkdir -p "$LIB_DIR"
+run_cmd mkdir -p "$DEPS_DIR"
+run_cmd mkdir -p "$DOWNLOAD_DIR"
+run_cmd mkdir -p "$CONFIG_DIR"
+run_cmd chmod 755 "$CONFIG_DIR"
+
+# ==========================================
+# 写入配置文件
+# ==========================================
+
+run_cmd tee "$CONFIG_FILE" > /dev/null << EOF
+{
+  "base_dir": "$BASE_DIR"
+}
+EOF
+
+run_cmd tee "$VERSION_FILE" > /dev/null << EOF
+{
+  "version": "$MACWAVE_VERSION",
+  "components": {
+    "installer": "$MACWAVE_VERSION",
+    "parser": "$MACWAVE_VERSION"
+  }
+}
+EOF
+
+# ==========================================
+# 把所有权交还给当前真实用户
+# ==========================================
+
+if [[ "$NEED_SUDO" == "true" ]]; then
+    sudo chown -R "$CURRENT_USER": "$BASE_DIR"
+fi
+
+if [[ "$NEED_SUDO" == "true" ]]; then
+    sudo chown -R "$CURRENT_USER": "$CONFIG_DIR"
+fi
+run_cmd chmod 755 "$CONFIG_DIR"
+run_cmd chmod 644 "$CONFIG_FILE"
+run_cmd chmod 644 "$VERSION_FILE"
+
+echo "🌊 Configuration saved to $CONFIG_FILE"
+echo "🌊 Version saved to $VERSION_FILE"
+
+# ==========================================
+# 删除旧版 repo.json
+# ==========================================
+
+OLD_JSON="$REPO_DIR/repo.json"
+if [ -f "$OLD_JSON" ]; then
+    echo "🌊 Removing old repo.json (legacy format)..."
+    run_cmd rm -f "$OLD_JSON"
+fi
+
+# ==========================================
+# 清理旧版（2.1.0）遗留的平铺 bin/ 文件
+# ==========================================
+
+LEGACY_BINS=$(find "$INSTALL_DIR" -maxdepth 1 -type f 2>/dev/null || true)
+if [[ -n "$LEGACY_BINS" ]]; then
+    echo -e "${YELLOW}🌊 Removing files installed by an older version in $DISPLAY_DIR/bin:${RESET}"
+    while IFS= read -r legacy_file; do
+        echo -e "${YELLOW}    $(basename "$legacy_file")${RESET}"
+    done <<< "$LEGACY_BINS"
+    while IFS= read -r legacy_file; do
+        run_cmd rm -f "$legacy_file"
+    done <<< "$LEGACY_BINS"
+    echo -e "${YELLOW}🌊 ${BRANCH} keeps packages in bin/{name}@{version}/ directories.${RESET}"
+    echo -e "${YELLOW}🌊 Please reinstall the packages: wave install {name}${RESET}"
+fi
+
+# ==========================================
+# 检查动态库路径替换所需的工具
+# ==========================================
+
+if command -v otool > /dev/null 2>&1 && command -v install_name_tool > /dev/null 2>&1 && command -v codesign > /dev/null 2>&1; then
+    echo "🌊 Xcode Command Line Tools detected (otool / install_name_tool / codesign)."
+else
+    echo -e "${YELLOW}🌊 Warning: Xcode Command Line Tools not found.${RESET}"
+    echo -e "${YELLOW}🌊 Dependency libraries cannot be relocated, so some packages may fail to run.${RESET}"
+    echo "🌊 You can install them later with: xcode-select --install"
+fi
+
+# ==========================================
 # 执行更新脚本
 # ==========================================
 #
@@ -486,7 +634,6 @@ if ! bash "$UPDATE_COMMANDS_TMP"; then
     echo -e "${RED_BOLD}🌊 Nothing was recorded as installed. Fix the cause above, then run the installer again.${RESET}"
     exit 1
 fi
-
 
 # ==========================================
 # Python 运行环境（私有 venv + 启动器）
@@ -518,7 +665,7 @@ fi
 # 一次「系统 Python 从 3.14 升到 3.15，所有命令都报模块缺失」。
 #
 # 自带之后，「用哪个解释器」由 MacWave 自己决定，报错也就能稳定复现。
-# 数据来自 MACWAVE_PYTHON_DOMAIN 的 pythondata/latest_python，换版本不用改脚本。
+# 数据来自 MACWAVE_PYTHON_DOMAIN 的 pythondata/latest.toml，换版本不用改脚本。
 # 下载失败（网络问题）时回退到系统 python3，安装不会因此中断。
 
 portable_python_arch() {

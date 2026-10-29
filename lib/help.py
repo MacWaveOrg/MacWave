@@ -64,6 +64,7 @@ def print_custom_help():
     print(f"  {CYAN}--max-time{RESET} {YELLOW}string{RESET}     Timeout for each request (e.g., 40s, 1min, 1min20s, 2h)")
     print(f"  {CYAN}--ver{RESET} {YELLOW}string{RESET}          Install a specific version (install only; --ver=1.0 works too)")
     print(f"  {CYAN}--install-from-source{RESET}     Download from the upstream URL instead of MacWave's own store")
+    print(f"  {CYAN}--install-python-from-source{RESET} Same, for the bundled Python (install / selfupdate)")
     print()
     print(f"{PURPLE}Special Flags:{RESET}")
     print(f"  {GREEN}wave install <pkgname>@<version>{RESET}   Download certain version(s) of a package")
@@ -156,6 +157,8 @@ COMMAND_HELP = {
         "desc": "Update MacWave itself to the version published in the self-update repository.",
         "flags": [
             ("--max-time <string>", "Timeout for each request (40s, 1min, 1min20s, 2h; bare numbers are seconds)"),
+            ("--install-python-from-source", "Fetch the bundled Python from its upstream URL "
+                                             "instead of MacWave's own repository"),
         ],
         "examples": ["wave selfupdate", "wave selfupdate --max-time=2min"],
     },

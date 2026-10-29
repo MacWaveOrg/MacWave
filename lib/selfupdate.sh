@@ -4,7 +4,7 @@
 # Re-downloads every MacWave code file and refreshes VERSION.json in the
 # active config dir (/opt/macwave_config or ~/.config/macwave_config).
 # Invoked by `wave selfupdate` through the update_command field in
-# the self-update repository's versiondata/latest_version, or directly:
+# the self-update repository's macwavedata/latest.toml, or directly:
 #   bash lib/selfupdate.sh [branch]
 
 set -e
@@ -53,7 +53,7 @@ CORE_URL="$(mw_domain MACWAVE_CORE_DOMAIN "${MACWAVE_CORE_DOMAIN:-https://raw.gi
 SELFUPDATE_URL="$(mw_domain MACWAVE_SELFUPDATE_DOMAIN "${MACWAVE_SELFUPDATE_DOMAIN:-https://raw.githubusercontent.com/MacWaveOrg/Selfupdate/main}")"
 # 自带 CPython 的清单
 # 解释器单独一个仓库（体积与发布节奏都和自更新数据不同）
-PYTHON_DATA_URL="$(mw_domain MACWAVE_PYTHON_DATA "${MACWAVE_PYTHON_DATA:-https://raw.githubusercontent.com/MacWaveOrg/Python/main}")"
+PYTHON_DATA_URL="$(mw_domain MACWAVE_PYTHON_DOMAIN "${MACWAVE_PYTHON_DOMAIN:-https://raw.githubusercontent.com/MacWaveOrg/Python/main}")"
 
 # ==========================================
 # 每个请求的超时
@@ -122,6 +122,8 @@ fi
 
 BRANCH="${MACWAVE_UPDATE_BRANCH:-${1:-main}}"
 BASE_URL="$CORE_URL/$BRANCH"
+# 由 selfupdate.py 按 `wave selfupdate --install-python-from-source` 置位
+INSTALL_PYTHON_FROM_SOURCE="${MACWAVE_INSTALL_PYTHON_FROM_SOURCE:-}"
 # -------------------- 测试根（隔离） --------------------
 # MACWAVE_TEST 指向一个目录时，把它当作 /：HOME 和所有系统路径都挂到它下面，
 # 整条链路都落在那个目录里，完全不碰真实系统。
@@ -149,7 +151,15 @@ if [[ -n "${MACWAVE_TEST:-}" ]]; then
     echo "🌊 Test root: $SYS_ROOT"
 fi
 
-VERSION_DATA_URL="$SELFUPDATE_URL/versiondata/latest_version"
+VERSION_DATA_URL="$SELFUPDATE_URL/macwavedata/latest.toml"
+
+read_toml_string() {
+    # read_toml_string <文本> <键> —— 取平铺 TOML 的字符串值，去掉引号与行尾注释。
+    # 只用 sed 是因为此刻能保证存在的只有系统 sh 工具；Python 还没准备好。
+    printf '%s\n' "$1" \
+        | sed -n "s/^[[:space:]]*$2[[:space:]]*=[[:space:]]*\"\([^\"]*\)\".*/\1/p" \
+        | head -n 1
+}
 
 # 配置目录：系统级优先，其次用户级（与 lib/configpaths.py 的规则一致）
 # 迁移可能把配置搬到用户级位置，所以做成函数，迁移之后要再解析一次。
@@ -323,9 +333,8 @@ fi
 VERSION="${MACWAVE_UPDATE_VERSION:-}"
 
 if [[ -z "$VERSION" ]]; then
-    VERSION="$(fetch_text "$VERSION_DATA_URL" "$METADATA_TIMEOUT" \
-        | sed -n 's/^version:[[:space:]]*"\(.*\)"/\1/p' \
-        | head -n 1)" || true
+    VERSION_DATA="$(fetch_text "$VERSION_DATA_URL" "$METADATA_TIMEOUT")" || true
+    VERSION="$(read_toml_string "$VERSION_DATA" version)"
 fi
 
 if [[ -z "$VERSION" ]]; then
@@ -377,171 +386,61 @@ if [[ -n "$CURRENT_MAJOR" && -n "$TARGET_MAJOR" && "$CURRENT_MAJOR" != "$TARGET_
 fi
 
 # ==========================================
-# 版本目录结构变更迁移（updatedata/{版本号}）
+# 更新脚本（macwavedata/<版本>/update_commands.sh）
 # ==========================================
 #
-# 自更新仓库的 updatedata/{版本号}/dir_structure_change 只有**一个字符**：
-#     Y/y → 该版本改变了目录结构，执行同目录下的 transfer_commands 完成迁移
-#     N/n → 没有改变，跳过（文件不存在也按「没有改变」处理）
-# 目标版本号用这次要升级到的版本（上面刚确定的 $VERSION）。
-# 迁移可能把配置搬到用户级位置，所以执行完要重新解析一次配置目录。
-
-UPDATEDATA_URL="$SELFUPDATE_URL/updatedata/$VERSION"
-
-DIR_STRUCTURE_CHANGE="$(fetch_text "$UPDATEDATA_URL/dir_structure_change" "$METADATA_TIMEOUT" 2>/dev/null | tr -d '[:space:]')" || DIR_STRUCTURE_CHANGE=""
-
-if [[ "$DIR_STRUCTURE_CHANGE" == "Y" || "$DIR_STRUCTURE_CHANGE" == "y" ]]; then
-    echo -e "${YELLOW}🌊 Directory structure changed in $VERSION, running migration...${RESET}"
-
-    TRANSFER_COMMANDS="$(fetch_text "$UPDATEDATA_URL/transfer_commands" "$FILE_TIMEOUT" 2>/dev/null)" || TRANSFER_COMMANDS=""
-    if [[ -z "$TRANSFER_COMMANDS" ]]; then
-        echo -e "${RED_BOLD}🌊 Error: Cannot fetch the migration script for $VERSION.${RESET}"
-        echo -e "${RED_BOLD}🌊 Nothing was updated. Check your network, then try again.${RESET}"
-        exit 1
-    fi
-
-    # 把当前安装的位置与配置目录告诉迁移脚本，由它自己判断该不该搬
-    export MACWAVE_INSTALL_DIR="$BASE_DIR"
-    export MACWAVE_CONFIG_DIR="$CONFIG_DIR"
-    export MACWAVE_TARGET_VERSION="$VERSION"
-
-    if ! bash -c "$TRANSFER_COMMANDS"; then
-        echo -e "${RED_BOLD}🌊 Error: The migration for $VERSION failed.${RESET}"
-        echo -e "${RED_BOLD}🌊 Nothing was updated. Fix the issue above, then try again.${RESET}"
-        exit 1
-    fi
-
-    resolve_config_dir    # 配置可能已经搬到用户级位置
-    echo ""
-fi
-
-# ==========================================
-# 文件清单（版本数据里的 files_info，缺省为 versiondata/files_info）
-# ==========================================
+# 要下载哪些文件、放到哪里，以前是客户端读一份 files_info 自己解析。现在改成
+# 由自更新数据提供一个脚本，客户端只负责取回来执行：
 #
-# 要更新哪些文件不再写死在本脚本里，而是去自更新仓库读一份清单。
-# 清单内容**只表示仓库里的路径**，写法：
+#   - 脚本知道这一版该下哪些文件，所以能只列变动的那些；
+#   - 目录结构变更的迁移也写在同一个脚本里，不必再维护第二套机制；
+#   - 客户端不再需要「缩进树」这种自定义格式的解析器。
 #
-#     /                      单独一个 / 表示安装根（等价于 BASE_DIR）
-#         lib/               以 / 结尾 → 目录，只创建不下载
-#             wave.py        其它 → 文件
-#         pkg/linker.py      也可以行内直接写完整路径，代替缩进
-#             # 以 # 开头的是注释，空行忽略
-#
-# 缩进每层 4 个空格，Tab 与 4 个空格等价，两种可以混用。
-# 每个文件都从 "$BASE_URL/<仓库路径>" 下载，落到 "$BASE_DIR" 下的同名位置。
-# lib/wave.py 按原名下载；PATH 上的入口 lib/wave 由 write_launcher 生成
-# （它要按私有 venv 与解释器路径决定怎么启动，不能直接复制脚本本体）。
-# 以后新增文件只要改这份清单，不用再动本脚本。
+# MACWAVE_CURRENT_VERSION 传的是本机已经装着的版本，脚本据此决定走增量还是全量。
 
-# 清单位置：4.0 每个版本一份（版本数据里的 files_info 字段，由 selfupdate.py 传下来），
-# 3.x 的数据没有那个字段，于是回落到共用的 versiondata/files_info。
-if [[ -n "${MACWAVE_UPDATE_FILES_INFO:-}" ]]; then
-    FILES_INFO_URL="$SELFUPDATE_URL/${MACWAVE_UPDATE_FILES_INFO#/}"
-else
-    FILES_INFO_URL="$SELFUPDATE_URL/versiondata/files_info"
-fi
-FILES_INFO_TMP="$(mktemp)"
+UPDATE_COMMANDS_URL="$SELFUPDATE_URL/macwavedata/$VERSION/update_commands.sh"
+UPDATE_COMMANDS_TMP="$(mktemp)"
 
-cleanup_files_info() {
-    rm -f "$FILES_INFO_TMP"
+cleanup_update_commands() {
+    rm -f "$UPDATE_COMMANDS_TMP"
 }
-trap cleanup_files_info EXIT
+trap cleanup_update_commands EXIT
 
-echo "🌊 Fetching the file list..."
+echo "🌊 Fetching the update commands..."
 
-if ! fetch_to_file "$FILES_INFO_URL" "$FILES_INFO_TMP" "$FILE_TIMEOUT"; then
-    echo -e "${RED_BOLD}🌊 Error: Cannot fetch the file list ($FILES_INFO_URL).${RESET}"
+if ! fetch_to_file "$UPDATE_COMMANDS_URL" "$UPDATE_COMMANDS_TMP" "$FILE_TIMEOUT"; then
+    echo -e "${RED_BOLD}🌊 Error: Cannot fetch the update commands ($UPDATE_COMMANDS_URL).${RESET}"
     echo -e "${RED_BOLD}🌊 Nothing was updated. Check your network or proxy, then try again.${RESET}"
     exit 1
 fi
 
-parse_files_info() {
-    # 把缩进树解析成 "<仓库路径>\t<本地相对路径>\t<是否需要 +x>"，一行一个文件
-    python3 - "$1" <<'PY'
-import sys
-
-stack = []   # [(缩进宽度, 目录名)]：当前所在目录的祖先链
-lines = []
-
-for raw in open(sys.argv[1], encoding="utf-8"):
-    line = raw.rstrip("\n")
-    if not line.strip() or line.lstrip().startswith("#"):
-        continue
-
-    # 缩进按 4 个空格算，Tab 等价于 4 个空格（两者可以混用）
-    expanded = line.expandtabs(4)
-    indent = len(expanded) - len(expanded.lstrip(" "))
-    name = line.strip()
-
-    while stack and stack[-1][0] >= indent:   # 缩进回退：弹掉不比当前行浅的祖先
-        stack.pop()
-
-    if name == "/":                 # 单独一个 /：安装根，等价于 BASE_DIR
-        stack = []
-        continue
-
-    if name.endswith("/"):          # 以 / 结尾 → 目录：只记层次，不下载
-        stack.append((indent, name.rstrip("/")))
-        continue
-
-    if "/" in name:                 # 行内直接写完整路径（可代替缩进）
-        repo_path = name.strip("/")
-    else:
-        repo_path = "/".join([directory for _, directory in stack] + [name])
-
-    local_path, executable = repo_path, int(repo_path.endswith(".sh"))
-
-    lines.append(f"{repo_path}\t{local_path}\t{executable}")
-
-print("\n".join(lines))
-PY
-}
-
-FILE_ENTRIES="$(parse_files_info "$FILES_INFO_TMP")"
-
-if [[ -z "$FILE_ENTRIES" ]]; then
-    echo -e "${RED_BOLD}🌊 Error: The file list is empty, nothing to update.${RESET}"
+if ! bash -n "$UPDATE_COMMANDS_TMP" 2>/dev/null; then
+    echo -e "${RED_BOLD}🌊 Error: the update commands for $VERSION are not valid shell.${RESET}"
+    echo -e "${RED_BOLD}🌊 Nothing was updated. Please report this to the administrator.${RESET}"
     exit 1
 fi
 
-FILE_COUNT=$(printf '%s\n' "$FILE_ENTRIES" | wc -l | tr -d ' ')
-# 4.0 起 Python 侧要 import domains。清单与代码必须一起发布：如果清单里没有它，
-# 装出来的树每条命令都会 ModuleNotFoundError。宁可在动任何东西之前停下，
-# 也不要留下一个半好用、还得靠猜的安装。
-if [[ "$MACWAVE_VERSION" =~ ^[0-9]+ ]] && (( ${MACWAVE_VERSION%%.*} >= 4 )) \
-   && ! grep -qx '[[:space:]]*domains\.py[[:space:]]*' "$FILES_INFO_TMP"; then
-    echo -e "${RED_BOLD}🌊 Error: the file list for $MACWAVE_VERSION does not contain lib/domains.py.${RESET}"
-    echo -e "${RED_BOLD}🌊 That list belongs to an older release; installing it would leave MacWave unusable.${RESET}"
-    echo -e "${RED_BOLD}🌊 Nothing was installed. Please report this to the administrator.${RESET}"
+# ==========================================
+# 执行更新脚本
+# ==========================================
+
+export MACWAVE_INSTALL_DIR="$BASE_DIR"
+export MACWAVE_CONFIG_DIR="$CONFIG_DIR"
+export MACWAVE_CORE_URL="$CORE_URL"
+export MACWAVE_BRANCH="$BRANCH"
+export MACWAVE_TARGET_VERSION="$VERSION"
+export MACWAVE_CURRENT_VERSION="$CURRENT_VERSION"
+export MACWAVE_FILE_TIMEOUT="$FILE_TIMEOUT"
+export MACWAVE_NEED_SUDO="$([ "$NEED_SUDO" = "true" ] && echo 1 || echo "")"
+export MACWAVE_SILENT=""
+
+if ! bash "$UPDATE_COMMANDS_TMP"; then
+    echo -e "${RED_BOLD}🌊 Error: the update commands for $VERSION failed.${RESET}" >&2
+    # VERSION.json 只在全部文件到位后才写，所以版本号还是旧的：
+    # 网络恢复后再跑一次 wave selfupdate 就会从这里继续。
+    echo -e "${RED_BOLD}🌊 Nothing was recorded as updated. Fix the cause above, then run wave selfupdate again.${RESET}" >&2
     exit 1
 fi
-
-echo "🌊 Updating $FILE_COUNT file(s) from branch: $BRANCH"
-echo ""
-
-# ==========================================
-# 按清单更新
-# ==========================================
-
-while IFS=$'\t' read -r repo_path local_path executable; do
-    if [[ -z "$repo_path" ]]; then
-        continue
-    fi
-
-    echo "🌊 Updating $repo_path..."
-    if ! fetch_to_file "$BASE_URL/$repo_path" "$BASE_DIR/$local_path" "$FILE_TIMEOUT" run_cmd; then
-        echo -e "${RED_BOLD}🌊 Error: Cannot download $repo_path.${RESET}" >&2
-        # VERSION.json 只在全部文件到位后才写，所以版本号还是旧的：
-        # 网络恢复后再跑一次 wave selfupdate 就会从这里继续。
-        echo -e "${RED_BOLD}🌊 Nothing was recorded as updated. Check your network, then run wave selfupdate again.${RESET}" >&2
-        exit 1
-    fi
-
-    if [[ "$executable" == "1" ]]; then
-        run_cmd chmod +x "$BASE_DIR/$local_path"
-    fi
-done <<< "$FILE_ENTRIES"
 
 # ==========================================
 # 清理旧的字节码缓存
@@ -570,7 +469,7 @@ done
 # 一次「系统 Python 从 3.14 升到 3.15，所有命令都报模块缺失」。
 #
 # 自带之后，「用哪个解释器」由 MacWave 自己决定，报错也就能稳定复现。
-# 数据来自 MACWAVE_PYTHON_DOMAIN 的 pythondata/latest_python，换版本不用改脚本。
+# 数据来自 MACWAVE_PYTHON_DOMAIN 的 pythondata/latest.toml，换版本不用改脚本。
 # 下载失败（网络问题）时回退到系统 python3，安装不会因此中断。
 
 portable_python_arch() {
@@ -630,71 +529,99 @@ normalize_portable_python() {
 
 ensure_portable_python() {
     # 成功时把解释器路径打到 stdout，失败返回 1（调用方回退系统 python3）。
+    #
+    # 两种来源：
+    #   默认                —— 从我们自己的 Python 仓库取（pythondata/<版本>/<文件名>）
+    #   --install-python-from-source —— 按 python_url.toml 记的上游地址直接回上游取
+    # 两条路径的校验值相同：字节原样搬运，所以 sha256 可以复用。
     local base_dir="$1"
     local arch="$2"
-    local data_url="$PYTHON_URL/pythondata/latest_python"
-    local data_file version url sha target current archive actual py
+    local latest_file url_file version="" url="" sha="" filename="" archive_url
+    local target current archive actual py
 
     [[ -n "$arch" ]] || return 1
 
-    # 先看本机是否已经有一份能用的解释器：有就直接用，一个网络请求都不发。
-    # 自更新每次都会走到这里，而为了确认一份早就装好的解释器去联网 ——
-    # 网络不好时就是「卡在某一行不动」的来源（取版本数据要重试，最长一两分钟没有输出）。
-    for candidate in "$base_dir/python/current" "$base_dir"/python/*/; do
-        [[ -d "$candidate" ]] || continue
-        if py="$(portable_python_binary "$candidate" 2>/dev/null)" \
+    # ── 第一步：MacWave 现在提供哪个版本的解释器 ──
+    # 这一步失败不算错：网络不好时继续用本机已有的那份，安装照常完成。
+    # 但**必须先问一次**，否则「本机已有 3.14.9」会让升级到「要求 3.15」的版本时
+    # 永远发现不了自己落后 —— 这正是 per-version 目录存在的理由。
+    echo "🌊 Checking the bundled Python version..." >&2
+    latest_file="$(mktemp -t macwave-pylatest)"
+    if curl -fsSL --max-time 30 -o "$latest_file" "$PYTHON_DATA_URL/pythondata/latest.toml" 2>/dev/null; then
+        version="$(read_toml_string "$(cat "$latest_file")" version)"
+    fi
+    rm -f "$latest_file"
+
+    if [[ -n "$version" ]]; then
+        target="$base_dir/python/$version"
+        current="$base_dir/python/current"
+
+        # 已经是最新版：直接用，一个字节都不下
+        if py="$(portable_python_binary "$target" 2>/dev/null)" \
            && "$py" -c 'import sys; sys.exit(0)' >/dev/null 2>&1; then
             echo "$py"
             return 0
         fi
-    done
-
-    # 本机没有，才去版本数据里找该下哪个。进度写 stderr：stdout 是返回值通道。
-    echo "🌊 Fetching the bundled Python definition..." >&2
-    data_file="$(mktemp -t macwave-pyver)"
-    # 超时与重试同其他请求；install.sh 里的同名步骤固定用 30/900 秒，
-    # 因为引导安装没有命令行旗标可依。
-    if ! fetch_to_file "$data_url" "$data_file" "$METADATA_TIMEOUT"; then
-        rm -f "$data_file"
-        return 1
-    fi
-    version="$(sed -n 's/^version:[[:space:]]*"\(.*\)"/\1/p' "$data_file" | head -n 1)"
-    url="$(sed -n "s/^${arch}_url:[[:space:]]*\"\(.*\)\"/\1/p" "$data_file" | head -n 1)"
-    sha="$(sed -n "s/^${arch}_sha256:[[:space:]]*\"\(.*\)\"/\1/p" "$data_file" | head -n 1)"
-    rm -f "$data_file"
-
-    if [[ -z "$version" || -z "$url" || -z "$sha" ]]; then
-        return 1
-    fi
-
-    target="$base_dir/python/$version"
-    current="$base_dir/python/current"
-
-    if py="$(portable_python_binary "$target" 2>/dev/null)"; then
-        :
     else
-        echo "🌊 Downloading the bundled Python $version (about 26 MB)..." >&2
-        archive="$base_dir/downloads/tmp/portable-python-$version.tar.gz"
-        # 归档几十 MB，重试一次就够，再多次也只是拖长等待
-        if ! fetch_to_file "$url" "$archive" "$ARCHIVE_TIMEOUT" direct 2; then
-            rm -f "$archive" "$archive.macwave-part"
-            return 1
-        fi
-        actual="$(shasum -a 256 "$archive" | awk '{print $1}')"
-        if [[ "$actual" != "$sha" ]]; then
-            rm -f "$archive"
-            echo -e "${RED_BOLD}🌊 Error: the bundled Python download failed its checksum check.${RESET}" >&2
-            return 1
-        fi
-        mkdir -p "$target" 2>/dev/null || true
-        if ! tar -xzf "$archive" -C "$target" 2>/dev/null; then
-            rm -f "$archive"
-            return 1
-        fi
-        rm -f "$archive"
-        py="$(portable_python_binary "$target" 2>/dev/null)" || return 1
+        # 问不到最新版：退回到「本机有任何一份可用解释器就用它」
+        for candidate in "$base_dir/python/current" "$base_dir"/python/*/; do
+            [[ -d "$candidate" ]] || continue
+            if py="$(portable_python_binary "$candidate" 2>/dev/null)" \
+               && "$py" -c 'import sys; sys.exit(0)' >/dev/null 2>&1; then
+                echo "$py"
+                return 0
+            fi
+        done
+        return 1
     fi
 
+    # ── 第二步：这个版本各架构的地址与校验值 ──
+    echo "🌊 Fetching the bundled Python $version definition..." >&2
+    url_file="$(mktemp -t macwave-pyurl)"
+    if ! curl -fsSL --max-time 30 -o "$url_file" \
+         "$PYTHON_DATA_URL/pythondata/$version/python_url.toml" 2>/dev/null; then
+        rm -f "$url_file"
+        return 1
+    fi
+
+    url="$(sed -n "s/^[[:space:]]*${arch}_url[[:space:]]*=[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" "$url_file" | head -n 1)"
+    sha="$(sed -n "s/^[[:space:]]*${arch}_sha256[[:space:]]*=[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" "$url_file" | head -n 1)"
+    rm -f "$url_file"
+
+    if [[ -z "$url" || -z "$sha" ]]; then
+        return 1
+    fi
+
+    # 文件名取上游地址的末段：我们自己托管的那份用同一个名字，校验值才能共用
+    filename="${url##*/}"
+    if [[ -n "$INSTALL_PYTHON_FROM_SOURCE" ]]; then
+        archive_url="$url"
+    else
+        archive_url="$PYTHON_DATA_URL/pythondata/$version/$filename"
+    fi
+
+    # ── 第三步：下载并校验 ──
+    echo "🌊 Downloading the bundled Python $version (about 26 MB)..." >&2
+    archive="$base_dir/downloads/tmp/portable-python-$version.tar.gz"
+    mkdir -p "$base_dir/downloads/tmp" 2>/dev/null || true
+    if ! curl -fsSL --max-time 900 -o "$archive" "$archive_url" 2>/dev/null; then
+        rm -f "$archive"
+        echo -e "${YELLOW}🌊 Could not download the bundled Python from ${archive_url}${RESET}" >&2
+        return 1
+    fi
+    actual="$(shasum -a 256 "$archive" | awk '{print $1}')"
+    if [[ "$actual" != "$sha" ]]; then
+        rm -f "$archive"
+        echo -e "${RED_BOLD}🌊 Error: the bundled Python download failed its checksum check.${RESET}" >&2
+        return 1
+    fi
+    mkdir -p "$target" 2>/dev/null || true
+    if ! tar -xzf "$archive" -C "$target" 2>/dev/null; then
+        rm -f "$archive"
+        return 1
+    fi
+    rm -f "$archive"
+    py="$(portable_python_binary "$target" 2>/dev/null)" || return 1
     if ! "$py" -c 'import sys; sys.exit(0)' >/dev/null 2>&1; then
         return 1
     fi
