@@ -72,13 +72,44 @@ mw_domain() {
     exit 1
 }
 
+mw_redact() {
+    # mw_redact <url>：把 URL 里的口令换成 ***，日志与报错里不能出现明文。
+    # 只在 host 段找 @ —— path 里的 @ 是合法文件名（jq@1.7.1.arm64）。
+    local url="$1"
+    local scheme rest authority path userinfo host user
+
+    case "$url" in
+        *://*) ;;
+        *) printf '%s\n' "$url"; return 0 ;;
+    esac
+
+    scheme="${url%%://*}"
+    rest="${url#*://}"
+    authority="${rest%%/*}"
+    if [[ "$rest" == */* ]]; then path="/${rest#*/}"; else path=""; fi
+
+    case "$authority" in
+        *@*) ;;
+        *) printf '%s\n' "$url"; return 0 ;;
+    esac
+
+    userinfo="${authority%@*}"
+    host="${authority##*@}"
+    user="${userinfo%%:*}"
+    if [[ "$userinfo" == *:* ]]; then
+        printf '%s://%s:***@%s%s\n' "$scheme" "$user" "$host" "$path"
+    else
+        printf '%s://***@%s%s\n' "$scheme" "$host" "$path"
+    fi
+}
+
 # MacWave 自身文件（后面再拼 /<分支>/<路径>）
 CORE_URL="$(mw_domain MACWAVE_CORE_DOMAIN "${MACWAVE_CORE_DOMAIN:-https://raw.githubusercontent.com/MacWaveOrg/MacWave}")"
 # 自更新数据：版本号、文件清单、目录迁移脚本
 SELFUPDATE_URL="$(mw_domain MACWAVE_SELFUPDATE_DOMAIN "${MACWAVE_SELFUPDATE_DOMAIN:-https://raw.githubusercontent.com/MacWaveOrg/Selfupdate/main}")"
 # 自带 CPython 的清单
-# 解释器单独一个仓库：体积（每架构约 26 MB）与发布节奏都和自更新数据不同
-PYTHON_DATA_URL="$(mw_domain MACWAVE_PYTHON_DOMAIN "${MACWAVE_PYTHON_DOMAIN:-https://raw.githubusercontent.com/MacWaveOrg/Python/main}")"
+# 解释器单独一个仓库（体积与发布节奏都和自更新数据不同）
+PYTHON_DOMAIN_URL="$(mw_domain MACWAVE_PYTHON_DOMAIN "${MACWAVE_PYTHON_DOMAIN:-https://raw.githubusercontent.com/MacWaveOrg/Python/main}")"
 
 # ==========================================
 # 版本号与代码分支（从自更新数据读取，不写死在脚本里）
@@ -105,7 +136,7 @@ LATEST_BRANCH="$(read_toml_string "$LATEST_VERSION_DATA" branch)"
 
 if [[ -z "$MACWAVE_VERSION" || -z "$LATEST_BRANCH" ]]; then
     echo -e "${RED_BOLD}🌊 Error: Cannot read the latest version from the self-update data.${RESET}" >&2
-    echo -e "${RED_BOLD}🌊   $LATEST_DATA_URL${RESET}" >&2
+    echo -e "${RED_BOLD}🌊   $(mw_redact "$LATEST_DATA_URL")${RESET}" >&2
     echo -e "${RED_BOLD}🌊 Check your network or proxy, then run the installer again.${RESET}" >&2
     exit 1
 fi
@@ -451,7 +482,7 @@ done
 
 if [[ "$UPDATE_COMMANDS_OK" != "true" ]]; then
     echo -e "${RED_BOLD}🌊 Error: Cannot fetch the update commands.${RESET}"
-    echo -e "${RED_BOLD}🌊   $UPDATE_COMMANDS_URL${RESET}"
+    echo -e "${RED_BOLD}🌊   $(mw_redact "$UPDATE_COMMANDS_URL")${RESET}"
     echo -e "${RED_BOLD}🌊 Nothing was installed. Check your network or proxy, then run the installer again.${RESET}"
     exit 1
 fi
@@ -743,7 +774,7 @@ ensure_portable_python() {
     # 永远发现不了自己落后 —— 这正是 per-version 目录存在的理由。
     echo "🌊 Checking the bundled Python version..." >&2
     latest_file="$(mktemp -t macwave-pylatest)"
-    if curl -fsSL --max-time 30 -o "$latest_file" "$PYTHON_DATA_URL/pythondata/latest.toml" 2>/dev/null; then
+    if curl -fsSL --max-time 30 -o "$latest_file" "$PYTHON_DOMAIN_URL/pythondata/latest.toml" 2>/dev/null; then
         version="$(read_toml_string "$(cat "$latest_file")" version)"
     fi
     rm -f "$latest_file"
@@ -775,7 +806,7 @@ ensure_portable_python() {
     echo "🌊 Fetching the bundled Python $version definition..." >&2
     url_file="$(mktemp -t macwave-pyurl)"
     if ! curl -fsSL --max-time 30 -o "$url_file" \
-         "$PYTHON_DATA_URL/pythondata/$version/python_url.toml" 2>/dev/null; then
+         "$PYTHON_DOMAIN_URL/pythondata/$version/python_url.toml" 2>/dev/null; then
         rm -f "$url_file"
         return 1
     fi
@@ -793,7 +824,7 @@ ensure_portable_python() {
     if [[ -n "$INSTALL_PYTHON_FROM_SOURCE" ]]; then
         archive_url="$url"
     else
-        archive_url="$PYTHON_DATA_URL/pythondata/$version/$filename"
+        archive_url="$PYTHON_DOMAIN_URL/pythondata/$version/$filename"
     fi
 
     # ── 第三步：下载并校验 ──
@@ -802,7 +833,7 @@ ensure_portable_python() {
     mkdir -p "$base_dir/downloads/tmp" 2>/dev/null || true
     if ! curl -fsSL --max-time 900 -o "$archive" "$archive_url" 2>/dev/null; then
         rm -f "$archive"
-        echo -e "${YELLOW}🌊 Could not download the bundled Python from ${archive_url}${RESET}" >&2
+        echo -e "${YELLOW}🌊 Could not download the bundled Python from $(mw_redact "$archive_url")${RESET}" >&2
         return 1
     fi
     actual="$(shasum -a 256 "$archive" | awk '{print $1}')"

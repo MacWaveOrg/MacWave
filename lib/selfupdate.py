@@ -61,12 +61,14 @@ def curl_seconds(timeout):
 # -------------------- 版本数据 --------------------
 
 def fetch_text(url, timeout=FETCH_TIMEOUT):
-    # 优先用标准库；本地 Python 缺根证书（macOS 常见）时改走 curl
-    try:
-        with urllib.request.urlopen(url, timeout=timeout) as response:
-            return response.read().decode()
-    except (urllib.error.URLError, UnicodeDecodeError, OSError):
-        pass
+    # 优先用标准库；本地 Python 缺根证书（macOS 常见）时改走 curl。
+    # 带凭据的 URL 直走 curl：urllib 不认 user:pass@，会把它当主机名，白失败一次。
+    if not domains._has_userinfo(url):
+        try:
+            with urllib.request.urlopen(url, timeout=timeout) as response:
+                return response.read().decode()
+        except (urllib.error.URLError, UnicodeDecodeError, OSError):
+            pass
 
     result = subprocess.run(['curl', '-fsSL',
                              '--max-time', str(curl_seconds(timeout)),
@@ -165,7 +167,7 @@ def handle_selfupdate(input_string=""):
     text = fetch_version_data(timeout)
     if text is None:
         print(f"{RED_BOLD}🌊 Error: Cannot reach the MacWave version data.{RESET}")
-        print(f"{RED_BOLD}🌊 {domains.selfupdate_latest_url()}{RESET}")
+        print(f"{RED_BOLD}🌊 {domains.redact_url(domains.selfupdate_latest_url())}{RESET}")
         sys.exit(1)
 
     data = version_data(text)

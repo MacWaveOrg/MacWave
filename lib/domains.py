@@ -389,17 +389,51 @@ def parse_simple_toml(text):
     return values
 
 
+def _has_userinfo(url):
+    # URL 的 host 段里有没有 user:pass@。只看第一段：path 里的 @ 是合法文件名
+    # （jq@1.7.1.arm64），不能当成凭据。
+    scheme, separator, rest = url.partition("://")
+    if not separator:
+        return False
+    return "@" in rest.split("/")[0]
+
+
+def redact_url(url):
+    # https://user:pass@host/path → https://user:***@host/path
+    # 报错与日志一律用它拼字符串：这些输出会被贴进 issue 或群里求助。
+    #
+    # 只在 authority（host）段里找 @：path 里的 @ 是合法文件名（jq@1.7.1.arm64），
+    # 拿整条 URL 去找最后一个 @ 会把包名当成密码位置，把地址改坏。
+    scheme, separator, rest = url.partition("://")
+    if not separator:
+        return url
+
+    authority, slash, path = rest.partition("/")
+    if "@" not in authority:
+        return url
+
+    userinfo, _at, host = authority.rpartition("@")
+    user, colon, _password = userinfo.partition(":")
+    masked = f"{user}:***" if colon else "***"
+    return f"{scheme}://{masked}@{host}{slash}{path}"
+
+
 def fetch_text(url, timeout=30):
     # 优先标准库；本地 Python 缺根证书（macOS 常见）时改走 curl。
+    #
+    # 带凭据的 URL 例外：urllib 不会把 user:pass@ 当成认证信息，而是把它整个当主机名，
+    # 于是必然抛一次 DNS 失败才轮到 curl。取版本数据、取更新脚本都走这里，
+    # 每次都白等一轮就没必要了，直接交给 curl。
     import subprocess
     import urllib.error
     import urllib.request
 
-    try:
-        with urllib.request.urlopen(url, timeout=timeout) as response:
-            return response.read().decode()
-    except (urllib.error.URLError, UnicodeDecodeError, OSError):
-        pass
+    if not _has_userinfo(url):
+        try:
+            with urllib.request.urlopen(url, timeout=timeout) as response:
+                return response.read().decode()
+        except (urllib.error.URLError, UnicodeDecodeError, OSError):
+            pass
 
     result = subprocess.run(["curl", "-fsSL", "--max-time", str(max(1, int(timeout))),
                              "--retry", "2", "--retry-delay", "2", "--retry-connrefused", url],

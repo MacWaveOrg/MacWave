@@ -20,10 +20,11 @@ FAILED=0
 pass() { echo -e "  ${GREEN}✅ $1${RESET}"; }
 fail() { echo -e "  ${RED_BOLD}❌ $1${RESET}"; FAILED=$((FAILED + 1)); }
 
-echo "========== 1. 默认值仍是 3.x 的地址 =========="
+echo "========== 1. 默认地址形状 =========="
 
-# 一个都不设时，拼出来的地址必须与 3.x 写死的字面量逐字一致：
-# 这是「不设环境变量就完全没变化」的唯一依据。
+# 一个都不设时拼出来的地址，是「不设环境变量就没有意外」的唯一依据。
+# 4.0 起索引 / core 仍是 3.x 的 raw 地址，但自更新数据与解释器换了布局
+# （macwavedata/latest.toml、pythondata/latest.toml），所以下面逐条写死预期值。
 if PYTHONPATH="$LIB_DIR" python3 - << 'PY'
 import domains
 
@@ -34,30 +35,32 @@ checks = [
      "https://raw.githubusercontent.com/MacWaveOrg/infosource/main/pkg/pkginfo_arm64/jq/_jq@1.7.1"),
     ("依赖索引", f"{domains.api_domain()}/deps/depsinfo_arm64/libidn2/_libidn2@common",
      "https://raw.githubusercontent.com/MacWaveOrg/infosource/main/deps/depsinfo_arm64/libidn2/_libidn2@common"),
-    ("版本数据", domains.selfupdate_version_url(),
-     "https://raw.githubusercontent.com/MacWaveOrg/Selfupdate/main/versiondata/latest_version"),
-    ("文件清单", domains.selfupdate_files_url(),
-     "https://raw.githubusercontent.com/MacWaveOrg/Selfupdate/main/versiondata/files_info"),
-    ("迁移脚本", domains.selfupdate_updatedata_url("3.2.1", "dir_structure_change"),
-     "https://raw.githubusercontent.com/MacWaveOrg/Selfupdate/main/updatedata/3.2.1/dir_structure_change"),
-    ("解释器清单", domains.python_manifest_url(),
-     "https://raw.githubusercontent.com/MacWaveOrg/Selfupdate/main/pythondata/latest_python"),
+    ("版本指针", domains.selfupdate_latest_url(),
+     "https://raw.githubusercontent.com/MacWaveOrg/Selfupdate/main/macwavedata/latest.toml"),
+    ("更新脚本", domains.selfupdate_commands_url("4.0.0"),
+     "https://raw.githubusercontent.com/MacWaveOrg/Selfupdate/main/macwavedata/4.0.0/update_commands.sh"),
+    ("解释器指针", domains.python_latest_url(),
+     "https://raw.githubusercontent.com/MacWaveOrg/Python/main/pythondata/latest.toml"),
+    ("解释器各架构", domains.python_url_toml_url("3.14.9"),
+     "https://raw.githubusercontent.com/MacWaveOrg/Python/main/pythondata/3.14.9/python_url.toml"),
+    ("解释器归档", domains.python_archive_url("3.14.9", "cpython-aarch64.tar.gz"),
+     "https://raw.githubusercontent.com/MacWaveOrg/Python/main/pythondata/3.14.9/cpython-aarch64.tar.gz"),
     ("列版本", domains.index_list_url("arm64", "jq"),
      "https://api.github.com/repos/MacWaveOrg/infosource/contents/pkg/pkginfo_arm64/jq?ref=main"),
     ("列软件包", domains.index_list_url("arm64"),
      "https://api.github.com/repos/MacWaveOrg/infosource/contents/pkg/pkginfo_arm64?ref=main"),
 ]
 
+print(f"  {len(checks)} 项")
 bad = [(name, got, want) for name, got, want in checks if got != want]
 for name, got, want in bad:
     print(f"    {name}: got {got}\n      want {want}")
-print(f"  {len(checks) - len(bad)}/{len(checks)}")
 raise SystemExit(1 if bad else 0)
 PY
 then
-    pass "9 个默认地址与 3.x 逐字一致"
+    pass "${CHECKS} 个默认地址与预期逐字一致"
 else
-    fail "默认地址与 3.x 不一致"
+    fail "默认地址与预期不一致"
 fi
 
 echo
@@ -74,8 +77,8 @@ if domains.api_domain() != "https://mirror.example.com/macwave":     # 末尾斜
 if domains.index_list_url("arm64", "jq") != "https://mirror.example.com/macwave/pkg/pkginfo_arm64/jq/versions":
     print(f"    list: {domains.index_list_url('arm64', 'jq')}")
     ok = False
-if domains.selfupdate_version_url() != "https://mirror.example.com/su/versiondata/latest_version":
-    print(f"    selfupdate: {domains.selfupdate_version_url()}")
+if domains.selfupdate_latest_url() != "https://mirror.example.com/su/macwavedata/latest.toml":
+    print(f"    selfupdate: {domains.selfupdate_latest_url()}")
     ok = False
 raise SystemExit(0 if ok else 1)
 PY
@@ -267,7 +270,7 @@ echo "========== 6. 两份 shell 脚本的域名块必须逐字一致 ==========
 # install.sh 与 selfupdate.sh 各抄了一份（前者是 curl | bash，没有本地文件可 source）。
 # 抄两份就会漂移，所以这里逐字比对：改一处就必须改另一处。
 extract_domain_block() {
-    sed -n '/^# 域名（4.0/,/^PYTHON_URL=/p' "$1"
+    sed -n '/^# 域名（4.0/,/^PYTHON_DOMAIN_URL=/p' "$1"
 }
 
 if diff -q <(extract_domain_block "$REPO_DIR/lib/install.sh") \
