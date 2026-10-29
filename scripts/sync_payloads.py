@@ -152,6 +152,8 @@ def main():
                         help="comma separated: bottle, deps (default: both)")
     parser.add_argument("--only", default="",
                         help="comma separated package/dependency names to limit the run")
+    parser.add_argument("--skip", default="",
+                        help="comma separated names to leave out (known-bad index records)")
     parser.add_argument("--jobs", type=int, default=8)
     parser.add_argument("--overwrite", action="store_true",
                         help="re-download even when the file is already correct")
@@ -166,9 +168,21 @@ def main():
 
     wanted_kinds = {kind.strip() for kind in args.kinds.split(",") if kind.strip()}
     only = {name.strip() for name in args.only.split(",") if name.strip()}
+    skip = {name.strip() for name in args.skip.split(",") if name.strip()}
+
+    # --skip 是给「索引里本身就坏的记录」用的：它们的 sha256 与上游不符、或者上游已经 404。
+    # 这类记录进不了镜像 —— 拿它去比对只会在每次同步时制造同样的失败，而失败信息
+    # 又会淹没真正的问题。跳过它们，让同步结果只剩「该成功却失败」的那些。
+    skipped = sorted({job[2] for job in records(args.infosource)
+                      if job[0] in wanted_kinds and job[2] in skip})
 
     jobs = [job for job in records(args.infosource)
-            if job[0] in wanted_kinds and (not only or job[2] in only)]
+            if job[0] in wanted_kinds
+            and (not only or job[2] in only)
+            and job[2] not in skip]
+
+    if skipped:
+        print(f"🌊 Skipping by request: {', '.join(skipped)}")
 
     if not jobs:
         print("🌊 Nothing to do: no matching records.")
