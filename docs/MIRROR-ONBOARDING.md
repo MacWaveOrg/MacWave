@@ -232,13 +232,13 @@ LINUXWAVE_SELFUPDATE_DOMAIN=... LINUXWAVE_BOTTLE_DOMAIN=... \
 
 ## 七点五、账号编号约定
 
-认证方式是**单个 nginx `auth_basic` 用户文件**，所有产品共用一个文件，
-靠用户名分段来区分「这个账号属于谁」。
+认证方式是**每个产品一份 nginx `auth_basic` 用户文件**，各产品的账号只在自己那份里，
+文件名靠用户名分段来区分「这个账号属于谁」。
 
 | 产品 | 用户名 | 现状 |
 | --- | --- | --- |
 | MacWave | `REPOHUBUSER1`、`REPOHUBUSER2`、`REPOHUBUSER3` | 已启用 |
-| LinuxWave | `REPOHUBUSER10001` 起 | 待建 |
+| LinuxWave | `REPOHUBUSER10001` 起 | 已启用（10001–10003） |
 | （以后的产品） | `REPOHUBUSER20001` 起 | 预留 |
 
 ### 为什么分段
@@ -279,27 +279,112 @@ echo "$user  $pass"
 - nginx **不需要 reload**：`auth_basic_user_file` 每次请求都会重新读文件。
 - 明文统一记在 `/root/macwave-passwords.txt`（`chmod 600`），发信时从这里取。
 
-### 验证
+### 密码明文存放
 
-```bash
-# 该账号能取 LinuxWave 数据
-curl -so /dev/null -w '%{http_code}\n' -u REPOHUBUSER10001:<密码> \
-  https://mirror.repohub.top/LinuxWave/selfupdate/latest.toml      # 期望 200
+每个账号一个文件，文件名就是编号，便于按账号单独发送、单独作废：
 
-# 同一账号也能取 MacWave 数据 —— 认证是站点级的，不按目录区分
-curl -so /dev/null -w '%{http_code}\n' -u REPOHUBUSER10001:<密码> \
-  https://mirror.repohub.top/MacWave/core/4.0/lib/install.sh       # 也是 200
+```
+~/LinuxWaveMirror/password/10001     ← 只含 REPOHUBUSER10001 的密码
+~/LinuxWaveMirror/password/10002
+~/LinuxWaveMirror/password/10003
 ```
 
-第二条是**已知的取舍**：nginx 的 `auth_basic` 只能按 location 放行，不能按账号限制目录。
-分段编号解决的是「能单独吊销」，不是「能隔离访问」。若将来真需要隔离，
-得换成每产品一个 `auth_basic_user_file`。
+目录 `700`、文件 `600`。为什么不用一个汇总文件：给某个用户发密码时只读那一个文件，
+不会顺带看到别人的；作废某个账号就删掉对应文件。
+
+MacWave 的旧账号仍在 `/root/macwave-passwords.txt`，可以照此迁移，但迁移时注意
+`~/LinuxWaveMirror` 只应放 LinuxWave 的编号（10001 起），别把 1/2/3 混进来。
+
+### 按产品隔离访问（已启用）
+
+nginx 的 `auth_basic_user_file` 是 **location 级**的指令，所以在
+`location ^~ /LinuxWave/` 里指另一份用户文件，两个产品的账号就互不相通。
+
+```nginx
+# server 级保持 MacWave 的账号文件作为默认
+auth_basic           "MacWave mirror";
+auth_basic_user_file /www/server/nginx/conf/macwave.htpasswd;
+
+# LinuxWave 用自己的账号文件
+location ^~ /LinuxWave/ {
+    auth_basic           "LinuxWave mirror";
+    auth_basic_user_file /www/server/nginx/conf/linuxwave.htpasswd;
+
+    # ^~ 会跳过外层的正则 location，所以 @ 缓存规则要在里面重复一次
+    location ~ "@" {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+}
+```
+
+要点：
+
+- **必须用 `^~`**：普通前缀 location 会被外层 `location ~ "@"` 正则抢走，
+  那样 @ 文件就落回 MacWave 的账号文件，隔离在那些文件上失效。
+- 嵌套的 `location ~ "@"` 只负责补回缓存头，认证从父级继承。
+- 顶层页面（`linuxwave.html`、图标）走的是另一条正则 location，不受影响，
+  仍然公开。
+- 改完 `nginx -t` 通过再 reload；`auth_basic_user_file` 每次请求都读文件，
+  所以**加账号不用 reload**，只有改配置才需要。
+
+### 验证
+
+判据只有两条 —— 两个产品的账号**不能跨读**：
+
+| 身份 | `/MacWave/…` | `/LinuxWave/…` |
+| --- | --- | --- |
+| 不带口令 | `401` | `401` |
+| `REPOHUBUSER10001`（LinuxWave） | **`401`** | `200` |
+| `REPOHUBUSER1`（MacWave） | `200` | **`401`** |
+
+加粗那两格就是「隔离生效」。隔离前它们都是 `200`。
+
+从外网不解码文件内容也能确认配置真的挂上了：看 realm 文字即可，两边必须不同：
+
+```bash
+curl -sI https://mirror.repohub.top/MacWave/core/4.0/   | grep -i www-authenticate
+# WWW-Authenticate: Basic realm="MacWave Mirror"
+
+curl -sI https://mirror.repohub.top/LinuxWave/probe.txt | grep -i www-authenticate
+# WWW-Authenticate: Basic realm="LinuxWave mirror"
+```
+
+#### 归一化绕过已实测无效
+
+nginx 会先把 URI 解码并归一化（`..`、`//`、`%XX`）**再**匹配 location，
+所以下面这些都不构成绕过，全部返回 `401`（需要在本地文件不存在时测，否则会变成别的状态码）：
+
+```
+/LinuxWave                  ← 无尾斜杠
+/linuxwave/probe.txt        ← 大小写
+//LinuxWave/probe.txt       ← 双斜杠
+/./LinuxWave/probe.txt      ← 点段
+/MacWave/../LinuxWave/probe.txt
+/LinuxWave/../MacWave/core/4.0/
+/Linux%57ave/probe.txt      ← URL 编码字母
+/LinuxWave%2Fprobe.txt      ← 编码斜杠
+/LinuxWave/core/..%2Fprobe.txt
+```
+
+测这些时务必带 `curl --path-as-is`，否则 curl 自己会把 `..` 和 `//` 先规整掉，
+测的就不是 nginx 了。
+
+#### 脚本化时的三个坑（都踩过）
+
+| 坑 | 后果 | 做法 |
+| --- | --- | --- |
+| `htpasswd -b` 在**文件不存在**时报 `use '-c' to create it` | 首次建账号直接失败 | 文件不存在/为空用 `-c`，已存在只能用 `-b`（`-c` 会清空整份文件） |
+| 用 `[[ -x $c ]]` 探测候选可执行文件 | **同名目录**也让 `-x` 为真，会把目录当程序 | 用 `[[ -f $c && -x $c ]]`；遍历候选列表时先 `shift` 掉命令名，否则相对路径会命中当前目录里的同名目录 |
+| 服务器没有 `htpasswd`（`httpd-tools` 未装） | 卡在建账号 | 用 `openssl passwd -apr1 -salt $(openssl rand -hex 4) '<口令>'` 生成 `$apr1$`，**nginx 原生支持**，不必装包 |
+
+最后一行的产物可以用 `htpasswd -vb <文件> <用户> <口令>` 反查（它与 nginx 的校验等价），
+用来确认生成的口令和文件里的哈希是对得上的。
 
 ---
 
 ## 七、和 MacWave 的约定
 
-- **账号按产品分段编号**，见第八节。MacWave 用 `REPOHUBUSER1…`，LinuxWave 从
+- **账号按产品分段编号**，见第七点五节。MacWave 用 `REPOHUBUSER1…`，LinuxWave 从
   `REPOHUBUSER10001` 起 —— 不要混用，否则一个产品泄露的账号能取到另一个产品的数据
 - 目录互不干扰：MacWave 的任何工具都不会读写 `LinuxWave/`，反之亦然
 - 带宽与磁盘共享同一台机器，产物体积请留意（MacWave 全量约 2 GB）
