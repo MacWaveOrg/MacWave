@@ -98,7 +98,7 @@ bash install.sh --silent --dir-option=1
 2. ~/.config/macwave_config     用户级安装（无需 sudo）
 ```
 ## 🌊 使用镜像站（4.0 起）
-MacWave 用到的每个地址都能替换，所以换镜像是一组环境变量而不是命令 —— 刻意没有 `wave mirror`，就像 Homebrew 没有 `brew mirror`。
+MacWave 用到的每个地址都能替换，所以换镜像是一组环境变量而不是命令。要查当前生效的是哪个地址，用 `wave mirror` —— 它会列出每一项的来源（环境变量还是内置默认值）与地址，密码默认脱敏。
 
 **这件事对国内用户最要紧**：`github.com` 常常不是慢，而是连不上。从一条国内线路实测：三次里两次在 20 秒内连 TCP 都没建立，而同一时刻国内镜像站 37~78 毫秒就返回了。
 
@@ -208,6 +208,7 @@ Commands:
   link        Link installed packages without a version number
   unlink      Remove those unversioned links
   linkquery   Show which version an unversioned link points to
+  mirror      Show which address each kind of data is fetched from
 
 Flags:
   -h, --help              Show help for any command
@@ -241,6 +242,14 @@ Unversioned Links:
 wave link <name>                   Link a package to its highest installed version
 wave linkquery <name>              Show what <name> is linked to (e.g. 🌊 ffmpeg@9.0)
 wave unlink <name>                 Remove that link
+
+Mirror Configuration:
+wave mirror                        Show the address each source is fetched from
+    --json / --yaml / --toml       Print the same information in that format
+    --raw                          Print ready-to-paste export lines
+    --only-set                     With --raw: export only the sources you overrode
+    --show-password                Print passwords instead of six asterisks
+    --hide-user                    Mask the user name too
 
 ```
 

@@ -198,6 +198,8 @@ COMMAND_HELP = {
             ("--yaml", "Print the configuration as YAML"),
             ("--toml", "Print the configuration as TOML"),
             ("--raw", "Print ready-to-paste export lines"),
+            ("--only-set", "With --raw: export only the sources you overrode, leaving "
+                           "the rest to follow the built-in defaults"),
             ("--show-password", "Print passwords in full instead of six asterisks"),
             ("--hide-user", "Also mask the user name"),
         ],

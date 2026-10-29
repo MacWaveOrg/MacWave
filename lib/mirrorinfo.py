@@ -155,17 +155,28 @@ def as_yaml(rows):
     return "\n".join(lines)
 
 
-def as_raw(rows):
+def as_raw(rows, only_set=False):
     # 逐行写全地址，不用 $B 之类的前缀变量：
     # 这样任何一行都能单独替换（例如只把 bottle 指向另一台机器），
     # 也不会因为改漏了前缀而让所有行一起错。
+    #
+    # only_set=True 时只导出用户真的设过的项。区别在于「默认值要不要钉死」：
+    # 全写的话，官方将来换默认地址，这份配置仍停在旧地址上；只写设过的项，
+    # 没设的部分继续跟着官方默认走。两种都合理，所以做成开关而不是替用户选。
     lines = ["# MacWave mirror"]
     for row in rows:
-        if row["source"] == "unset":
+        if row["source"] == "env":
+            lines.append(f'export {row["env"]}="{row["value"]}"')
+        elif only_set:
+            continue
+        elif row["source"] == "unset":
             # 空值 export 会把变量清掉，用注释占位更安全
             lines.append(f'# {row["env"]}  {NOT_CONFIGURED}')
-            continue
-        lines.append(f'export {row["env"]}="{row["value"]}"')
+        else:
+            lines.append(f'export {row["env"]}="{row["value"]}"')
+
+    if only_set and len(lines) == 1:
+        lines.append("# Nothing is overridden; every source uses its built-in default.")
     return "\n".join(lines)
 
 
@@ -180,7 +191,8 @@ RENDERERS = {
 
 # -------------------- 参数解析 --------------------
 
-FLAGS = {"--show-password", "--hide-user", *[f"--{name}" for name in FORMATS]}
+FLAGS = {"--show-password", "--hide-user", "--only-set",
+         *[f"--{name}" for name in FORMATS]}
 
 
 def parse_args(words):
@@ -197,10 +209,17 @@ def parse_args(words):
         print(f"{YELLOW}🌊 Next      --json, --yaml, --toml and --raw are mutually exclusive{RESET}")
         sys.exit(1)
 
+    only_set = "--only-set" in words
+    if only_set and chosen and chosen[0] != "raw":
+        print(f"{RED_BOLD}🌊 Error: --only-set only applies to --raw{RESET}")
+        print(f"{YELLOW}🌊 Next      wave mirror --raw --only-set{RESET}")
+        sys.exit(1)
+
     return {
         "format": chosen[0] if chosen else "table",
         "show_password": "--show-password" in words,
         "hide_user": "--hide-user" in words,
+        "only_set": only_set,
     }
 
 
@@ -216,6 +235,9 @@ def handle_mirror(input_string=""):
     options = parse_args(words)
     rows = collect(options["show_password"], options["hide_user"])
 
+    if options["format"] == "raw":
+        print(as_raw(rows, options["only_set"]))
+        sys.exit(0)
     if options["format"] != "table":
         print(RENDERERS[options["format"]](rows))
         sys.exit(0)

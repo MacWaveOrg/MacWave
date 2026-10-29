@@ -160,6 +160,26 @@ else
     fail "--raw did not comment the unset entry"
 fi
 
+echo "========== --raw --only-set exports only the overridden sources =========="
+OUT="$(run_mirror_api "$MIRROR/infosource" --raw --only-set 2>/dev/null)"
+if [[ "$OUT" == *'export MACWAVE_API_DOMAIN='* ]]; then
+    pass "--only-set keeps the source that was overridden"
+else
+    fail "--only-set dropped the overridden source"
+fi
+if [[ "$OUT" == *'export MACWAVE_DEPS_DOMAIN='* ]]; then
+    fail "--only-set still exported a built-in default"
+else
+    pass "--only-set omits sources that fall back to the built-in default"
+fi
+if [[ "$OUT" == *'s3cr3t-pw'* ]]; then
+    fail "--only-set leaked the password"
+else
+    pass "--only-set stays masked"
+fi
+run_mirror_api "$MIRROR/infosource" --only-set --json >/dev/null 2>&1
+[[ $? -eq 1 ]] && pass "--only-set without --raw exits 1" || fail "--only-set should require --raw"
+
 echo
 echo "=========================================="
 echo "🌊 Passed: $PASSED / $((PASSED + FAILED))"

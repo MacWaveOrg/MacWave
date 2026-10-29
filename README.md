@@ -103,7 +103,7 @@ Config file is stored in (a system-level install always takes priority):
 2. ~/.config/macwave_config     user-level install (no sudo)
 ```
 ## 🌊 Using a Mirror (4.0 and later)
-Every address MacWave contacts is configurable, so switching mirrors is a set of environment variables rather than a command — there is deliberately no `wave mirror`, the same way Homebrew has no `brew mirror`.
+Every address MacWave contacts is configurable, so switching mirrors is a set of environment variables rather than a command. To check which address is in effect, run `wave mirror` — it prints every source, whether it came from the environment or the built-in default, with passwords masked.
 
 **This matters most in mainland China**, where `github.com` is often unreachable rather than merely slow. Measured from one such connection: two out of three attempts failed to open a TCP connection within 20 seconds, while domestic mirrors answered in 37–78 ms.
 
@@ -214,6 +214,7 @@ Commands:
   link        Link installed packages without a version number
   unlink      Remove those unversioned links
   linkquery   Show which version an unversioned link points to
+  mirror      Show which address each kind of data is fetched from
 
 Flags:
   -h, --help              Show help for any command
@@ -247,6 +248,14 @@ Unversioned Links:
 wave link <name>                   Link a package to its highest installed version
 wave linkquery <name>              Show what <name> is linked to (e.g. 🌊 ffmpeg@9.0)
 wave unlink <name>                 Remove that link
+
+Mirror Configuration:
+wave mirror                        Show the address each source is fetched from
+    --json / --yaml / --toml       Print the same information in that format
+    --raw                          Print ready-to-paste export lines
+    --only-set                     With --raw: export only the sources you overrode
+    --show-password                Print passwords instead of six asterisks
+    --hide-user                    Mask the user name too
 
 ```
 
