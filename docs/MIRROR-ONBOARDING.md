@@ -230,8 +230,76 @@ LINUXWAVE_SELFUPDATE_DOMAIN=... LINUXWAVE_BOTTLE_DOMAIN=... \
 
 ---
 
+## 七点五、账号编号约定
+
+认证方式是**单个 nginx `auth_basic` 用户文件**，所有产品共用一个文件，
+靠用户名分段来区分「这个账号属于谁」。
+
+| 产品 | 用户名 | 现状 |
+| --- | --- | --- |
+| MacWave | `REPOHUBUSER1`、`REPOHUBUSER2`、`REPOHUBUSER3` | 已启用 |
+| LinuxWave | `REPOHUBUSER10001` 起 | 待建 |
+| （以后的产品） | `REPOHUBUSER20001` 起 | 预留 |
+
+### 为什么分段
+
+| 做法 | 问题 |
+| --- | --- |
+| 所有产品共用 `REPOHUBUSER1` | 一个产品泄露的账号可以取到另一个产品的数据；也无法单独吊销 |
+| 各产品从 1 开始各自编号 | `REPOHUBUSER1` 会重复，文件里只能留一个 |
+| ❌ 用同一批账号 | 同上，且无法按产品停用 |
+
+分段编号让「吊销 LinuxWave 全部账号」不影响 MacWave，反之亦然。
+
+### 建账号
+
+```bash
+HTPASSWD=/www/server/nginx/conf/macwave.htpasswd
+
+# LinuxWave 第一个账号
+user=REPOHUBUSER10001
+# 严格 24 位：openssl + cut 偶尔只出 23 位（base64 尾部填充被 tr 删掉），改用 secrets
+pass="$(python3 -c 'import secrets,string; a=string.ascii_letters+string.digits; print("".join(secrets.choice(a) for _ in range(24)))')"
+
+htpasswd -b "$HTPASSWD" "$user" "$pass"
+printf '%s  %s\n' "$user" "$pass" >> /root/macwave-passwords.txt
+chmod 600 /root/macwave-passwords.txt
+
+echo "$user  $pass"
+```
+
+几点：
+
+- **不要加 `-c`**。`-c` 会**新建并清空**文件，把 MacWave 现有账号一起抹掉。
+  文件已存在时只用 `-b` 追加；要改某个账号的口令，同样用 `-b`（同名覆盖）。
+- 哈希算法用默认值即可：Linux 的 `httpd-tools` 写 `$2y$`（bcrypt），
+  macOS 自带的写法是 `$apr1$`，**nginx 两种都认**。不要用 `-p`（明文）。
+- 口令生成不要用 `openssl rand -base64 18 | cut -c1-24` —— `tr` 删掉 `/+` 后
+  偶尔只剩 23 位。用上面那条 `secrets` 命令可稳定得到 24 位。
+- nginx **不需要 reload**：`auth_basic_user_file` 每次请求都会重新读文件。
+- 明文统一记在 `/root/macwave-passwords.txt`（`chmod 600`），发信时从这里取。
+
+### 验证
+
+```bash
+# 该账号能取 LinuxWave 数据
+curl -so /dev/null -w '%{http_code}\n' -u REPOHUBUSER10001:<密码> \
+  https://mirror.repohub.top/LinuxWave/selfupdate/latest.toml      # 期望 200
+
+# 同一账号也能取 MacWave 数据 —— 认证是站点级的，不按目录区分
+curl -so /dev/null -w '%{http_code}\n' -u REPOHUBUSER10001:<密码> \
+  https://mirror.repohub.top/MacWave/core/4.0/lib/install.sh       # 也是 200
+```
+
+第二条是**已知的取舍**：nginx 的 `auth_basic` 只能按 location 放行，不能按账号限制目录。
+分段编号解决的是「能单独吊销」，不是「能隔离访问」。若将来真需要隔离，
+得换成每产品一个 `auth_basic_user_file`。
+
+---
+
 ## 七、和 MacWave 的约定
 
-- 镜像站**共用同一个 basic auth 账号**（在当前规模下没必要分账号）
+- **账号按产品分段编号**，见第八节。MacWave 用 `REPOHUBUSER1…`，LinuxWave 从
+  `REPOHUBUSER10001` 起 —— 不要混用，否则一个产品泄露的账号能取到另一个产品的数据
 - 目录互不干扰：MacWave 的任何工具都不会读写 `LinuxWave/`，反之亦然
 - 带宽与磁盘共享同一台机器，产物体积请留意（MacWave 全量约 2 GB）
