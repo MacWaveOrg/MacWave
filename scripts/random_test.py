@@ -115,6 +115,9 @@ LIMIT_RATE_MIN_ARTIFACT = 2 * 1024 * 1024    # 限速测试挑够大的包才测
 REPO_DIR = Path(__file__).resolve().parent.parent
 ARCH_MAP = {"aarch64": "arm64", "arm64": "arm64", "x86_64": "amd64", "amd64": "amd64"}
 
+SELFUPDATE_LATEST_URL = "https://raw.githubusercontent.com/MacWaveOrg/Selfupdate/main/macwavedata/latest.toml"
+CONFIGDATA_LATEST_URL = "https://raw.githubusercontent.com/MacWaveOrg/configdata/main/versiondata/latest_version"
+
 
 # -------------------- 结果记录 --------------------
 
@@ -284,25 +287,47 @@ def setup_environment(layout):
     print(f"🌊 deployed scripts into {layout.base_dir}")
 
 
+def _fetch_text(url):
+    try:
+        if requests is not None:
+            return requests.get(url, timeout=20).text
+        import urllib.request
+        with urllib.request.urlopen(url, timeout=20) as response:
+            return response.read().decode()
+    except Exception:
+        return ""
+
+
+def latest_version_source():
+    # 「最新版本」从哪个仓库读，由被测代码决定，不按分支名猜：
+    #   4.0 起 selfupdate 读 Selfupdate 仓库的 macwavedata/latest.toml；
+    #   3.x 读 configdata 的 versiondata/latest_version。
+    # 以 lib/domains.py 里有没有 selfupdate_latest_url 作为判据。
+    try:
+        domains_py = (REPO_DIR / "lib" / "domains.py").read_text()
+    except OSError:
+        return CONFIGDATA_LATEST_URL, r'version:\s*"([^"]+)"'
+    if "def selfupdate_latest_url" in domains_py:
+        return SELFUPDATE_LATEST_URL, r'^\s*version\s*=\s*"([^"]+)"'
+    return CONFIGDATA_LATEST_URL, r'version:\s*"([^"]+)"'
+
+
 def installed_version_for_selfupdate():
     """让 selfupdate 走「已是最新」的短路分支，避免随机测试真的去更新安装目录。
 
     真的自更新由 scripts/selfupdate_test.sh 专门覆盖；这里只关心命令的反应。
+
+    版本号必须取自**被测代码自己会读的那个源**。此前固定读 configdata，于是 4.0
+    代码把 3.2.x 当成「已安装版本」，误判有新版本并真的去更新，整个用例随即失败。
     """
-    url = "https://raw.githubusercontent.com/MacWaveOrg/configdata/main/versiondata/latest_version"
-    try:
-        if requests is not None:
-            text = requests.get(url, timeout=20).text
-        else:
-            import urllib.request
-            with urllib.request.urlopen(url, timeout=20) as response:
-                text = response.read().decode()
-        match = re.search(r'version:\s*"([^"]+)"', text)
-        if match:
-            return match.group(1)
-    except Exception:
-        pass
-    return "3.0.1"
+    url, pattern = latest_version_source()
+    match = re.search(pattern, _fetch_text(url), re.M)
+    if match:
+        return match.group(1)
+
+    # 取不到就别猜一个小版本号——那会让 selfupdate 判定「该升级」并真的动安装目录。
+    # 用一个远高于真实的版本，让它走「已是最新」的短路分支。
+    return "999.999.999"
 
 
 def cleanup(layout, keep=False):

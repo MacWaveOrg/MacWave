@@ -43,6 +43,58 @@ fi
 FAILED=0
 
 # ==========================================
+# 0. 本地自更新数据（下面 2、3、6、7 四段都靠它，全程离线）
+# ==========================================
+#
+# 4.0 起的自更新数据只有两样东西，按版本平铺：
+#   macwavedata/latest.toml                  哪个版本是最新的
+#   macwavedata/<版本>/update_commands.sh    那一版下什么、放哪里
+# 这里在临时目录里造一份同大版本、比 4.0.0 高一档的数据，用 file:// 指给客户端。
+# 这样测试既离线、又不依赖线上已发布的版本号（线上换版本不会让这里变红）。
+
+SU_WORK="$(mktemp -d)"
+trap 'rm -rf "$SU_WORK"' EXIT
+
+SU_VERSION="4.0.1"
+SU_BRANCH="4.0"
+mkdir -p "$SU_WORK/selfupdate/macwavedata/$SU_VERSION" "$SU_WORK/core"
+
+cat > "$SU_WORK/selfupdate/macwavedata/latest.toml" <<EOF
+version = "$SU_VERSION"
+release_date = "2026-01-01"
+build_number = "TEST"
+branch = "$SU_BRANCH"
+EOF
+
+# 代码树：<core>/<branch>/<路径>，用软链接指回仓库，省一次复制
+ln -s "$REPO_DIR" "$SU_WORK/core/$SU_BRANCH"
+
+# 用仓库自己的生成器产出这一版的 update_commands.sh。清单取自工作区实际文件，
+# 而不是 --ref HEAD：本地 HEAD 可能落后于工作区，那样会漏掉新加的文件。
+SU_FILES=()
+for dir in lib pkg surfboard; do
+    for file in "$REPO_DIR/$dir"/*; do
+        [[ -f "$file" ]] || continue
+        rel="$dir/$(basename "$file")"
+        case "$rel" in
+            lib/wave|lib/install.sh|lib/uninstall.sh) continue ;;
+        esac
+        SU_FILES+=("$rel")
+    done
+done
+
+python3 "$SCRIPT_DIR/build_update_commands.py" \
+    --version "$SU_VERSION" \
+    --branch "$SU_BRANCH" \
+    --files "${SU_FILES[@]}" \
+    --out "$SU_WORK/selfupdate/macwavedata/$SU_VERSION/update_commands.sh" > /dev/null
+
+export MACWAVE_SELFUPDATE_DOMAIN="file://$SU_WORK/selfupdate"
+export MACWAVE_CORE_DOMAIN="file://$SU_WORK/core"
+# 解释器数据不存在时安装器会警告并回退到系统 python3，安装不中断
+export MACWAVE_PYTHON_DOMAIN="file://$SU_WORK/python"
+
+# ==========================================
 # 1. 版本数据解析与版本比较（离线，不碰网络）
 # ==========================================
 
@@ -59,25 +111,35 @@ spec = importlib.util.spec_from_file_location('selfupdate_module', selfupdate_py
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 
-# 单行命令
+# 4.0 的版本数据是 TOML（macwavedata/latest.toml）。3.x 的「冒号 + <<< >>> 命令块」
+# 随 files_info 一起退休了，所以这里只校验 key = "value" 这一种形态。
 single = (
-    'version: "9.9.9"\n'
-    'release_date: "2026-01-01"\n'
-    'build_number: "X1"\n'
-    'branch: "main"\n'
-    'update_command: <<< echo hello >>>\n'
+    'version = "9.9.9"\n'
+    'release_date = "2026-01-01"\n'
+    'build_number = "X1"\n'
+    'branch = "main"\n'
 )
-data = module.parse_version_data(single)
+data = module.version_data(single)
 assert data['version'] == '9.9.9', data
 assert data['branch'] == 'main', data
 assert data['release_date'] == '2026-01-01', data
-assert data['update_command'] == 'echo hello', data
+assert data['build_number'] == 'X1', data
 
-# 多行命令（<<< >>> 之间可以换行，且不能被当成字段）
-multi = 'version: "1.0"\nupdate_command: <<<\necho one: two\necho three\n>>>\n'
-parsed = module.parse_version_data(multi)
+# 线上文件带注释：注释里的「version =」不能被当成字段
+commented = (
+    '# version = "should-not-win"\n'
+    '# 说明文字\n'
+    'version = "1.0"\n'
+)
+parsed = module.version_data(commented)
 assert parsed['version'] == '1.0', parsed
-assert parsed['update_command'] == 'echo one: two\necho three', parsed
+
+# 解析器是**故意宽松**的：认不出的行直接跳过，不报错。
+# 这样有人在数据文件里留了说明、或以后加了新字段，旧客户端仍能读到 version，
+# 而不是整个自更新停摆。坏处是拼错也不会被告知，所以这里把行为钉住：
+lenient = module.version_data('version "1.0"\nversion = "2.0"\nunknown-key = "x"\n')
+assert lenient['version'] == '2.0', lenient
+assert lenient['unknown-key'] == 'x', lenient
 
 # 版本比较：补齐到四位，2.3 == 2.3.0，跨位数按数值比
 assert module.version_key('2.3') == module.version_key('2.3.0')
@@ -142,7 +204,8 @@ RC=0
 python3 "$WAVE_BIN" selfupdate > "$LOG_FILE" 2>&1 || RC=$?
 cat "$LOG_FILE"
 
-if [[ "$RC" -ne 0 ]] && grep -q 'cannot cross major versions' "$LOG_FILE"; then
+# 4.0 的守卫措辞已改为「is a new major version, so it cannot be installed with selfupdate」
+if [[ "$RC" -ne 0 ]] && grep -q 'cannot be installed with selfupdate' "$LOG_FILE"; then
     echo -e "${GREEN}🌊 OK: cross-major selfupdate refused${RESET}"
 else
     echo -e "${RED_BOLD}🌊 FAIL: expected a cross-major refusal (exit $RC)${RESET}"
@@ -376,19 +439,16 @@ if ! bash -n "$SELFUPDATE_SH"; then
     FAILED=$((FAILED + 1))
 fi
 
-# 线上版本形如 x.0 时，「同大版本且更旧」的版本并不存在（x.0 已是该大版本的最低版本），
-# 所以这里直接给 selfupdate.sh 指定一个同大版本、更高的目标版本号，走完真实的更新流程
-# （读文件清单 → 下载文件 → 写 VERSION.json）。
-PUBLISHED="$(curl -fsSL --max-time 60 "https://raw.githubusercontent.com/MacWaveOrg/configdata/main/versiondata/latest_version" \
-    | sed -n 's/^version:[[:space:]]*"\(.*\)"/\1/p' | head -n 1)"
+# 目标版本取自上面那份本地数据（SU_VERSION，与 4.0.0 同大版本、高一档），
+# 于是这里真的会走一遍完整流程：取 <selfupdate>/macwavedata/<版本>/update_commands.sh
+# → 按它的 want 清单下载代码 → 全部到位后写 VERSION.json。
+INSTALLED="4.0.0"
+TARGET="$SU_VERSION"
 
-if [[ -z "$PUBLISHED" ]]; then
-    echo -e "${RED_BOLD}🌊 FAIL: cannot read the published version${RESET}"
+if [[ -z "$TARGET" ]]; then
+    echo -e "${RED_BOLD}🌊 FAIL: no target version in the local selfupdate data${RESET}"
     FAILED=$((FAILED + 1))
 else
-    INSTALLED="$PUBLISHED"
-    TARGET="$(python3 -c 'import sys; parts = sys.argv[1].split("."); parts[-1] = str(int(parts[-1]) + 1); print(".".join(parts))' "$PUBLISHED")"
-
     python3 - "$VERSION_FILE" "$INSTALLED" << 'PYEOF'
 import json
 import sys
@@ -400,7 +460,10 @@ PYEOF
 
     LOG_FILE="$(mktemp)"
     RC=0
-    MACWAVE_UPDATE_VERSION="$TARGET" MACWAVE_UPDATE_BRANCH=main bash "$SELFUPDATE_SH" > "$LOG_FILE" 2>&1 || RC=$?
+    # 走真实命令（selfupdate.py + selfupdate.sh 两层都覆盖）。
+    # selfupdate.py 会把 latest.toml 里的 version / branch 通过环境变量传下去；
+    # 直接调 selfupdate.sh 就得自己拼这些变量，测的就不是用户实际走的那条路了。
+    python3 "$WAVE_BIN" selfupdate > "$LOG_FILE" 2>&1 || RC=$?
     cat "$LOG_FILE"
 
     if [[ "$RC" -ne 0 ]]; then
@@ -428,29 +491,25 @@ echo "========== every listed file landed =========="
 
 BASE_DIR=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE'))['base_dir'])")
 
-FILES_INFO_URL="https://raw.githubusercontent.com/MacWaveOrg/configdata/main/versiondata/files_info"
-FILES_INFO_TMP="$(mktemp)"
-PARSER_TMP="$(mktemp)"
+FILES_INFO_TMP="$SU_WORK/selfupdate/macwavedata/$SU_VERSION/update_commands.sh"
 
-if ! curl -fsSL --max-time 60 -o "$FILES_INFO_TMP" "$FILES_INFO_URL"; then
-    echo -e "${RED_BOLD}🌊 FAIL: cannot fetch versiondata/files_info${RESET}"
+if [[ ! -f "$FILES_INFO_TMP" ]]; then
+    echo -e "${RED_BOLD}🌊 FAIL: the generated update_commands.sh is missing${RESET}"
     FAILED=$((FAILED + 1))
 else
-    # 抽出 selfupdate.sh 里真正的解析器，保证测的是实现本身而不是另一份复制品
-    sed -n '/^parse_files_info() {/,/^}$/p' "$SELFUPDATE_SH" > "$PARSER_TMP"
-
+    # 清单就是脚本里的 `want <路径> <是否 +x>` 调用 —— 测的是这一版真正会下载的东西。
     FILE_COUNT=0
     MISSING=0
-    while IFS=$'\t' read -r repo_path local_path executable; do
+    while read -r repo_path; do
         if [[ -z "$repo_path" ]]; then
             continue
         fi
         FILE_COUNT=$((FILE_COUNT + 1))
-        if [[ ! -e "$BASE_DIR/$local_path" ]]; then
-            echo -e "${RED_BOLD}🌊 FAIL: $repo_path was not installed to $local_path${RESET}"
+        if [[ ! -e "$BASE_DIR/$repo_path" ]]; then
+            echo -e "${RED_BOLD}🌊 FAIL: $repo_path was not installed${RESET}"
             MISSING=$((MISSING + 1))
         fi
-    done < <(bash -c "source '$PARSER_TMP'; parse_files_info '$FILES_INFO_TMP'")
+    done < <(sed -n 's/^[[:space:]]*want \([^[:space:]]*\).*/\1/p' "$FILES_INFO_TMP" | sort -u)
 
     if [[ "$FILE_COUNT" -eq 0 ]]; then
         echo -e "${RED_BOLD}🌊 FAIL: the file list parsed to nothing${RESET}"
@@ -462,8 +521,6 @@ else
         echo -e "${GREEN}🌊 OK: all $FILE_COUNT listed file(s) landed${RESET}"
     fi
 fi
-
-rm -f "$FILES_INFO_TMP" "$PARSER_TMP"
 
 # ==========================================
 # 8. wave.py 里每个命令都要有对应的模块文件

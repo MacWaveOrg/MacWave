@@ -1,0 +1,110 @@
+name: Keep data pointers in sync
+
+# 数据仓库里的 latest.toml 是**手写指针**，而真正决定装哪一版的是版本目录本身。
+# 发布时只加了目录、忘了改指针，客户端就会一直装着旧版本，而且不报错 ——
+# 现象只是「怎么更新都不变」，很难追到原因。这个工作流负责发现并修正它。
+#
+#   verify  任何 push / PR：只检查，不一致就失败（早发现，不改任何仓库）
+#   sync    定时与手动触发：把 latest.toml 改成实际最高的版本目录并提交
+#
+# 改的是数据仓库（Python / Selfupdate），需要能写别人的仓库，所以用 RELEASE_SYNC_TOKEN
+# （与 sync-release-branch.yml 同一个 PAT）。GITHUB_TOKEN 只能写本仓库。
+
+on:
+  push:
+    branches: [main, '4.0', '3.2']
+  pull_request:
+  schedule:
+    # 每天一次。数据仓库通常由人手工加目录，定时兜底比事后追查划算。
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    # PR 与 push 只做检查：数据仓库的状态不该由一次代码提交顺手改掉
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Checkout the data repositories
+        uses: actions/checkout@v4
+        with:
+          repository: MacWaveOrg/Python
+          path: data-python
+
+      - uses: actions/checkout@v4
+        with:
+          repository: MacWaveOrg/Selfupdate
+          path: data-selfupdate
+
+      - name: Check the Python pointer
+        run: |
+          python3 scripts/sync_latest_pointer.py \
+            --data-dir data-python --subdir pythondata \
+            --require python_url.toml --check
+
+      - name: Check the self-update pointer
+        run: |
+          python3 scripts/sync_latest_pointer.py \
+            --data-dir data-selfupdate --subdir macwavedata \
+            --require update_commands.sh --check
+
+  sync:
+    # 定时与手动触发才真的改：自动提交落到数据仓库自己的历史里，便于审阅回滚
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Checkout the data repositories
+        uses: actions/checkout@v4
+        with:
+          repository: MacWaveOrg/Python
+          path: data-python
+          token: ${{ secrets.RELEASE_SYNC_TOKEN }}
+
+      - uses: actions/checkout@v4
+        with:
+          repository: MacWaveOrg/Selfupdate
+          path: data-selfupdate
+          token: ${{ secrets.RELEASE_SYNC_TOKEN }}
+
+      - name: Sync the Python pointer
+        run: |
+          python3 scripts/sync_latest_pointer.py \
+            --data-dir data-python --subdir pythondata \
+            --require python_url.toml
+
+      - name: Sync the self-update pointer
+        run: |
+          python3 scripts/sync_latest_pointer.py \
+            --data-dir data-selfupdate --subdir macwavedata \
+            --require update_commands.sh
+
+      - name: Commit and push whatever changed
+        run: |
+          set -euo pipefail
+
+          commit() {
+            local dir="$1" label="$2"
+            if [[ -z "$(git -C "$dir" status --porcelain)" ]]; then
+              echo "$label: already in sync"
+              return 0
+            fi
+            git -C "$dir" config user.name  "MacWave CI"
+            git -C "$dir" config user.email "ci@macwave.org"
+            git -C "$dir" add --all
+            git -C "$dir" commit \
+              -m "$label: point latest.toml at the newest version directory" \
+              -m "Derived from the version directories that actually exist, so the pointer cannot drift."
+            git -C "$dir" push
+          }
+
+          commit data-python     "Sync latest_python"
+          commit data-selfupdate "Sync latest.toml"
