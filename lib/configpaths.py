@@ -14,8 +14,8 @@
 
 import json
 import os
-import re
 import sys
+import unicodedata
 from pathlib import Path
 
 
@@ -161,29 +161,84 @@ def load_base_dir():
 #
 # 包名、版本号、可执行文件名既来自命令行，也来自远端数据（@common / deps 字段），
 # 之后会被拼进 URL 和文件路径，还会以换行分隔的长字符串形式交给 shell。
-# 所以这里做统一的白名单校验，外加"最终路径必须在 BASE_DIR 之内"的兜底。
+#
+# 这里按 **Unicode 类别** 做白名单，而不是列 ASCII 字符：这样中文、日文、带重音的
+# 拉丁字母都能当包名，同时下面这些危险字符因为类别不在白名单里而自然落榜——
+#   /  \              分隔符，唯一能改变目录层级的字符（Um, Po）
+#   空格、NBSP          空白（Zs）——能把一个参数劈成两个
+#   \n \r \t 等控制字符   （Cc）——会截断 mw_parse_info 的换行分隔协议，等价于往 shell 多塞字段
+#   U+2028/U+2029      行/段分隔符（Zl/Zp）
+#   $ ` ' " ; | & ( )   符号类（Sc/Sk/Po/Ps/Pe），shell 元字符
+#   %  @  :  =  ,  ~ 等   标点/符号类，除非显式列进 ALLOWED_PUNCT
+#
+# 名字仍要过一遍 assert_inside 才能真正落盘：字符规则是早失败、报错清楚，
+# 路径包含检查才是防穿越的硬保障。
 
-# 允许的字符：字母、数字、点、下划线、加号、减号，且必须以字母或数字开头。
-# 刻意不含 / \ % @ : 空白 与换行——它们要么能改变目录层级（路径穿越），
-# 要么能做 URL 注入（%2f 之类），要么能往 shell 里注入额外字段。
-SAFE_TOKEN_RE = re.compile(r'[A-Za-z0-9][A-Za-z0-9._+-]*\Z')
+# 字母、组合符号（重音）、数字。中文属 Lo，é 属 Ll（或 L+Mn），均在此列。
+NAME_CATEGORIES = frozenset({
+    'Lu', 'Ll', 'Lt', 'Lm', 'Lo',   # 字母
+    'Mn', 'Mc', 'Me',               # 组合符号，如 e + U+0301
+    'Nd', 'Nl', 'No',               # 数字
+})
+
+# 首字符必须是字母或数字：挡住开头的 -（选项注入）、. 与组合符号（同形异义伪装）。
+START_CATEGORIES = frozenset({'Lu', 'Ll', 'Lt', 'Lm', 'Lo', 'Nd', 'Nl', 'No'})
+
+ALLOWED_PUNCT = frozenset('._+-')
+# 4.0 的落盘名是「包名@版本.架构.扩展名」，所以文件名多放行一个 @。
+# @ 在 shell 里无特殊含义（全程引号引用），进 URL 时由 payload_url 编码成 %40。
+ALLOWED_PUNCT_FILENAME = ALLOWED_PUNCT | {'@'}
+
+# 单个路径段上限。非 ASCII 一个字最多占 4 字节，而 macOS 的 NAME_MAX 是 255 字节，
+# 所以除了字符数还要卡字节数，否则长中文包名会在落盘时才炸「File name too long」。
+MAX_NAME_CHARS = 128
+MAX_NAME_BYTES = 200
+
+
+def _category(ch):
+    return unicodedata.category(ch)
+
+
+def _matches(value, punct):
+    value = str(value)
+    if not value or len(value) > MAX_NAME_CHARS:
+        return False
+    if '..' in value:
+        return False
+    if len(value.encode('utf-8')) > MAX_NAME_BYTES:
+        return False
+    if _category(value[0]) not in START_CATEGORIES:
+        return False
+    return all(ch in punct or _category(ch) in NAME_CATEGORIES for ch in value)
 
 
 def is_safe_token(value):
-    value = str(value)
-    if not value or len(value) > 128:
-        return False
-    if '..' in value or value in ('-', '.'):
-        return False
-    return bool(SAFE_TOKEN_RE.match(value))
+    return _matches(value, ALLOWED_PUNCT)
+
+
+def is_safe_filename(value):
+    return _matches(value, ALLOWED_PUNCT_FILENAME)
+
+
+def _reject(what, value, punct):
+    print(f"{RED_BOLD}🌊 Error: Unsafe {what}: {value!r}{RESET}")
+    print(f"{RED_BOLD}🌊 Allowed: letters, digits, and {''.join(sorted(punct))} "
+          f"(must start with a letter or digit).{RESET}")
+    print(f"{RED_BOLD}🌊 Path separators, whitespace, control characters "
+          f"and shell metacharacters are never allowed.{RESET}")
+    sys.exit(1)
 
 
 def require_safe_token(value, what):
     # 不合法直接退出：这类输入没有任何"宽松解释"的余地
     if not is_safe_token(value):
-        print(f"{RED_BOLD}🌊 Error: Unsafe {what}: {value!r}{RESET}")
-        print(f"{RED_BOLD}🌊 Allowed: letters, digits, and . _ + - (must start with a letter or digit).{RESET}")
-        sys.exit(1)
+        _reject(what, value, ALLOWED_PUNCT)
+    return str(value)
+
+
+def require_safe_filename(value, what="file name"):
+    if not is_safe_filename(value):
+        _reject(what, value, ALLOWED_PUNCT_FILENAME)
     return str(value)
 
 

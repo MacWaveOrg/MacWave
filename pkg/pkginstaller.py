@@ -27,6 +27,7 @@ from configpaths import (
     VERSION_FILE,
     assert_inside,
     load_base_dir,
+    require_safe_filename,
     require_safe_token,
 )
 import domains
@@ -627,7 +628,7 @@ def handle_install(input_string):
         from_source=config.get("install_from_source", False))
 
     # 文件名会被当路径用，来自远端数据，必须过白名单
-    original_filename = require_safe_token(payload["filename"], "file name")
+    original_filename = require_safe_filename(payload["filename"], "file name")
 
     # 7. 下载
     DOWNLOAD_TMP.mkdir(parents=True, exist_ok=True)

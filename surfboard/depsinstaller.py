@@ -23,7 +23,7 @@ RESET = '\033[0m'
 
 # -------------------- 配置加载 --------------------
 
-from configpaths import assert_inside, load_base_dir, require_safe_token
+from configpaths import assert_inside, load_base_dir, require_safe_filename
 import domains
 
 
@@ -212,7 +212,7 @@ def download_dependency(payload, dep_name, dep_version, arch, dep_display_name,
     from pkginstaller import download_file
 
     DOWNLOAD_TMP.mkdir(parents=True, exist_ok=True)
-    original_filename = require_safe_token(payload["filename"], "file name")
+    original_filename = require_safe_filename(payload["filename"], "file name")
     temp_path = DOWNLOAD_TMP / f"{original_filename}.partial"
     assert_inside(temp_path, DOWNLOAD_TMP, "dependency download path")
 
