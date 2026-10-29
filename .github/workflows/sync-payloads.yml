@@ -55,7 +55,7 @@ jobs:
       - name: Checkout MacWave
         uses: actions/checkout@v4
         with:
-          ref: 4.0
+          ref: "4.0"
 
       # 索引是纯数据，直接检出本地副本，不走 api.github.com（未认证只有 60 次/小时）。
       - name: Checkout infosource
