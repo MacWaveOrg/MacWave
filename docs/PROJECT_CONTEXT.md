@@ -19,7 +19,7 @@ scripts/      回归测试脚本
 .github/      CI
 .templates/   目录与文件的模板样例（bin/、pkg/、macwave_config/）
 .Pseudocode/  早期伪代码，仅作参考
-STYLE.md      代码风格约定
+docs/STYLE.md 代码风格约定
 README.md     用户文档
 ```
 
@@ -158,7 +158,7 @@ updatedata/{版本号}/transfer_commands      Y/y 时执行这个脚本（bash -
 
 ## 七、代码约定
 
-见 `STYLE.md`，要点：
+见 `docs/STYLE.md`，要点：
 
 - Python 文件头 5 行：shebang / 空行 / `# 文件名` / 空行 / 代码，其后用 `# -------------------- 分区名 --------------------` 分区
 - 颜色常量模块级单引号：`RED_BOLD` / `GREEN` / `YELLOW` / `RESET`
@@ -259,7 +259,7 @@ BASE_DIR/links/                  wget@1.25.0，以及每个依赖 bin/ 下可执
 | --- | --- | --- |
 | 1 | `MacWaveOrg/configdata` 的 `versiondata/latest_version` | `branch` 指向新分支（新分支成为发布线时），`version` / `release_date` / `build_number` 一并更新 |
 | 2 | `.github/workflows/format-test.yml` | 把新分支名加进 `on.push.branches` 与 `on.pull_request.branches` |
-| 3 | `PROJECT_CONTEXT.md` 开头的「版本分支（当前的 `3.1`）」 | 改成新分支 |
+| 3 | `docs/PROJECT_CONTEXT.md` 开头的「版本分支（当前的 `3.1`）」 | 改成新分支 |
 | 4 | `README.md` / `README.zh-Hans.md` 的 `Latest Version` / `最新版本` | 正式发布时更新 |
 | 5 | 站点 `index.html`（`MacWaveOrg/Pages`） | 版本行的版本号 |
 
