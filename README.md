@@ -112,9 +112,54 @@ Every address MacWave contacts is configurable, so switching mirrors is a set of
 export MACWAVE_BOTTLE_DOMAIN=https://mirror.example.cn/MacWave/bottle
 export MACWAVE_DEPS_DOMAIN=https://mirror.example.cn/MacWave/deps
 ```
-Put those two lines in `~/.zshrc` so they apply to every shell. Everything else keeps using the official addresses, so a mirror only needs to carry what it mirrors.
+Everything else keeps using the official addresses, so a mirror only needs to carry what it mirrors.
 
 The `MacWave/` segment keeps a mirror's domain shareable: LinuxWave can later live at `/LinuxWave` on the same host without either product owning the root.
+
+### Mirror everything
+Those two lines only cover the bulk downloads. When `github.com` and `raw.githubusercontent.com` are **blocked** rather than slow, the files that let MacWave work at all still come from GitHub: the package index, the self-update data, the bundled interpreter and MacWave's own code. Point all of them at the mirror:
+
+```bash
+export MACWAVE_BOTTLE_DOMAIN=https://mirror.example.cn/MacWave/bottle
+export MACWAVE_DEPS_DOMAIN=https://mirror.example.cn/MacWave/deps
+export MACWAVE_API_DOMAIN=https://mirror.example.cn/MacWave/infosource
+export MACWAVE_SELFUPDATE_DOMAIN=https://mirror.example.cn/MacWave/selfupdate
+export MACWAVE_PYTHON_DOMAIN=https://mirror.example.cn/MacWave/python
+export MACWAVE_CORE_DOMAIN=https://mirror.example.cn/MacWave/core
+export MACWAVE_PIP_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
+`MACWAVE_PIP_INDEX` is the odd one out: it only affects the three Python dependencies (`requests`, `toml`, `colorama`) that `pip` installs once, so it can point at any PyPI mirror. The other six are paths under one mirror host, which is why a single account covers all of them.
+
+### Write it once, keep it
+
+`export` lasts only until you close the terminal. Append the block to `~/.zshrc` once and every later shell inherits it:
+
+```bash
+cat >> ~/.zshrc <<'MWMIRROR'
+
+# MacWave mirror — delete this block to go back to the official addresses
+export MACWAVE_BOTTLE_DOMAIN=https://mirror.example.cn/MacWave/bottle
+export MACWAVE_DEPS_DOMAIN=https://mirror.example.cn/MacWave/deps
+export MACWAVE_API_DOMAIN=https://mirror.example.cn/MacWave/infosource
+export MACWAVE_SELFUPDATE_DOMAIN=https://mirror.example.cn/MacWave/selfupdate
+export MACWAVE_PYTHON_DOMAIN=https://mirror.example.cn/MacWave/python
+export MACWAVE_CORE_DOMAIN=https://mirror.example.cn/MacWave/core
+export MACWAVE_PIP_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
+MWMIRROR
+source ~/.zshrc
+```
+
+Run it once. New terminals pick it up on their own, and the trailing `source` only refreshes the terminal you ran it in. Drop the lines you do not need — a partial set works, and anything unset falls back to the official address.
+
+Four things worth knowing:
+
+- **Percent-encode the credentials.** A raw `@`, `:`, `/`, `"` or `$` in a password breaks either the URL or the shell. Write `%40`, `%24` and so on instead — both `curl` and `requests` decode them before the Basic Auth exchange. The project's mirror page hands you the encoded form.
+- **The quotes in `<<'MWMIRROR'` are load-bearing.** Without them the shell expands `$` while writing the block, so even a `%`-free password lands in the file mangled. With them the file keeps exactly what you typed — but `$` is still expanded when `.zshrc` is read, which is the other reason to percent-encode.
+- **Running it twice appends a second copy.** Both get evaluated and the last one wins, so it still works — but edit the existing block instead of adding another.
+- **The file is plain text.** With the project mirror the password sits in `~/.zshrc` in the clear; `chmod 600 ~/.zshrc` if other accounts share the machine.
+
+Whatever you end up with, `wave mirror` reports the effective address for every source and says whether it came from the environment or the built-in default.
 
 ### The project-run mirror (trusted users only)
 
@@ -129,10 +174,12 @@ export MACWAVE_BOTTLE_DOMAIN="https://<user>:<password>@<mirror-host>/MacWave/bo
 export MACWAVE_DEPS_DOMAIN="https://<user>:<password>@<mirror-host>/MacWave/deps"
 ```
 
+The same credentials go into each of the six paths when you want the full set — the mirror serves all of them.
+
 - Both `curl` and `requests` accept credentials embedded in a URL, so no client-side setup is needed.
 - These lines end up in `~/.zshrc`, **which is plain text**: never commit it, and remember the password is readable by anyone who can read that file.
 - When something fails, MacWave replaces the password with `***` before printing the address, so pasting an error into a chat will not leak it.
-- The mirror carries only `bottle` and `deps`; everything else keeps using the official addresses. It fixes "large downloads crawl", not "`github.com` is unreachable".
+- The mirror carries all six paths, so putting the credentials into the full set above covers the "`github.com` is unreachable" case too, not just "large downloads crawl".
 
 ### The full set
 | Variable | What it fetches | Default |
