@@ -106,6 +106,7 @@ def print_custom_help():
         (_command("link"), "Link installed packages without a version number"),
         (_command("unlink"), "Remove those unversioned links"),
         (_command("linkquery"), "Show which version an unversioned link points to"),
+        (_command("mirror"), "Show which addresses packages are fetched from"),
     ])
 
     _print_section("Flags", [
@@ -187,6 +188,23 @@ COMMAND_HELP = {
         ],
         "examples": ["wave upgrade jq", "wave upgrade jq -X",
                      "wave upgrade jq --remove-old-versions --max-time=2min"],
+    },
+    "mirror": {
+        "usage": "wave mirror [flags]",
+        "desc": "Show the address each kind of data is fetched from, including the "
+                "built-in defaults for anything not overridden by an environment variable.",
+        "flags": [
+            ("--json", "Print the configuration as JSON"),
+            ("--yaml", "Print the configuration as YAML"),
+            ("--toml", "Print the configuration as TOML"),
+            ("--raw", "Print ready-to-paste export lines"),
+            ("--only-set", "With --raw: export only the sources you overrode, leaving "
+                           "the rest to follow the built-in defaults"),
+            ("--show-password", "Print passwords in full instead of six asterisks"),
+            ("--hide-user", "Also mask the user name"),
+        ],
+        "examples": ["wave mirror", "wave mirror --raw",
+                     "wave mirror --json", "wave mirror --show-password"],
     },
     "uninstall": {
         "usage": "wave uninstall <package>[@<version>] [flags]",

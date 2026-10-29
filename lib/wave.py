@@ -39,6 +39,7 @@ COMMANDS = {
     "link":       "linker",
     "unlink":     "linker",
     "linkquery":  "linker",
+    "mirror":     "mirrorinfo",
 }
 
 ARGUMENTS = {
@@ -115,6 +116,10 @@ def main():
         elif module_name == "selfupdate":
             from selfupdate import handle_selfupdate
             handle_selfupdate(full_input)
+
+        elif module_name == "mirrorinfo":
+            from mirrorinfo import handle_mirror
+            handle_mirror(full_input)
 
         elif module_name == "linker":
             from linker import handle_link_command, handle_linkquery_command, handle_unlink_command
