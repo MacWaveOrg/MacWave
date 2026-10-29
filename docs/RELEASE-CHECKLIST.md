@@ -137,6 +137,61 @@ gh release create v<版本> --repo MacWaveOrg/MacWave --title "MacWave <版本>"
 先建 tag 再建 Release。`--target-commitish` 只在 tag 不存在时有效，
 tag 已存在却仍传 `--target` 会报 `Release.target_commitish is invalid`。
 
+#### Release 上必须附全部源码
+
+每个 Release 除了 GitHub 自动生成的 Source code，还要**手工再附两样东西**，
+这个习惯从 3.2.1 一直延续下来，不要断：
+
+| 附什么 | 资产名 | 内容 |
+| --- | --- | --- |
+| 扁平源码文件 | 原文件名（`wave.py`、`mirrorinfo.py`…） | 该 tag 下的每个 `.py` / `.sh`，**不带目录** |
+| 源码树归档 | `MacWave-<版本>.tar`、`MacWave-<版本>.tar.gz` | 整棵源码树，顶层目录 `MacWave-<版本>/` |
+
+```bash
+TAG=v<版本>
+
+# 1) 列该 tag 下全部 py/sh —— 必须排除 . 开头的目录（见下面「文件名会撞」）
+gh api "repos/MacWaveOrg/MacWave/git/trees/$TAG?recursive=1" \
+  --jq '.tree[] | select(.type=="blob") | .path' | grep -E '\.(py|sh)$' | grep -v '^\.' > /tmp/src.txt
+
+# 2) 下载并扁平上传（--clobber 让重复执行安全）
+mkdir -p /tmp/rel
+while read -r p; do
+  gh api -H "Accept: application/vnd.github.raw" \
+    "repos/MacWaveOrg/MacWave/contents/$p?ref=$TAG" > "/tmp/rel/$(basename "$p")"
+done < /tmp/src.txt
+for f in /tmp/rel/*; do gh release upload "$TAG" "$f" -R MacWaveOrg/MacWave --clobber; done
+
+# 3) 整棵源码树打包，顶层目录名必须是 MacWave-<版本>/
+rm -rf /tmp/arc && mkdir -p /tmp/arc && cd /tmp/arc
+gh api "repos/MacWaveOrg/MacWave/tarball/$TAG" > src.tar.gz && tar xzf src.tar.gz
+mv MacWaveOrg-MacWave-* "MacWave-<版本>"
+tar --no-xattrs -cf "MacWave-<版本>.tar" "MacWave-<版本>"
+gzip -9 -c "MacWave-<版本>.tar" > "MacWave-<版本>.tar.gz"
+gh release upload "$TAG" "MacWave-<版本>.tar" "MacWave-<版本>.tar.gz" -R MacWaveOrg/MacWave --clobber
+```
+
+核对：
+
+```bash
+gh release view "$TAG" -R MacWaveOrg/MacWave --json assets --jq '.assets | length'
+# 应等于 py/sh 文件数 + 2（4.1.0 是 46 + 2 = 48）
+```
+
+四个容易踩的点：
+
+- **文件名会撞。** `.Pseudocode/pkg/pkginstaller.py` 与 `pkg/pkginstaller.py` 同名，扁平化后只剩一个。
+  所以第 1 步要 `grep -v '^\.'` —— 那个目录只是早期伪代码，本来就不该出现在资产里。
+- **`gh release upload` 必须带 `--clobber`。** 否则重跑报 422。
+- **macOS 上打归档要加 `--no-xattrs`。** 不加时 bsdtar 会把扩展属性写进 pax 头，Linux 解包多出 `._*`。
+  打完务必解包 `diff -r` 一遍，确认与原树逐文件一致。
+- **归档要从 tag 建，不要从工作副本建。** 3.2.1 的 tar 就比 tag 少两个文件
+  （`sync-payloads.yml`、`RELEASE-3.2.2.md`），是 tag 之后又改过导致的不一致。
+
+为什么还要附这些：4.x 的自更新已经改成从**分支下的文件**取（见 `update_commands.sh` 的
+`want`），Release 资产不参与安装流程。附源码是为了给人看 —— 离线核对、第三方审计、
+以及「这一版到底包含哪些文件」有个确定的答案。
+
 ### 第 8 步：等 CI 绿
 
 `Format Test` 的 4 个 job 全绿才算发布完成。合并提交内容零变化时也应重跑一遍确认。
