@@ -130,15 +130,36 @@ tag 已存在却仍传 `--target` 会报 `Release.target_commitish is invalid`�
 **旧发布分支应当停在该大版本的最后一次发布上**。`4.0` 分支里出现 4.1 的代码，
 将来想从 4.0 分支取一个 4.0.x 补丁就会混乱。
 
+注意这个 workflow **只维护 `main` 与「当前发布分支」这一对**：`configdata` 指向谁，
+谁才会被同步，历史分支（`1.0.0`、`2.5`、`4.0`…）它一概不碰。所以发布后把 `branch`
+切走，旧分支就自动冻结了 —— 这也是事后止血最省力的办法。
+
 **2026-10-29 发 4.1.0 时踩过这个坑**：先合并、后改指针，`4.0` 被快进到了 `ec1fbc7`。
 
 ### 已经发生了怎么办
 
-改写历史能把 `4.0` 退回去，但那会抹掉提交（本项目已经因为一次 force 对齐，
-不得不额外补 9 个合并提交才把历史接回来）。**更推荐**：
+改写历史能把旧分支退回去，但那会抹掉提交 —— 本项目已经因为一次 force 对齐，
+不得不额外补 9 个合并提交才把历史接回来。**不要再来一次。**
 
-- 接受现状：在旧分支上打一个 tag 标记它「本应停在这里」的位置
-- 下一个版本严格按第 2 步的顺序做
+推荐做法是接受现状，并用 tag 标出「本应停在这里」的位置：
+
+```bash
+# annotated tag 需要两步：先建 tag 对象，再让 ref 指向它
+OBJECT=$(gh api "repos/MacWaveOrg/MacWave/commits/4.0" --jq '.sha')
+TAG_SHA=$(gh api --method POST repos/MacWaveOrg/MacWave/git/tags \
+    -f tag="4.0-final" \
+    -f message="Last content of the 4.0 line before 4.1 arrived on this branch" \
+    -f object="$OBJECT" -f type=commit --jq '.sha')
+gh api --method POST repos/MacWaveOrg/MacWave/git/refs \
+    -f ref="refs/tags/4.0-final" -f sha="$TAG_SHA"
+```
+
+之后想从 4.0 取补丁时，以 `4.0-final` 为基准而不是分支头。
+
+**2026-10-29 的实际情形**：`4.0` 被快进到 `ec1fbc7`（4.1 的合并提交）。
+把 `configdata` 的 `branch` 改到 `4.1` 之后，`4.0` 就停在 `ec1fbc7` 不再前进。
+该提交与 `v4.1.0` 内容相同，所以从 `4.0` 取补丁必须显式用 `4.0-final` 之类的
+基准点，否则会连 4.1 的功能一起带走。
 
 ---
 
