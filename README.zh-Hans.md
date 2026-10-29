@@ -107,9 +107,55 @@ MacWave 用到的每个地址都能替换，所以换镜像是一组环境变量
 export MACWAVE_BOTTLE_DOMAIN=https://mirror.example.cn/MacWave/bottle
 export MACWAVE_DEPS_DOMAIN=https://mirror.example.cn/MacWave/deps
 ```
-把这两行写进 `~/.zshrc`，每个终端都会生效。其余地址继续用官方源，所以镜像站只需要镜像它承载的那部分内容。
+其余地址继续用官方源，所以镜像站只需要镜像它承载的那部分内容。
 
 路径里的 `MacWave/` 是为了让一个镜像域名能共用：以后 LinuxWave 可以放在同一台机器的 `/LinuxWave`，两边都不独占域名根。
+
+### 全量镜像
+
+上面两行只覆盖大文件的下载。当 `github.com` 与 `raw.githubusercontent.com` 是**连不上**而不是慢的时候，让 MacWave 能跑起来的那几个文件仍然在 GitHub 上：软件包索引、自更新数据、自带解释器、MacWave 自身代码。把它们全部指向镜像：
+
+```bash
+export MACWAVE_BOTTLE_DOMAIN=https://mirror.example.cn/MacWave/bottle
+export MACWAVE_DEPS_DOMAIN=https://mirror.example.cn/MacWave/deps
+export MACWAVE_API_DOMAIN=https://mirror.example.cn/MacWave/infosource
+export MACWAVE_SELFUPDATE_DOMAIN=https://mirror.example.cn/MacWave/selfupdate
+export MACWAVE_PYTHON_DOMAIN=https://mirror.example.cn/MacWave/python
+export MACWAVE_CORE_DOMAIN=https://mirror.example.cn/MacWave/core
+export MACWAVE_PIP_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
+`MACWAVE_PIP_INDEX` 是唯一不一样的那个：它只影响 `pip` 安装的三个 Python 依赖（`requests`、`toml`、`colorama`），所以可以指向任意 PyPI 镜像。其余六个都是同一个镜像域名下的路径，因此一个账号就能覆盖全部。
+
+### 一次写入，长期生效
+
+`export` 只在当前终端有效，关掉就没了。把这个块追加进 `~/.zshrc`，此后每个终端自动继承：
+
+```bash
+cat >> ~/.zshrc <<'MWMIRROR'
+
+# MacWave mirror — 删掉这一块就恢复官方地址
+export MACWAVE_BOTTLE_DOMAIN=https://mirror.example.cn/MacWave/bottle
+export MACWAVE_DEPS_DOMAIN=https://mirror.example.cn/MacWave/deps
+export MACWAVE_API_DOMAIN=https://mirror.example.cn/MacWave/infosource
+export MACWAVE_SELFUPDATE_DOMAIN=https://mirror.example.cn/MacWave/selfupdate
+export MACWAVE_PYTHON_DOMAIN=https://mirror.example.cn/MacWave/python
+export MACWAVE_CORE_DOMAIN=https://mirror.example.cn/MacWave/core
+export MACWAVE_PIP_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
+MWMIRROR
+source ~/.zshrc
+```
+
+跑一次就够。新开的终端自己会读到，末尾那句 `source` 只是让**当前**这个终端立刻生效。用不上的行可以删掉 —— 少写几行也能用，没设的变量会回落到官方地址。
+
+四点需要注意：
+
+- **口令要做百分号编码。** 密码里直接写 `@`、`:`、`/`、`"`、`$` 会破坏 URL 或 shell。改成 `%40`、`%24` 这类写法 —— `curl` 与 `requests` 都会在发出 Basic Auth 之前先解码。项目镜像页给出的就是编码后的形式。
+- **`<<'MWMIRROR'` 的引号不能省。** 省了的话 shell 会在写入时就展开 `$`，哪怕密码里没有 `%` 也会被悄悄写坏。加上引号，文件里保留的就是你打的原样 —— 但 `.zshrc` 被读取时 `$` 仍会展开，所以还是要做百分号编码。
+- **跑两次会追加两份。** 两份都会被求值、以最后一个为准，所以不至于出错，但正确做法是改已有的那一块，而不是再加一份。
+- **这个文件是明文。** 用项目镜像时密码就明文躺在 `~/.zshrc` 里；如果这台机器还有别的账号，记得 `chmod 600 ~/.zshrc`。
+
+无论最后写成什么样，`wave mirror` 都会列出每一项实际生效的地址，并标明它来自环境变量还是内置默认值。
 
 ### 受信任用户专用镜像
 
@@ -123,10 +169,12 @@ export MACWAVE_BOTTLE_DOMAIN="https://<用户名>:<密码>@<镜像地址>/MacWav
 export MACWAVE_DEPS_DOMAIN="https://<用户名>:<密码>@<镜像地址>/MacWave/deps"
 ```
 
+要全量的话，同一组凭据分别写进六个路径即可 —— 镜像站六个都提供。
+
 - `curl` 与 `requests` 都支持 URL 里带凭据，所以客户端不需要额外配置。
 - 这两行会写进 `~/.zshrc`，**那是明文文件**：别把它提交进任何仓库，也别忘了密码对人可见。
 - 报错时 MacWave 会把地址里的口令换成 `***` 再打印，所以贴日志求助不会顺便泄露密码。
-- 镜像只承载 `bottle` 与 `deps`，其余地址继续走官方源；所以它只解决「大文件下不动」，不解决 `github.com` 整体连不上。
+- 镜像承载全部六个路径，所以把账号写进上面的全量配置后，「`github.com` 整体连不上」也能解决，不只是「大文件下不动」。
 
 ### 全部变量
 | 变量 | 取什么 | 默认 |
