@@ -111,6 +111,23 @@ export MACWAVE_DEPS_DOMAIN=https://mirror.example.cn/MacWave/deps
 
 路径里的 `MacWave/` 是为了让一个镜像域名能共用：以后 LinuxWave 可以放在同一台机器的 `/LinuxWave`，两边都不独占域名根。
 
+### 受信任用户专用镜像
+
+除了自己搭，还有一个**由项目维护的国内镜像**，只对受信任的用户开放，地址不公开。
+需要的话写信给 [hi@macwave.org](mailto:hi@macwave.org?subject=申请%20MacWave%20镜像账号) 索取账号和密码。
+
+账号是一组用户名 + 密码，直接写进 URL：
+
+```bash
+export MACWAVE_BOTTLE_DOMAIN="https://<用户名>:<密码>@<镜像地址>/MacWave/bottle"
+export MACWAVE_DEPS_DOMAIN="https://<用户名>:<密码>@<镜像地址>/MacWave/deps"
+```
+
+- `curl` 与 `requests` 都支持 URL 里带凭据，所以客户端不需要额外配置。
+- 这两行会写进 `~/.zshrc`，**那是明文文件**：别把它提交进任何仓库，也别忘了密码对人可见。
+- 报错时 MacWave 会把地址里的口令换成 `***` 再打印，所以贴日志求助不会顺便泄露密码。
+- 镜像只承载 `bottle` 与 `deps`，其余地址继续走官方源；所以它只解决「大文件下不动」，不解决 `github.com` 整体连不上。
+
 ### 全部变量
 | 变量 | 取什么 | 默认 |
 | --- | --- | --- |

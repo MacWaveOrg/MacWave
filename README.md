@@ -116,6 +116,24 @@ Put those two lines in `~/.zshrc` so they apply to every shell. Everything else 
 
 The `MacWave/` segment keeps a mirror's domain shareable: LinuxWave can later live at `/LinuxWave` on the same host without either product owning the root.
 
+### The project-run mirror (trusted users only)
+
+Besides running your own, there is **a mirror hosted by the project** for users in mainland China.
+It is not publicly listed; write to [hi@macwave.org](mailto:hi@macwave.org?subject=Request%20a%20MacWave%20mirror%20account)
+to ask for a username and password.
+
+The credentials go straight into the URL:
+
+```bash
+export MACWAVE_BOTTLE_DOMAIN="https://<user>:<password>@<mirror-host>/MacWave/bottle"
+export MACWAVE_DEPS_DOMAIN="https://<user>:<password>@<mirror-host>/MacWave/deps"
+```
+
+- Both `curl` and `requests` accept credentials embedded in a URL, so no client-side setup is needed.
+- These lines end up in `~/.zshrc`, **which is plain text**: never commit it, and remember the password is readable by anyone who can read that file.
+- When something fails, MacWave replaces the password with `***` before printing the address, so pasting an error into a chat will not leak it.
+- The mirror carries only `bottle` and `deps`; everything else keeps using the official addresses. It fixes "large downloads crawl", not "`github.com` is unreachable".
+
 ### The full set
 | Variable | What it fetches | Default |
 | --- | --- | --- |
