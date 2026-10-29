@@ -65,6 +65,7 @@ def print_custom_help():
     print(f"  {CYAN}--ver{RESET} {YELLOW}string{RESET}          Install a specific version (install only; --ver=1.0 works too)")
     print(f"  {CYAN}--install-from-source{RESET}     Download from the upstream URL instead of MacWave's own store")
     print(f"  {CYAN}--install-python-from-source{RESET} Same, for the bundled Python (install / selfupdate)")
+    print(f"  {CYAN}MACWAVE_PIP_INDEX{RESET}  (env) pip index for the Python deps; default pypi.org/simple")
     print()
     print(f"{PURPLE}Special Flags:{RESET}")
     print(f"  {GREEN}wave install <pkgname>@<version>{RESET}   Download certain version(s) of a package")

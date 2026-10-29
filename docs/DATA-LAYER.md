@@ -31,6 +31,11 @@ shell 侧（`install.sh`、`selfupdate.sh`）有一份逐字对应的副本，�
 | `MACWAVE_SELFUPDATE_DOMAIN` | 自更新数据 | `raw.githubusercontent.com/MacWaveOrg/Selfupdate/main` |
 | `MACWAVE_PKG_SOURCECODE_DOMAIN` | 源码包（预留，当前为空） | 空 |
 
+另有第八个变量 `MACWAVE_PIP_INDEX`，不属于「七类数据」：它覆盖 `pip` 安装
+`requests` / `packaging` / `rich` 时使用的索引，默认 `https://pypi.org/simple`。
+国内直连 pypi.org 常超时，换成本地镜像即可；它只影响那一次 `pip install`，不参与
+「MacWave 从哪取文件」的判断。
+
 校验规则（`domains._validate`）：
 
 - 只要 `https://` 与 `file://`；

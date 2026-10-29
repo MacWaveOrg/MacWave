@@ -144,6 +144,7 @@ export MACWAVE_DEPS_DOMAIN="https://<user>:<password>@<mirror-host>/MacWave/deps
 | `MACWAVE_PYTHON_DOMAIN` | the bundled interpreter | `Python` on raw.githubusercontent |
 | `MACWAVE_CORE_DOMAIN` | MacWave's own files | `MacWave` on raw.githubusercontent |
 | `MACWAVE_PKG_SOURCECODE_DOMAIN` | package source (reserved) | — |
+| `MACWAVE_PIP_INDEX` | `pip`'s index (only the three Python deps) | `https://pypi.org/simple` |
 
 A variable's value is the part **before** the package name: the client appends `/<package>/<package>@<version>.<arch><ext>` to the bottle and deps prefixes, and `/pkg/…`, `/macwavedata/…`, `/pythondata/…` to the others.
 

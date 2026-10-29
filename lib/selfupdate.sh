@@ -78,6 +78,13 @@ mw_redact() {
     fi
 }
 
+# pip 依赖（requests / packaging / rich）不在我们自己的存储里，仍走 PyPI。
+# 国内直连 pypi.org 常超时，所以留一个可覆盖的索引地址：默认官方，设了就换。
+#
+# 与上面六个变量的差别：它不参与「MacWave 从哪取文件」的判断，只影响 pip 一次调用，
+# 所以校验规则更松（允许 https 与 http 回环，与 mw_domain 同）。
+PIP_INDEX_URL="$(mw_domain MACWAVE_PIP_INDEX "${MACWAVE_PIP_INDEX:-https://pypi.org/simple}")"
+
 # MacWave 自身文件（后面再拼 /<分支>/<路径>）
 CORE_URL="$(mw_domain MACWAVE_CORE_DOMAIN "${MACWAVE_CORE_DOMAIN:-https://raw.githubusercontent.com/MacWaveOrg/MacWave}")"
 # 自更新数据：版本号、文件清单、目录迁移脚本
@@ -703,8 +710,10 @@ if [[ -n "$PYTHON_BIN" ]]; then
             # pip 默认会无限等下去，网络不好时看上去就是卡死。给它超时与重试，
             # 并说明这一步可能要一会儿，免得用户以为程序挂了。
             echo "🌊 Installing Python dependencies into the private environment (this can take a minute)..."
+            # --index-url 与 install.sh 用同一个变量：换个索引两处一起生效。
             run_cmd "$VENV_PY" -m pip install --quiet --disable-pip-version-check \
-                --timeout 30 --retries 2 requests packaging rich >/dev/null 2>&1 || \
+                --timeout 30 --retries 2 --index-url "$PIP_INDEX_URL" \
+                requests packaging rich >/dev/null 2>&1 || \
                 echo -e "${YELLOW}🌊 Warning: the private environment is incomplete; the launcher will fall back.${RESET}"
         fi
     fi

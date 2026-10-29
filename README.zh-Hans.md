@@ -138,6 +138,7 @@ export MACWAVE_DEPS_DOMAIN="https://<用户名>:<密码>@<镜像地址>/MacWave/
 | `MACWAVE_PYTHON_DOMAIN` | 自带解释器 | raw.githubusercontent 上的 `Python` |
 | `MACWAVE_CORE_DOMAIN` | MacWave 自身文件 | raw.githubusercontent 上的 `MacWave` |
 | `MACWAVE_PKG_SOURCECODE_DOMAIN` | 软件包源码（预留） | — |
+| `MACWAVE_PIP_INDEX` | `pip` 的索引（只影响三个 Python 依赖） | `https://pypi.org/simple` |
 
 变量的值是**包名之前那一段**：客户端会往 bottle / deps 的地址后接 `/<包名>/<包名>@<版本>.<架构><扩展名>`，往其他地址后接 `/pkg/…`、`/macwavedata/…`、`/pythondata/…`。末尾斜杠会被自动去掉，写不写都行。
 
