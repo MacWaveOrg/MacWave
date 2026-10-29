@@ -191,15 +191,59 @@ tag    = 包名
 GitHub 那 45 个走 `gh api -H "Accept: application/octet-stream"` 取，实测下载后 sha256
 与索引一致。第三方那个只能在有代理的机器上取。
 
-### 落盘形状
+### 镜像站上完整的一棵树
 
 ```
 /www/wwwroot/mirror.repohub.top/LinuxWave/
-├── bottle/<包名>/<包名>@<版本>.<架构><扩展名>     69 个
-└── deps/<包名>/<包名>@<版本>.<架构><扩展名>       30 个
+├── bottle/<包名>/<包名>@<版本>.<架构><扩展名>            69 个   ← 产物
+├── deps/<包名>/<包名>@<版本>.<架构><扩展名>              30 个   ← 依赖产物
+├── infosource/                                          311 个  ← 索引 + 生成的版本清单
+│   ├── pkg/pkginfo_<架构>/versions                        一行一个包名
+│   ├── pkg/pkginfo_<架构>/<包名>/versions                 一行一条版本记录名
+│   ├── pkg/pkginfo_<架构>/<包名>/_<包名>@<版本>
+│   ├── pkg/pkginfo_<架构>/<包名>/_<包名>@common
+│   └── deps/depsinfo_<架构>/<依赖>/…
+├── core/3.1/                                             87 个  ← 当前发布线
+├── core/main/                                            87 个  ← HEAD 安装
+└── selfupdate/                                           21 个  ← = configdata 全量
+    ├── versiondata/{latest_version,files_info,latest_test_version}
+    ├── pythondata/latest_python
+    └── updatedata/<版本>/{dir_structure_change,transfer_commands}
 ```
 
-与客户端的 `<LINUXWAVE_BOTTLE_DOMAIN>/<包>/<文件>` 拼接规则一一对应。
+合计 **506 个文件 / 4.0 MB**（不含产物），全量与本地逐字节对账通过。
+
+四条对齐客户端拼接规则的细节：
+
+- **`core` 必须按分支铺目录**：`install.sh` 是 `BASE_URL="$CORE_URL/$BRANCH"`，分支名是一层真实目录。
+  `BRANCH` 取自 `versiondata/latest_version` 的 `branch` 字段，所以**换发布线就等于换目录名** ——
+  3.1 与 main 都要有，否则切分支那一刻 404。
+- **`selfupdate` 与 `python` 可以指同一个目录**：客户端这两个默认值本来就都指 `configdata`，
+  一棵树同时满足 `versiondata/` 与 `pythondata/`，不必镜像两份。
+- **版本清单必须带 `_包名@` 前缀**。客户端是 `fname.split("@")[1]` 取版本号、并跳过 `@common`，
+  所以写 `0.26.1` 会解析失败，必须写 `_bat@0.26.1`。
+- **`deps` 侧不需要清单**：`depsinstaller.py` 只按明确的 `_{依赖}@{版本}` 取，没有任何列举调用。
+  只有 `pkg` 侧要生成 `versions`。
+
+### 六个变量里只有四个现在真的起作用
+
+这是查客户端代码得出的（2026-10-29，`main` = `f108eca`），**照抄时别假设全部生效**：
+
+| 变量 | `install.sh` | `selfupdate.sh` | `selfupdate.py` | 生效 |
+| --- | --- | --- | --- | --- |
+| `LINUXWAVE_API_DOMAIN` | ✓ | ✓ | | ✅ |
+| `LINUXWAVE_CORE_DOMAIN` | ✓ | ✓ | | ✅ |
+| `LINUXWAVE_SELFUPDATE_DOMAIN` | ✓ | ✓ | ✓ | ✅ |
+| `LINUXWAVE_PYTHON_DOMAIN` | ✓ | ✓ | | ✅ |
+| `LINUXWAVE_BOTTLE_DOMAIN` | — | — | — | ❌ 已定义未接线 |
+| `LINUXWAVE_DEPS_DOMAIN` | — | — | — | ❌ 已定义未接线 |
+
+原因：`lib/domains.py` 的 `resolve_payload()`（决定「从哪取、文件叫什么」）**没有调用方**，
+`pkg/pkginstaller.py:602→641` 仍然读索引的 `url` 直连上游。所以镜像的 588 MB 产物
+在这个接线完成之前不会被任何客户端取用。已提 `LinuxWaveOrg/LinuxWave#3` 记录此状态。
+
+**给自己的提醒**：接到新产品时，别只看「变量在 `domains.py` 里定义了」就写进页面 ——
+要 grep 一遍调用点。定义与生效是两件事。
 
 ### 灌数据的流程（可复现）
 
@@ -212,12 +256,14 @@ GitHub 那 45 个走 `gh api -H "Accept: application/octet-stream"` 取，实测
 
 **每一步都校验，且都留可重跑的命令** —— 588 MB 传一半断掉是常态。
 
-### 两个已踩过的坑
+### 四个已踩过的坑
 
 | 坑 | 症状 | 处理 |
 | --- | --- | --- |
 | 记录名 `_tree@2.2.1` 已含包名，再拼 `<包名>@` 得到 `tree@tree@2.2.1.arm64` | 71 个文件全错名 | 资产名一律用 `记录名.架构+后缀`，不要重复拼包名 |
 | macOS 自带 `openrsync` 不支持 `--chown`，`bash 3.2` 在 UTF-8 locale 下 `$var` 紧贴中文会吞字节 | `arch?: unbound variable`、`RSYNC_CHOWN[@]: unbound variable` | `--chown` 先探测再决定；变量一律写 `${var}`；空数组不要直接展开 |
+| `while read` 循环里调用 `ssh` 不加重定向 | ssh 抢走循环的 stdin，**循环静默地只跑第一轮**（21 条抽样只报了 1 条就说「完成」） | `ssh -n` 或 `</dev/null`；这类「只做了一半还报成功」的故障比报错更难发现 |
+| 把需要本地文件的脚本用 `ssh host 'bash -s' < script` 执行 | 脚本跑到服务器上，找不到本地文件，还试图 ssh 回自己 → `Host key verification failed` | 需要**本地**文件的脚本用 `bash script`；只有纯粹的服务器端操作才用 `bash -s` |
 
 ---
 
