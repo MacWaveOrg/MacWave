@@ -58,9 +58,17 @@ trap cleanup EXIT
 
 HOME_DIR="$WORK/home"
 BASE="$WORK/base"
-mkdir -p "$HOME_DIR/.config/macwave_config" "$BASE"
+TEST_ROOT="$WORK/root"
+
+# 用 MACWAVE_TEST 把 /opt 映射到测试根下。不这么做的话，CI 上那份预先写好的
+# /opt/macwave_config/config.json（config_dir_candidates 是系统级优先）会被读到，
+# load_base_dir() 返回别的路径，本测试装的 jq 就「不存在」，断言全挂；
+# 本地没有那个文件，所以本地一直是绿的。
+export MACWAVE_TEST="$TEST_ROOT"
+mkdir -p "$TEST_ROOT/opt/macwave_config" "$HOME_DIR/.config/macwave_config" "$BASE"
 cp -R "$REPO_DIR/lib" "$REPO_DIR/pkg" "$REPO_DIR/surfboard" "$BASE/"
 printf '{"version": "4.1.0"}\n' > "$BASE/VERSION.json"
+printf '{"base_dir": "%s"}\n' "$BASE" > "$TEST_ROOT/opt/macwave_config/config.json"
 printf '{"base_dir": "%s"}\n' "$BASE" > "$HOME_DIR/.config/macwave_config/config.json"
 
 ARCH=$(python3 -c 'import platform; m=platform.machine().lower(); print("arm64" if m in ("arm64","aarch64") else "amd64")')
@@ -113,6 +121,7 @@ fi
 wave() {
     env -u MACWAVE_BOTTLE_DOMAIN -u MACWAVE_DEPS_DOMAIN \
         HOME="$HOME_DIR" \
+        MACWAVE_TEST="$TEST_ROOT" \
         MACWAVE_API_DOMAIN="http://127.0.0.1:$PORT" \
         python3 "$BASE/lib/wave.py" "$@"
 }
