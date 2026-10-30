@@ -124,6 +124,11 @@ jobs:
         run: |
           bash scripts/latest_test.sh
 
+      # 离线：假索引起在 localhost，验 info 的四种输出格式
+      - name: Run info format test
+        run: |
+          bash scripts/info_format_test.sh
+
       - name: Run unversioned link test
         run: |
           bash scripts/link_test.sh
