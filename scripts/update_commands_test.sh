@@ -67,7 +67,7 @@ gen "$WORK/dirty.sh" --files \
     docs/README.md 2>/dev/null
 rc=$?
 
-if [ "$rc" -eq 0 ]; then pass "--files 的脏清单仍能生成"; else fail "--files 的脏清单生成失败（退出码 $rc）"; fi
+if [ "$rc" -eq 0 ]; then pass "--files 的脏清单仍能生成"; else fail "--files 的脏清单生成失败（退出码 ${rc}）"; fi
 
 list=$(wants "$WORK/dirty.sh")
 expect_absent "__pycache__ 被过滤"        "$list" "__pycache__"
@@ -198,7 +198,7 @@ if command -v python3 >/dev/null 2>&1; then
     rc=$?
 
     if [ "$rc" -ne 0 ]; then
-        pass "有文件 404 时整次更新失败（退出码 $rc）"
+        pass "有文件 404 时整次更新失败（退出码 ${rc}）"
     else
         fail "有文件 404 却报告成功 —— 客户端会写 VERSION.json 留下残缺安装树"
     fi
@@ -213,7 +213,7 @@ if command -v python3 >/dev/null 2>&1; then
           MACWAVE_CURRENT_VERSION=9.9.8 \
           bash "$WORK/ok.sh" 2>&1)
     rc=$?
-    if [ "$rc" -eq 0 ]; then pass "文件齐全时正常成功"; else fail "文件齐全却失败（退出码 $rc）"; fi
+    if [ "$rc" -eq 0 ]; then pass "文件齐全时正常成功"; else fail "文件齐全却失败（退出码 ${rc}）"; fi
 
     kill "$server_pid" 2>/dev/null || true
     wait "$server_pid" 2>/dev/null || true

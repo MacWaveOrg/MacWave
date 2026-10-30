@@ -365,12 +365,12 @@ for source_file in "$repo/lib/install.sh" "$repo/lib/selfupdate.sh"; do
     first="$(MACWAVE_TEST="$work_home_real" HOME=/Users/example bash -c "$block"$'\nprintf %s "$HOME"' 2>/dev/null | tail -1)"
     case "$first" in
         "$work_home"|"$work_home"/*) : ;;
-        *) echo "  ❌ $(basename "$source_file"): HOME 没有被搬进测试根（$first）"; exit 1 ;;
+        *) echo "  ❌ $(basename "$source_file"): HOME 没有被搬进测试根（${first}）"; exit 1 ;;
     esac
     # 第二遍：HOME 已经在测试根里，不能再套一层
     second="$(MACWAVE_TEST="$work_home_real" HOME="$first" bash -c "$block"$'\nprintf %s "$HOME"' 2>/dev/null | tail -1)"
     if [ "$second" != "$first" ]; then
-        echo "  ❌ $(basename "$source_file"): HOME 被重复前缀（$first -> $second）"
+        echo "  ❌ $(basename "$source_file"): HOME 被重复前缀（$first -> ${second}）"
         exit 1
     fi
 done

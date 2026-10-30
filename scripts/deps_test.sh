@@ -173,7 +173,7 @@ run_case() {
     if [[ "$RUN_RC" -eq 0 ]]; then
         echo -e "${GREEN}🌊 OK: $PKG $FLAG${RESET}"
     else
-        echo -e "${RED_BOLD}🌊 FAIL: $PKG 起不来（最后试的 $FLAG，rc=$RUN_RC）${RESET}"
+        echo -e "${RED_BOLD}🌊 FAIL: $PKG 起不来（最后试的 ${FLAG}，rc=${RUN_RC}）${RESET}"
         echo "$RUN_OUT" | head -12 | sed 's/^/   /'
         FAILED=$((FAILED + 1))
     fi
