@@ -300,6 +300,160 @@ rm -rf /www/wwwroot/mirror.repohub.top/MacWave/python/.git
 
 目录形状与每类数据的确切规则见 [DATA-LAYER.md](DATA-LAYER.md)。
 
+## 让镜像自己跟上上游（自动同步）
+
+手动 rsync 的问题是**会忘**：发了新版、镜像还是旧的，而客户端拿到 404 只会说「下载失败」，
+没人会来告诉你。所以同步也交给服务器自己。
+
+`MacWave/` 下五类东西来源不同，脚本按来源分别处理：
+
+| 目标 | 来源 | 处理 |
+| --- | --- | --- |
+| `infosource/` | `MacWaveOrg/infosource` 的 `main` | 浅克隆 + `rsync --delete` |
+| `selfupdate/` | `MacWaveOrg/Selfupdate` 的 `main` | 同上 |
+| `python/` | `MacWaveOrg/Python` 的 `main` | 同上 |
+| `core/<分支>/` | `MacWaveOrg/MacWave` 的对应分支 | 同上；分支表 = `configdata` 的当前发布线 + `KEEP_BRANCHES` |
+| `python/pythondata/<版本>/*.tar.gz` | `python_url.toml` 里记的**上游**地址 | 自己下载并校验 sha256；仓库里没有二进制 |
+| `bottle/` `deps/` | 我们自己的 Bottle / Deps **Release** | `sync_payloads.py --source payload`，只增不删；坏记录按 `scripts/known-bad-records.txt` 跳过 |
+
+最后再跑一次 `build_versions_index.py` 重建 `versions` 清单 —— 客户端的「列出版本」
+靠它，漏了会表现为「没有版本可装」。
+
+三个文件在 [scripts/mirror-sync/](../scripts/mirror-sync/)：
+
+| 文件 | 作用 |
+| --- | --- |
+| `mirror-sync.sh` | 同步本体 |
+| `sync-run.sh` | cron 包装：记 `history.log`，失败建 `ALERT`、通过删 `ALERT` |
+| `sync-install.sh` | 落地 cron 行并试跑一次 |
+
+```bash
+# Mac 上
+# known-bad-records.txt 也要一起传：脚本优先读它旁边那份
+rsync -a -e "ssh -o ControlPath=$HOME/.ssh/cm-lw" \
+  scripts/mirror-sync/ scripts/known-bad-records.txt \
+  root@<服务器>:/root/mirror-sync/
+
+# 服务器上
+bash /root/mirror-sync/sync-install.sh
+```
+
+cron 定在 **03:23**，排在巡检（04:17）之前 —— 先同步再体检，体检看到的就是同步后的状态。
+
+### 三种跑法
+
+```bash
+bash /root/mirror-sync/mirror-sync.sh --dry-run       # 只看会动哪些树，不写文件
+bash /root/mirror-sync/mirror-sync.sh --no-payloads   # 只同步 git 树与清单（快）
+bash /root/mirror-sync/mirror-sync.sh                 # 全量，含产物
+```
+
+退出码 0 表示全部成功，1 表示有任何一步失败。`cron` 里默认带 `--no-payloads`：
+产物体积大、变动少，先确认 git 树这条路稳了，再决定要不要把产物也交给它。
+
+### 几条「故意做坏」的记录
+
+索引里有 4 条记录是**负向测试夹具**，本来就取不到：`test_001` 上游 404、
+`test_no_sha256` 缺校验值、`test_wrong_sha256` 校验值故意不符、`ldid` 上游不可用。
+
+不跳过它们，每次同步都会报同样的失败 —— 而真正的问题会淹没在同一批报错里。名单放在
+`scripts/known-bad-records.txt`，**CI 与同步脚本共用同一份**，免得两边走散。
+脚本优先读它旁边那份（部署时一起传上去），再读工具克隆里的 —— 后者要等改动进了 `main`
+才有，而镜像不该等一次合并才能正确工作。
+
+### 为什么解释器压缩包要单独一步
+
+`MacWaveOrg/Python` 里只有 toml，没有那两个约 26 MB 的压缩包 —— 二进制不进 git。
+但客户端默认不是回上游取，而是取镜像上那份：
+
+```python
+def python_archive_url(version, filename):
+    return f"{python_data_domain()}/pythondata/{version}/{filename}"
+```
+
+所以镜像必须自己把它们放在 `pythondata/<版本>/` 下。同步脚本在 git 树同步完之后
+读 `latest.toml` 与 `python_url.toml`，两个架构都补（与这台服务器是什么架构无关，
+镜像要同时服务两种 Mac），逐字节校验，**验不过就丢弃**：宁可少一个文件，也不要
+在镜像里留一份校验不符的。
+
+### 必须记住的五点
+
+| 点 | 为什么 |
+| --- | --- |
+| **`versions` 不能跟着 `--delete` 消失** | 它是本地生成的，上游没有。rsync 里 `--exclude versions` 保它，第 5 步再重建 |
+| **`infosource/.git` 不该留在站点里** | 索引是 `git clone` 来的，`.git` 会一并被服务；nginx 的 `location ~ /\.` 挡住它，但没必要留。同步末尾直接删 |
+| **同步失败时不能清理旧分支目录** | 发布线刚切到 `4.5`、而 `4.5` 分支还没建时，清理会把仍在服务的 `4.1` 删掉 —— 一次上游打嗝变成镜像全站不可用。脚本里只要有一个 core 分支没同步成功就跳过清理 |
+| **`pythondata/*.tar.gz` 必须排除在 `--delete` 之外** | 它们在仓库里不存在，rsync 的 `--delete` 会当成「上游删了」而清掉。实测确认：不排除时两个压缩包会被删，镜像从此装不了自带解释器 |
+| **`bottle/deps` 只增不删** | 上游删掉一个旧包时，镜像里已有的文件不该跟着消失：客户端的索引缓存可能还指着它 |
+
+另外，产物那一步走的是 `--source payload`，即从**我们自己的 Release** 取，不打扰上游。
+它依赖 `domains.py` 的内置默认值，所以脚本开头会显式 `unset MACWAVE_*_DOMAIN` ——
+否则这台机器上残留的镜像变量会把路径指到别处，变成「从镜像同步镜像」。
+
+> **LinuxWave 暂未纳入**：它的客户端还没定稿，且缺少与之配套的 `sync_payloads`。
+> 等那边统一处理时，`mirror-sync.sh` 的结构可以直接照搬，只有 `ORG` 与产物来源要换。
+
+## 让服务器自己盯着（日常巡检）
+
+镜像站是外部依赖：它坏了不会有任何人主动告诉你。用户那边只会看到「下载失败」，
+多半也不会来反馈 —— 等你发现时可能已经坏了一周。
+
+所以装一个每天跑一次的体检。三个文件，都放服务器 `/root/mirror-check/`，
+源文件在仓库 [scripts/mirror-check/](../scripts/mirror-check/)：
+
+| 文件 | 作用 |
+| --- | --- |
+| `check.sh` | 体检本体，只读。退出码 = 失败项数，0 表示全绿 |
+| `run.sh` | cron 包装：跑 `check.sh` → 记一行到 `history.log`（留 120 行）→ 失败建 `ALERT`、通过删 `ALERT` |
+| `install.sh` | 落地：`chmod +x`、写 cron 行、立刻试跑一次 |
+
+```bash
+# Mac 上（ControlPath 指向已有的 ssh 连接，一轮只输一次密码）
+rsync -a -e "ssh -o ControlPath=$HOME/.ssh/cm-lw" \
+  scripts/mirror-check/ root@<服务器>:/root/mirror-check/
+
+# 服务器上
+bash /root/mirror-check/install.sh
+```
+
+装完 cron 里多一行，每天 04:17 跑。**时间刻意不取整点**，避开全网都在打 GitHub 的时刻。
+
+### 它查什么
+
+| 段 | 内容 | 为什么必须查 |
+| --- | --- | --- |
+| 0 | 三棵树各自的文件数下限（886 / 69 / 30） | 目录被清空时，「有文件」类断言会**全部真空真** |
+| 1 | 六个公开页与图片 200 | 页面 401 或 404 都意味着首页打不开 |
+| 2 | 数据目录无凭据 401 | 公开可下 = 镜像被白嫖 |
+| 3–4 | 两边账号交叉访问（各自 200、对方 401） | 隔离失效时最容易出的事故 |
+| 5 | 两边 `realm` 必须不同 | realm 相同会导致浏览器把一方的凭据发给另一方 |
+| 6 | 8 种路径归一化绕过（大小写、`//`、`./`、`%57`、`%2F`…） | 写错一条就是免费下载 |
+| 7 | 三个真实产物的 `content-length` 与磁盘一致 | 挡「200 但内容是 404 页」这种空壳 |
+
+### 怎么读结果
+
+```bash
+tail -5  /root/mirror-check/history.log   # 最近几次的结论
+cat      /root/mirror-check/last-run.log  # 本次完整输出
+ls       /root/mirror-check/ALERT         # 存在 = 当前有故障
+```
+
+`rc` 就是失败项数。**没有邮件通道** —— 服务器没装 MTA，`mail` 必然失败，所以报警只落在
+`ALERT` 文件里。要真正「有人知道」，得靠外部监控盯这个文件，或者自己每天看一眼 `history.log`。
+
+### 写这类脚本的五个坑（都踩过）
+
+| 坑 | 后果 | 做法 |
+| --- | --- | --- |
+| `find … \| sort \| head -1` 配 `set -o pipefail` | `head` 读完一行就退出，`sort` 继续写吃 SIGPIPE，管道返回 141。**输出有值但函数返回非零** —— 大目录（886 个文件、路径约 62 KB，正好塞满管道）必失败，小目录（69 个）正常，极难查 | 先全量捕获再在 bash 里取首行：`all=$(… \| sort); all=${all%%$'\n'*}` |
+| 挑靶子挑到点文件 | nginx 的 `location ~ /\.` 在认证**之前**返回 404，断言「应 401」必然假红 | 排除含点段的路径；客户端本来就不取这类文件 |
+| 挑靶子挑到目录 | 目录请求返回 404 而不是 401，同样假红 | 只挑 `-type f` |
+| 空目录静默通过 | 目录被清空时检查全绿 | 先断言数量下限 |
+| 报完不销账 | 一次故障后 `ALERT` 永远存在，之后就没人看了 | 失败建、通过删，**双向** |
+
+另外两条与 bash 3.2 有关，写任何服务器脚本都要注意：变量紧贴中文必须写 `${var}`（否则
+locale 会把中文首字节吃进变量名）；`"${ARR[@]}"` 在空数组上会报 unbound，改用单一变量。
+
 ## 常见问题
 
 **404，但文件确实在。** 按顺序查这三条：
