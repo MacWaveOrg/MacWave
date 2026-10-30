@@ -114,6 +114,11 @@ jobs:
         run: |
           bash scripts/deps_test.sh --infosource infosource-data
 
+      # 离线：假镜像起在 localhost，只验「报错说清楚了该怎么办」
+      - name: Run message test
+        run: |
+          bash scripts/message_test.sh
+
       - name: Run unversioned link test
         run: |
           bash scripts/link_test.sh

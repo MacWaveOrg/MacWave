@@ -49,6 +49,35 @@ ARGUMENTS = {
     "--version": "help",
 }
 
+# 常见误输入 → 正确的命令。
+#
+# 只收真的会有人这么打的几条，不做通用拼写纠正：/usr/bin 里那些包管理器的叫法
+# （apt update、yum update、dnf update）会让人顺手打 `wave update`，而这里只有 upgrade。
+# 猜错比不猜更让人困惑，所以宁可少提示。
+MISTYPED = {
+    "update":  "upgrade",
+    "updates": "upgrade",
+    "remove":  "uninstall",
+    "delete":  "uninstall",
+    "rm":      "uninstall",
+    "ls":      "list",
+    "find":    "search",
+    "show":    "info",
+}
+
+
+def suggest(words):
+    """首词打错时给出完整改法：只换掉那个词，其余参数与旗标原样保留。
+
+    返回 (改好的命令行, 打错的词, 正确命令)；不认识就返回 None。
+    """
+    if not words:
+        return None
+    right = MISTYPED.get(words[0])
+    if right is None or right not in COMMANDS:
+        return None
+    return " ".join(["wave", right] + words[1:]), words[0], right
+
 
 # -------------------- 主调度逻辑 --------------------
 
@@ -134,7 +163,7 @@ def main():
 
     # 4. 未知输入
     from help import print_error_help
-    print_error_help()
+    print_error_help(suggest(words))
     sys.exit(1)
 
 
