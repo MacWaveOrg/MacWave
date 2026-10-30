@@ -107,6 +107,7 @@ def print_custom_help():
         (_command("unlink"), "Remove those unversioned links"),
         (_command("linkquery"), "Show which version an unversioned link points to"),
         (_command("mirror"), "Show which addresses packages are fetched from"),
+        (_command("latest"), "Show which packages have a newer version available"),
     ])
 
     _print_section("Flags", [
@@ -205,6 +206,17 @@ COMMAND_HELP = {
         ],
         "examples": ["wave mirror", "wave mirror --raw",
                      "wave mirror --json", "wave mirror --show-password"],
+    },
+    "latest": {
+        "usage": "wave latest <package> | wave latest --all",
+        "desc": "Compare what you have with the newest version in the index. Reports only; "
+                "nothing is downloaded.",
+        "flags": [
+            ("-a, --all", "Check every installed package"),
+            ("--max-time <string>", "Timeout for each request (e.g. 40s, 1min)"),
+            ("-v, --verbose", "Print each request as it is made"),
+        ],
+        "examples": ["wave latest jq", "wave latest --all", "wave latest -a --max-time=1min"],
     },
     "uninstall": {
         "usage": "wave uninstall <package>[@<version>] [flags]",

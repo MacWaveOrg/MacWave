@@ -40,6 +40,7 @@ COMMANDS = {
     "unlink":     "linker",
     "linkquery":  "linker",
     "mirror":     "mirrorinfo",
+    "latest":     "latest",
 }
 
 ARGUMENTS = {
@@ -120,6 +121,10 @@ def main():
         elif module_name == "mirrorinfo":
             from mirrorinfo import handle_mirror
             handle_mirror(full_input)
+
+        elif module_name == "latest":
+            from latest import handle_latest
+            handle_latest(full_input)
 
         elif module_name == "linker":
             from linker import handle_link_command, handle_linkquery_command, handle_unlink_command

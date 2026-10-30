@@ -257,6 +257,7 @@ Commands:
   unlink      Remove those unversioned links
   linkquery   Show which version an unversioned link points to
   mirror      Show which address each kind of data is fetched from
+  latest      Show which packages have a newer version available
 
 Flags:
   -h, --help              Show help for any command
@@ -298,6 +299,11 @@ wave mirror                        Show the address each source is fetched from
     --only-set                     With --raw: export only the sources you overrode
     --show-password                Print passwords instead of six asterisks
     --hide-user                    Mask the user name too
+
+Updates:
+wave latest <name>                 Compare what you have with the newest in the index
+wave latest --all                  Same, for every installed package
+    --max-time string              Timeout for each request
 
 ```
 
