@@ -174,7 +174,7 @@ def report_service_unavailable(url, status=0):
         print(f"{RED_BOLD}🌊 Error: GitHub returned HTTP {status} for the dependency data.{RESET}")
     else:
         print(f"{RED_BOLD}🌊 Error: Cannot reach GitHub for the dependency data.{RESET}")
-    print(f"{RED_BOLD}🌊   {url}{RESET}")
+    print(f"{RED_BOLD}🌊   {domains.redact_url(url)}{RESET}")
     print(f"{RED_BOLD}🌊 This is usually a network hiccup. Check your network or proxy, then run the command again.{RESET}")
     sys.exit(1)
 

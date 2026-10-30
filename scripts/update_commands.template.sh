@@ -43,6 +43,35 @@ run() {
     fi
 }
 
+redact_url() {
+    # 报错里的地址要打码：用镜像时 MACWAVE_CORE_URL 是
+    # https://<用户>:<密码>@mirror/...，原样打印等于把密码写进终端滚屏、
+    # CI 日志和用户贴出来的求助截图。
+    #
+    # 只在 // 之后、第一个 / 之前找最后一个 @ —— 路径里带 @ 是正常的
+    # （jq@1.8.2.arm64），拿整条串找 @ 会把包名当成密码位置，地址就改坏了。
+    local url="$1" rest authority path userinfo host user
+    rest=${url#*://}
+    [ "$rest" = "$url" ] && { printf '%s' "$url"; return; }
+    authority=${rest%%/*}
+    case "$rest" in
+        */*) path="/${rest#*/}" ;;
+        *)   path="" ;;
+    esac
+    if [[ "$authority" != *@* ]]; then
+        printf '%s' "$url"
+        return
+    fi
+    userinfo=${authority%@*}
+    host=${authority##*@}
+    user=${userinfo%%:*}
+    if [[ "$userinfo" == *:* ]]; then
+        printf '%s://%s:***@%s%s' "${url%%://*}" "$user" "$host" "$path"
+    else
+        printf '%s://***@%s%s' "${url%%://*}" "$host" "$path"
+    fi
+}
+
 fetch() {
     # fetch <url> <目标>：先写 .macwave-part 再 mv，重试期间目标位置不会出现半个文件
     local url="$1" destination="$2" attempt status partial
@@ -80,8 +109,14 @@ want() {
     fi
     if ! fetch "$url" "$destination"; then
         echo "🌊 Error: cannot download $repo_path" >&2
-        echo "🌊   $url" >&2
-        return 1
+        echo "🌊   $(redact_url "$url")" >&2
+        # 必须 exit 而不是 return：install_fresh / install_delta 是一串裸的
+        # `want ...`，没有 `|| exit`，脚本也没有 set -e。用 return 1 的话
+        # 调用方不看返回值，于是「有文件没下到」会被当成更新成功，客户端照旧
+        # 写 VERSION.json —— 安装树缺文件但版本号已经前进了，这种状态最难查。
+        # 2026-10-30 的 4.1.1 就是这样：两个 __pycache__ 路径 404 之后，
+        # 那一步仍然打印了 "MacWave has been updated to 4.1.1!"。
+        exit 1
     fi
     if [ "$exec_flag" = "1" ]; then
         run chmod +x "$destination"

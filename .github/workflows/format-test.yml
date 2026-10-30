@@ -142,6 +142,12 @@ jobs:
         run: |
           bash scripts/selfupdate_test.sh
 
+      # 升级脚本生成：清单过滤（__pycache__ / EXCLUDED / 非安装目录）、空 delta 拒绝、
+      # 可执行位、报错地址打码、以及「文件下不到必须让整次更新失败」
+      - name: Run update commands test
+        run: |
+          bash scripts/update_commands_test.sh
+
   # 随机化端到端回归：每次抽 10~20 个包 + 随机参数/随机打断 + 固定命令覆盖。
   # 自带安装目录挑选、部署与清理，所以不需要上面那一套 sudo 配置。
   random-test:

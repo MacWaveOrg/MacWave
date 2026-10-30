@@ -53,13 +53,46 @@ def files_from_git(ref):
             return None
         for name in result.stdout.splitlines():
             name = name.strip()
-            if not name or name == "__pycache__":
+            if not name:
                 continue
-            repo_path = f"{directory}/{name}"
-            if repo_path in EXCLUDED:
-                continue
-            entries.append(repo_path)
+            entries.append(f"{directory}/{name}")
     return sorted(entries)
+
+
+def sanitize(paths, source):
+    """把一份原始清单收拾成能装的文件清单，返回 (保留的, [(被丢掉的, 原因)])。
+
+    必须在这里过滤，而不是只在上游的 files_from_git 里 —— 发版时用 `--files`
+    传入一份 `find` 的结果是常见做法，而 find 会把工作区里的 __pycache__ 也列
+    进来（git 里其实没有这些目录）。2026-10-30 的 4.1.1 就是这么发的：清单里混进
+    了 pkg/__pycache__ 与 surfboard/__pycache__，客户端更新时对两个不存在的路径
+    各重试 3 次再报 404，用户看到一堆红字才更新完成。
+
+    同一次事故里 `--files` 也绕过了 EXCLUDED（lib/install.sh 等三份被当成普通
+    文件下载并覆盖了安装目录里的副本）。两个过滤器都放在这里，才不会因为换了
+    入口就漏。
+    """
+    kept = []
+    dropped = []
+    for path in paths:
+        path = (path or "").strip()
+        if not path:
+            continue
+        parts = path.split("/")
+        if "__pycache__" in parts:
+            dropped.append((path, "字节码缓存目录，git 里没有"))
+            continue
+        if path.endswith(".pyc"):
+            dropped.append((path, "字节码文件，git 里没有"))
+            continue
+        if path.rstrip("/") in EXCLUDED:
+            dropped.append((path, "运行时由客户端生成或不该自装"))
+            continue
+        if parts[0] not in INSTALLED_DIRS:
+            dropped.append((path, f"不在 {INSTALLED_DIRS} 之下"))
+            continue
+        kept.append(path)
+    return sorted(kept), dropped
 
 
 def want_lines(paths):
@@ -89,20 +122,45 @@ def main():
         print("🌊 Error: cannot derive a branch; pass --branch.", file=sys.stderr)
         return 1
 
-    files = args.files
-    if not files:
-        files = files_from_git(args.ref)
-        if files is None:
+    raw_files = args.files
+    source = "--files"
+    if not raw_files:
+        raw_files = files_from_git(args.ref)
+        source = f"git {args.ref}"
+        if raw_files is None:
             return 1
-    if not files:
+    if not raw_files:
         print("🌊 Error: the file list is empty.", file=sys.stderr)
         return 1
 
-    delta = args.delta if args.delta else files
-    unknown = [path for path in delta if path not in files]
-    if unknown:
-        print(f"🌊 Error: --delta names files missing from the full list: {unknown}", file=sys.stderr)
+    # 不管清单来自 --files 还是 git，都过同一道过滤（见 sanitize 的说明）
+    files, dropped = sanitize(raw_files, source)
+    if not files:
+        print("🌊 Error: the file list is empty after filtering.", file=sys.stderr)
         return 1
+
+    if args.delta:
+        delta, dropped_delta = sanitize(args.delta, "--delta")
+        dropped = dropped + dropped_delta
+        # 空的 delta 不能放行：install_delta 里一条 want 都没有，脚本瞬间成功返回，
+        # 客户端于是写 VERSION.json —— 版本号前进了，文件一个都没换。与「文件下不到
+        # 却报成功」是同一类故障，只是更难发现（连报错都没有）。
+        if not delta:
+            print("🌊 Error: every entry in --delta was filtered out; "
+                  "an empty delta would silently upgrade nothing.", file=sys.stderr)
+            return 1
+        unknown = [path for path in delta if path not in files]
+        if unknown:
+            print(f"🌊 Error: --delta names files missing from the full list: {unknown}",
+                  file=sys.stderr)
+            return 1
+    else:
+        delta = files
+
+    if dropped:
+        print(f"🌊 Dropped {len(dropped)} entries that must not be installed:", file=sys.stderr)
+        for path, why in dropped:
+            print(f"     - {path}  ({why})", file=sys.stderr)
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(TEMPLATE

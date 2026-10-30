@@ -163,7 +163,8 @@ def handle_search(query):
         resp = requests.get(api_url, timeout=30, headers=github_api_headers(api_url))
         if resp.status_code != 200:
             print(f"{RED_BOLD}🌊 Error: Cannot fetch package list.{RESET}")
-            print(f"{RED_BOLD}🌊 URL: {api_url}{RESET}")
+            # 用镜像时 api_url 里带凭据，直接打印等于把密码写进终端记录
+            print(f"{RED_BOLD}🌊 URL: {domains.redact_url(api_url)}{RESET}")
             sys.exit(1)
     except Exception as e:
         print(f"{RED_BOLD}🌊 Error: {e}{RESET}")
