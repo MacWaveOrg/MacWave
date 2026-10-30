@@ -1,0 +1,192 @@
+---
+description: MacWave / MacWaveOrg 代码与文档风格：文件头、注释语言、报错文案、命名、测试与提交信息
+alwaysApply: true
+---
+
+# 代码风格
+
+以下每一条都来自这个仓库的真实代码，不是通用规范。写新代码时照做；改旧代码时就近一致，不要顺手重构大片格式。
+
+## 一、Python 文件头
+
+`STYLE.md` 定下的形状，严格照抄：
+
+```python
+#!/usr/bin/env python3
+
+# steplog.py
+
+import sys
+```
+
+即：shebang、空行、`# 文件名`、空行、代码。第二行之后如果还有说明性段落，接在文件名下面（见下条），代码前保留一个空行。
+
+## 二、注释用中文
+
+实测占比：`lib/` 72%、`pkg/` 89%、`surfboard/` 90%、`scripts/` 77%。新写的注释一律中文。
+仅 `lib/steplog.py` 是历史英文文件，改它时保持英文，别混排。
+
+注释回答**为什么**，不回答是什么。反面例子：
+
+```python
+# 递增计数器
+total += 1
+```
+
+正面例子（真实代码）：
+
+```python
+# 报错里的地址要打码：用镜像时地址形如 https://用户:密码@mirror/...，
+# 原样打印等于把密码写进终端滚屏、CI 日志和用户贴出来的求助截图。
+```
+
+## 三、分节用横线注释
+
+模块内按职责分节，格式固定：`# ` + **每侧 20 个减号** + 中文节名 + ` `。实测 96 处全是 20。
+
+```python
+# -------------------- 颜色定义 --------------------
+```
+
+`lib/domains.py`、`lib/configpaths.py`、`pkg/pkginstaller.py` 都用这个形状。
+
+## 四、命名
+
+| 类型 | 风格 | 例子 |
+| --- | --- | --- |
+| 函数 / 变量 | `snake_case` | `apply_proxy_from_command_line` |
+| 私有辅助 | 前导下划线 | `_resolve_test_root`、`_parse_duration` |
+| 模块级常量 | `SCREAMING_SNAKE` | `RED_BOLD`、`ARCHIVE_SUFFIXES`、`REQUIRED_MODULES` |
+
+缩进 4 空格。行宽没有硬上限——现有代码只有 43 行超过 100 列（按字符计；`awk length()` 数的是字节，中文一字三字节，会虚高到 200 多）。不要为了凑宽度拆散有意义的表达式。
+
+## 五、终端文案
+
+用户在终端看到的一切都由 `🌊` 开头，模板固定：
+
+```
+🌊 Error: <发生了什么>
+🌊 Next  <下一步该做什么>          # 可选，steplog 会缩进对齐
+```
+
+实测词频：`Error` 77 次、`No` 10、`Warning` 9、`Next` 8、`Please` 6。
+**正文用英文**（终端可能没有中文 locale），注释和文档用中文。
+
+三条硬规定：
+
+1. **报错必须给出下一步。** 只说"失败了"等于没说。
+2. **地址进输出前必须打码。** 用 `domains.redact_url()`（Python）或模板里的 `redact_url()`（shell）。只在 `//` 之后、第一个 `/` 之前找 `@`——路径里的 `@` 是合法文件名（`jq@1.8.2.arm64`）。
+3. **颜色常量集中在文件顶部**，不要在打印处内联转义序列。
+
+## 六、失败语义（这条最容易写错）
+
+> 子脚本里每一个可能失败的动作，都要问一句「失败了谁看得见」。答案是「没人」时用 `exit`，不要 `return` 或忽略。
+
+```bash
+# 错误：return 1 会被下一行 want 覆盖，调用方拿不到，脚本以 0 退出
+if ! fetch "$url" "$dest"; then
+    echo "🌊 Error: cannot download $repo_path" >&2
+    return 1
+fi
+
+# 正确
+if ! fetch "$url" "$dest"; then
+    echo "🌊 Error: cannot download $repo_path" >&2
+    exit 1
+fi
+```
+
+同类动作一律检查返回值：`mv`（文件可能还留在 `.part` 里）、`chmod +x`（装好了但 `command not found`）、`rsync`、`git`。
+`set -u` 要开；`set -e` 不是必需的，但依赖它前先确认没有故意忽略返回值的地方。
+
+## 七、Shell 脚本
+
+```bash
+#!/bin/bash
+
+# mirror_sync_test.sh
+# 一句话说明这个脚本守什么。
+# 第二段说明为什么需要它（对应哪个真实故障）。
+
+set -uo pipefail
+```
+
+- 帮助函数集中定义：`say` / `ok` / `no` / `note`，与 `scripts/mirror-sync/mirror-sync.sh` 一致
+- 参数解析用 `while [ $# -gt 0 ]` + `case`，未知参数 `exit 2` 并列出可用项
+- `--dry-run` 必须在写任何文件之前就返回
+- 写文件的脚本要幂等：重跑一次不能把已就位的东西弄坏
+- 目录权限 `700`，文件 `600`。**给目录 `chmod 600` 会把你自己锁在外面**（缺 `x` 位，`cd ..` 都出不来）
+- macOS 没有 `timeout` 命令，用 Python 或 `perl` 计时
+
+## 八、`$变量` 紧邻中文时必须加花括号
+
+```bash
+# 错：UTF-8 locale 下 bash 会把全角括号当成变量名的一部分，
+#     去找一个叫 rc）的变量，CI 上直接 unbound variable
+echo "失败（退出码 $rc）"
+
+# 对
+echo "失败（退出码 ${rc}）"
+```
+
+本地 locale 是 C 时按字节处理，**不会复现**——所以这条只在 CI 上炸，报错还完全指不到真问题。写完 `grep -nP '\$[A-Za-z_][A-Za-z0-9_]*[^\x00-\x7F]'` 自查一遍。
+
+## 九、测试
+
+新增行为要配测试。文件名 `scripts/<主题>_test.sh`，结构固定：
+
+- 顶部 `RED_BOLD` / `GREEN` / `RESET` 三个颜色常量
+- `pass()` / `fail()` 累加计数
+- 结束时打印 `Passed: N` / `Failed: N`，有失败则 `exit 1`
+- 最后一行 `🌊 All <主题> tests passed`
+
+要点：
+
+- **跑端到端的测试必须设 `MACWAVE_TEST`**（或 `LINUXWAVE_TEST`）。`config_dir_candidates()` 是系统级优先，CI 预写的 `/opt/macwave_config` 会遮蔽测试自己的配置——本地绿、CI 红，且报错指不到原因。
+- 一个脚本里多个互不相干的沙箱，每个要有**自己的**测试根。
+- 网络不通的段落记 `SKIP`，不要记 `FAIL`——区分「环境问题」与「被拒绝」。
+- 断言要针对行为，不要针对文案。文案会改，行为不该改。
+- 能造出「平时几乎不可能自然复现」的场景就用 `chflags uchg` 这类手段造（见 `update_commands_test.sh` 的 `mv` 失败测试）。
+
+## 十、文档
+
+中文，与 `docs/` 现有文件一致：
+
+- 段落短，能列表就列表，能表格就表格
+- 引号用「」，破折号用 `——`，顿号用 `、`
+- 讲坑的固定三段：**现象 → 根因 → 修法**（见 `docs/CI-AND-PITFALLS.md`）
+- 讲版本改动的固定三段：**为什么要升 → 更新了什么 → 规模**（见 `docs/WHY-UPDATE.md`）
+- 文件路径用相对链接，行内代码用反引号
+- 不要写「我们修了一个 bug」这类空话，写「4.1.1 是 X，4.1.3 是 Y，因为 Z」
+
+## 十一、提交信息
+
+**主题行英文，祈使句，首字母大写，不加 `feat:` / `fix:` 前缀。**
+
+```
+Stop shipping __pycache__ in the update list, and fail loudly when a file is missing
+Put braces around variables that sit next to a wide character
+Say 4.1.3 in the READMEs and the upgrade guide
+```
+
+> 历史里有 93/1038 条中文主题，形状都是 GitHub 网页编辑留下的「更新 X.md」
+> （2026-08 起零星、09 月集中，10 月只剩 2 条）。那批是 PR 标题默认值，不动；
+> 新提交一律英文。
+
+**正文中文**，回答「为什么」。真实格式：
+
+1. 第一段说清故障或动机，必要时贴终端原文（缩进 4 空格，不用代码围栏）
+2. 分点说明改法，解释权衡
+3. 涉及已发布产物时，说明「改代码只保护下一个版本，改数据才保护这一个版本」
+
+主题行 72 列以内；正文每行不要太长（现有提交按 80 列左右断行）。
+
+## 十二、不要做的事
+
+- 不要给站点根加 `rsync --delete`——旁边躺着 `MacWave/`、`LinuxWave/`、`OpenCore-Legacy-Patcher/` 三棵数据树
+- 不要在代码里写字面量域名。所有对外地址走 `lib/domains.py` 的环境变量（`MACWAVE_*_DOMAIN`）
+- 不要把密码放进 argv（`ps` 可见）。用环境变量或 stdin
+- 不要用 `head -c N /dev/urandom | base64 | tr -d '/+='` 生成密码——`tr` 会把填充也删掉，偶发少一位。用 `python3 -c 'import secrets...'`
+- 不要在发版清单里用 shell 通配符（`--files pkg/*` 会匹配到 `pkg/__pycache__` 目录）。用 `git ls-tree`
+- 不要为了让命令"看起来成功"而吞掉错误码
+- `~/Web/RepoHub` 是 `~/Sha0huaZhang/RepoHub` 的旧副本，改页面前先确认改的是哪一份
