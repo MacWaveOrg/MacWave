@@ -1,9 +1,19 @@
 ---
-description: 备份放哪、叫什么、什么时候必须备份、怎么算备份成功
+description: 备份一律 .tar.gz；放哪、叫什么、什么时候必须备份、怎么算备份成功
 alwaysApply: true
 ---
 
 # 备份规则
+
+## 零、格式：一律 `.tar.gz`
+
+**没有例外。** 不用 `.zip`、`.tar`、`.tar.xz`、`.7z`。
+
+```bash
+tar --no-xattrs -czf ~/Projects/Backup/MacWave/<内容>-$(date +%Y%m%d-%H%M%S).tar.gz <路径>
+```
+
+> 属主（uid/gid）会写进归档，但非 root 解包时无法还原 —— 这是内核限制，与格式无关。
 
 ## 一、放哪
 
@@ -56,15 +66,10 @@ alwaysApply: true
 
 ## 五、两个 macOS 细节
 
-打归档要加 `--no-xattrs`：
+**必须带 `--no-xattrs`**（见第二节的完整命令）。不加时 macOS 的 bsdtar 会把扩展属性写进 pax 头，Linux 解包会多出一堆 `._*` 文件，还会在 stderr 刷一片
+`tar: Ignoring unknown extended header keyword 'LIBARCHIVE.xattr.com.apple.provenance'`。这些提示无害，但会把真正的错误淹没掉。
 
-```bash
-tar --no-xattrs -czf <备份> <路径>
-```
-
-不加时 macOS 的 bsdtar 会把扩展属性写进 pax 头，Linux 解包会多出一堆 `._*` 文件。
-
-默认**不打包 `.git`**（体积和 `.git` 同量级，且备份的是工作状态而不是历史）。需要完整仓库时用 `git bundle`，别用 tar。
+默认**不打包 `.git`**（体积与 `.git` 同量级，且备份的是工作状态而不是历史）。需要完整仓库时用 `git bundle`，别用 tar。
 
 ## 六、恢复时
 
