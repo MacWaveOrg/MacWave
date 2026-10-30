@@ -10,6 +10,7 @@ import shutil
 import time
 import platform
 import subprocess
+import difflib
 import re
 from pathlib import Path
 
@@ -563,6 +564,26 @@ def fetch_common_fields(package_name, arch, timeout=DEFAULT_TIMEOUT):
     return parse_common_fields(response.text)
 
 
+def suggest_package_name(package_name, arch, timeout=DEFAULT_TIMEOUT):
+    # 404 时翻一次镜像的名字清单，找最接近的包名。
+    #
+    # 打错包名是最常见的失败（treee / tree、rg / rgs），而原来的报错只会说
+    # 「读不到版本清单」—— 用户得自己意识到是拼写错了。这里只在 404 时多发一个请求，
+    # 拿不到清单就安静放弃，绝不影响正常路径。
+    try:
+        names_url = domains.index_list_url(arch)
+        response = requests.get(names_url, timeout=timeout, headers=github_api_headers(names_url))
+        if response.status_code != 200:
+            return None
+        names = domains.listing_names(response.text)
+        if not names:
+            return None
+        matches = difflib.get_close_matches(package_name, names, n=1, cutoff=0.6)
+        return matches[0] if matches else None
+    except Exception:
+        return None
+
+
 def fetch_max_version(package_name, arch, timeout=DEFAULT_TIMEOUT):
     # 版本清单：默认走 GitHub API，设了索引镜像时读镜像自己的清单（见 domains.index_list_url）
     api_url = domains.index_list_url(arch, package_name)
@@ -570,11 +591,18 @@ def fetch_max_version(package_name, arch, timeout=DEFAULT_TIMEOUT):
     try:
         response = requests.get(api_url, timeout=timeout, headers=github_api_headers(api_url))
         if response.status_code != 200:
-            hint = [f"check the package exists: `wave search {package_name}`",
-                    "check MACWAVE_API_DOMAIN points at <mirror>/MacWave/infosource"]
+            hint = []
             if response.status_code == 404:
-                hint.append("if every list is missing, run scripts/build_versions_index.py "
-                            "on the mirror")
+                # 拼错包名远比镜像配错常见，所以先猜名字，猜到了就放在第一条
+                close = suggest_package_name(package_name, arch, timeout)
+                if close:
+                    hint.append(f"did you mean `{close}`?  try: wave info {close}")
+                hint.append("search the index by part of the name: wave search <词>")
+                hint.append("check MACWAVE_API_DOMAIN points at <mirror>/MacWave/infosource")
+                hint.append("if every package is missing, the mirror has no versions lists "
+                            "yet (see docs/MIRROR-SETUP.md)")
+            else:
+                hint.append("check the network and any --proxy setting, then retry")
             steplog.fail(
                 f"cannot read the version list for {package_name}",
                 request=api_url,

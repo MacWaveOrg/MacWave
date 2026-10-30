@@ -307,9 +307,20 @@ def print_version():
     print(f"🌊 MacWave {version}")
 
 
-def print_error_help():
-    """未知命令或参数时：先报错，再输出完整帮助"""
+def print_error_help(suggestion=None):
+    """未知命令或参数时：先报错，能猜到本该打什么就给出改法，最后输出完整帮助。
+
+    suggestion 由 wave.py 传入（打错的词表与命令清单都只在那里一份，这里不重复维护）。
+    """
     print(f"{BOLD}{RED}🌊 Error: Unknown command or argument.{RESET}")
+
+    if suggestion:
+        fixed, wrong, right = suggestion
+        print()
+        print(f"{BOLD}🌊 Did you mean:{RESET} {GREEN}{fixed}{RESET}")
+        print(f"   {YELLOW}{wrong}{RESET} is not a command. "
+              f"The one you want is {GREEN}{right}{RESET}.")
+
     print()
     print_custom_help()
 
