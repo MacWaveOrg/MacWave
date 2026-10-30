@@ -24,7 +24,7 @@ echo
 if [[ "$rc" -eq 0 ]]; then
     echo "✅ 首次巡检通过"
 else
-    echo "❌ 首次巡检失败（退出码 $rc），详见 $DIR/last-run.log"
+    echo "❌ 首次巡检失败（退出码 ${rc}），详见 $DIR/last-run.log"
 fi
 
 echo

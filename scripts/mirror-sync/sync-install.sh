@@ -25,7 +25,7 @@ echo
 if (( rc == 0 )); then
     echo "✅ 首次同步通过"
 else
-    echo "❌ 首次同步失败（退出码 $rc），详见 $DIR/last-run.log"
+    echo "❌ 首次同步失败（退出码 ${rc}），详见 $DIR/last-run.log"
 fi
 
 echo
@@ -34,5 +34,7 @@ echo "  tail -5  $DIR/history.log      最近几次的结论"
 echo "  cat      $DIR/last-run.log     本次完整输出"
 echo "  ls       $DIR/ALERT            存在=当前有故障"
 echo
-echo "产物（bottle/deps）暂不纳入 cron：先手工跑一次全量，确认无误后把 --no-payloads 去掉。"
+echo "cron 是每天 03:23 的**全量**同步（含产物与解释器压缩包）。"
+echo "已存在的文件不联网、直接按 sha256 跳过，所以日常开销很小。"
+echo "这次试跑带 --no-payloads，只验 git 树这条链路；产物交给今晚的 cron。"
 exit "$rc"

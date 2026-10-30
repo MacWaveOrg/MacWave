@@ -23,6 +23,8 @@
 
 set -uo pipefail
 
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+
 ROOT=${ROOT:-/www/wwwroot/mirror.repohub.top}
 DEST=$ROOT/MacWave
 SRC=${SRC:-/root/mirror-src}
@@ -38,7 +40,7 @@ for arg in "$@"; do
     case "$arg" in
         --dry-run)     DRY_RUN=1 ;;
         --no-payloads) NO_PAYLOADS=1 ;;
-        *) echo "未知参数：$arg（可用：--dry-run / --no-payloads）"; exit 2 ;;
+        *) echo "未知参数：${arg}（可用：--dry-run / --no-payloads）"; exit 2 ;;
     esac
 done
 
@@ -91,7 +93,7 @@ sha256_of() {
 mkdir -p "$SRC" || { say "❌ 建不了工作区 $SRC"; exit 1; }
 LOCK="$SRC/.lock"
 if ! mkdir "$LOCK" 2>/dev/null; then
-    say "另一轮同步正在进行（$LOCK），本次跳过"
+    say "另一轮同步正在进行（${LOCK}），本次跳过"
     exit 0
 fi
 trap 'rmdir "$LOCK" 2>/dev/null' EXIT
@@ -326,10 +328,29 @@ elif [[ ! -d "$DEST/bottle" ]]; then
 else
     # 只增不删：上游删掉一个旧包时，镜像里已有的文件不该跟着消失 ——
     # 客户端的索引缓存可能还指向它。
+    # 索引里有几条**故意做坏**的记录（缺 sha256、校验值不符、上游 404），
+    # 它们是负向测试夹具，本来就取不到。名单与 CI 共用同一份文件，免得两边走散：
+    # 不跳过的话每次同步都会报同样的失败，真正的故障反而被淹没。
+    #
+    # 先找脚本旁边那份（运维部署时一起传上来），再找工具克隆里的那份 ——
+    # 后者要等改动进了 main 才有，而镜像不该等一次合并才能正确工作。
+    skip=""
+    for candidate in "$SCRIPT_DIR/known-bad-records.txt" \
+                     "$SRC/tools/scripts/known-bad-records.txt"; do
+        if [[ -f "$candidate" ]]; then
+            skip=$(tr '\n' ',' < "$candidate")
+            break
+        fi
+    done
+    if [[ -z "$skip" ]]; then
+        note "没找到 known-bad-records.txt，坏记录会照常报错"
+    fi
+
     out=$(python3 "$SRC/tools/scripts/sync_payloads.py" \
             --infosource "$DEST/infosource" \
             --out "$DEST" \
             --source payload \
+            --skip "$skip" \
             --jobs "$JOBS" 2>&1)
     rc=$?
     say "$out" | tail -6

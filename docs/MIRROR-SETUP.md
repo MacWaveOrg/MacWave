@@ -314,7 +314,7 @@ rm -rf /www/wwwroot/mirror.repohub.top/MacWave/python/.git
 | `python/` | `MacWaveOrg/Python` 的 `main` | 同上 |
 | `core/<分支>/` | `MacWaveOrg/MacWave` 的对应分支 | 同上；分支表 = `configdata` 的当前发布线 + `KEEP_BRANCHES` |
 | `python/pythondata/<版本>/*.tar.gz` | `python_url.toml` 里记的**上游**地址 | 自己下载并校验 sha256；仓库里没有二进制 |
-| `bottle/` `deps/` | 我们自己的 Bottle / Deps **Release** | `sync_payloads.py --source payload`，只增不删 |
+| `bottle/` `deps/` | 我们自己的 Bottle / Deps **Release** | `sync_payloads.py --source payload`，只增不删；坏记录按 `scripts/known-bad-records.txt` 跳过 |
 
 最后再跑一次 `build_versions_index.py` 重建 `versions` 清单 —— 客户端的「列出版本」
 靠它，漏了会表现为「没有版本可装」。
@@ -329,8 +329,10 @@ rm -rf /www/wwwroot/mirror.repohub.top/MacWave/python/.git
 
 ```bash
 # Mac 上
+# known-bad-records.txt 也要一起传：脚本优先读它旁边那份
 rsync -a -e "ssh -o ControlPath=$HOME/.ssh/cm-lw" \
-  scripts/mirror-sync/ root@<服务器>:/root/mirror-sync/
+  scripts/mirror-sync/ scripts/known-bad-records.txt \
+  root@<服务器>:/root/mirror-sync/
 
 # 服务器上
 bash /root/mirror-sync/sync-install.sh
@@ -348,6 +350,16 @@ bash /root/mirror-sync/mirror-sync.sh                 # 全量，含产物
 
 退出码 0 表示全部成功，1 表示有任何一步失败。`cron` 里默认带 `--no-payloads`：
 产物体积大、变动少，先确认 git 树这条路稳了，再决定要不要把产物也交给它。
+
+### 几条「故意做坏」的记录
+
+索引里有 4 条记录是**负向测试夹具**，本来就取不到：`test_001` 上游 404、
+`test_no_sha256` 缺校验值、`test_wrong_sha256` 校验值故意不符、`ldid` 上游不可用。
+
+不跳过它们，每次同步都会报同样的失败 —— 而真正的问题会淹没在同一批报错里。名单放在
+`scripts/known-bad-records.txt`，**CI 与同步脚本共用同一份**，免得两边走散。
+脚本优先读它旁边那份（部署时一起传上去），再读工具克隆里的 —— 后者要等改动进了 `main`
+才有，而镜像不该等一次合并才能正确工作。
 
 ### 为什么解释器压缩包要单独一步
 
