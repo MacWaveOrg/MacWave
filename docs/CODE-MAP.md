@@ -69,11 +69,14 @@
 | `wave`（生成） | **不在仓库里**：`install.sh` / `selfupdate.sh` 生成的最外层入口，是一个 sh 启动器 | 按「私有 venv → 安装时记录的解释器 → PATH 上的 python3」挑选**真正能 import 依赖**的解释器，再 exec `wave.py`。改入口逻辑要同时改两个脚本里的 `write_launcher` |
 | `configpaths.py` | 配置目录解析的唯一来源 | 系统级优先、损坏则回落用户级。另提供「路径必须位于根目录内」的安全校验，防止配置被篡改后写到任意位置 |
 | `configerror.py` | 启动自检：机器上到底装没装 | 两处配置有一处有效就放行；都没装且当前在 git 仓库里时，报错并引导用安装脚本 |
-| `help.py` | 三套文本：总帮助、版本信息、子命令帮助 | 子命令帮助只列该命令真正接受的旗标，不承诺做不到的事 |
+| `help.py` | 三套文本：总帮助、版本信息、子命令帮助 | 子命令帮助只列该命令真正接受的旗标，不承诺做不到的事。新增旗标时必须同步这里，否则模糊测试会把它当「未知选项」而预测错 |
+| `mirrorinfo.py` | `wave mirror`：打印每类数据**实际**从哪个地址取，并标明来自环境变量还是内置默认值 | 未设置也打印默认值（空值分不清「没设」和「设成了空」）；密码一律打印固定 6 个星号，与真实长度无关，否则星号个数会泄露密码长度；`--show-password` 才给真实值，`--hide-user` 连用户名一起盖掉 |
+| `latest.py` | `wave latest`：只报告有没有新版，不下载任何东西 | 比较基准是**已安装的最高版本**，不是不带版本号的链接；链接指向更旧版本时附一行 `(linked: x.y.z)`。并发取清单（`MAX_WORKERS`），装了几十个包时串行会让「看一眼」变成等半分钟。拼错的包名从索引自己的名字表里给建议 |
 | `install.sh` | 官方安装器 | 见下 |
 | `uninstall.sh` | 卸载器 | 确认从终端设备读，标准输入为空时**不能**当作同意 |
 | `selfupdate.py` | 自更新第一层：判断有没有新版、触发更新、复核结果 | 复核不可省，见技术手册 8.1。`--max-time` 在这里从原始命令行解析，原样经 `MACWAVE_MAX_TIME` 传给脚本，由脚本自己再解析一次 |
 | `selfupdate.sh` | 自更新第二层：按清单逐文件更新 | 自带清单解析器，因为解析器本身不能依赖「还没下载的文件」。所有下载都走 `fetch_to_file`（超时 + 重试 + 先写分片再 mv），超时值由 `mw_seconds` 把 `40s`/`1min20s`/`2h` 折算成秒 |
+| `steplog.py` | 安装流程的步骤追踪（`-v` 时启用） | 失败一律走 `fail()`，一次打出「停在哪一步、请求了哪个 URL、服务器答了什么、下一步该试什么」。没有 `-v` 时只多打这两行诊断，进度输出保持原样 —— 排查不该依赖重跑一次带 `-v` 的安装 |
 
 **`install.sh` 内部的分段结构**（按执行顺序）：
 
@@ -135,6 +138,11 @@
 | `deps_test.sh` | 依赖链端到端：装带依赖的包 → 运行 → 检查标记 → 卸载 → 确认级联清理 |
 | `link_test.sh` | 无版本链接全生命周期回归 |
 | `format_test.sh` | 逐个压缩格式的安装/执行/卸载（九个归档格式 + 一个无扩展名样本，共十个测试包） |
+| `latest_test.sh` | `wave latest`：三种比较结果、未安装、包名打错、`--all` 汇总、链接指向旧版本时的附注。离线，假索引起在 localhost |
+| `info_format_test.sh` | `wave info` 的四种输出格式（`--json`/`--yaml`/`--toml`/`--raw`），三种互斥、`--raw` 是记录原样。离线 |
+| `message_test.sh` | 报错文本：命令名拼错时给出的建议是否保留其余命令行、包名拼错时是否从索引里猜。离线 |
+| `upgrade_test.sh` | 升级路径：跨大版本守卫、同名不同版本、链接重指 |
+| `mirror_test.sh` | `wave mirror` 的输出形状：默认值、环境变量覆盖、密码掩码、`--raw` 的 export 行 |
 | `selfupdate_test.sh` | 自更新：版本解析、短路、跨大版本拒绝、同大版本端到端（最后一步会真的更新，所以放最后） |
 | `sandbox_test.sh` | 安装器/卸载器在系统沙箱里跑，宿主除沙箱外零写入，且离线 |
 | `configpath_test.sh` | 配置目录解析的优先级与容错回落 |
@@ -144,14 +152,26 @@
 | `sync_payloads.py` | 把索引里登记的产物取回本地并按 4.0 的命名摆好，落盘前核对索引里的 sha256。`--source payload` 时从我们自己的 Release 取（给镜像站同步用） |
 | `publish_payloads.py` | 把上一步的结果发布到 `Bottle` / `Deps` 的 Release：tag 是包名，只增不删，同名同大小跳过 |
 | `backfill_file_field.py` | 数据迁移：给 3.x 的版本记录补上 4.0 需要的 `file` 字段（取 `url` 末段，与 3.x 实际用过的名字一致）。幂等 |
+| `build_update_commands.py` | 生成 `Selfupdate/macwavedata/<版本>/update_commands.sh`。**发版必跑**：漏一个文件，升级后的安装就找不到自己的命令。`--files` 显式传比 `--ref` 读仓库树更稳（本地 HEAD 可能落后于工作区） |
+| `update_commands.template.sh` | 上面那份生成脚本的模板，改清单结构时改这里 |
+| `build_versions_index.py` | 生成索引仓库的 `versions` 文件（包名 → 版本清单） |
+| `sync_latest_pointer.py` | 把 `Selfupdate` 的 `latest.toml` 推到指定版本，供发版流程调用 |
+| `known-bad-records.txt` | **故意坏掉**的测试记录（`test_001`、`test_no_sha256`、`test_wrong_sha256`、`ldid`）。CI 与镜像脚本共读这一份，免得各记一份、日后漂移 |
+| `mirror-sync/` | 镜像站同步：`mirror-sync.sh` 主管道，`sync-install.sh` / `sync-run.sh` 负责安装与定时。只保留最新一版、失败就不铺站点，避免 `--delete` 把上一版删光 |
+| `mirror-check/` | 镜像站巡检：`check.sh` 比对镜像与上游，`install.sh` / `run.sh` 负责安装与定时。结果记日志，异常才需要人看 |
 
 **所有测试共享的隔离机制**：设置 `MACWAVE_TEST` 指向一个临时目录后，安装器、卸载器与相关脚本会把该目录当作系统根，家目录也挂到它下面。危险操作必须用它。
+
+**两个必须知道的坑**（都真实发生过）：
+
+1. **系统级配置优先于用户级。** `config_dir_candidates()` 先看 `/opt/macwave_config`，再看好目录。CI 为了跑别的测试预先写过那份文件，于是新加的测试读到它、`load_base_dir()` 返回了别的路径，本地却因为文件不存在而一直是绿的。**新测试一律要设 `MACWAVE_TEST`**，否则在 CI 上会读到宿主的系统配置。同一个脚本里有多个互不相干的沙箱时（比如「空安装」用例），每个沙箱要有**自己的**测试根，否则共享的 `MACWAVE_TEST` 会让它们互相看见。
+2. **`wave info` 只认四种格式旗标**（`--json`/`--yaml`/`--toml`/`--raw`）。给别的选项是「未知选项」错误，不是「缺包名」。模糊测试的预测模型要跟着更新，否则正确的行为会被判成失败。
 
 ### 2.6 `.github/workflows/`
 
 | 文件 | 作用 |
 | --- | --- |
-| `format-test.yml` | 在多个 Python 版本上跑格式与回归；分支列表里包含若干历史分支 |
+| `format-test.yml` | 在多个 Python 版本上跑格式与回归；分支列表里包含若干历史分支。除原有的格式/依赖/链接/升级/自更新之外，4.1 又加了三个**纯离线**步骤（`message`、`latest`、`info format`），它们排在需要联网的步骤之前 —— 报错文本和输出格式坏了，没必要再等网络超时 |
 | `sync-release-branch.yml` | 主分支与发布分支的自动镜像，只做快进，分叉即报错 |
 | `portable-python.yml` | 上游有了新的 CPython 时更新 `Python` 仓库的 `pythondata/<版本>/python_url.toml` 与 `pythondata/latest.toml`：下载、算 sha256、确认压缩包里真有解释器 |
 | `sync-payloads.yml` | 抓上游产物 → 核对索引里的 sha256 → 发布到 `Bottle` / `Deps` 的 Release，再回读比对。**必须跑在 GitHub 托管的 Runner 上**：从大陆访问 `github.com` 实测三次里两次连 TCP 都建不起来 |
