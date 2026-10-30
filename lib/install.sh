@@ -370,6 +370,11 @@ resolve_custom_dir() {
 # ==========================================
 
 echo "🌊 Welcome to MacWave $MACWAVE_VERSION!"
+
+if [[ "$CORE_URL" != "https://raw.githubusercontent.com/MacWaveOrg/MacWave" ]]; then
+    echo "🌊 Install from mirror: $(mw_redact "$CORE_URL")"
+fi
+
 echo ""
 
 echo "🌊 Detected architecture: $ARCH"
