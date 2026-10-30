@@ -305,6 +305,13 @@ wave mirror                        Show the address each source is fetched from
     --show-password                Print passwords instead of six asterisks
     --hide-user                    Mask the user name too
 
+Info Output:
+wave info <name>                   Show one package in a human-readable form
+    --json / --yaml / --toml       Print the same fields in that format
+                                   (name, author, description, homepage, license,
+                                   installed, available, latest)
+    --raw                          Print the index record exactly as stored
+
 ```
 
 Uninstalling a version re-points the link to the next highest one, and removes the link

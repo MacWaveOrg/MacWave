@@ -3,6 +3,7 @@
 # pkginfohelper.py
 # 处理 wave 的 list / search / info 命令。
 
+import json
 import os
 import sys
 import platform
@@ -104,23 +105,27 @@ def fetch_remote_versions(pkg_name, arch):
 
 def fetch_remote_info(pkg_name, arch):
     
-    # 从数据仓库拉取 @common 文件，返回描述信息。
+    # 从数据仓库拉取 @common 文件，返回 (解析后的字段, 原文)。
+    #
+    # 原文要留着：`wave info --raw` 输出的就是它 —— 想知道「作者名为什么是这样」时，
+    # 看格式化之后的几行没有意义，得看索引里到底写了什么。
+    # 拉不到时返回 (None, None)，调用方据此区分「没这条记录」和「有记录但没字段」。
     
     pkg_name = require_safe_token(pkg_name, "package name")
     common_url = f"{domains.api_domain()}/pkg/pkginfo_{arch}/{pkg_name}/_{pkg_name}@common"
     try:
         resp = requests.get(common_url, timeout=30)
         if resp.status_code != 200:
-            return None
+            return None, None
     except Exception:
-        return None
+        return None, None
 
     result = {}
     for key in ["des", "hom", "lic", "aut"]:
         match = re.search(rf'{key}:\s*"([^"]+)"', resp.text)
         if match:
             result[key] = match.group(1)
-    return result
+    return result, resp.text
 
 
 # -------------------- list --------------------
@@ -180,7 +185,84 @@ def handle_search(query):
 
 # -------------------- info --------------------
 
-def handle_info(pkg_name):
+# -------------------- info 的输出格式 --------------------
+#
+# 三条机器可读格式共用一份数据，字段名与 `wave info` 的标签一一对应；
+# --raw 例外，它给的是索引里的 @common 原文，用来回答「这个作者名哪来的」。
+
+INFO_FORMATS = ("json", "yaml", "toml", "raw")
+
+
+def info_fields(pkg_name, remote, installed_versions, available_versions):
+    remote = remote or {}
+    return {
+        "name": pkg_name,
+        "author": remote.get("aut"),
+        "description": remote.get("des"),
+        "homepage": remote.get("hom"),
+        "license": remote.get("lic"),
+        "installed": list(installed_versions),
+        "available": list(available_versions),
+        "latest": available_versions[0] if available_versions else None,
+    }
+
+
+def info_as_json(fields):
+    return json.dumps(fields, indent=2, ensure_ascii=False)
+
+
+def info_as_yaml(fields):
+    # 标量一律走 json.dumps：JSON 的字符串写法是合法的 YAML 标量，
+    # 这样引号、冒号、换行都不用自己处理。
+    lines = []
+    for key, value in fields.items():
+        if value is None:
+            continue
+        if isinstance(value, list):
+            if not value:
+                lines.append(f"{key}: []")
+                continue
+            lines.append(f"{key}:")
+            for item in value:
+                lines.append(f"  - {json.dumps(item, ensure_ascii=False)}")
+        else:
+            lines.append(f"{key}: {json.dumps(value, ensure_ascii=False)}")
+    return "\n".join(lines)
+
+
+def info_as_toml(fields):
+    lines = []
+    for key, value in fields.items():
+        if value is None:
+            continue
+        if isinstance(value, list):
+            rendered = ", ".join(json.dumps(item, ensure_ascii=False) for item in value)
+            lines.append(f"{key} = [{rendered}]")
+        else:
+            lines.append(f"{key} = {json.dumps(value, ensure_ascii=False)}")
+    return "\n".join(lines)
+
+
+def render_info(output_format, pkg_name, remote, record_text,
+                installed_versions, available_versions):
+    if output_format == "raw":
+        # 索引里没有这条记录时没什么可打印的。打印空行等于让人以为「这条记录是空的」，
+        # 而实际原因是「压根没有这条记录」—— 两者要分清楚。
+        if record_text is None:
+            print(f"{RED_BOLD}🌊 Error: {pkg_name} has no @common record in the index.{RESET}")
+            print(f"{YELLOW}🌊 Next      wave info {pkg_name} --json prints what is available{RESET}")
+            sys.exit(1)
+        return record_text
+
+    fields = info_fields(pkg_name, remote, installed_versions, available_versions)
+    if output_format == "json":
+        return info_as_json(fields)
+    if output_format == "yaml":
+        return info_as_yaml(fields)
+    return info_as_toml(fields)
+
+
+def handle_info(pkg_name, output_format=None):
     
     # 先扫描本地 bin 目录，已安装则输出本地信息；
     # 未安装则拉远程 @common 文件。
@@ -200,13 +282,20 @@ def handle_info(pkg_name):
     installed_versions = sort_versions(installed_versions)
 
     # 2. 拉取远程 @common
-    remote = fetch_remote_info(pkg_name, arch)
+    remote, record_text = fetch_remote_info(pkg_name, arch)
 
     # 3. 拉取远程所有可安装版本
     available_versions = fetch_remote_versions(pkg_name, arch)
     available_versions = sort_versions(available_versions)
 
     # 4. 输出
+    if output_format:
+        text = render_info(output_format, pkg_name, remote, record_text,
+                           installed_versions, available_versions)
+        if text is not None:
+            print(text)
+        return
+
     print(f"🌊 Name:               {pkg_name}")
 
     if remote:
@@ -230,6 +319,36 @@ def handle_info(pkg_name):
 
 # -------------------- 入口 --------------------
 
+def parse_info_arguments(words):
+    """返回 (其余参数, 输出格式或 None)。
+
+    四种格式互斥：同时给两个就报错，而不是悄悄挑一个 —— 「哪个生效」不该靠猜。
+    """
+    chosen = []
+    operands = []
+    for word in words:
+        if not word.startswith("-"):
+            operands.append(word)
+            continue
+        name = word.partition("=")[0]
+        if name[2:] in INFO_FORMATS and name.startswith("--"):
+            chosen.append(name[2:])
+        else:
+            print(f"{RED_BOLD}🌊 Error: unknown option {word}{RESET}")
+            print(f"{YELLOW}🌊 Next      wave info accepts "
+                  f"--json, --yaml, --toml or --raw{RESET}")
+            sys.exit(1)
+
+    if len(chosen) > 1:
+        given = ", ".join(f"--{name}" for name in chosen)
+        print(f"{RED_BOLD}🌊 Error: choose one output format, got: {given}{RESET}")
+        print(f"{YELLOW}🌊 Next      --json, --yaml, --toml and --raw are "
+              f"mutually exclusive{RESET}")
+        sys.exit(1)
+
+    return operands, (chosen[0] if chosen else None)
+
+
 def handle_info_command(input_string):
   
     # 解析完整输入字符串（如 "wave info ldid"），分派到 list / search / info
@@ -249,13 +368,14 @@ def handle_info_command(input_string):
             sys.exit(1)
         handle_search(words[2])
     elif subcommand == "info":
-        # 与其他命令一致：忽略 flag（不是包名），并容忍 <包名>@<版本号> 这种写法
-        operands = [word for word in words[2:] if not word.startswith("-")]
+        # 容忍 <包名>@<版本号> 这种写法；--json 之类的输出格式会被挑出来
+        operands, output_format = parse_info_arguments(words[2:])
         pkg_name = operands[0].partition("@")[0] if operands else ""
         if not pkg_name:
             print(f"{RED_BOLD}🌊 Error: Missing package name.{RESET}")
+            print(f"{YELLOW}🌊 Next      wave info <name> [--json|--yaml|--toml|--raw]{RESET}")
             sys.exit(1)
-        handle_info(pkg_name)
+        handle_info(pkg_name, output_format)
     else:
         print(f"{RED_BOLD}🌊 Error: Unknown subcommand '{subcommand}'.{RESET}")
         sys.exit(1)

@@ -228,10 +228,15 @@ COMMAND_HELP = {
         "examples": ["wave search json"],
     },
     "info": {
-        "usage": "wave info <package>",
+        "usage": "wave info <package> [--json|--yaml|--toml|--raw]",
         "desc": "Show author, description, homepage and the installed / available versions.",
-        "flags": [],
-        "examples": ["wave info jq"],
+        "flags": [
+            ("--json", "Print the same fields as JSON"),
+            ("--yaml", "Print the same fields as YAML"),
+            ("--toml", "Print the same fields as TOML"),
+            ("--raw", "Print the index record as stored, without the formatting"),
+        ],
+        "examples": ["wave info jq", "wave info jq --json", "wave info jq --raw"],
     },
     "selfupdate": {
         "usage": "wave selfupdate [flags]",
