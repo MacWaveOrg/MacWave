@@ -59,9 +59,20 @@ trap cleanup EXIT
 
 HOME_DIR="$WORK/home"
 BASE="$WORK/base"
-mkdir -p "$HOME_DIR/.config/macwave_config" "$BASE"
+TEST_ROOT="$WORK/root"
+
+# 用 MACWAVE_TEST 把 /opt 映射到测试根下。
+#
+# 不这么做的后果（CI 上真实发生过）：config_dir_candidates() 是**系统级优先**，
+# 而 CI 的 workflow 为了跑别的测试预先写过 /opt/macwave_config/config.json，
+# 于是 load_base_dir() 读到那一份、返回 /tmp/macwave-test，本测试安装的包
+# 一个都认不出来，12 项断言全挂 —— 而本地没有那个文件，所以本地一直是绿的。
+export MACWAVE_TEST="$TEST_ROOT"
+mkdir -p "$TEST_ROOT/opt/macwave_config" "$HOME_DIR/.config/macwave_config" "$BASE"
 cp -R "$REPO_DIR/lib" "$REPO_DIR/pkg" "$REPO_DIR/surfboard" "$BASE/"
 printf '{"version": "4.1.0"}\n' > "$BASE/VERSION.json"
+# 两处都写：系统级是首选，用户级兜底
+printf '{"base_dir": "%s"}\n' "$BASE" > "$TEST_ROOT/opt/macwave_config/config.json"
 printf '{"base_dir": "%s"}\n' "$BASE" > "$HOME_DIR/.config/macwave_config/config.json"
 
 ARCH=$(python3 -c 'import platform; m=platform.machine().lower(); print("arm64" if m in ("arm64","aarch64") else "amd64")')
@@ -108,6 +119,7 @@ USER_SITE=$(python3 -c 'import site; print(site.getusersitepackages())')
 wave() {
     env -u MACWAVE_BOTTLE_DOMAIN -u MACWAVE_DEPS_DOMAIN \
         HOME="$HOME_DIR" \
+        MACWAVE_TEST="$TEST_ROOT" \
         MACWAVE_API_DOMAIN="http://127.0.0.1:$PORT" \
         python3 "$BASE/lib/wave.py" "$@"
 }
@@ -184,8 +196,12 @@ ok "-a 是 --all 的短形式" "$out" "1 of 3 package(s) have an update"
 
 mkdir -p "$WORK/empty/base" "$WORK/empty/home/.config/macwave_config"
 cp -R "$REPO_DIR/lib" "$REPO_DIR/pkg" "$REPO_DIR/surfboard" "$WORK/empty/base/"
-printf '{"base_dir": "%s"}\n' "$WORK/empty/base" > "$WORK/empty/home/.config/macwave_config/config.json"
-out=$(env HOME="$WORK/empty/home" MACWAVE_API_DOMAIN="http://127.0.0.1:$PORT" \
+# 这个用例要一个「什么都没装」的根，必须与主沙箱分开：MACWAVE_TEST 是全局导出的，
+# 沿用主沙箱的测试根就会读到主沙箱那份 config.json，三条包记录全被认成已安装。
+mkdir -p "$WORK/empty/root/opt/macwave_config"
+printf '{"base_dir": "%s"}\n' "$WORK/empty/base" > "$WORK/empty/root/opt/macwave_config/config.json"
+out=$(env HOME="$WORK/empty/home" MACWAVE_TEST="$WORK/empty/root" \
+      MACWAVE_API_DOMAIN="http://127.0.0.1:$PORT" \
       PYTHONPATH="$USER_SITE" python3 "$WORK/empty/base/lib/wave.py" latest --all 2>&1)
 ok "--all 在没装任何包时说清楚" "$out" "No packages installed yet"
 
