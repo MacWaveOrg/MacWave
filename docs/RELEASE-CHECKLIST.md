@@ -96,21 +96,41 @@ git merge --no-ff 4.1 -m "Merge 4.1 into main"
 python3 scripts/build_update_commands.py \
     --version <新版本> \
     --branch <新分支> \
-    --files lib/*.py lib/*.sh pkg/* surfboard/* \
     --out /tmp/update_commands.sh
 ```
 
-确认清单里包含**这一版新增的文件**（例如新增模块），否则升级后该模块缺失：
+**不要手写 `--files 'pkg/*'` 这类通配符。** 4.1.1 就是这么发出去的，而且出了两个问题：
 
 ```bash
-grep -c 'want ' /tmp/update_commands.sh
-grep 'want lib/<新模块>.py' /tmp/update_commands.sh
+# 这一行的通配符在真实工作区里会展开成：
+#   lib/install.sh、lib/uninstall.sh   —— 本该被 EXCLUDED 挡掉
+#   pkg/__pycache__、surfboard/__pycache__ —— 目录，git 里根本不存在
+--files lib/*.py lib/*.sh pkg/* surfboard/*
+```
+
+结果客户端升级时对两个 `__pycache__` 各重试 3 次再报 404，还把 `lib/install.sh`
+当成普通文件下载、覆盖了安装目录里的副本。
+
+现在生成器会对 `--files` 也做过滤（`sanitize()`），上面这行不会再产出坏清单；
+但**省略 `--files`、让它按 `--ref` 读仓库树**仍然是最稳的写法 —— 仓库树里没有
+`__pycache__`，也不会把工作区里未提交的东西带进去。确实需要显式传时，
+用 `git ls-tree` 而不是 shell 通配符：
+
+```bash
+--files $(git ls-tree --name-only -r <ref> lib pkg surfboard)
+```
+
+确认清单内容对得上，且没有不该出现的东西：
+
+```bash
+grep -c 'want ' /tmp/update_commands.sh          # 文件数是不是预期
+grep 'want lib/<新模块>.py' /tmp/update_commands.sh   # 这一版新增的模块在不在
+
+# 这三类一律不该出现，出现了就说明清单是脏的
+grep -E 'want (lib/(install|uninstall)\.sh|.*__pycache__|.*\.pyc)' /tmp/update_commands.sh && echo '❌ 清单有脏条目'
 ```
 
 推到 `Selfupdate/macwavedata/<新版本>/update_commands.sh`。
-
-`--files` 也可以省略，此时脚本按 `--ref` 读仓库树；但**本地 HEAD 可能落后于工作区**，
-漏掉新文件就是从这里来的，所以显式传 `--files` 更稳。
 
 ### 第 5 步：更新 `Selfupdate` 的 `latest.toml`
 

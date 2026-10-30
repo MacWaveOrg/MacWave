@@ -179,7 +179,108 @@ CI 传 145 分钟，step timeout 165 分钟只当兜底。
 （**只发给 api.github.com**），CI 里已经传了 `GITHUB_TOKEN`。
 回归脚本会把限流/403 识别成 **SKIP**（环境问题），而不是 FAIL。
 
-### 10. 其它零碎但很费时间的
+### 10. 升级「成功」了，但两个 404 和一次覆盖都没被当成失败（4.1.1）
+
+**现象**：`wave selfupdate` 从 4.1.0 升 4.1.1，终端里是这样：
+
+```
+🌊 Downloading pkg/__pycache__...
+curl: (56) The requested URL returned error: 404      ← 重试了 3 次
+🌊 Error: cannot download pkg/__pycache__
+🌊   https://REPOHUBUSER1:RCtSwVprSAa8sfFaLd2PXgyH@mirror.repohub.top/...
+🌊 Downloading surfboard/__pycache__...
+curl: (56) ... 404
+🌊 Error: cannot download surfboard/__pycache__
+...
+🌊 MacWave has been updated to 4.1.1!                 ← 居然报成功
+```
+
+**这一条里其实有三个独立的问题**，前两个是同一个根因的两个后果。
+
+#### 10.1 清单里的 `__pycache__` 从哪来 —— 发版命令自己带的
+
+`docs/RELEASE-CHECKLIST.md` 第 4 步原本写的是：
+
+```bash
+--files lib/*.py lib/*.sh pkg/* surfboard/*
+```
+
+**shell 通配符在真实工作区里展开**，`pkg/*` 会匹配到 `pkg/__pycache__` 这个
+**目录**，`lib/*.sh` 会匹配到 `lib/install.sh` 与 `lib/uninstall.sh`。四条脏
+条目一条不少：
+
+```
+lib/install.sh          ← 本该被 EXCLUDED 挡掉
+lib/uninstall.sh        ← 同上
+pkg/__pycache__         ← 目录，git 里根本不存在
+surfboard/__pycache__   ← 同上
+```
+
+而生成器里那两行过滤（`name == "__pycache__"`、`repo_path in EXCLUDED`）**只写在
+`files_from_git()` 里**。`--files` 是另一条入口，直接 `files = args.files` 就往下
+走了 —— 过滤器根本没经过。
+
+> 这就是「过滤器写在某个入口里」的典型后果：换条入口就全漏。
+
+**修法**：把两个过滤器收进 `sanitize(paths)`，放在「清单到手之后」这一处，
+不管来自 `--files` 还是 git 都要过；被丢掉的条目打印出来（清单少一行没人知道）。
+文档也改成省略 `--files`（按 `--ref` 读仓库树，那里没有 `__pycache__`），
+确实要显式传时用 `git ls-tree` 而不是 shell 通配符。
+
+#### 10.2 为什么 404 了还报成功
+
+`want` 失败时 `return 1`，而调用它的是：
+
+```bash
+install_delta() {
+    want lib/configerror.py 0
+    want lib/configpaths.py 0
+    ...几十行裸调用...
+}
+```
+
+**没有 `|| exit`，脚本也没有 `set -e`，调用方 `install_delta || return 1` 拿不到
+任何信号** —— `return 1` 的返回值被下一行 `want` 覆盖了。
+
+于是脚本退出码 0 → `lib/selfupdate.sh` 认为成功 → 写 `VERSION.json` →
+**版本号前进了，但安装树少了文件**。这种状态最难查：用户以为升好了，
+下次报错的地方和原因隔了几百行。
+
+**修法**：`want` 里改成 `exit 1`（不是 `return`）。同一类的还有两处也静默忽略：
+
+```bash
+run mv -f "$partial" "$destination"     # 权限不足时文件还在 .macwave-part 里
+run chmod +x "$destination"             # 装好了但命令跑不起来 → command not found
+```
+
+都改成检查返回值。`--delta` 过滤后为空也要硬失败 —— 一条 `want` 都没有的
+`install_delta` 会瞬间成功返回，等于「升级了但什么都没换」，连报错都没有。
+
+> **判断标准**：子脚本里每一个「可能失败的动作」都要问一句「失败了谁看得见」。
+> 答案若是「没人」，就得 `exit`，而不是 `return`/忽略。
+
+#### 10.3 报错把镜像密码打进了终端
+
+`want` 失败时 `echo "🌊   $url"`，而用镜像时 `MACWAVE_CORE_URL` 是
+`https://<用户>:<密码>@mirror/...`。这段输出会被贴进 issue、群聊、截图。
+
+模板里加 `redact_url`，`pkg/pkginfohelper.py` 与 `surfboard/depsinstaller.py`
+里同样的 `print` 也改用 `domains.redact_url`。
+
+**只在 `//` 之后、第一个 `/` 之前找 `@`** —— 路径里的 `@` 是合法文件名
+（`jq@1.8.2.arm64`），拿整条串找最后一个 `@` 会把包名当成密码位置，把地址改坏。
+
+#### 10.4 已经发出去的坏产物也要修
+
+光改代码不够：`Selfupdate/macwavedata/4.1.1/update_commands.sh` 已经在线上，
+**所有从 4.1.0 升上来的人都会踩**。所以按新生成器重发了一份（25 个文件，
+逐字节核对过本地与线上）。改代码只保护下一个版本，改数据才保护这一个版本。
+
+**新增回归** `scripts/update_commands_test.sh`（30 条，已进 `format-test`），
+钉死上面每一条。其中「`mv` 覆盖失败」用 `chflags uchg` 把目标文件设为不可变
+来制造 —— 这个场景平时几乎不可能自然复现，但一旦发生后果就是静默半成品。
+
+### 11. 其它零碎但很费时间的
 
 - **Python 输出块缓冲**：管道下 stdout 是块缓冲的，CI 日志会"二十分钟没有输出"，
   看起来像卡死。用 `-u` / `PYTHONUNBUFFERED=1`，回归脚本额外做了 flush + 心跳。

@@ -152,8 +152,10 @@
 | `sync_payloads.py` | 把索引里登记的产物取回本地并按 4.0 的命名摆好，落盘前核对索引里的 sha256。`--source payload` 时从我们自己的 Release 取（给镜像站同步用） |
 | `publish_payloads.py` | 把上一步的结果发布到 `Bottle` / `Deps` 的 Release：tag 是包名，只增不删，同名同大小跳过 |
 | `backfill_file_field.py` | 数据迁移：给 3.x 的版本记录补上 4.0 需要的 `file` 字段（取 `url` 末段，与 3.x 实际用过的名字一致）。幂等 |
-| `build_update_commands.py` | 生成 `Selfupdate/macwavedata/<版本>/update_commands.sh`。**发版必跑**：漏一个文件，升级后的安装就找不到自己的命令。`--files` 显式传比 `--ref` 读仓库树更稳（本地 HEAD 可能落后于工作区） |
-| `update_commands.template.sh` | 上面那份生成脚本的模板，改清单结构时改这里 |
+| `build_update_commands.py` | 生成 `Selfupdate/macwavedata/<版本>/update_commands.sh`。**发版必跑**：漏一个文件，升级后的安装就找不到自己的命令。清单来源两条路（`--files` 或 `--ref` 读仓库树），**过滤统一在 `sanitize()` 里做**，不管走哪条都挡掉 `__pycache__` / `.pyc` / `EXCLUDED` / 不在 `lib pkg surfboard` 之下的路径 —— 4.1.1 曾因为 `--files pkg/*` 把 `pkg/__pycache__` 与 `lib/install.sh` 写进清单，客户端对前者 404、对后者覆盖了安装目录里的副本。`--delta` 过滤后为空要硬失败，否则升级会「成功」但一个文件都不换 |
+| `update_commands.template.sh` | 升级脚本的模板。`want` 失败一律 `exit 1`（不是 `return`）—— 调用方是一串裸的 `want`，脚本没有 `set -e`、也不看返回值，`return` 会让「有文件没下到」被当成成功。`mv` 就位、`chmod +x` 同样要检查。报错里的地址过 `redact_url`，用镜像时不会把密码打进终端 |
+| `update_commands_test.sh` | 上面两件的回归（30 条）：脏清单过滤、`--delta` 空集拒绝、可执行位、报错打码的四种输入、404 必须让整次失败、`mv` 覆盖失败（用 `chflags uchg` 制造）也必须失败 |
+| `update_commands.template.sh` | 上面那份生成脚本的模板，改清单结构时改这里（失败语义与地址打码的细节见上一行） |
 | `build_versions_index.py` | 生成索引仓库的 `versions` 文件（包名 → 版本清单） |
 | `sync_latest_pointer.py` | 把 `Selfupdate` 的 `latest.toml` 推到指定版本，供发版流程调用 |
 | `known-bad-records.txt` | **故意坏掉**的测试记录（`test_001`、`test_no_sha256`、`test_wrong_sha256`、`ldid`）。CI 与镜像脚本共读这一份，免得各记一份、日后漂移 |
