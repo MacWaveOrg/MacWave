@@ -313,6 +313,7 @@ rm -rf /www/wwwroot/mirror.repohub.top/MacWave/python/.git
 | `selfupdate/` | `MacWaveOrg/Selfupdate` 的 `main` | 同上 |
 | `python/` | `MacWaveOrg/Python` 的 `main` | 同上 |
 | `core/<分支>/` | `MacWaveOrg/MacWave` 的对应分支 | 同上；分支表 = `configdata` 的当前发布线 + `KEEP_BRANCHES` |
+| `python/pythondata/<版本>/*.tar.gz` | `python_url.toml` 里记的**上游**地址 | 自己下载并校验 sha256；仓库里没有二进制 |
 | `bottle/` `deps/` | 我们自己的 Bottle / Deps **Release** | `sync_payloads.py --source payload`，只增不删 |
 
 最后再跑一次 `build_versions_index.py` 重建 `versions` 清单 —— 客户端的「列出版本」
@@ -348,13 +349,29 @@ bash /root/mirror-sync/mirror-sync.sh                 # 全量，含产物
 退出码 0 表示全部成功，1 表示有任何一步失败。`cron` 里默认带 `--no-payloads`：
 产物体积大、变动少，先确认 git 树这条路稳了，再决定要不要把产物也交给它。
 
-### 必须记住的四点
+### 为什么解释器压缩包要单独一步
+
+`MacWaveOrg/Python` 里只有 toml，没有那两个约 26 MB 的压缩包 —— 二进制不进 git。
+但客户端默认不是回上游取，而是取镜像上那份：
+
+```python
+def python_archive_url(version, filename):
+    return f"{python_data_domain()}/pythondata/{version}/{filename}"
+```
+
+所以镜像必须自己把它们放在 `pythondata/<版本>/` 下。同步脚本在 git 树同步完之后
+读 `latest.toml` 与 `python_url.toml`，两个架构都补（与这台服务器是什么架构无关，
+镜像要同时服务两种 Mac），逐字节校验，**验不过就丢弃**：宁可少一个文件，也不要
+在镜像里留一份校验不符的。
+
+### 必须记住的五点
 
 | 点 | 为什么 |
 | --- | --- |
 | **`versions` 不能跟着 `--delete` 消失** | 它是本地生成的，上游没有。rsync 里 `--exclude versions` 保它，第 5 步再重建 |
 | **`infosource/.git` 不该留在站点里** | 索引是 `git clone` 来的，`.git` 会一并被服务；nginx 的 `location ~ /\.` 挡住它，但没必要留。同步末尾直接删 |
 | **同步失败时不能清理旧分支目录** | 发布线刚切到 `4.5`、而 `4.5` 分支还没建时，清理会把仍在服务的 `4.1` 删掉 —— 一次上游打嗝变成镜像全站不可用。脚本里只要有一个 core 分支没同步成功就跳过清理 |
+| **`pythondata/*.tar.gz` 必须排除在 `--delete` 之外** | 它们在仓库里不存在，rsync 的 `--delete` 会当成「上游删了」而清掉。实测确认：不排除时两个压缩包会被删，镜像从此装不了自带解释器 |
 | **`bottle/deps` 只增不删** | 上游删掉一个旧包时，镜像里已有的文件不该跟着消失：客户端的索引缓存可能还指着它 |
 
 另外，产物那一步走的是 `--source payload`，即从**我们自己的 Release** 取，不打扰上游。
