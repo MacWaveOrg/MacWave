@@ -222,6 +222,49 @@ else
 fi
 
 # ==========================================================
+echo "========== 8. 就位与 +x 失败也必须失败 =========="
+# ==========================================================
+
+# chmod 失败（例如安装树是 root 装的、当前用户只是 sudo 拿到了写权限）
+# 以前是静默忽略 —— 用户随后看到「命令找不到」，比下载失败难懂得多。
+if command -v chflags >/dev/null 2>&1; then
+    # 必须放在客户端真正会去取的路径上（branch=main → /main/lib/wave.py），
+    # 否则先 404，测到的就不是 mv 失败而是下载失败了
+    mkdir -p "$WORK/www/main/lib"
+    printf 'new wave\n' > "$WORK/www/main/lib/wave.py"
+    gen "$WORK/ex.sh" --files lib/wave.py >/dev/null 2>&1
+    mkdir -p "$WORK/install2/lib"
+    printf 'old\n' > "$WORK/install2/lib/wave.py"
+    # 目标文件不可变 → mv 覆盖会失败
+    chflags uchg "$WORK/install2/lib/wave.py" 2>/dev/null
+
+    PORT2=$(( PORT + 1 ))
+    ( cd "$WORK/www" && exec python3 -m http.server "$PORT2" --bind 127.0.0.1 ) >/dev/null 2>&1 &
+    server2=$!
+    for _ in $(seq 1 40); do
+        python3 -c "import socket,sys; s=socket.socket(); s.settimeout(0.2); sys.exit(0 if s.connect_ex(('127.0.0.1',$PORT2))==0 else 1)" && break
+        sleep 0.1
+    done
+
+    out=$(MACWAVE_INSTALL_DIR="$WORK/install2" \
+          MACWAVE_CORE_URL="http://127.0.0.1:$PORT2" MACWAVE_BRANCH=main \
+          MACWAVE_CURRENT_VERSION=9.9.8 bash "$WORK/ex.sh" 2>&1)
+    rc=$?
+    if [ "$rc" -ne 0 ]; then
+        pass "mv 覆盖失败时整次更新失败"
+    else
+        fail "mv 失败却报告成功"
+    fi
+    expect "报错说明了是 mv 出问题" "$out" "move"
+
+    chflags nouchg "$WORK/install2/lib/wave.py" 2>/dev/null || true
+    kill "$server2" 2>/dev/null || true
+    wait "$server2" 2>/dev/null || true
+else
+    echo "  ·  跳过：没有 chflags，无法可靠制造 mv 失败"
+fi
+
+# ==========================================================
 echo
 echo "=========================================="
 echo -e "🌊 Passed: $PASSED"

@@ -82,7 +82,14 @@ fetch() {
         status=0
         run curl -fsSL --max-time "$FILE_TIMEOUT" -o "$partial" "$url" || status=$?
         if [ "$status" -eq 0 ]; then
-            run mv -f "$partial" "$destination"
+            # mv 失败也要报：权限不足（sudo 没拿到）时文件还在 .macwave-part 里，
+            # 目标位置是旧的甚至不存在。以前这里不看返回值，于是「下载成功但没就位」
+            # 会被当成这一步成功 —— 和 want 里那个 return/exit 是同一类问题。
+            if ! run mv -f "$partial" "$destination"; then
+                echo "🌊 Error: cannot move $partial into place" >&2
+                run rm -f "$partial" 2>/dev/null || true
+                return 1
+            fi
             return 0
         fi
         run rm -f "$partial" 2>/dev/null || true
@@ -119,7 +126,11 @@ want() {
         exit 1
     fi
     if [ "$exec_flag" = "1" ]; then
-        run chmod +x "$destination"
+        # 加不上 +x 的后果是「命令找不到」，比下载失败更难懂，所以这里也要拦住
+        if ! run chmod +x "$destination"; then
+            echo "🌊 Error: cannot make $repo_path executable" >&2
+            exit 1
+        fi
     fi
     return 0
 }
