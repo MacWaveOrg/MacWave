@@ -617,7 +617,7 @@ echo "🌊 Configuration saved to $CONFIG_FILE"
 echo "🌊 Version saved to $VERSION_FILE"
 
 # ==========================================
-# 删除旧版 repo.json
+# 删除1.x旧版 repo.json，软件包索引现已网络实时拉取，不再依赖需要记得刷新（否则安装不到新版）、冗余（用户还得下载且没什么用）的本地索引
 # ==========================================
 
 OLD_JSON="$REPO_DIR/repo.json"
