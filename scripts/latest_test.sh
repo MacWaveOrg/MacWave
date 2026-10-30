@@ -112,6 +112,27 @@ wave() {
         python3 "$BASE/lib/wave.py" "$@"
 }
 
+# 诊断：CI 上出现过「索引读得到、已装包却一个都不认」，本地复现不出。
+# 这里把关键路径打出来，失败时日志能直接看出差在哪一步。
+echo "---------- 环境 ----------"
+echo "HOME       = $HOME_DIR"
+echo "BASE       = $BASE"
+echo "ARCH       = $ARCH"
+echo "索引端口   = $PORT"
+echo -n "BASE_DIR 解析 = "
+HOME="$HOME_DIR" MACWAVE_API_DOMAIN="http://127.0.0.1:$PORT" \
+  python3 -c "
+import sys
+sys.path.insert(0, '$BASE/lib')
+from configpaths import load_base_dir
+print(load_base_dir())
+" 2>&1 | tail -1
+echo -n "bin/ 内容     = "
+ls "$BASE/bin" 2>/dev/null | tr '\n' ' '
+echo
+echo "--------------------------"
+echo
+
 echo "========== 1. 三种比较结果 =========="
 
 out=$(wave latest jq)

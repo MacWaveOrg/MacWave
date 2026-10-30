@@ -1253,6 +1253,12 @@ def predict(cmd, argv, installed, links):
             return 1, ("Missing search query.",)
         return 0, ()
     if cmd == "info":
+        # info 只认这四种输出格式。给它别的选项（例如从 install 那边串过来的
+        # --all）会走「unknown option」分支，而不是「缺包名」——两者是完全不同的
+        # 错误，预测要分开，否则模糊测试会把正确的行为判成失败。
+        known_info = {"--json", "--yaml", "--toml", "--raw", "-h", "--help"}
+        if any(w.startswith("-") and w.split("=")[0] not in known_info for w in words):
+            return 1, ("unknown option",)
         operands = [w for w in words if not w.startswith("-")]
         if not operands or not operands[0].partition("@")[0]:
             return 1, ("Missing package name.",)
