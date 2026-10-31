@@ -118,7 +118,11 @@ done
 
 # ─────────────────────────────────────────────────────────────
 section "1. 公开页：不需要口令"
-for p in / /index.html /macwave.html /linuxwave.html /macwave.png /linuxwave.png; do
+# 图片在 images/ 下 —— 与 index.html 里的引用一致。写成根目录的 /macwave.png
+# 会让体检长期报假失败，而首页其实是好的。
+for p in / /index.html /macwave.html /linuxwave.html \
+         /images/mascot.png /images/macwave.png /images/linuxwave.png \
+         /images/oclp.png; do
     expect "GET $p" "$(code "$p")" 200
 done
 

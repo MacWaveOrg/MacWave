@@ -15,7 +15,8 @@ MacWave 自己的存储层契约见 [DATA-LAYER.md](./DATA-LAYER.md)。
 mirror.repohub.top/
 ├── index.html                  产品选择页（公开）
 ├── macwave.html                MacWave 页面（公开，含账号获取方式）
-├── macwave.png  linuxwave.png  产品图标（公开）
+├── images/                     站点图片（公开）
+│   ├── mascot.png  macwave.png  linuxwave.png  oclp.png
 └── MacWave/                    数据（basic auth）
     ├── core/4.0/…
     ├── selfupdate/…
@@ -303,7 +304,7 @@ location ~ ^/[^/]+[.](?:html|png|css|js|svg|ico|webp)$ {
 }
 ```
 
-只要把文件放在**站点根目录**（不是 `LinuxWave/` 里面），就自动公开。
+图片放在站点根目录的 `images/` 下（不是 `LinuxWave/` 里面），就自动公开。
 
 ### 第 5 步：在首页加卡片
 
@@ -311,7 +312,7 @@ location ~ ^/[^/]+[.](?:html|png|css|js|svg|ico|webp)$ {
 
 ```html
 <a class="card" href="./linuxwave.html">
-  <img class="icon" src="./linuxwave.png" alt="" width="44" height="44">
+  <img class="icon" src="./images/linuxwave.png" alt="" width="44" height="44">
   <span class="text">
     <span class="name">LinuxWave</span>
     <span class="desc">Linux 包管理器</span>
