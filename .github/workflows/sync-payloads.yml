@@ -50,20 +50,20 @@ jobs:
 
     steps:
       - name: Checkout MacWave
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # 索引是纯数据，直接检出本地副本，不走 api.github.com（未认证只有 60 次/小时）。
       # 默认 main；准备新包的索引还在分支上时，用 infosource_ref 指过去，
       # 这样「代码分支 + 索引分支」可以一起演练，不必先往 main 写半成品。
       - name: Checkout infosource
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: MacWaveOrg/infosource
           ref: ${{ github.event.inputs.infosource_ref || 'main' }}
           path: infosource-data
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.14"
 
@@ -173,7 +173,7 @@ jobs:
 
       # 香港镜像站可以用这个产物同步，不必逐个访问 Release。
       - name: Upload mirror tree as an artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mirror-tree
           path: staging

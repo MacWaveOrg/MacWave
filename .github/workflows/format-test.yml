@@ -23,12 +23,12 @@ jobs:
         python-version: ['3.14', '3.15']
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # 审计需要 infosource 仓库的数据。直接检出本地副本，不走 api.github.com：
       # 未认证只有 60 次/小时，而 Runner 共用出口 IP，很容易被限流。
       - name: Checkout infosource data
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: MacWaveOrg/infosource
           ref: main
@@ -36,7 +36,7 @@ jobs:
 
       - name: Setup Python
         if: matrix.python-version != '3.15'
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -46,7 +46,7 @@ jobs:
       # python-build-standalone 的 3.15.0。
       - name: Setup Python 3.15 (uv / python-build-standalone)
         if: matrix.python-version == '3.15'
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v7
         with:
           python-version: '3.15'
 
@@ -196,10 +196,10 @@ jobs:
         python-version: ['3.14', '3.15']
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Checkout infosource data
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: MacWaveOrg/infosource
           ref: main
@@ -207,7 +207,7 @@ jobs:
 
       - name: Setup Python
         if: matrix.python-version != '3.15'
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -216,7 +216,7 @@ jobs:
       # 才能让 PATH 上的 python3 变成 3.15。
       - name: Setup Python 3.15 (uv / python-build-standalone)
         if: matrix.python-version == '3.15'
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v7
         with:
           python-version: '3.15'
 
@@ -246,7 +246,7 @@ jobs:
 
       - name: Upload the regression log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: random-test-${{ matrix.python-version }}-log
           path: ${{ runner.temp }}/random-test-${{ matrix.python-version }}.log
