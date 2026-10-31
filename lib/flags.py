@@ -40,7 +40,10 @@ upgrade = {"-X", "--remove-old-version", "--remove-old-versions", "--rov",
 link = {"-a", "--all"}
 unlink = {"-a", "--all"}
 linkquery = {"-a", "--all"}
-latest = {"--all", "-a", "--json", "--yaml", "--toml", "--raw"}
+# 只有 -a/--all 是 latest 独有的；--json/--yaml/--toml/--raw 属于 info。
+# 这两组混在一起时，`wave install jq --json` 会被提示成「--json 也适用于 latest」，
+# 而 latest 其实会直接拒绝 --json。
+latest = {"--all", "-a"}
 info = {"--json", "--yaml", "--toml", "--raw"}
 mirror = {"--show-password", "--hide-user", "--only-set", "--raw"}
 

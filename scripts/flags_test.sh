@@ -63,11 +63,26 @@ if m:
         if flag not in flags.ALL:
             add(f"mirrorinfo.FLAGS 里的 {flag} 不在 flags.ALL")
 
-# 3) latest 接受的旗标（散在 split_arguments 的分支里）
-src = (repo / "lib" / "latest.py").read_text()
-for flag in ("--all", "-a", "--json", "--yaml", "--toml", "--raw"):
+# 3) latest 与 info 各自接受的输出格式旗标不能混为一谈。
+#    混过的后果：`wave install jq --json` 提示成「--json 也适用于 latest」，
+#    而 latest 收到 --json 会直接拒绝 —— 把人指到一条同样会失败的命令上。
+for flag in ("--all", "-a"):
     if flag not in flags.ALL:
         add(f"latest 接受的 {flag} 不在 flags.ALL")
+    if flag not in flags.COMMAND_FLAGS["latest"]:
+        add(f"latest 接受的 {flag} 不在 flags.COMMAND_FLAGS['latest']")
+
+for flag in ("--json", "--yaml", "--toml", "--raw"):
+    if flag not in flags.ALL:
+        add(f"info 接受的 {flag} 不在 flags.ALL")
+    if flag not in flags.COMMAND_FLAGS["info"]:
+        add(f"info 接受的 {flag} 不在 flags.COMMAND_FLAGS['info']")
+    if flag in flags.COMMAND_FLAGS["latest"]:
+        add(f"{flag} 被记到了 latest 名下，但 latest 并不接受它")
+
+extra = flags.COMMAND_FLAGS["latest"] - {"--all", "-a"}
+if extra:
+    add(f"flags.COMMAND_FLAGS['latest'] 多了 latest 不接受的旗标: {sorted(extra)}")
 
 # 4) upgrade / link / unlink 的 -a --all、uninstall 的 --unlink
 for flag in ("-a", "--all"):
@@ -112,6 +127,10 @@ if problems:
         print(f"FAIL {p}")
 else:
     print(f"OK 检查通过（flags.ALL 共 {len(flags.ALL)} 个旗标）")
+
+# 没有这一行，上面所有的 FAIL 都只是打印：shell 拿到 rc=0，
+# 「flags.py 与白名单一致」这条断言永远不会红 —— 等于没测。
+sys.exit(1 if problems else 0)
 PY
 rc=$?
 
