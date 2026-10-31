@@ -74,10 +74,16 @@ printf '{"base_dir": "%s"}\n' "$BASE" > "$HOME_DIR/.config/macwave_config/config
 # 输出一致：一行一个包名 / 一行一条 <包名>@<版本>。
 
 MIRROR="$WORK/mirror"
-mkdir -p "$MIRROR/pkg/pkginfo_arm64/tree" "$MIRROR/pkg/pkginfo_arm64/jq"
-printf 'bat\njq\ntree\nwget\n' > "$MIRROR/pkg/pkginfo_arm64/versions"
-printf 'tree@2.2.1\ntree@2.1.0\n' > "$MIRROR/pkg/pkginfo_arm64/tree/versions"
-printf 'jq@1.8.2\n' > "$MIRROR/pkg/pkginfo_arm64/jq/versions"
+
+# 索引目录按架构分家。写死 arm64 的话，测试只在 Apple Silicon 上成立 ——
+# Linux runner 是 x86_64，代码会去请求 pkginfo_amd64，目录不存在，全部 404。
+# 这段映射必须与 pkg/pkginstaller.detect_arch() 保持一致。
+ARCH=$(python3 -c 'import platform; m = platform.machine().lower(); print("arm64" if m in ("arm64", "aarch64") else "amd64")')
+
+mkdir -p "$MIRROR/pkg/pkginfo_$ARCH/tree" "$MIRROR/pkg/pkginfo_$ARCH/jq"
+printf 'bat\njq\ntree\nwget\n' > "$MIRROR/pkg/pkginfo_$ARCH/versions"
+printf 'tree@2.2.1\ntree@2.1.0\n' > "$MIRROR/pkg/pkginfo_$ARCH/tree/versions"
+printf 'jq@1.8.2\n' > "$MIRROR/pkg/pkginfo_$ARCH/jq/versions"
 
 PORT=$(python3 - <<'PY'
 import socket
@@ -91,7 +97,7 @@ PY
 HTTP_PID=$!
 
 for _ in $(seq 1 40); do
-    if curl -sf -o /dev/null "http://127.0.0.1:$PORT/pkg/pkginfo_arm64/versions"; then break; fi
+    if curl -sf -o /dev/null "http://127.0.0.1:$PORT/pkg/pkginfo_$ARCH/versions"; then break; fi
     sleep 0.1
 done
 
