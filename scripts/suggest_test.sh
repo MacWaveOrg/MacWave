@@ -32,8 +32,14 @@ from pathlib import Path
 repo = Path(sys.argv[1])
 sys.path[:0] = [str(repo / "lib"), str(repo / "pkg"), str(repo / "surfboard")]
 
-# 只导入纯函数所在的模块；它顶层不读配置，所以离线可用。
+# 只导入纯函数所在的模块。
 import importlib.util
+
+# pkginstaller 顶层有 `BASE_DIR = load_base_dir()`，而 load_base_dir() 在找不到
+# 配置时会直接 sys.exit(1)。这里只测纯函数，先把那个来源换成常量 ——
+# 否则这段测试只在「装过 MacWave 的机器」上能过，干净容器里必红。
+import configpaths
+configpaths.load_base_dir = lambda: Path("/nonexistent-base-dir")
 
 spec = importlib.util.spec_from_file_location("pkginstaller", repo / "pkg" / "pkginstaller.py")
 module = importlib.util.module_from_spec(spec)

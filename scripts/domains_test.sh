@@ -241,6 +241,14 @@ echo "========== 5. 旗标解析 =========="
 # --install-from-source 不带值，所以不能进 FLAGS_TAKING_VALUE，
 # 否则 `wave install --install-from-source jq` 会把 jq 当成它的值。
 if PYTHONPATH="$LIB_DIR:$REPO_DIR/pkg:$REPO_DIR/surfboard" python3 - << 'PY'
+from pathlib import Path
+
+# pkginstaller 顶层有 `BASE_DIR = load_base_dir()`，而 load_base_dir() 在找不到
+# 配置时会直接 sys.exit(1)。这里只测纯函数，先把那个来源换成常量 ——
+# 否则这段测试只在「装过 MacWave 的机器」上能过，干净容器里必红。
+import configpaths
+configpaths.load_base_dir = lambda: Path("/nonexistent-base-dir")
+
 import pkginstaller
 
 ok = True
