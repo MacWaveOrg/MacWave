@@ -165,6 +165,11 @@ jobs:
         run: |
           bash scripts/depsync_test.sh
 
+      # 文档互相引用的相对链接，断了没有任何机制会告诉你
+      - name: Run markdown structure test
+        run: |
+          bash scripts/markdown_test.sh
+
       # 静态检查：配置在 pyproject.toml 与 .shellcheckrc 里。
       # 只装工具、不自动修 —— CI 的职责是「报告」，改动应当由人提交。
       - name: Lint Python

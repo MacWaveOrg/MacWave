@@ -93,6 +93,11 @@ jobs:
           command: bash scripts/depsync_test.sh
 
       - run:
+          name: Markdown structure
+          # 相对链接断了、围栏少一个 ``` —— 都是渲染出来才发现的错
+          command: bash scripts/markdown_test.sh
+
+      - run:
           name: Message and domain tests
           command: |
             bash scripts/message_test.sh

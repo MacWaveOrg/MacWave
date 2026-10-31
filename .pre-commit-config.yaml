@@ -63,6 +63,14 @@ repos:
         files: '^(pyproject\.toml|lib/install\.sh|lib/selfupdate\.sh|scripts/sandbox_test\.sh|\.github/workflows/.*\.yml|\.circleci/config\.yml)$'
         pass_filenames: false
 
+      # 文档之间的相对链接断了没人会知道；围栏少一个 ``` 会让后面全部变成代码块
+      - id: markdown-structure
+        name: markdown structure
+        entry: bash scripts/markdown_test.sh
+        language: system
+        files: '\.md$'
+        pass_filenames: false
+
       # 改 shell 脚本时顺手确认语法（比 shellcheck 更快，先失败）
       - id: bash-syntax
         name: bash syntax

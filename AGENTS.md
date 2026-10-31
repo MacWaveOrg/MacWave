@@ -1,6 +1,8 @@
 # AGENTS.md
 
-给在此仓库工作的编码代理（Codex、Copilot 等）的项目约定。
+给在此仓库工作的编码代理（Codex、Claude Code、Copilot 等）的项目约定。
+
+`CLAUDE.md` 是指向本文件的符号链接 —— Claude Code 读 `CLAUDE.md`，Codex 读 `AGENTS.md`，两者指向同一份内容，改这里就够，不要分别维护。
 
 ## 代码风格
 
