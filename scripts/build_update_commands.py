@@ -20,6 +20,12 @@
 #
 #   --delta 省略时等于 full（新版本首次发布时的正常情形）。
 #   --files 省略时按 --ref 指向的仓库树生成。
+#
+#   --new 列出「上一版还不存在」的文件。它们会被排到 delta 的**最前面**，
+#   这不是排版偏好：新模块常被改动过的老模块 import，若旧模块先落地、新模块
+#   后落地，中途一次网络失败就会留下「能 import 的目录、但模块不在」的安装，
+#   wave 从此起不来，连重跑 selfupdate 都做不到。先下新文件，最坏也只是
+#   老逻辑继续跑，重试即可。
 
 import argparse
 import subprocess
@@ -114,6 +120,9 @@ def main():
     parser.add_argument("--files", nargs="*", default=None, help="full file list (default: from --ref)")
     parser.add_argument("--delta", nargs="*", default=None,
                         help="changed files since the previous release (default: same as --files)")
+    parser.add_argument("--new", nargs="*", default=None,
+                        help="files that did not exist in the previous release; emitted first so a "
+                             "half-finished update still has every module it imports")
     parser.add_argument("--out", required=True, type=Path)
     args = parser.parse_args()
 
@@ -156,6 +165,14 @@ def main():
             return 1
     else:
         delta = files
+
+    if args.new:
+        fresh, dropped_new = sanitize(args.new, "--new")
+        dropped = dropped + dropped_new
+        fresh = [path for path in fresh if path in delta]
+        if fresh:
+            # 去重后再拼接：--new 里可能有已列在 delta 的更前面的项
+            delta = fresh + [path for path in delta if path not in fresh]
 
     if dropped:
         print(f"🌊 Dropped {len(dropped)} entries that must not be installed:", file=sys.stderr)
