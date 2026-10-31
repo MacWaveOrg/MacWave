@@ -56,7 +56,8 @@ def fetch_names(arch, timeout):
     """索引里的全部包名，一行一个。列不出来时返回 None，调用方退回「按已装的名字直接查」。"""
     url = domains.index_list_url(arch)
     try:
-        response = requests.get(url, timeout=timeout, headers=headers(url))
+        response = requests.get(url, timeout=timeout.request_timeout,
+                                headers=headers(url))
     except Exception as error:
         steplog.detail(f"package list failed: {error}")
         return None
@@ -71,7 +72,8 @@ def fetch_versions(package_name, arch, timeout):
     url = domains.index_list_url(arch, package_name)
     steplog.detail(f"GET {domains.redact_url(url)}")
     try:
-        response = requests.get(url, timeout=timeout, headers=headers(url))
+        response = requests.get(url, timeout=timeout.request_timeout,
+                                headers=headers(url))
     except Exception as error:
         return [], str(error)[:120]
     if response.status_code != 200:
@@ -309,10 +311,13 @@ def split_arguments(input_string):
 
 
 def resolve_timeout(input_string, timeout_raw):
+    """latest 也认三档超时；它自己只解析 --max-time 的值，其余交给 parse_timeout。"""
     from pkginstaller import parse_timeout
-    if timeout_raw is None:
-        return parse_timeout(input_string, [])
-    return parse_timeout(input_string, ["--max-time"])
+    from timeouts import FLAG_FIELDS
+    present = [flag for flag in FLAG_FIELDS if flag in input_string.split()]
+    budget = parse_timeout(input_string, present)
+    budget.start()
+    return budget
 
 
 # -------------------- 入口 --------------------

@@ -33,6 +33,7 @@ from configpaths import (
 )
 import domains
 from flags import describe as describe_flag
+import timeouts
 import quiet
 import steplog
 
@@ -117,39 +118,9 @@ def _parse_rate_limit(rate_str):
 
 DEFAULT_TIMEOUT = 30
 
-def _parse_duration(text):
-    # 把 curl 风格的时长解析成秒数：40 / 40s / 1min / 1min20s / 2h / 1m30s / 250ms。
-    # 无单位时按秒处理（与 curl 一致）。返回 None 表示格式不合法。
-    if text is None:
-        return None
-    raw = text.strip().lower()
-    if not raw:
-        return None
-
-    # 单位必须**长优先**：`1min` 若先匹配到单字母 `m`，剩下的 `in` 就无解了。
-    pattern = re.compile(r"(\d+(?:\.\d+)?)(hrs|hr|h|mins|min|ms|secs|sec|s|m)?")
-    units = {
-        None: 1, "s": 1, "sec": 1, "secs": 1,
-        "m": 60, "min": 60, "mins": 60,
-        "h": 3600, "hr": 3600, "hrs": 3600,
-        "ms": 0.001,
-    }
-
-    total = 0.0
-    position = 0
-    matched = False
-    while position < len(raw):
-        match = pattern.match(raw, position)
-        if not match or match.end() == position:
-            return None
-        value, unit = match.group(1), match.group(2)
-        total += float(value) * units.get(unit, 1)
-        position = match.end()
-        matched = True
-
-    if not matched or total <= 0:
-        return None
-    return total
+# 时长解析只有一份实现，在 lib/timeouts.py —— 它被 lib/ 与 surfboard/ 共用，
+# 放在 pkg/ 会让 lib/selfupdate.py 反过来依赖 pkg/。这里保留名字给旧调用方。
+from timeouts import _parse_duration  # noqa: E402,F401
 
 
 def _check_disk_space(path: Path, required_bytes: int = 10 * 1024 * 1024) -> bool:
@@ -166,6 +137,7 @@ ALLOWED_FLAGS = {
     "-v", "-C",
     "--verbose", "--skip-ssl", "--continue",
     "--limit-rate", "--proxy", "--unlink", "--ver", "--max-time",
+    "--connect-timeout", "--content-time",
     "--install-from-source",
 }
 
@@ -257,20 +229,13 @@ def parse_flags(input_string, command="install", shown=None):
     return flags
 
 
-def flag_value(input_string, name):
-    # 取旗标的值，`--name value` 与 `--name=value` 都支持；没有该旗标时返回 None。
-    tokens = input_string.split()
-    for index, token in enumerate(tokens):
-        if token == name:
-            return tokens[index + 1] if index + 1 < len(tokens) else ""
-        if token.startswith(name + "="):
-            return token[len(name) + 1:]
-    return None
+from timeouts import flag_value  # noqa: E402,F401  —— 单一实现，见 lib/timeouts.py
 
 
 # 这些旗标后面跟的是一个「值」，那个值不是包名。
 # 少了 --max-time 时，`wave install --max-time 1min jq` 会把 `1min` 当成包名。
-FLAGS_TAKING_VALUE = ("--limit-rate", "--proxy", "--ver", "--max-time")
+FLAGS_TAKING_VALUE = ("--limit-rate", "--proxy", "--ver", "--max-time",
+                      "--connect-timeout", "--content-time")
 
 
 def package_index(words):
@@ -297,23 +262,25 @@ def first_package_token(input_string):
     return None if index is None else words[index]
 
 
+def _reject_bad_duration(flag, raw):
+    print(f"{RED_BOLD}🌊 Error: cannot parse {flag} value '{raw}'.{RESET}")
+    print(f"{RED_BOLD}🌊 Use a number of seconds or a suffix like 40s, 1min, 1min20s, 2h.{RESET}")
+    sys.exit(1)
+
+
 def parse_timeout(input_string, flags):
-    # `--max-time` 的秒数；没有这个旗标时用 DEFAULT_TIMEOUT，取值不合法就报错退出。
-    # 单独提出来，是因为 upgrade 要在「下载之前」先用它去取版本列表。
-    if "--max-time" not in flags:
-        return DEFAULT_TIMEOUT
+    """三档超时（连接 / 读数据 / 总时长），见 lib/timeouts.py。
 
-    raw_timeout = flag_value(input_string, "--max-time")
-    if raw_timeout is None or raw_timeout == "":
-        print(f"{RED_BOLD}🌊 Error: --max-time needs a value, e.g. --max-time=1min.{RESET}")
-        sys.exit(1)
-
-    parsed_timeout = _parse_duration(raw_timeout)
-    if parsed_timeout is None:
-        print(f"{RED_BOLD}🌊 Error: cannot parse --max-time value '{raw_timeout}'.{RESET}")
-        print(f"{RED_BOLD}🌊 Use a number of seconds or a suffix like 40s, 1min, 1min20s, 2h.{RESET}")
-        sys.exit(1)
-    return parsed_timeout
+    单独提出来，是因为 upgrade 要在「下载之前」先用它去取版本列表 ——
+    那时还没有 config 字典。
+    """
+    for flag in timeouts.FLAG_FIELDS:
+        if flag in flags:
+            value = flag_value(input_string, flag)
+            if value is None or value == "":
+                print(f"{RED_BOLD}🌊 Error: {flag} needs a value, e.g. {flag}=1min.{RESET}")
+                sys.exit(1)
+    return timeouts.from_command_line(input_string, fail=_reject_bad_duration)
 
 
 def handle_download_args(input_string):
@@ -329,7 +296,7 @@ def handle_download_args(input_string):
         "resume": False,
         "limit_rate": None,
         "proxy": None,
-        "timeout": DEFAULT_TIMEOUT,
+        "timeout": timeouts.Budget(),
         # 4.0 只从 Bottle 存储取二进制，url 字段平时不读；
         # 只有这个开关会让安装绕开 Bottle，直接回上游取（含依赖）。
         "install_from_source": "--install-from-source" in flags,
@@ -367,7 +334,9 @@ def handle_download_args(input_string):
         if rate_str:
             config["limit_rate"] = _parse_rate_limit(rate_str)
 
-    # 4.1 超时（--max-time）：请求与读取两个阶段都用它
+    # 4.1 三档超时：--connect-timeout 管握手，--content-time 管等数据，
+    # --max-time 管整次操作。只给 --max-time 时，握手与读数据都退回默认的短值，
+    # 这样「防止卡在握手」不需要额外旗标也能生效。
     config["timeout"] = parse_timeout(input_string, flags)
 
     # 5. 代理
@@ -426,7 +395,7 @@ def download_file(url, temp_path, config, input_string, display_name):
         try:
             # 超时同时约束「连接」与「两次读取之间」：只给一个数字时 requests 会让
             # 两者都取该值，因此 --max-time 对「连上了但不动」的下载同样有效。
-            response = requests.get(url, timeout=config["timeout"], **request_kwargs)
+            response = requests.get(url, timeout=config["timeout"].request_timeout, **request_kwargs)
 
             if response.status_code == 416:
                 download_success = True
@@ -573,13 +542,18 @@ def package_common_url(package_name, arch):
     return f"{domains.api_domain()}/pkg/pkginfo_{arch}/{package_name}/_{package_name}@common"
 
 
+def _as_request_timeout(value):
+    """既接受裸秒数，也接受 Budget —— 调用方有的地方已经在用后者。"""
+    return value.request_timeout if isinstance(value, timeouts.Budget) else value
+
+
 def fetch_common_fields(package_name, arch, timeout=DEFAULT_TIMEOUT):
     # 包名与 bin_name 不一定相同（例如 choma -> ChOma），而 bin/ 与 links/ 用的是 bin_name。
     # 所以任何要「按名字找已安装版本」的命令都必须先读这个文件。
     url = package_common_url(package_name, arch)
     steplog.detail(f"GET {domains.redact_url(url)}")
     try:
-        response = requests.get(url, timeout=timeout)
+        response = requests.get(url, timeout=_as_request_timeout(timeout))
         if response.status_code != 200:
             steplog.fail(
                 f"cannot read the @common metadata for {package_name}",
@@ -597,22 +571,61 @@ def fetch_common_fields(package_name, arch, timeout=DEFAULT_TIMEOUT):
     return parse_common_fields(response.text)
 
 
+def _edit_distance(left, right):
+    """Levenshtein 距离：把 left 改成 right 要几次增/删/换。"""
+    previous = list(range(len(right) + 1))
+    for i, char_left in enumerate(left, 1):
+        current = [i]
+        for j, char_right in enumerate(right, 1):
+            current.append(min(previous[j] + 1,          # 删
+                               current[j - 1] + 1,        # 增
+                               previous[j - 1] + (char_left != char_right)))
+        previous = current
+    return previous[-1]
+
+
+def closest_name(package_name, names):
+    """从名字清单里挑最像的一个；都不像就返回 None。
+
+    与网络无关，所以可以单独测 —— 这条路径只在 404 时才会走到，
+    平时怎么用都不会碰，坏了也没人发现。
+    """
+    candidates = []
+    for name in names:
+        ratio = difflib.SequenceMatcher(None, package_name, name).ratio()
+        distance = _edit_distance(package_name, name)
+        if ratio >= 0.6 or distance <= 1:
+            candidates.append((distance, -ratio, name))
+    if not candidates:
+        return None
+    # 先看谁改得最少，再比相似度；同分时按名字排序，保证结果稳定可测
+    candidates.sort()
+    return candidates[0][2]
+
+
 def suggest_package_name(package_name, arch, timeout=DEFAULT_TIMEOUT):
     # 404 时翻一次镜像的名字清单，找最接近的包名。
     #
     # 打错包名是最常见的失败（treee / tree、rg / rgs），而原来的报错只会说
     # 「读不到版本清单」—— 用户得自己意识到是拼写错了。这里只在 404 时多发一个请求，
     # 拿不到清单就安静放弃，绝不影响正常路径。
+    #
+    # 两个判据取并集，缺一不可：
+    #   ratio >= 0.6      长名字打错一两个字母（treee -> tree）
+    #   edit distance <= 1 短名字打错一个字母（xk -> sk 的 ratio 只有 0.50）
+    # 只用 ratio 时 `xk` 拿不到任何建议；只用距离时 `htpz -> htop`（距离 2）会漏。
+    # 距离判据同时挡住 ratio 恰好也是 0.50 的误报：`curl -> ncdu` 距离 4，不成立。
     try:
         names_url = domains.index_list_url(arch)
-        response = requests.get(names_url, timeout=timeout, headers=github_api_headers(names_url))
+        response = requests.get(names_url, timeout=_as_request_timeout(timeout),
+                                headers=github_api_headers(names_url))
         if response.status_code != 200:
             return None
         names = domains.listing_names(response.text)
         if not names:
             return None
-        matches = difflib.get_close_matches(package_name, names, n=1, cutoff=0.6)
-        return matches[0] if matches else None
+
+        return closest_name(package_name, names)
     except Exception:
         return None
 
@@ -622,7 +635,8 @@ def fetch_max_version(package_name, arch, timeout=DEFAULT_TIMEOUT):
     api_url = domains.index_list_url(arch, package_name)
     steplog.detail(f"GET {domains.redact_url(api_url)}")
     try:
-        response = requests.get(api_url, timeout=timeout, headers=github_api_headers(api_url))
+        response = requests.get(api_url, timeout=_as_request_timeout(timeout),
+                                headers=github_api_headers(api_url))
         if response.status_code != 200:
             hint = []
             if response.status_code == 404:
@@ -630,7 +644,10 @@ def fetch_max_version(package_name, arch, timeout=DEFAULT_TIMEOUT):
                 close = suggest_package_name(package_name, arch, timeout)
                 if close:
                     hint.append(f"did you mean `{close}`?  try: wave info {close}")
-                hint.append("search the index by part of the name: wave search <词>")
+                # 这里曾经写死 `wave search <词>` —— 用户照着敲会得到
+                # "No packages found matching '<词>'"。给一条真能跑、且一定有结果的例子。
+                hint.append("search by part of a name, e.g. wave search z "
+                            "(lists every name containing z)")
                 hint.append("check MACWAVE_API_DOMAIN points at <mirror>/MacWave/infosource")
                 hint.append("if every package is missing, the mirror has no versions lists "
                             "yet (see docs/MIRROR-SETUP.md)")
@@ -762,7 +779,7 @@ def handle_install(input_string):
     pkg_version_url = f"{domains.api_domain()}/pkg/pkginfo_{ARCH}/{ParsePkgName}/_{ParsePkgName}@{ParsePkgVersion}"
     steplog.detail(f"GET {domains.redact_url(pkg_version_url)}")
     try:
-        resp = requests.get(pkg_version_url, timeout=config["timeout"])
+        resp = requests.get(pkg_version_url, timeout=config["timeout"].request_timeout)
         if resp.status_code != 200:
             if config["verbose"]:
                 print(resp.text)

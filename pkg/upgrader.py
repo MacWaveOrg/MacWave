@@ -258,14 +258,15 @@ def handle_upgrade(input_string, assume_yes=False):
             print(f"{YELLOW}🌊 {hint}.{RESET}")
             sys.exit(1)
 
-    timeout = parse_timeout(probe, flags)
+    budget = parse_timeout(probe, flags)
+    budget.start()
 
     arch = detect_arch()
     quiet.say(f"🌊 Checking the latest version of {package_name}...")
-    latest = fetch_max_version(package_name, arch, timeout)
+    latest = fetch_max_version(package_name, arch, budget)
 
     # 包名与 bin_name 不一定相同（choma -> ChOma），而 bin/ 与 links/ 用的是 bin_name
-    common_fields = fetch_common_fields(package_name, arch, timeout)
+    common_fields = fetch_common_fields(package_name, arch, budget)
     bin_name = get_field(common_fields, "bin_name")
     if not bin_name:
         print(f'{RED_BOLD}🌊 Missing "bin_name" field, Please contact the administrator.{RESET}')

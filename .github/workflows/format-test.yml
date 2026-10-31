@@ -154,6 +154,12 @@ jobs:
         run: |
           bash scripts/flags_test.sh
 
+      # 包名建议：只在 404 那条路径上跑到，平时 install 一次都碰不到。
+      # 退化成「什么都不建议」时，表现只是少一行提示，不会有人报 bug。
+      - name: Run suggestion test
+        run: |
+          bash scripts/suggest_test.sh
+
   # 随机化端到端回归：每次抽 10~20 个包 + 随机参数/随机打断 + 固定命令覆盖。
   # 自带安装目录挑选、部署与清理，所以不需要上面那一套 sudo 配置。
   random-test:

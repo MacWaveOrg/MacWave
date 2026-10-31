@@ -112,7 +112,7 @@ def request_timeout(input_string):
     # 超时从**原始命令行**里取，与软件包安装侧用同一套规则。
     # 这里不接收调用方解析好的对象，保证「命令怎么写的，就怎么生效」，
     # 也避免两处解析逻辑漂移。
-    from pkginstaller import _parse_duration, flag_value
+    from timeouts import _parse_duration, flag_value
 
     raw = flag_value(input_string, "--max-time") if input_string else None
     if raw is None or raw == "":

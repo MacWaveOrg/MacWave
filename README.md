@@ -278,8 +278,14 @@ Global Flags (can be used with any command):
       --proxy string      Specify an HTTP/HTTPS proxy (e.g., http://127.0.0.1:8080)
       --skip-ssl          Skip SSL certificate verification (insecure)
       --limit-rate string Limit download speed (e.g., 200K, 1M, 5M)
-      --max-time string   Timeout for each request, for install and selfupdate
+      --max-time string   Total time limit for each request, for install and selfupdate
                           (e.g., 40s, 1min, 1min20s, 2h; bare numbers are seconds)
+      --connect-timeout string
+                          Give up if the TCP/TLS handshake takes longer than this
+                          (like curl --connect-timeout); stops a hang before any data
+      --content-time string
+                          Give up if the server sends nothing for this long after
+                          connecting; stops "connected but the server never replies"
       --ver string        Install a specific version of the package
 
 Special Flags:

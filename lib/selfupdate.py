@@ -39,7 +39,7 @@ def max_time(input_string):
     if not input_string:
         return "", FETCH_TIMEOUT
 
-    from pkginstaller import _parse_duration, flag_value
+    from timeouts import _parse_duration, flag_value
 
     raw = flag_value(input_string, "--max-time") or ""
     if not raw:

@@ -23,6 +23,8 @@ GLOBAL = {
     "--limit-rate",
     "--proxy",
     "--max-time",
+    "--connect-timeout",
+    "--content-time",
     "--ver",
     "--install-from-source",
     "--install-python-from-source",

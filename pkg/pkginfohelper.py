@@ -80,7 +80,7 @@ def parse_pkg_from_bin(dirname):
     return dirname, None
 
 
-def fetch_remote_versions(pkg_name, arch):
+def fetch_remote_versions(pkg_name, arch, budget=None):
     
     # 通过索引列出可安装版本，返回所有可安装版本号列表。
     # 默认走 GitHub API 读 infosource，设了索引镜像时读镜像自己的清单
@@ -89,7 +89,8 @@ def fetch_remote_versions(pkg_name, arch):
     pkg_name = require_safe_token(pkg_name, "package name")
     api_url = domains.index_list_url(arch, pkg_name)
     try:
-        resp = requests.get(api_url, timeout=30, headers=github_api_headers(api_url))
+        resp = requests.get(api_url, timeout=_to(budget or _fallback()),
+                            headers=github_api_headers(api_url))
         if resp.status_code != 200:
             return []
         versions = []
@@ -103,7 +104,7 @@ def fetch_remote_versions(pkg_name, arch):
         return []
 
 
-def fetch_remote_info(pkg_name, arch):
+def fetch_remote_info(pkg_name, arch, budget=None):
     
     # 从数据仓库拉取 @common 文件，返回 (解析后的字段, 原文)。
     #
@@ -114,7 +115,7 @@ def fetch_remote_info(pkg_name, arch):
     pkg_name = require_safe_token(pkg_name, "package name")
     common_url = f"{domains.api_domain()}/pkg/pkginfo_{arch}/{pkg_name}/_{pkg_name}@common"
     try:
-        resp = requests.get(common_url, timeout=30)
+        resp = requests.get(common_url, timeout=_to(budget or _fallback()))
         if resp.status_code != 200:
             return None, None
     except Exception:
@@ -130,7 +131,7 @@ def fetch_remote_info(pkg_name, arch):
 
 # -------------------- list --------------------
 
-def handle_list():
+def handle_list(budget=None):
     
     # 直接扫描 BASE_DIR/bin 目录下的子目录，列出所有已安装的包
     # （2.2 起每个包是一个 <包名>@<版本号> 目录）。
@@ -150,7 +151,7 @@ def handle_list():
 
 # -------------------- search --------------------
 
-def handle_search(query):
+def handle_search(query, budget=None):
     
     # 远程搜索索引里的所有包名，匹配查询词。
     # 默认走 GitHub API 读 infosource，设了索引镜像时读镜像自己的清单。
@@ -160,7 +161,8 @@ def handle_search(query):
     api_url = domains.index_list_url(arch)
 
     try:
-        resp = requests.get(api_url, timeout=30, headers=github_api_headers(api_url))
+        resp = requests.get(api_url, timeout=_to(budget or _fallback()),
+                            headers=github_api_headers(api_url))
         if resp.status_code != 200:
             print(f"{RED_BOLD}🌊 Error: Cannot fetch package list.{RESET}")
             # 用镜像时 api_url 里带凭据，直接打印等于把密码写进终端记录
@@ -263,7 +265,7 @@ def render_info(output_format, pkg_name, remote, record_text,
     return info_as_toml(fields)
 
 
-def handle_info(pkg_name, output_format=None):
+def handle_info(pkg_name, output_format=None, budget=None):
     
     # 先扫描本地 bin 目录，已安装则输出本地信息；
     # 未安装则拉远程 @common 文件。
@@ -283,10 +285,10 @@ def handle_info(pkg_name, output_format=None):
     installed_versions = sort_versions(installed_versions)
 
     # 2. 拉取远程 @common
-    remote, record_text = fetch_remote_info(pkg_name, arch)
+    remote, record_text = fetch_remote_info(pkg_name, arch, budget)
 
     # 3. 拉取远程所有可安装版本
-    available_versions = fetch_remote_versions(pkg_name, arch)
+    available_versions = fetch_remote_versions(pkg_name, arch, budget)
     available_versions = sort_versions(available_versions)
 
     # 4. 输出
@@ -325,19 +327,30 @@ def parse_info_arguments(words):
 
     四种格式互斥：同时给两个就报错，而不是悄悄挑一个 —— 「哪个生效」不该靠猜。
     """
+    import timeouts
+
     chosen = []
     operands = []
+    skip_next = False
     for word in words:
+        if skip_next:
+            skip_next = False          # 这是上一个超时旗标的值，不是包名
+            continue
         if not word.startswith("-"):
             operands.append(word)
             continue
         name = word.partition("=")[0]
         if name[2:] in INFO_FORMATS and name.startswith("--"):
             chosen.append(name[2:])
+        elif name in timeouts.FLAG_FIELDS:
+            # 三档超时是全局旗标，由 _budget() 处理；这里只是跳过，
+            # 不能当成「未知选项」—— 那会让 wave info 与其它命令不一致。
+            if "=" not in word:
+                skip_next = True       # --max-time 1min 的空格写法
         else:
             print(f"{RED_BOLD}🌊 Error: unknown option {word}{RESET}")
-            print(f"{YELLOW}🌊 Next      wave info accepts "
-                  f"--json, --yaml, --toml or --raw{RESET}")
+            print(f"{YELLOW}🌊 Next      wave info accepts --json, --yaml, "
+                  f"--toml or --raw{RESET}")
             sys.exit(1)
 
     if len(chosen) > 1:
@@ -348,6 +361,35 @@ def parse_info_arguments(words):
         sys.exit(1)
 
     return operands, (chosen[0] if chosen else None)
+
+
+# 这三个命令以前把超时写死成 30 秒：`wave search jq --max-time=2min` 既不生效、
+# 也不报错 —— 旗标被静默吞掉是最难查的一类问题。现在与 install 走同一套三档超时。
+def _to(value):
+    """Budget 或裸秒数都能喂给 requests。"""
+    return value.request_timeout if hasattr(value, "request_timeout") else value
+
+
+def _fallback():
+    import timeouts
+    return timeouts.Budget().start()
+
+
+def _budget(input_string):
+    import timeouts
+    from pkginstaller import _reject_bad_duration
+
+    words = input_string.split()
+    for flag in timeouts.FLAG_FIELDS:
+        if flag in words:
+            raw = timeouts.flag_value(input_string, flag)
+            if raw is None or raw == "":
+                print(f"{RED_BOLD}🌊 Error: {flag} needs a value, "
+                      f"e.g. {flag}=1min.{RESET}")
+                sys.exit(1)
+    budget = timeouts.from_command_line(input_string, fail=_reject_bad_duration)
+    budget.start()
+    return budget
 
 
 def handle_info_command(input_string):
@@ -361,13 +403,16 @@ def handle_info_command(input_string):
 
     subcommand = words[1].lower()
 
+    # 只解析一次：三个子命令共用同一条命令行的时限
+    budget = _budget(input_string)
+
     if subcommand == "list":
-        handle_list()
+        handle_list(budget)
     elif subcommand == "search":
         if len(words) < 3:
             print(f"{RED_BOLD}🌊 Error: Missing search query.{RESET}")
             sys.exit(1)
-        handle_search(words[2])
+        handle_search(words[2], budget)
     elif subcommand == "info":
         # 容忍 <包名>@<版本号> 这种写法；--json 之类的输出格式会被挑出来
         operands, output_format = parse_info_arguments(words[2:])
@@ -376,7 +421,7 @@ def handle_info_command(input_string):
             print(f"{RED_BOLD}🌊 Error: Missing package name.{RESET}")
             print(f"{YELLOW}🌊 Next      wave info <name> [--json|--yaml|--toml|--raw]{RESET}")
             sys.exit(1)
-        handle_info(pkg_name, output_format)
+        handle_info(pkg_name, output_format, budget)
     else:
         print(f"{RED_BOLD}🌊 Error: Unknown subcommand '{subcommand}'.{RESET}")
         sys.exit(1)
