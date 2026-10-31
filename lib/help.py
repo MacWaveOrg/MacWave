@@ -117,7 +117,8 @@ def print_custom_help():
     ])
 
     _print_section("Global Flags (can be used with any command)", [
-        (_flag("-s, --silent"), "Only errors are printed; good for scripts (beats -v)"),
+        (_flag("-s, --silent"), "Print nothing at all; the exit code is the signal (beats -v; install / upgrade / uninstall / link / unlink / selfupdate)"),
+        (_flag("-S, --show-error"), "With -s, still print the error when a command fails"),
         (_flag("-C, --continue"), "Resume interrupted downloads (like curl -C -)"),
         (_flag("--proxy", "<string>"), "Specify an HTTP/HTTPS proxy (e.g., http://127.0.0.1:8080)"),
         (_flag("--skip-ssl"), "Skip SSL certificate verification (insecure)"),
@@ -135,7 +136,7 @@ def print_custom_help():
         (_flag("--unlink"), "Leave the unversioned link alone (install / uninstall)"),
         # 只列规范写法；单数的 --remove-old-version 与 --rov 仍然接受，但不再宣传
         (_flag("-X, --remove-old-versions"), "Remove older versions after upgrading"),
-        (_flag("--all, -a"), "Apply to every installed package (link / unlink / linkquery)"),
+        (_flag("--all, -a"), "Apply to every installed package (upgrade / link / unlink / linkquery)"),
     ])
 
     _print_section("Unversioned Links", [
@@ -176,10 +177,11 @@ COMMAND_HELP = {
                      "wave install jq --max-time=1min", "wave install jq --install-from-source"],
     },
     "upgrade": {
-        "usage": "wave upgrade <package> [flags]",
-        "desc": "Install the latest version of a package. Versions coexist, so the old ones "
-                "stay until -X removes them.",
+        "usage": "wave upgrade <package> | wave upgrade --all",
+        "desc": "Install the latest version of a package, or of every installed package "
+                "with --all. Versions coexist, so the old ones stay until -X removes them.",
         "flags": [
+            ("-a, --all", "Upgrade every installed package that has a newer version"),
             ("-X, --remove-old-versions", "Also remove the versions older than the one just installed"),
             ("-C, --continue", "Resume an interrupted download (like curl -C -)"),
             ("--proxy <string>", "HTTP/HTTPS proxy (e.g. http://127.0.0.1:8080)"),
@@ -188,7 +190,7 @@ COMMAND_HELP = {
             ("--max-time <string>", "Timeout for each request (40s, 1min, 1min20s, 2h; bare numbers are seconds)"),
             ("-v, --verbose", "Enable verbose output"),
         ],
-        "examples": ["wave upgrade jq", "wave upgrade jq -X",
+        "examples": ["wave upgrade jq", "wave upgrade jq -X", "wave upgrade --all",
                      "wave upgrade jq --remove-old-versions --max-time=2min"],
     },
     "mirror": {

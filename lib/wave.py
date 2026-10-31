@@ -93,34 +93,45 @@ SILENT_COMMANDS = {"install", "upgrade", "uninstall", "link", "unlink", "selfupd
 
 
 def strip_silent(words):
-    """把 `-s` / `--silent` 从 argv 里拿掉，返回 (剩下的 words, 是否静默)。
+    """把 `-s` / `--silent` / `-S` / `--show-error` 从 argv 里拿掉。
 
-    三种写法都认，且与 upgrader 处理 -X 的方式一致：
+    返回 (剩下的 words, 是否静默, 是否保留错误)。写法与 upgrader 处理 -X 一致：
 
         wave install jq -s          单个
         wave install jq --silent    长写法
         wave upgrade jq -sX         合并（s 与 X 都在这一簇里）
         wave upgrade jq -CsX        合并里夹着别的短旗标
+        wave install jq -sS         静默但保留错误（curl 的 -sS）
 
-    只处理单横线短旗标簇，`--skip-ssl` 这类长旗标不受影响（`s` 不在
+    只处理单横线短旗标簇，`--skip-ssl` 这类长旗标不受影响（`s`/`S` 不在
     `--` 开头的那一类里找）。包名不以 `-` 开头，所以不会被误伤。
     """
     silent = False
+    show_error = False
     kept = []
     for word in words:
         if word == "--silent":
             silent = True
             continue
+        if word == "--show-error":
+            show_error = True
+            continue
         if word.startswith("-") and not word.startswith("--") and len(word) > 1:
             letters = word[1:]
-            if "s" in letters:
-                silent = True
-                letters = letters.replace("s", "")
+            # 大写 S 与小写 s 各管一件事，顺序无关：-sS 与 -Ss 等价
+            for letter in ("s", "S"):
+                if letter in letters:
+                    if letter == "s":
+                        silent = True
+                    else:
+                        show_error = True
+                    letters = letters.replace(letter, "")
+            if letters != word[1:]:
                 if letters:
                     kept.append("-" + letters)
                 continue
         kept.append(word)
-    return kept, silent
+    return kept, silent, show_error
 
 
 # -------------------- 主调度逻辑 --------------------
@@ -139,7 +150,7 @@ def main():
     #
     # 取首词也从剥离后的副本里取：`wave -s update jq` 里的 -s 是全局旗标，
     # 不该被当成命令名报「unknown command: -s」。
-    lead, silent = strip_silent(words)
+    lead, silent, show_error = strip_silent(words)
     FirstWord = lead[0] if lead else words[0]
 
     # 2. 参数优先
@@ -171,13 +182,18 @@ def main():
         # split_input 本来就用同样的办法处理 -X，这里保持一致。
         #
         # 静默优先于啰嗦：同时给了 -v，-v 会被 steplog.set_verbose 挡掉。
-        words, silent = strip_silent(words)
+        words, silent, show_error = strip_silent(words)
         if silent:
             if FirstWord not in SILENT_COMMANDS:
-                # 拒绝得早一点，并且用和「旗标写错」同一种形状，脚本好处理
-                quiet.unknown("flag", "-s")
+                # 拒绝得早一点，并且用和「旗标写错」同一种形状，脚本好处理。
+                # 不能说 unknown —— -s 真实存在，只是不适用于只读命令。
+                applicable = ", ".join(f"wave {name}" for name in sorted(SILENT_COMMANDS))
+                quiet.misplaced("-s", f"-s only applies to {applicable}")
                 sys.exit(1)
-            quiet.set_silent(True)
+            # 单给 -s 时连错误一起吞（curl 语义）；-sS 才留错误。
+            quiet.set_silent(True, show_error=show_error)
+            if not show_error:
+                quiet.silence_everything()
             # 子脚本（pkginstaller.sh、depsmanager.sh…）也要知道：它们的输出
             # 虽然由 Python 重印，但 update_commands 那类直接写终端的脚本
             # 只能靠环境变量。

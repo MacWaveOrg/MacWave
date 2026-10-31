@@ -271,6 +271,8 @@ Flags:
   -v, --verbose           Enable verbose output (show detailed logs)
 
 Global Flags (can be used with any command):
+  -s, --silent            Print nothing at all; the exit code is the signal
+  -S, --show-error        With -s, still print the error when a command fails
   -C, --continue          Resume interrupted downloads (like curl -C -)
       --proxy string      Specify an HTTP/HTTPS proxy (e.g., http://127.0.0.1:8080)
       --skip-ssl          Skip SSL certificate verification (insecure)
@@ -282,12 +284,13 @@ Global Flags (can be used with any command):
 Special Flags:
 wave install <pkgname>@<version>   Download certain version(s) of a package
 wave upgrade <pkgname>             Take a package to the latest version
+wave upgrade --all, -a             Take every installed package to the latest version
     --remove-old-version           Remove the versions older than the one just installed
     --remove-old-versions          Same as --remove-old-version
     --rov                          Same as --remove-old-version
     -X                             Same as --remove-old-version
     --unlink                       Leave the unversioned link alone (install / uninstall)
-    --all, -a                      Apply to every installed package (link / unlink / linkquery)
+    --all, -a                      Apply to every installed package (upgrade / link / unlink / linkquery)
 
 Self Update:
 wave selfupdate                    Update MacWave itself

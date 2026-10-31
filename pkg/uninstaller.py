@@ -25,7 +25,7 @@ import quiet
 
 # 只取「任何命令都接受」的那一组；模块名不用 flags ——
 # 这个函数里已经有个局部变量叫 flags（argv 里剥出来的旗标集合）。
-from flags import GLOBAL as GLOBAL_FLAGS
+from flags import GLOBAL as GLOBAL_FLAGS, describe as describe_flag
 
 
 BASE_DIR = load_base_dir()
@@ -372,7 +372,13 @@ def handle_uninstall(input_string):
     # 也会漏出一行，而那句话本身还是错的。帮助是承诺，这里按承诺放行。
     tolerated = {"--unlink"} | GLOBAL_FLAGS
     for unknown in sorted(flags - tolerated):
-        print(f"{YELLOW}🌊 Warning: unknown flag '{unknown}' ignored.{RESET}")
+        # 「属于别的命令」与「拼错了」是两种错，说法要分开：
+        # 前者提示去用对命令，后者才提示拼写。
+        description = describe_flag(unknown)
+        if description:
+            print(f"{YELLOW}🌊 Warning: {description}; ignored.{RESET}")
+        else:
+            print(f"{YELLOW}🌊 Warning: unknown flag '{unknown}' ignored.{RESET}")
 
     if not operands:
         print(f"{RED_BOLD}🌊 Error: Missing package name.{RESET}")

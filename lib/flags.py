@@ -27,6 +27,7 @@ GLOBAL = {
     "--install-from-source",
     "--install-python-from-source",
     "-s", "--silent",
+    "-S", "--show-error",
     # 注意没有 --help / --version：那两条在分发之前就被拦下，
     # 不算「某条命令接受的旗标」，但仍然是合法输入，所以在 ALL 里单独补。
 }
@@ -34,7 +35,8 @@ GLOBAL = {
 # 单条命令独有的
 install = set()
 uninstall = {"--unlink"}
-upgrade = {"-X", "--remove-old-version", "--remove-old-versions", "--rov"}
+upgrade = {"-X", "--remove-old-version", "--remove-old-versions", "--rov",
+           "-a", "--all"}
 link = {"-a", "--all"}
 unlink = {"-a", "--all"}
 linkquery = {"-a", "--all"}
@@ -72,6 +74,26 @@ def split(token):
     if token.startswith("-") and len(token) > 1:
         return [f"-{ch}" for ch in token[1:]]
     return []
+
+
+def owner_commands(flag):
+    """这个旗标属于哪些命令。空列表 = 谁都不认。"""
+    return sorted(cmd for cmd, table in COMMAND_FLAGS.items() if flag in table)
+
+
+def describe(flag):
+    """给「用错命令」的旗标一句准确的说明。
+
+    `-X` 不是拼错，而是升级专属。一律说成「unknown flag」会把人送去查拼写，
+    真正的原因（用错了命令）反而看不到。
+    """
+    owners = owner_commands(flag)
+    if not owners:
+        return None
+    if len(owners) == 1:
+        return f"{flag} only applies to wave {owners[0]}"
+    listed = ", ".join(f"wave {cmd}" for cmd in owners)
+    return f"{flag} only applies to {listed}"
 
 
 def unknown_flags(words):

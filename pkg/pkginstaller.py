@@ -32,6 +32,7 @@ from configpaths import (
     require_safe_token,
 )
 import domains
+from flags import describe as describe_flag
 import quiet
 import steplog
 
@@ -175,9 +176,11 @@ UPGRADE_ONLY_FLAGS = {
 }
 
 # 其余命令独有的参数：用错时指到正确的那条命令（值要能直接照着敲）
+# 值是一组可以照着敲的命令：同一个旗标可能属于好几条命令（-a 同时属于
+# upgrade 与 link 系），只说其中一个会把人引到错误的那条上。
 OTHER_COMMAND_FLAGS = {
-    "-a": "`wave link --all`",
-    "--all": "`wave link --all`",
+    "-a": ("wave upgrade --all", "wave link --all"),
+    "--all": ("wave upgrade --all", "wave link --all"),
 }
 
 def parse_flags(input_string, command="install", shown=None):
@@ -218,9 +221,14 @@ def parse_flags(input_string, command="install", shown=None):
     for flag in flags:
         if flag in ALLOWED_FLAGS:
             continue
-        # 静默模式：整段解释对脚本没用，给一行可匹配的即可
+        # 静默模式：整段解释对脚本没用，给一行可匹配的即可。
+        # 但要分清两种「不接受」：拼错了，还是这条命令不认它。
         if quiet.is_silent():
-            quiet.unknown("flag", flag)
+            description = describe_flag(flag)
+            if description:
+                quiet.misplaced(flag, description)
+            else:
+                quiet.unknown("flag", flag)
             sys.exit(1)
         # 保留 "illegal" 这个词：随机回归用它在断言里识别「参数被拒」这一类结果。
         if flag in UPGRADE_ONLY_FLAGS:
@@ -234,13 +242,13 @@ def parse_flags(input_string, command="install", shown=None):
                       "Did you mean:",
                       f"  wave upgrade {package} {flag}"])
         if flag in OTHER_COMMAND_FLAGS:
+            commands = OTHER_COMMAND_FLAGS[flag]
             steplog.fail(
                 f"illegal option {flag} for `wave {command}`: "
-                f"it belongs to {OTHER_COMMAND_FLAGS[flag]}",
+                f"it belongs to {', '.join(f'`{item}`' for item in commands)}",
                 extra=f"you ran: {(shown or input_string).strip()}",
-                hint=["Did you mean:",
-                      f"  {OTHER_COMMAND_FLAGS[flag]}",
-                      f"see `{OTHER_COMMAND_FLAGS[flag].split()[1]} --help` for the rest"])
+                hint=["Did you mean:"] + [f"  {item}" for item in commands]
+                     + [f"`wave {commands[0].split()[1]} --help` lists the rest"])
         steplog.fail(
             f"illegal option {flag} for `wave {command}`",
             extra=f"you ran: {(shown or input_string).strip()}",

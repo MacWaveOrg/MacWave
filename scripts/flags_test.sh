@@ -69,10 +69,13 @@ for flag in ("--all", "-a", "--json", "--yaml", "--toml", "--raw"):
     if flag not in flags.ALL:
         add(f"latest 接受的 {flag} 不在 flags.ALL")
 
-# 4) link / unlink 的 -a --all、uninstall 的 --unlink
+# 4) upgrade / link / unlink 的 -a --all、uninstall 的 --unlink
 for flag in ("-a", "--all"):
     if flag not in flags.ALL:
         add(f"link 系命令接受的 {flag} 不在 flags.ALL")
+    # upgrade 也认 -a（批量升级），漏了会让「-a 用错命令」的提示把 upgrade 漏掉
+    if flag not in flags.COMMAND_FLAGS["upgrade"]:
+        add(f"upgrade 接受的 {flag} 不在 flags.COMMAND_FLAGS['upgrade']")
 if "--unlink" not in flags.ALL:
     add("uninstall 接受的 --unlink 不在 flags.ALL")
 
@@ -140,6 +143,51 @@ if [[ "$WAVE_OUT" == *"Did you mean"* ]]; then
     pass "仍然给出命令名建议"
 else
     fail "命令名建议消失了"
+fi
+
+# 旗标用对了拼写、但用错了命令时，别说成 unknown —— 那会把人送去查拼写。
+# 静默模式下只有一行，这一行必须是「只适用于哪条命令」。
+MISPLACED=$(cd "$RUN_DIR" && MACWAVE_TEST="$RUN_DIR/root" \
+    python3 lib/wave.py install jq -X -sS 2>&1 || true)
+if [[ "$MISPLACED" == *"-X only applies to wave upgrade"* ]]; then
+    pass "静默 + 错用命令的旗标 → 指向正确的命令"
+else
+    fail "静默下 -X 的提示没说清该用哪条命令（输出：${MISPLACED:0:120}）"
+fi
+if [[ "$MISPLACED" != *"unknown flag"* ]]; then
+    pass "不把 -X 说成未知旗标"
+else
+    fail "-X 被误报成 unknown flag，用户会去查拼写"
+fi
+
+# 真拼错的仍要报 unknown，两者不能混为一谈
+TYPO=$(cd "$RUN_DIR" && MACWAVE_TEST="$RUN_DIR/root" \
+    python3 lib/wave.py install jq -q -sS 2>&1 || true)
+if [[ "$TYPO" == *"unknown flag: -q"* ]]; then
+    pass "真拼错的旗标仍报 unknown"
+else
+    fail "拼错的旗标没有报 unknown（输出：${TYPO:0:120}）"
+fi
+
+# curl 的 -s / -S / -sS：单 -s 什么都不打（退出码是唯一信号），加 -S 才留错误
+MUTED=$(cd "$RUN_DIR" && MACWAVE_TEST="$RUN_DIR/root" \
+    python3 lib/wave.py install jq -q -s 2>&1 || true)
+if [[ -z "$MUTED" ]]; then
+    pass "单给 -s：一个字节都不输出"
+else
+    fail "单给 -s 仍有输出：${MUTED:0:120}"
+fi
+MUTED_RC=0
+(cd "$RUN_DIR" && MACWAVE_TEST="$RUN_DIR/root" python3 lib/wave.py install jq -q -s >/dev/null 2>&1) || MUTED_RC=$?
+if [[ "$MUTED_RC" -ne 0 ]]; then
+    pass "单给 -s：失败仍靠退出码表达"
+else
+    fail "单给 -s 失败时退出码应为非零"
+fi
+if [[ "$TYPO" != *"Fetching version info"* ]]; then
+    pass "-sS 只留错误，不带进度噪音"
+else
+    fail "-sS 混进了进度噪音"
 fi
 
 echo
