@@ -1380,7 +1380,14 @@ def predict(cmd, argv, installed, links):
         formats = [w.split("=")[0] for w in words if w.split("=")[0] in INFO_FORMAT_FLAGS]
         if len(set(formats)) > 1:
             return 1, ("mutually exclusive",)
-        known = set(INFO_FORMAT_FLAGS) | set(MIRROR_EXTRA_FLAGS) | {"-h", "--help"}
+        # --only-set 只对 --raw 有意义。显式选了别的格式会被拒；一个格式都不给时
+        # 默认就是表格，--only-set 只是不生效，仍然成功 —— 这两种必须分开预测。
+        if "--only-set" in words and formats and formats[0] != "--raw":
+            return 1, ("only applies to --raw",)
+        # --show-password 是合法旗标，但生成器绝不给它（会把口令打进日志），
+        # 所以它只进「合法集合」，不进 MIRROR_EXTRA_FLAGS。
+        known = (set(INFO_FORMAT_FLAGS) | set(MIRROR_EXTRA_FLAGS)
+                 | {"--show-password", "-h", "--help"})
         if any(w.startswith("-") and w.split("=")[0] not in known for w in words):
             return 1, ("unknown option",)
         return 0, ()
@@ -1615,6 +1622,10 @@ def phase_flag_matrix(wave, rng, checks):
         expect(checks, wave.run(["mirror", flag], timeout=60), 0, f"wave mirror {flag}")
     expect(checks, wave.run(["mirror", "--json", "--yaml"], timeout=60), 1,
            "wave mirror --json --yaml（互斥）", must_contain=("mutually exclusive",))
+    for flag in [f for f in INFO_FORMAT_FLAGS if f != "--raw"]:
+        expect(checks, wave.run(["mirror", flag, "--only-set"], timeout=60), 1,
+               f"wave mirror {flag} --only-set（--only-set 只对 --raw 有意义）",
+               must_contain=("only applies to --raw",))
 
     # 2) wave info（4.1.1）的四种输出格式：用「缺包名」证明格式旗标本身被接受
     for flag in INFO_FORMAT_FLAGS:
