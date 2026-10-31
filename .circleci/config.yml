@@ -30,10 +30,10 @@ jobs:
   offline-tests:
     docker:
       # cimg 是 CircleCI 维护的镜像，自带 git / curl / sudo 与常用构建工具。
-      # 项目下限是 3.14（`.conda` 需要 compression.zstd）。
-      # 若这个 tag 不存在（第一次跑会明确报 image not found），换成 cimg/python:3.13
-      # 或 python:3.14 —— 下面这七个离线测试只需要 3.11+（tomllib），不需要 3.14。
-      - image: cimg/python:3.14
+      # 下面这些离线测试只需要 3.11+（tomllib），用不到 3.14 的任何特性 —— 代码里
+      # 也没有 compression.zstd。选 3.13 是因为它的 tag 一定在镜像仓库里；3.14 的
+      # tag 发布较晚，用它是拿一次构建去赌 image not found。
+      - image: cimg/python:3.13
     # small = 1 vCPU / 2 GB / 5 credits 每分钟，medium 是 10。离线测试用不上 medium，
     # 这一行让同样 30000 credits 从 3000 分钟变成 6000 分钟。
     resource_class: small
