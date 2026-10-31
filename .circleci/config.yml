@@ -1,7 +1,7 @@
 # .circleci/config.yml
 #
-# **当前状态：未启用。** 这个文件已经本地验证过（所有步骤都能跑通），但还没有在
-# CircleCI 上注册项目，所以不会触发任何构建。启用步骤见文末。
+# **当前状态：已启用。** 项目走 GitHub App，pipeline 名 `quick-feedback`，
+# 触发条件是 `All pushes`。启用过程中踩过的坑记在文末，改这里之前先读一遍。
 #
 # 角色定位：**快速反馈**。
 #
@@ -43,9 +43,11 @@ jobs:
 
       - run:
           name: Show the interpreter
+          # 下限是 3.11：只有 tomllib 需要它。写成断言是为了让镜像被换掉时立刻失败，
+          # 而不是等到某个测试用上不存在的标准库特性才暴露。
           command: |
             python3 -V
-            python3 -c 'import sys; assert sys.version_info >= (3, 14), sys.version'
+            python3 -c 'import sys; assert sys.version_info >= (3, 11), sys.version'
 
       - run:
           name: Install Python dependencies
@@ -125,14 +127,26 @@ workflows:
                 - "3.1"
                 - "3.0"
 
-# -------------------- 启用步骤 --------------------
+# -------------------- 启用记录 --------------------
 #
-# 1. circleci.com → Sign Up → 用 GitHub 账号（OAuth）
-# 2. 如果 MacWaveOrg 组织不在授权列表里，需要组织所有者批准这个 OAuth App
-# 3. Dashboard → Projects → MacWaveOrg/MacWave → Set Up Project
-# 4. 选 "Use Existing Config"（它会读这个文件）→ Start Building
-# 5. 推一次提交，或在 CircleCI 页面点 "Trigger Pipeline"
+# 当前状态：已启用。项目 609cb781（pipeline `quick-feedback`），走 GitHub App，
+# 触发条件是 `All pushes`。分支白名单在上面的 workflows 里，不在 trigger 里。
 #
-# 不需要：信用卡、环境变量、SSH key、第二个仓库的 checkout。
+# 下面三条是启用时踩过的坑，故障复现时按顺序核对：
+#
+# 1. GitHub App 必须从 CircleCI 发起安装：
+#      Org → VCS Connections → GitHub App 卡片 → 走完 GitHub 授权页
+#    不要用 github.com/apps/circleci-app/installations/new 直链。直链能装上，
+#    但 CircleCI 收不到 state 回调，App 会一直挂在 "Available Providers"，
+#    push 永远不触发，而且 GitHub 侧看起来一切正常。
+#
+# 2. 本组织的 OAuth 集成（URL 里带 /github/）不允许 Follow 项目，
+#    Follow 报 "Failed to follow project"。绕法是新建 App pipeline：
+#      Project Settings → Project Setup → Add Pipeline → 类型选 GitHub App
+#    再给这个 pipeline 加一个 `All pushes` 的 GitHub trigger。
+#
+# 3. 换镜像时记得同步改 "Show the interpreter" 里的版本断言，否则
+#    镜像换了、断言没换，第一步就红，看起来像镜像不存在。
+#
 # 若要接 GitLab：CircleCI 用「邮箱注册 + GitLab 作为 VCS 集成」的方式授权，
 # 不是 GitLab 账号登录。
