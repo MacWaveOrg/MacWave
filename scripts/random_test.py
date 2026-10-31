@@ -97,7 +97,9 @@ FLAG_VALIDATING_COMMANDS = {"install", "upgrade", "info", "mirror", "latest"}
 # 归属以 docs/RELEASE-4.0.0.md ~ RELEASE-4.1.4.md 为准；`--connect-timeout` /
 # `--content-time` 还没发布（在 v4.1.4 之后），一并覆盖，免得发版时才发现没测。
 SILENT_PROBABILITY = 0.20            # 安装/卸载时带上静默旗标的概率
-SILENT_FORMS = ("-s", "--silent", "-CsX")          # 这几个真的一个字节都不输出
+# 这几个真的一个字节都不输出。不要写成 wave.py 注释里那个 `-CsX` —— 那是 **upgrade**
+# 的例子，`X` 在 install 上属于非法旗标，会以 rc=1 静默失败（错误被 -s 吞掉）。
+SILENT_FORMS = ("-s", "--silent", "-Cs")
 SHOW_ERROR_FORMS = ("-S", "--show-error")          # 只让错误仍打出来，本身不静默
 # -sS 单独一档：它压掉一切正常输出，只留错误，且错误不带 🌊（输出给脚本读）
 INFO_FORMAT_PROBABILITY = 0.30       # info 带 --json/--yaml/--toml/--raw 的概率
@@ -875,6 +877,33 @@ def expect(checks, result, rc, label, must_contain=(), must_not_contain=()):
         checks.check(f"{label}: 输出含 {needle!r}", needle in out, describe(result))
     for needle in must_not_contain:
         checks.check(f"{label}: 输出不含 {needle!r}", needle not in out, describe(result))
+
+
+# -------------------- 阶段 0：旗标假设自检 --------------------
+
+
+def phase_flag_sanity(wave, checks):
+    """用「缺包名 / 包不存在」这种离线失败，反证假定的每组旗标真的被命令接受。
+
+    起因：把 `lib/wave.py` 注释里 **upgrade** 的 `-CsX` 照搬成了 install 的静默写法。
+    `X` 在 install 上属于 upgrade 专属，于是 install 以 rc=1 静默失败 —— 而静默正好把
+    「illegal option -X」这句证据吞掉了，只有随机种子恰好抽中才暴露。
+
+    做法：给每个旗标再加一个 `--show-error`，让错误重新可见；合法旗标一定会走到
+    「缺包名 / 包不存在」，非法旗标则不会。这样一次离线运行就能证伪整张表。
+    """
+    banner("阶段 0：旗标假设自检（离线）")
+
+    for form in SILENT_FORMS + SHOW_ERROR_FORMS:
+        expect(checks, wave.run(["install", form, "--show-error"], timeout=60), 1,
+               f"install {form} --show-error（缺包名）",
+               must_contain=("no package name",))
+
+    for form in SILENT_FORMS + SHOW_ERROR_FORMS:
+        expect(checks,
+               wave.run(["uninstall", "no_such_package_mw", form, "--show-error"], timeout=60),
+               1, f"uninstall no_such_package_mw {form} --show-error",
+               must_contain=("is not installed",))
 
 
 # -------------------- 阶段 1：随机包的安装循环 --------------------
@@ -1796,6 +1825,7 @@ def main():
             DEADLINE = time.monotonic() + args.time_budget * 60
         wave = Wave(layout, checks, args.limit_rate)
 
+        phase_flag_sanity(wave, checks)
         installed = phase_install_cycle(wave, rng, plans, checks)
         # --skip-ssl / -C 那几个用例装完就把包卸掉了，所以按 bin/ 的实际内容重新算
         # 「现在还装着什么」，否则后面 link / linkquery / uninstall 的预测全部错位。
