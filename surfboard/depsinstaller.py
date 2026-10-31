@@ -25,6 +25,7 @@ RESET = '\033[0m'
 
 from configpaths import assert_inside, load_base_dir, require_safe_filename
 import domains
+import quiet
 
 
 BASE_DIR = load_base_dir()
@@ -197,7 +198,7 @@ def add_depender_tag(dep_path, depender):
 
     if result.returncode != 0:
         if result.stdout.strip():
-            print(result.stdout.strip())
+            quiet.show(result)
         if result.stderr.strip():
             print(result.stderr.strip())
         sys.exit(result.returncode)
@@ -242,7 +243,7 @@ def transfer_paths(target_dir, shared_index_dir=None):
     )
 
     if result.stdout.strip():
-        print(result.stdout.strip())
+        quiet.show(result)
     if result.returncode != 0:
         sys.exit(result.returncode)
 
@@ -270,7 +271,7 @@ def transfer_installed_artifacts(*extra_dirs):
     # 这一步会逐个扫描产物里的 Mach-O（依赖多时有上万文件），不打声招呼
     # 用户会以为卡死了。只报总进度，实际改写了几个文件由 transfer.sh 逐个报告。
     if targets:
-        print(f"🌊 Relocating Mach-O files in {len(targets)} installed artifact(s)...")
+        quiet.say(f"🌊 Relocating Mach-O files in {len(targets)} installed artifact(s)...")
 
     # 兜底索引目录：多个 target 共用一个，否则每个 target 都要把全部依赖树重扫
     # 一遍，target 一多就是 O(n²)。实测 18 个依赖时收尾会从几秒涨到 5 分钟。
@@ -312,7 +313,7 @@ def install_dependency_shell(dep_name, dep_version, dep_sha256, dep_display_name
     )
 
     if result.stdout.strip():
-        print(result.stdout.strip())
+        quiet.show(result)
     if result.returncode != 0:
         sys.exit(result.returncode)
 
@@ -349,7 +350,7 @@ def ensure_dependency(dep_ref, arch, config, input_string, depender, visited=Non
 
     # 1. 已安装：跳过下载，只补上“谁依赖了我”的标记（随后仍会检查它自己的依赖）
     if already_installed:
-        print(f"🌊 Dependency {dep_name}@{dep_version} is already installed, skipping.")
+        quiet.say(f"🌊 Dependency {dep_name}@{dep_version} is already installed, skipping.")
         add_depender_tag(target_dir, depender)
 
     # 循环依赖保护：本轮已经在处理这个目录，补完标记就返回

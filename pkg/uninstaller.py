@@ -21,6 +21,11 @@ RESET = '\033[0m'
 # -------------------- 配置加载 --------------------
 
 from configpaths import assert_inside, assert_inside_entry, load_base_dir, require_safe_token
+import quiet
+
+# 只取「任何命令都接受」的那一组；模块名不用 flags ——
+# 这个函数里已经有个局部变量叫 flags（argv 里剥出来的旗标集合）。
+from flags import GLOBAL as GLOBAL_FLAGS, describe as describe_flag
 
 
 BASE_DIR = load_base_dir()
@@ -184,7 +189,7 @@ def remove_dependency(artifact_dir, depender_kind, depender_name, depender_versi
         visited.add(resolved_dep)
 
         # 已无任何依赖者：先清软链接与它自己的依赖，再删除目录
-        print(f"🌊 Removing orphan dependency {dep_name}@{dep_version}...")
+        quiet.say(f"🌊 Removing orphan dependency {dep_name}@{dep_version}...")
 
         remove_dep_links(dep_path)
 
@@ -221,7 +226,7 @@ def remove_one(pkg_name, version, installed):
     else:
         display_path = target
 
-    print(f"🌊 Deleting {to_tilde(display_path)}...")
+    quiet.say(f"🌊 Deleting {to_tilde(display_path)}...")
 
     if target.is_dir():
         # 先按 _DEPS 清理依赖标记与孤立依赖，再删除整个目录
@@ -273,10 +278,10 @@ def refresh_link(pkg_name):
     if versions:
         version = get_max_version(versions)
         linker.create_link(pkg_name, version)
-        print(f"🌊 Unversioned link now points to {pkg_name}@{version}")
+        quiet.say(f"🌊 Unversioned link now points to {pkg_name}@{version}")
     else:
         linker.remove_link(pkg_name)
-        print(f"🌊 Removed the unversioned link for {pkg_name}")
+        quiet.say(f"🌊 Removed the unversioned link for {pkg_name}")
 
 
 def broken_link_target(pkg_name, versions):
@@ -308,16 +313,25 @@ def uninstall_versions(pkg_name, versions, keep_link=False):
     if changed:
         save_installed(installed)
     if keep_link:
-        print(f"🌊 Left the unversioned link for {pkg_name} untouched")
+        quiet.say(f"🌊 Left the unversioned link for {pkg_name} untouched")
     else:
         refresh_link(pkg_name)
     for version in versions:
-        print(f"{GREEN}🌊 Successfully uninstalled {pkg_name}@{version}.{RESET}")
+        quiet.say(f"{GREEN}🌊 Successfully uninstalled {pkg_name}@{version}.{RESET}")
 
 
 # -------------------- 交互式选择 --------------------
 
 def select_versions(pkg_name, versions):
+    # 静默模式下没人能回答「删哪几个」，而这里没有安全的默认值 ——
+    # 猜一个版本可能删错。所以明确拒绝，让用户自己写出 @<版本>。
+    if quiet.is_silent():
+        print(f"{RED_BOLD}🌊 Error: {pkg_name} has {len(versions)} installed versions "
+              f"({', '.join(versions)}).{RESET}")
+        print(f"{RED_BOLD}🌊 --silent cannot ask which to remove; name one: "
+              f"wave uninstall {pkg_name}@<version>{RESET}")
+        sys.exit(1)
+
     print(f"🌊 Multiple versions found for '{pkg_name}':")
     for index, version in enumerate(versions, start=1):
         print(f"🌊 - {index}. {version}")
@@ -326,7 +340,7 @@ def select_versions(pkg_name, versions):
     try:
         choice = input().strip()
     except (EOFError, KeyboardInterrupt):
-        print("🌊 Operation cancelled by user.")
+        quiet.say("🌊 Operation cancelled by user.")
         sys.exit(130)
 
     selected = []
@@ -353,8 +367,18 @@ def handle_uninstall(input_string):
     operands = [word for word in parts[2:] if not word.startswith("-")]
     keep_link = "--unlink" in flags
 
-    for unknown in sorted(flags - {"--unlink"}):
-        print(f"{YELLOW}🌊 Warning: unknown flag '{unknown}' ignored.{RESET}")
+    # `-C` / `-v` / `--proxy` 这些在帮助里写着「can be used with any command」，
+    # 却在这里被当成未知旗标告警 —— 于是 `wave uninstall x -sv` 在静默模式下
+    # 也会漏出一行，而那句话本身还是错的。帮助是承诺，这里按承诺放行。
+    tolerated = {"--unlink"} | GLOBAL_FLAGS
+    for unknown in sorted(flags - tolerated):
+        # 「属于别的命令」与「拼错了」是两种错，说法要分开：
+        # 前者提示去用对命令，后者才提示拼写。
+        description = describe_flag(unknown)
+        if description:
+            print(f"{YELLOW}🌊 Warning: {description}; ignored.{RESET}")
+        else:
+            print(f"{YELLOW}🌊 Warning: unknown flag '{unknown}' ignored.{RESET}")
 
     if not operands:
         print(f"{RED_BOLD}🌊 Error: Missing package name.{RESET}")

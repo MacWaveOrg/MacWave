@@ -117,6 +117,8 @@ def print_custom_help():
     ])
 
     _print_section("Global Flags (can be used with any command)", [
+        (_flag("-s, --silent"), "Print nothing at all; the exit code is the signal (beats -v; install / upgrade / uninstall / link / unlink / selfupdate)"),
+        (_flag("-S, --show-error"), "With -s, still print the error when a command fails"),
         (_flag("-C, --continue"), "Resume interrupted downloads (like curl -C -)"),
         (_flag("--proxy", "<string>"), "Specify an HTTP/HTTPS proxy (e.g., http://127.0.0.1:8080)"),
         (_flag("--skip-ssl"), "Skip SSL certificate verification (insecure)"),
@@ -134,7 +136,7 @@ def print_custom_help():
         (_flag("--unlink"), "Leave the unversioned link alone (install / uninstall)"),
         # 只列规范写法；单数的 --remove-old-version 与 --rov 仍然接受，但不再宣传
         (_flag("-X, --remove-old-versions"), "Remove older versions after upgrading"),
-        (_flag("--all, -a"), "Apply to every installed package (link / unlink / linkquery)"),
+        (_flag("--all, -a"), "Apply to every installed package (upgrade / link / unlink / linkquery)"),
     ])
 
     _print_section("Unversioned Links", [
@@ -175,10 +177,11 @@ COMMAND_HELP = {
                      "wave install jq --max-time=1min", "wave install jq --install-from-source"],
     },
     "upgrade": {
-        "usage": "wave upgrade <package> [flags]",
-        "desc": "Install the latest version of a package. Versions coexist, so the old ones "
-                "stay until -X removes them.",
+        "usage": "wave upgrade <package> | wave upgrade --all",
+        "desc": "Install the latest version of a package, or of every installed package "
+                "with --all. Versions coexist, so the old ones stay until -X removes them.",
         "flags": [
+            ("-a, --all", "Upgrade every installed package that has a newer version"),
             ("-X, --remove-old-versions", "Also remove the versions older than the one just installed"),
             ("-C, --continue", "Resume an interrupted download (like curl -C -)"),
             ("--proxy <string>", "HTTP/HTTPS proxy (e.g. http://127.0.0.1:8080)"),
@@ -187,7 +190,7 @@ COMMAND_HELP = {
             ("--max-time <string>", "Timeout for each request (40s, 1min, 1min20s, 2h; bare numbers are seconds)"),
             ("-v, --verbose", "Enable verbose output"),
         ],
-        "examples": ["wave upgrade jq", "wave upgrade jq -X",
+        "examples": ["wave upgrade jq", "wave upgrade jq -X", "wave upgrade --all",
                      "wave upgrade jq --remove-old-versions --max-time=2min"],
     },
     "mirror": {
@@ -324,12 +327,23 @@ def print_version():
     print(f"🌊 MacWave {version}")
 
 
-def print_error_help(suggestion=None):
-    """未知命令或参数时：先报错，能猜到本该打什么就给出改法，最后输出完整帮助。
+def print_error_help(suggestion=None, unknown_flags=None):
+    """未知命令或参数时：先报错，能猜到本该打什么就给出改法。
 
     suggestion 由 wave.py 传入（打错的词表与命令清单都只在那里一份，这里不重复维护）。
+    unknown_flags 是「不属于任何命令」的旗标：命令名错了时它们轮不到校验，
+    不单独报出来就会被一起吞掉，而下面那句建议会把它原样抄进去。
+
+    猜到该敲什么时**不再输出整篇帮助**：那五六十行会把唯一有用的那一句
+    （「你要敲的是 upgrade」）淹掉，而用户此刻需要的正是那一句。真正不知道该
+    敲什么时才展开完整清单，并留一行告诉他以后怎么自查。
     """
     print(f"{BOLD}{RED}🌊 Error: Unknown command or argument.{RESET}")
+
+    if unknown_flags:
+        listed = ", ".join(unknown_flags)
+        print(f"{BOLD}{RED}🌊 Error: Unknown flag{'s' if len(unknown_flags) > 1 else ''}: "
+              f"{listed}{RESET}")
 
     if suggestion:
         fixed, wrong, right = suggestion
@@ -337,6 +351,13 @@ def print_error_help(suggestion=None):
         print(f"{BOLD}🌊 Did you mean:{RESET} {GREEN}{fixed}{RESET}")
         print(f"   {YELLOW}{wrong}{RESET} is not a command. "
               f"The one you want is {GREEN}{right}{RESET}.")
+        print()
+        print(f"   For the full list: {GREEN}wave --help{RESET}")
+        return
+
+    if unknown_flags:
+        print(f"   `wave --help` lists the global flags; "
+              f"`wave <command> --help` lists the rest.")
 
     print()
     print_custom_help()

@@ -58,19 +58,19 @@ system `python3` and tells you so.
 
 ### Unattended install
 
-For scripts and batch use, the installer takes flags so it never waits for input.
+For CI and batch use, the installer takes flags so it never waits for input.
 Options go after `--`, which ends bash's own options:
 
 ```bash
 # script already on disk
-bash install.sh --silent --dir-option=1
+bash install.sh --ci --dir-option=1
 
 # straight from the repository
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/install.sh)" \
-  -- --silent --dir-option=2
+  -- --ci --dir-option=2
 ```
 
-`--silent` (`-S`) answers the directory menu and the agreement automatically. It
+`--ci` (same as `--CI`) answers the directory menu and the agreement automatically. It
 needs passwordless sudo, or root, when the chosen directory requires privilege.
 `--dir-option=N` picks menu entry `N` (1-4 on Intel, 1-3 on Apple silicon); for the
 custom entry, append the path after `=`, as in `--dir-option=4=/opt/my-macwave`, or just
@@ -78,7 +78,7 @@ pass the path on its own, as in `--dir-option=~/my-macwave`. Run `install.sh --h
 the list.
 
 > **Mind where the options go.** Writing
-> `/bin/bash -c "$(curl ...)" --silent` makes `--silent` the script name (`$0`), so
+> `/bin/bash -c "$(curl ...)" --ci` makes `--ci` the script name (`$0`), so
 > it is silently dropped; the installer warns when it detects this. The working
 > form puts the options after `--`.
 
@@ -271,6 +271,8 @@ Flags:
   -v, --verbose           Enable verbose output (show detailed logs)
 
 Global Flags (can be used with any command):
+  -s, --silent            Print nothing at all; the exit code is the signal
+  -S, --show-error        With -s, still print the error when a command fails
   -C, --continue          Resume interrupted downloads (like curl -C -)
       --proxy string      Specify an HTTP/HTTPS proxy (e.g., http://127.0.0.1:8080)
       --skip-ssl          Skip SSL certificate verification (insecure)
@@ -282,12 +284,13 @@ Global Flags (can be used with any command):
 Special Flags:
 wave install <pkgname>@<version>   Download certain version(s) of a package
 wave upgrade <pkgname>             Take a package to the latest version
+wave upgrade --all, -a             Take every installed package to the latest version
     --remove-old-version           Remove the versions older than the one just installed
     --remove-old-versions          Same as --remove-old-version
     --rov                          Same as --remove-old-version
     -X                             Same as --remove-old-version
     --unlink                       Leave the unversioned link alone (install / uninstall)
-    --all, -a                      Apply to every installed package (link / unlink / linkquery)
+    --all, -a                      Apply to every installed package (upgrade / link / unlink / linkquery)
 
 Self Update:
 wave selfupdate                    Update MacWave itself

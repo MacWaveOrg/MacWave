@@ -10,6 +10,8 @@
 import os
 import sys
 
+import quiet
+
 
 # -------------------- 颜色定义 --------------------
 
@@ -208,15 +210,15 @@ def handle_link_command(input_string=""):
         create_link(name, chosen)
 
         if previous == chosen:
-            print(f"🌊 {name} is already linked to {chosen}")
+            quiet.say(f"🌊 {name} is already linked to {chosen}")
         elif previous:
-            print(f"🌊 {name}: re-linked from {previous} to {chosen}")
+            quiet.say(f"🌊 {name}: re-linked from {previous} to {chosen}")
         else:
-            print(f"🌊 {name}: linked to {chosen}")
+            quiet.say(f"🌊 {name}: linked to {chosen}")
         linked += 1
 
     if linked:
-        print(f"{GREEN}🌊 Linked {linked} package(s).{RESET}")
+        quiet.say(f"{GREEN}🌊 Linked {linked} package(s).{RESET}")
     else:
         print(f"{YELLOW}🌊 Nothing was linked.{RESET}")
     sys.exit(0)
@@ -241,13 +243,13 @@ def handle_unlink_command(input_string=""):
     for target in targets:
         name = target.partition("@")[0]
         if remove_link(name):
-            print(f"🌊 {name}: unlinked")
+            quiet.say(f"🌊 {name}: unlinked")
             unlinked += 1
         else:
             print(f"{YELLOW}🌊 Warning: {name} has no unversioned link, skipping.{RESET}")
 
     if unlinked:
-        print(f"{GREEN}🌊 Unlinked {unlinked} package(s).{RESET}")
+        quiet.say(f"{GREEN}🌊 Unlinked {unlinked} package(s).{RESET}")
     else:
         print(f"{YELLOW}🌊 Nothing was unlinked.{RESET}")
     sys.exit(0)
