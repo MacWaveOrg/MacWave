@@ -148,6 +148,12 @@ jobs:
         run: |
           bash scripts/update_commands_test.sh
 
+      # 旗标诊断层：lib/flags.py 必须与各命令真白名单一致（它只在「命令名写错」
+      # 那条路径上用到，平时跑不到，走散也没人发现），外加 -s 与未知命令的行为
+      - name: Run flag test
+        run: |
+          bash scripts/flags_test.sh
+
   # 随机化端到端回归：每次抽 10~20 个包 + 随机参数/随机打断 + 固定命令覆盖。
   # 自带安装目录挑选、部署与清理，所以不需要上面那一套 sudo 配置。
   random-test:

@@ -32,6 +32,7 @@ from configpaths import (
     require_safe_token,
 )
 import domains
+import quiet
 import steplog
 
 
@@ -179,8 +180,15 @@ OTHER_COMMAND_FLAGS = {
     "--all": "`wave link --all`",
 }
 
-def parse_flags(input_string):
+def parse_flags(input_string, command="install", shown=None):
+    """校验旗标白名单。
 
+    command: 报错时说的命令名。upgrade 复用这个函数，报错必须说 `wave upgrade`，
+             不能让用户以为自己在用 install。
+    shown:   报错里「you ran:」要回显的命令行。upgrade 传的是用户真实输入 ——
+             它内部会构造一条 `wave install placeholder …` 的探针去复用白名单，
+             那条探针只该用于解析，不该出现在给用户看的文案里。
+    """
     # 截取所有 "-开头"（且 - 前是空格）至下一个空格的内容。
     # 规则：
     # 1. 单独的 "-" 表示参数结束，后续不统计。
@@ -210,29 +218,33 @@ def parse_flags(input_string):
     for flag in flags:
         if flag in ALLOWED_FLAGS:
             continue
+        # 静默模式：整段解释对脚本没用，给一行可匹配的即可
+        if quiet.is_silent():
+            quiet.unknown("flag", flag)
+            sys.exit(1)
         # 保留 "illegal" 这个词：随机回归用它在断言里识别「参数被拒」这一类结果。
         if flag in UPGRADE_ONLY_FLAGS:
             package = first_package_token(input_string) or "<package>"
             steplog.fail(
-                f"illegal option {flag} for `wave install`: "
+                f"illegal option {flag} for `wave {command}`: "
                 f"it only applies to `wave upgrade`",
-                extra=f"you ran: {input_string.strip()}",
+                extra=f"you ran: {(shown or input_string).strip()}",
                 hint=[f"`{flag}` removes the older versions *after* upgrading to the latest one,",
                       "so it needs a command that installs and prunes in one go.",
                       "Did you mean:",
                       f"  wave upgrade {package} {flag}"])
         if flag in OTHER_COMMAND_FLAGS:
             steplog.fail(
-                f"illegal option {flag} for `wave install`: "
+                f"illegal option {flag} for `wave {command}`: "
                 f"it belongs to {OTHER_COMMAND_FLAGS[flag]}",
-                extra=f"you ran: {input_string.strip()}",
+                extra=f"you ran: {(shown or input_string).strip()}",
                 hint=["Did you mean:",
                       f"  {OTHER_COMMAND_FLAGS[flag]}",
                       f"see `{OTHER_COMMAND_FLAGS[flag].split()[1]} --help` for the rest"])
         steplog.fail(
-            f"illegal option {flag} for `wave install`",
-            extra=f"you ran: {input_string.strip()}",
-            hint="`wave install --help` lists the flags this command accepts")
+            f"illegal option {flag} for `wave {command}`",
+            extra=f"you ran: {(shown or input_string).strip()}",
+            hint=f"`wave {command} --help` lists the flags this command accepts")
 
     return flags
 
@@ -443,7 +455,10 @@ def download_file(url, temp_path, config, input_string, display_name):
                     TextColumn("•"),
                     TimeRemainingColumn(),
                 ]
-                with Progress(*progress_columns, console=console) as progress:
+                # disable=True 让 rich 不启动实时渲染（进度条是噪音）；
+                # 下载循环仍在这个 with 里，progress.update 变成无操作。
+                with Progress(*progress_columns, console=console,
+                              disable=quiet.is_silent()) as progress:
                     task_id = progress.add_task(
                         description=f"🌊 {display_name}",
                         total=total_size or None
@@ -479,9 +494,9 @@ def download_file(url, temp_path, config, input_string, display_name):
                     for chunk in response.iter_content(chunk_size=8192):
                         if chunk:
                             f.write(chunk)
-                            if config["verbose"]:
+                            if config["verbose"] and not quiet.is_silent():
                                 print(".", end="", flush=True)
-                if config["verbose"]:
+                if config["verbose"] and not quiet.is_silent():
                     print(" ")
 
             download_success = True
@@ -489,13 +504,17 @@ def download_file(url, temp_path, config, input_string, display_name):
 
         except (ConnectionError, Timeout) as e:
             # 超时或连接失败：每次都询问是否重试，不再直接放弃
+            # 失败原因必须留下（这是错误，不是噪音）；问题本身可以被静默掉，
+            # 因为静默模式下没有人能回答，问出来只会让人以为卡住了。
             print(f"{RED_BOLD}🌊 Download failed: {e}{RESET}")
-            print(f"{RED_BOLD}🌊 Do you want to retry? [y/N]: {RESET}")
-
-            try:
-                retry = input().strip().lower()
-            except (EOFError, KeyboardInterrupt):
+            if quiet.is_silent():
                 retry = ""
+            else:
+                print(f"{RED_BOLD}🌊 Do you want to retry? [y/N]: {RESET}")
+                try:
+                    retry = input().strip().lower()
+                except (EOFError, KeyboardInterrupt):
+                    retry = ""
 
             if retry == 'y':
                 continue
@@ -701,9 +720,9 @@ def handle_install(input_string):
         ParsePkgVersion = ver_flag
         steplog.detail(f"version from --ver: {ParsePkgVersion}")
     else:
-        print("🌊 Fetching version info...")
+        quiet.say("🌊 Fetching version info...")
         ParsePkgVersion = fetch_max_version(ParsePkgName, ARCH)
-        print("🌊 Version info fetched successfully.")
+        quiet.say("🌊 Version info fetched successfully.")
 
     # 版本号同样会进 URL 与目录名：`%`、`/`、`..` 这类一律拒绝
     ParsePkgVersion = require_safe_token(ParsePkgVersion, "package version")
@@ -841,8 +860,7 @@ def handle_install(input_string):
             ['bash', script_path, pkg_info_string, deps_string],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
         )
-        if result.stdout.strip():
-            print(result.stdout.strip())
+        quiet.show(result)
         if result.returncode != 0:
             steplog.fail(
                 "the install shell stage failed (extract / verify / place)",
@@ -871,7 +889,7 @@ def handle_install(input_string):
         try:
             from linker import link_package
             if link_package(bin_name, ParsePkgVersion):
-                print(f"🌊 Linked {bin_name} -> {bin_name}@{ParsePkgVersion}")
+                quiet.say(f"🌊 Linked {bin_name} -> {bin_name}@{ParsePkgVersion}")
         except Exception as error:
             print(f"{YELLOW}🌊 Warning: could not create the unversioned link ({error}).{RESET}")
 
@@ -881,6 +899,6 @@ if __name__ == "__main__":
         input_string = " ".join(sys.argv[1:])
         handle_install(input_string)
     except KeyboardInterrupt:
-        print("🌊 Operation cancelled by user.")
-        print("🌊 You can use -C to resume the download next time.")
+        quiet.say("🌊 Operation cancelled by user.")
+        quiet.say("🌊 You can use -C to resume the download next time.")
         sys.exit(130)

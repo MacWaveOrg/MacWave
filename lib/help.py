@@ -117,6 +117,7 @@ def print_custom_help():
     ])
 
     _print_section("Global Flags (can be used with any command)", [
+        (_flag("-s, --silent"), "Only errors are printed; good for scripts (beats -v)"),
         (_flag("-C, --continue"), "Resume interrupted downloads (like curl -C -)"),
         (_flag("--proxy", "<string>"), "Specify an HTTP/HTTPS proxy (e.g., http://127.0.0.1:8080)"),
         (_flag("--skip-ssl"), "Skip SSL certificate verification (insecure)"),
@@ -324,12 +325,21 @@ def print_version():
     print(f"🌊 MacWave {version}")
 
 
-def print_error_help(suggestion=None):
+def print_error_help(suggestion=None, unknown_flags=None):
     """未知命令或参数时：先报错，能猜到本该打什么就给出改法，最后输出完整帮助。
 
     suggestion 由 wave.py 传入（打错的词表与命令清单都只在那里一份，这里不重复维护）。
+    unknown_flags 是「不属于任何命令」的旗标：命令名错了时它们轮不到校验，
+    不单独报出来就会被一起吞掉，而下面那句建议会把它原样抄进去。
     """
     print(f"{BOLD}{RED}🌊 Error: Unknown command or argument.{RESET}")
+
+    if unknown_flags:
+        listed = ", ".join(unknown_flags)
+        print(f"{BOLD}{RED}🌊 Error: Unknown flag{'s' if len(unknown_flags) > 1 else ''}: "
+              f"{listed}{RESET}")
+        print(f"   `wave --help` lists the global flags; "
+              f"`wave <command> --help` lists the rest.")
 
     if suggestion:
         fixed, wrong, right = suggestion

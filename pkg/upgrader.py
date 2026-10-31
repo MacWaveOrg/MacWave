@@ -14,6 +14,7 @@
 import sys
 
 from configpaths import require_safe_token
+import quiet
 
 
 RED_BOLD = '\033[1;31m'
@@ -66,6 +67,10 @@ def split_input(input_string):
 
 def ask_yes_no(prompt):
     """问一次 Y/n。返回 True / False；读到 EOF（非交互）时返回 None。"""
+    # 静默模式不读 stdin：提示语已被压掉，再 input() 就是卡死。
+    # 返回 None 让调用方走「非交互」分支 —— 那条分支本来就保留旧版本。
+    if quiet.is_silent():
+        return None
     while True:
         try:
             answer = input(prompt).strip().lower()
@@ -86,16 +91,26 @@ def remove_old_versions(bin_name, keep_version):
     old = [version for version in find_installed_versions(bin_name)
            if version_key(version) < version_key(keep_version)]
     if not old:
-        print(f"🌊 No old versions of {bin_name} to remove.")
+        quiet.say(f"🌊 No old versions of {bin_name} to remove.")
         return
 
     # 只有一个旧版本：不必再问选哪个，「移除旧版本」已经表达得很清楚
     if len(old) == 1:
-        print(f"🌊 Removing the old version {bin_name}@{old[0]}...")
+        quiet.say(f"🌊 Removing the old version {bin_name}@{old[0]}...")
         uninstall_versions(bin_name, old)
         return
 
-    print(f"🌊 {len(old)} old versions of {bin_name} are installed: {', '.join(old)}")
+    # 走到这里说明旧版本不止一个，正常要问「全删还是挑几个」。
+    #
+    # 静默模式下不给 -X 就不会走到这个函数（调用点有 remove_old 判断），
+    # 所以「静默且到了这里」等价于用户显式写了 -X。既然意图已经明确，
+    # 就直接全删 —— 不该因为「问不了」而什么都不做，那是把用户的显式要求丢掉。
+    if quiet.is_silent():
+        quiet.say(f"🌊 Removing {len(old)} old versions of {bin_name}...")
+        uninstall_versions(bin_name, old)
+        return
+
+    quiet.say(f"🌊 {len(old)} old versions of {bin_name} are installed: {', '.join(old)}")
     answer = ask_yes_no("🌊 Remove all of them? [Y/n] ")
     if answer is None:
         # 非交互（CI、管道）：没有人能替用户回答，保留旧版本比误删安全
@@ -106,7 +121,7 @@ def remove_old_versions(bin_name, keep_version):
         uninstall_versions(bin_name, old)
         return
 
-    print("🌊 Choose which old versions to remove, one or more.")
+    quiet.say("🌊 Choose which old versions to remove, one or more.")
     try:
         selected = select_versions(bin_name, old)
     except SystemExit:
@@ -147,8 +162,10 @@ def handle_upgrade(input_string):
 
     # 其余旗标交给 install 的白名单校验：upgrade 自己的旗标已经在上面剥掉了，
     # 所以这里能接受的恰好就是 install 能接受的减去被拒绝的那两个。
+    # probe 只用于解析（复用 install 的白名单），不该出现在报错文案里：
+    # 用户敲的是 `wave upgrade jq --bad`，回显的必须就是这一条。
     probe = "wave install placeholder " + " ".join(words[:index] + words[index + 1:])
-    flags = parse_flags(probe)
+    flags = parse_flags(probe, command="upgrade", shown=input_string)
     for flag, hint in REJECTED_FLAGS.items():
         if flag in flags:
             print(f"{RED_BOLD}🌊 Error: {flag} is not accepted by upgrade.{RESET}")

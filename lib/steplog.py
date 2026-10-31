@@ -42,6 +42,13 @@ _notes = []
 
 def set_verbose(enabled):
     global _verbose
+    # 静默优先于啰嗦：`-s -v` 同时给时，-v 不生效。
+    # 放在这里而不是调用方，是因为 set_verbose 只有这一个入口，
+    # 将来新增的命令也自动遵守同一条规则。
+    if enabled:
+        import quiet
+        if quiet.is_silent():
+            enabled = False
     _verbose = bool(enabled)
 
 
