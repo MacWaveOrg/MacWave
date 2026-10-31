@@ -1,0 +1,96 @@
+name: 报告一个可复现的问题
+description: 命令报错、行为不对、或安装失败。请先确认能重复出现。
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        下面每一条都是定位问题必需的。缺了版本号或 `-v` 输出，第一轮回复只能是「请补充这些」。
+
+        **安全问题是例外** —— 不要开 issue，见 [SECURITY.md](https://github.com/MacWaveOrg/MacWave/blob/main/SECURITY.md)。
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 发生了什么
+      description: 你期望的结果，与实际得到的结果。
+      placeholder: |
+        期望：wave install jq 成功
+        实际：报 Error: cannot read the version list
+    validations:
+      required: true
+
+  - type: textarea
+    id: command
+    attributes:
+      label: 你运行的命令
+      description: 原样粘贴。如果你的命令里有账号密码，先删掉。
+      render: shell
+      placeholder: wave install jq -v
+    validations:
+      required: true
+
+  - type: textarea
+    id: verbose-output
+    attributes:
+      label: 加 `-v` 之后的完整输出
+      description: |
+        `-v` 会打印每一步做了什么、请求了哪个地址、服务器回了什么 —— 没有这个基本无法定位。
+        输出里的凭据会被自动打码（显示成 `***`），可以放心粘贴。
+      render: shell
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: MacWave 版本
+      description: 运行 `wave -V`，原样粘贴整行。
+      placeholder: "🌊 MacWave 4.1.4"
+    validations:
+      required: true
+
+  - type: input
+    id: macos
+    attributes:
+      label: macOS 版本与架构
+      description: 运行 `sw_vers -productVersion` 与 `uname -m`。
+      placeholder: "14.5 / arm64"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: mirror
+    attributes:
+      label: 是否用了镜像
+      description: |
+        用镜像（设置了 `MACWAVE_*_DOMAIN`）时，问题可能出在镜像没同步，而不是客户端。
+        运行 `wave mirror` 可以看到当前用的是哪些地址。
+      options:
+        - 用了官方镜像 mirror.repohub.top
+        - 用了其它镜像或自建镜像
+        - 没用镜像（直连 GitHub）
+        - 不确定
+    validations:
+      required: true
+
+  - type: dropdown
+    id: reproducible
+    attributes:
+      label: 能重复出现吗
+      options:
+        - 每次都出现
+        - 偶尔出现
+        - 只出现过一次
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: verification
+    attributes:
+      label: 确认
+      options:
+        - label: 我贴的输出里没有账号密码
+          required: true
+        - label: 这不是「某个软件包本身有问题」（那是上游项目的事，MacWave 只负责校验下载内容与索引一致）
+          required: true

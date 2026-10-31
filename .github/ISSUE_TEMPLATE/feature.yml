@@ -1,0 +1,64 @@
+name: 提一个功能或新软件包
+description: 希望 MacWave 能做某件事，或者希望支持某个软件包。
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: 这是哪一类
+      options:
+        - 希望支持一个新软件包
+        - 希望某条命令支持新参数/新行为
+        - 其它
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你想解决什么问题
+      description: |
+        先说问题，再说方案。描述你现在的做法卡在哪一步 —— 这比直接说「加个 --foo」
+        更容易得到有用的回应，因为可能存在不需要新参数的做法。
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 你设想的做法
+      description: 可选。有具体命令示例最好，比如 `wave install jq --ver 1.8.2`。
+    validations:
+      required: false
+
+  - type: input
+    id: package-upstream
+    attributes:
+      label: 如果是新软件包 —— 上游地址
+      description: |
+        GitHub 仓库或发布页。MacWave 只从**公开的 GitHub Release** 取产物，
+        其它来源（官网直接下载、私有仓库）目前接不进来。
+      placeholder: https://github.com/dandavison/delta
+    validations:
+      required: false
+
+  - type: textarea
+    id: package-platforms
+    attributes:
+      label: 如果是新软件包 —— 两个架构都有产物吗
+      description: |
+        MacWave 同时服务 Apple Silicon 与 Intel。上游只出 arm64 时，Intel 用户装不了，
+        这会影响能不能收。看一眼发布页的资产列表就能回答。
+      placeholder: |
+        arm64: delta-0.20.1-aarch64-apple-darwin.tar.gz
+        amd64: 没找到
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: verification
+    attributes:
+      label: 确认
+      options:
+        - label: 我搜过现有 issue，没有重复
+          required: true

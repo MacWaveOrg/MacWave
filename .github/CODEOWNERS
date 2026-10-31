@@ -1,0 +1,41 @@
+# CODEOWNERS
+#
+# 这里列的是**必须参与 review 的人**，不是「文件的所有者」——
+# 与 Homebrew 那份文件的说明一致：仓库里的代码属于项目，不属于任何个人。
+#
+# 语法：<路径模式> <@用户或@组织/团队>
+# 后出现的规则覆盖前面的，所以「特殊文件」写在「默认」之后。
+#
+# 说明：GitHub 的 CODEOWNERS 需要账号对该仓库有写权限才生效。
+# 加人之前先确认权限，否则这条规则会被静默忽略。
+
+# 默认：任何改动都要有人看过
+*                                   @Sha0huaZhang
+
+# 安装与自更新：错了会让所有人装不上或升不上去
+/lib/install.sh                     @Sha0huaZhang
+/lib/uninstall.sh                   @Sha0huaZhang
+/lib/selfupdate.sh                  @Sha0huaZhang
+/lib/selfupdate.py                  @Sha0huaZhang
+/pkg/pkginstaller.py                @Sha0huaZhang
+/pkg/pkginstaller.sh                @Sha0huaZhang
+/pkg/pkgunzip.sh                    @Sha0huaZhang
+
+# 信任链：下载地址、校验、凭据打码都在这里
+/lib/domains.py                     @Sha0huaZhang
+/lib/configpaths.py                 @Sha0huaZhang
+
+# CI 与发布流程：影响所有分支与所有发布
+/.github/                           @Sha0huaZhang
+/.circleci/                         @Sha0huaZhang
+/scripts/build_update_commands.py   @Sha0huaZhang
+/scripts/sync_payloads.py           @Sha0huaZhang
+
+# 协作规则本身：改这些等于改流程
+/CODEOWNERS                         @Sha0huaZhang
+/SECURITY.md                        @Sha0huaZhang
+/.editorconfig                      @Sha0huaZhang
+/.shellcheckrc                      @Sha0huaZhang
+/pyproject.toml                     @Sha0huaZhang
+/docs/RELEASE-CHECKLIST.md          @Sha0huaZhang
+/docs/ADD-PACKAGE-CHECKLIST.md      @Sha0huaZhang

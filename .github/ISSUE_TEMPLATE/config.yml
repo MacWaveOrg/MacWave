@@ -1,0 +1,16 @@
+# 空白 issue 关掉：模板里那几项（版本、macOS、-v 输出）缺了就无从下手，
+# 与其来回问三轮，不如让提问的人一次填完。
+blank_issues_enabled: false
+
+contact_links:
+  - name: 安全漏洞
+    url: https://github.com/MacWaveOrg/MacWave/security/advisories/new
+    about: 不要开公开 issue。私密报告渠道见 SECURITY.md —— 请在报告里先去掉账号密码。
+
+  - name: 镜像站申请 / 镜像同步问题
+    url: mailto:hi@macwave.org?subject=%E9%95%9C%E5%83%8F%E7%AB%99
+    about: 账号申请、镜像没同步、下载慢这类问题发邮件，不要开 issue。
+
+  - name: 使用疑问
+    url: https://docs.macwave.org
+    about: 先查文档。命令用法、安装位置、链接机制都在里面。
