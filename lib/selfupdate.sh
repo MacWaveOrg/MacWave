@@ -154,6 +154,43 @@ if [[ -n "${MACWAVE_MAX_TIME:-}" ]]; then
     ARCHIVE_TIMEOUT="$_user_timeout"
 fi
 
+# 另两档自 4.1.5 起也从命令行传下来（MACWAVE_CONNECT_TIMEOUT / MACWAVE_CONTENT_TIME）。
+# 与 --max-time 一样原样传文本，由本脚本自己解析 —— 规则只有 lib/timeouts.py 一份。
+# 没给时留空，也就是不加对应旗标，行为与以前一致。
+CONNECT_TIMEOUT=""
+if [[ -n "${MACWAVE_CONNECT_TIMEOUT:-}" ]]; then
+    if ! CONNECT_TIMEOUT="$(mw_seconds "$MACWAVE_CONNECT_TIMEOUT")"; then
+        echo -e "${RED_BOLD}🌊 Error: cannot parse --connect-timeout value '$MACWAVE_CONNECT_TIMEOUT'.${RESET}" >&2
+        echo -e "${RED_BOLD}🌊 Use a number of seconds or a suffix like 40s, 1min, 1min20s, 2h.${RESET}" >&2
+        exit 1
+    fi
+fi
+
+CONTENT_TIME=""
+if [[ -n "${MACWAVE_CONTENT_TIME:-}" ]]; then
+    if ! CONTENT_TIME="$(mw_seconds "$MACWAVE_CONTENT_TIME")"; then
+        echo -e "${RED_BOLD}🌊 Error: cannot parse --content-time value '$MACWAVE_CONTENT_TIME'.${RESET}" >&2
+        echo -e "${RED_BOLD}🌊 Use a number of seconds or a suffix like 40s, 1min, 1min20s, 2h.${RESET}" >&2
+        exit 1
+    fi
+fi
+
+# 除 --max-time 之外的限制，拼成一段附加参数给每个 curl 用。
+#   --connect-timeout          握手多久算失败
+#   --speed-limit 1 --speed-time N   连上之后 N 秒收不到数据算失败
+#   -k                         --skip-ssl（与 requests 的 verify=False 同义）
+# 只有整数与 -k，所以按空格拆开用是安全的。
+CURL_LIMITS=""
+if [[ -n "$CONNECT_TIMEOUT" ]]; then
+    CURL_LIMITS="${CURL_LIMITS:-} --connect-timeout $CONNECT_TIMEOUT"
+fi
+if [[ -n "$CONTENT_TIME" ]]; then
+    CURL_LIMITS="${CURL_LIMITS:-} --speed-limit 1 --speed-time $CONTENT_TIME"
+fi
+if [[ -n "${MACWAVE_SKIP_SSL:-}" ]]; then
+    CURL_LIMITS="${CURL_LIMITS:-} -k"
+fi
+
 # ==========================================
 # 目标仓库、分支与版本
 # ==========================================
@@ -302,8 +339,8 @@ fetch_to_file() {
         # 同时取 HTTP 状态码：curl 的退出码并不总能反映「404」。
         # raw.githubusercontent 在 404 时常常报 (56) 收数据失败而不是 (22)，
         # 只看退出码会把「这个文件不存在」当成网络抖动重试三次。
-        code="$("$runner" curl -fsSL --max-time "$timeout" -w '%{http_code}' \
-            -o "$partial" "$url" 2>/dev/null)" || status=$?
+        code="$("$runner" curl -fsSL --max-time "$timeout" ${CURL_LIMITS:-} \
+            -w '%{http_code}' -o "$partial" "$url" 2>/dev/null)" || status=$?
         if [[ "$status" -eq 0 ]]; then
             "$runner" mv -f "$partial" "$destination"
             return 0
@@ -586,7 +623,8 @@ ensure_portable_python() {
     # 永远发现不了自己落后 —— 这正是 per-version 目录存在的理由。
     echo "🌊 Checking the bundled Python version..." >&2
     latest_file="$(mktemp -t macwave-pylatest)"
-    if curl -fsSL --max-time 30 -o "$latest_file" "$PYTHON_DOMAIN_URL/pythondata/latest.toml" 2>/dev/null; then
+    if curl -fsSL --max-time 30 ${CURL_LIMITS:-} -o "$latest_file" \
+         "$PYTHON_DOMAIN_URL/pythondata/latest.toml" 2>/dev/null; then
         version="$(read_toml_string "$(cat "$latest_file")" version)"
     fi
     rm -f "$latest_file"
@@ -617,7 +655,7 @@ ensure_portable_python() {
     # ── 第二步：这个版本各架构的地址与校验值 ──
     echo "🌊 Fetching the bundled Python $version definition..." >&2
     url_file="$(mktemp -t macwave-pyurl)"
-    if ! curl -fsSL --max-time 30 -o "$url_file" \
+    if ! curl -fsSL --max-time 30 ${CURL_LIMITS:-} -o "$url_file" \
          "$PYTHON_DOMAIN_URL/pythondata/$version/python_url.toml" 2>/dev/null; then
         rm -f "$url_file"
         return 1
@@ -643,7 +681,7 @@ ensure_portable_python() {
     echo "🌊 Downloading the bundled Python $version (about 26 MB)..." >&2
     archive="$base_dir/downloads/tmp/portable-python-$version.tar.gz"
     mkdir -p "$base_dir/downloads/tmp" 2>/dev/null || true
-    if ! curl -fsSL --max-time 900 -o "$archive" "$archive_url" 2>/dev/null; then
+    if ! curl -fsSL --max-time 900 ${CURL_LIMITS:-} -o "$archive" "$archive_url" 2>/dev/null; then
         rm -f "$archive"
         echo -e "${YELLOW}🌊 Could not download the bundled Python from $(mw_redact "$archive_url")${RESET}" >&2
         return 1

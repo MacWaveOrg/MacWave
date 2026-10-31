@@ -25,6 +25,7 @@ RESET = '\033[0m'
 
 from configpaths import assert_inside, load_base_dir, require_safe_filename
 import domains
+import tls
 import quiet
 
 
@@ -109,16 +110,14 @@ def get_deps(fields):
 # -------------------- 远程数据 --------------------
 
 def request_timeout(input_string):
-    # 超时从**原始命令行**里取，与软件包安装侧用同一套规则。
-    # 这里不接收调用方解析好的对象，保证「命令怎么写的，就怎么生效」，
+    # 超时从**原始命令行**里取，与软件包安装侧用同一套规则：
+    # lib/timeouts.py 的 FLAG_FIELDS 是唯一来源，三档（连接 / 读数据 / 总时长）
+    # 都从那张表来。这里不接收调用方解析好的对象，保证「命令怎么写的，就怎么生效」，
     # 也避免两处解析逻辑漂移。
-    from timeouts import _parse_duration, flag_value
-
-    raw = flag_value(input_string, "--max-time") if input_string else None
-    if raw is None or raw == "":
-        return 30
-    parsed = _parse_duration(raw)
-    return parsed if parsed else 30
+    #
+    # 返回 requests 要的 (connect, read) 元组；fetch_text 直接透传。
+    from timeouts import from_command_line
+    return from_command_line(input_string or "").request_timeout
 
 
 def fetch_text(url, attempts=3, timeout=None):
@@ -127,14 +126,16 @@ def fetch_text(url, attempts=3, timeout=None):
     # 抽风，用户网络也可能抖动），404 与 200 直接返回，不浪费时间重试。
     # 重试用尽后：网络异常记状态码 0，服务端错误记最后一次的状态码。
     #
-    # timeout 由调用方从 `--max-time` 传下来；缺省沿用 30 秒。
+    # timeout 由调用方从三档超时旗标（--connect-timeout / --content-time /
+    # --max-time）转成 (connect, read) 元组后传下来；缺省沿用内置默认值。
 
     last_status = 0
     request_timeout = timeout if timeout else 30
 
     for _ in range(attempts):
         try:
-            response = requests.get(url, timeout=request_timeout)
+            response = requests.get(url, timeout=request_timeout,
+                                    **tls.request_kwargs())
         except Exception:
             last_status = 0
             continue

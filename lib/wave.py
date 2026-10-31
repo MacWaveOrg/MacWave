@@ -172,6 +172,14 @@ def main():
         from configpaths import apply_proxy_from_command_line
         apply_proxy_from_command_line(words)
 
+        # `--skip-ssl` 在这里只**记录**，真正生效要等确认之后（见 lib/tls.py）。
+        # install / upgrade 会先弹一句安全询问，用户答否时不能跳过校验；
+        # 其余命令没有那道询问，直接授权。
+        import tls
+        tls.configure_from(words)
+        if FirstWord not in ("install", "upgrade"):
+            tls.grant()
+
         # `-s / --silent`：这条命令只留错误输出。位置放在分发之前，因为
         # handler 的旗标白名单里没有它（各命令按自己的白名单校验，加进去要改
         # 十几处），而且它天然是全局选项。所以这里**把它从 argv 里拿掉**，

@@ -14,13 +14,18 @@
 #   4b. 每个普通安装另有 5% 概率在 Mach-O 重定向（surfboard/transfer.sh）中途被 SIGINT 打断，
 #       只要求「不崩 + 再装一次能收敛到正确状态」。打断会真的杀掉 install_name_tool，
 #       所以有可能留下半改写的 Mach-O——这正是要观察的。
-#   5. 固定命令覆盖：list / search / info / selfupdate / link / linkquery / unlink 各 5 次。
+#   5. 固定命令覆盖：list / search / info / selfupdate / link / linkquery / unlink
+#      各 5 次；4.1 新增的 latest 与 mirror 同样各 5 次。
 #   6. 5 个非法命令；裸 -h/--help/-V/--version 以及它们带非法参数的形式。
 #   7. 任何命令都可能有 10% 概率被插入非法参数；install 与 selfupdate 另有 25% 概率
 #      带上 --max-time，数值形式（纯数字 / s / min / min+s / h / 小数 / ms）等概率抽取，
 #      `--max-time=值` 与 `--max-time 值` 两种写法各占一半。各形式的接受与拒绝由阶段 6 兜底。
 #   8. 等效参数的长/短形式随机（-h/--help、-V/--version、-a/--all、-C/--continue、-v/--verbose）。
 #   9. 随机池排除 test_* 测试夹具；单个产物体积上限 200MB。
+#  10. 4.x 新增的参数（`-s`/`-S`、`-X` 四种写法、`--all`、`--json/--yaml/--toml/--raw`、
+#      `--only-set`/`--show-password`/`--hide-user`、`--install-from-source`、`--proxy`、
+#      以及未发布的 `--connect-timeout`/`--content-time`）都会跑到：会改系统的命令上按
+#      SILENT_PROBABILITY 随机带静默旗标，其余由阶段 7 的离线矩阵逐个覆盖。
 #
 # 安全约束：只清理本次运行亲手创建的目录；已存在的配置目录（可能是一份真实安装）
 # 与已存在的非空安装目录一律拒绝覆盖并直接报错。
@@ -72,6 +77,9 @@ COMMAND_BATTERY = {
     "link": 5,
     "linkquery": 5,
     "unlink": 5,
+    # 4.1 新增的两条只读命令：latest 要联网（只报告不下载），mirror 完全不联网
+    "latest": 5,
+    "mirror": 5,
 }
 ILLEGAL_COMMAND_COUNT = 5
 HELP_VERSION_CASES = 8
@@ -81,6 +89,26 @@ NONEXISTENT_VERSIONS = ("999.999.999", "0.0.0-does-not-exist", "12345.6789.0")
 ILLEGAL_VERSIONS = ("not-a-version", "1.0.0-!!!", "..%2f..%2fetc%2fpasswd", "v1.2.3@beta")
 
 ILLEGAL_FLAGS = ("--bogus", "-Z", "--no-such-flag", "-Q", "--definitely-not-a-flag")
+
+# 4.x 新增的参数。比例按代价定：离线的、只读的多跑，联网的、会改系统的少跑。
+# 归属以 docs/RELEASE-4.0.0.md ~ RELEASE-4.1.4.md 为准；`--connect-timeout` /
+# `--content-time` 还没发布（在 v4.1.4 之后），一并覆盖，免得发版时才发现没测。
+SILENT_PROBABILITY = 0.20            # 安装/卸载时带上静默旗标的概率
+SILENT_FORMS = ("-s", "--silent", "-CsX")          # 这几个真的一个字节都不输出
+SHOW_ERROR_FORMS = ("-S", "--show-error")          # 只让错误仍打出来，本身不静默
+# -sS 单独一档：它压掉一切正常输出，只留错误，且错误不带 🌊（输出给脚本读）
+INFO_FORMAT_PROBABILITY = 0.30       # info 带 --json/--yaml/--toml/--raw 的概率
+MIRROR_FORMAT_PROBABILITY = 0.40     # mirror 带输出格式旗标的概率
+MIRROR_EXTRA_PROBABILITY = 0.25      # mirror 再带一个修饰旗标的概率
+REMOVE_OLD_FLAGS = ("-X", "--remove-old-version", "--remove-old-versions", "--rov")
+INFO_FORMAT_FLAGS = ("--json", "--yaml", "--toml", "--raw")
+# 刻意不含 --show-password：随机测试会把命令与输出一起写进日志，而镜像地址里
+# 可能带着密码（~/.zshrc 里的 MACWAVE_*_DOMAIN）。默认的六个星号才是要验的东西。
+MIRROR_EXTRA_FLAGS = ("--only-set", "--hide-user")
+# 三档超时同源（lib/timeouts.py 的 FLAG_FIELDS），写法也同一套
+TIMEOUT_FLAGS = ("--max-time", "--connect-timeout", "--content-time")
+# -s 只对会改系统的命令生效，给只读命令会被明确拒绝（4.1.4）
+READ_ONLY_COMMANDS = ("list", "search", "info", "latest", "mirror")
 
 # --max-time：安装与自更新都支持。25% 的命令会带上它，数值的每种形式等概率抽。
 # 各形式折算后都是 60 秒上下，既覆盖「纯数字 / s / min / min+s 组合 / h / 小数 / ms」
@@ -857,6 +885,35 @@ def random_flag(rng, short, long):
     return rng.choice((short, long))
 
 
+def maybe_silent(rng):
+    """随机决定这条命令要不要静默，返回 (旗标或 None, 是否真的一个字节都不输出)。
+
+    -s / --silent / -sS / -CsX 通过把 fd 1 与 fd 2 指向 /dev/null 实现，成功时
+    输出为空；-S / --show-error 只是让失败信息仍然打出来，本身并不静默。
+    """
+    if rng.random() >= SILENT_PROBABILITY:
+        return None, False
+    flag = rng.choice(SILENT_FORMS + SHOW_ERROR_FORMS)
+    return flag, flag in SILENT_FORMS
+
+
+def maybe_info_format(rng):
+    """info 的四种输出格式（4.1.1 起）。它们互斥，所以一次最多给一个。"""
+    if rng.random() >= INFO_FORMAT_PROBABILITY:
+        return []
+    return [rng.choice(INFO_FORMAT_FLAGS)]
+
+
+def maybe_mirror_args(rng):
+    """mirror 的输出格式与修饰旗标（4.1.0 起）。四种格式互斥，最多给一个。"""
+    args = []
+    if rng.random() < MIRROR_FORMAT_PROBABILITY:
+        args.append(rng.choice(INFO_FORMAT_FLAGS))
+    if rng.random() < MIRROR_EXTRA_PROBABILITY:
+        args.append(rng.choice(MIRROR_EXTRA_FLAGS))
+    return args
+
+
 def maybe_illegal_arg(rng):
     return rng.choice(ILLEGAL_FLAGS) if rng.random() < ILLEGAL_ARG_PROBABILITY else None
 
@@ -931,7 +988,13 @@ def phase_install_cycle(wave, rng, plans, checks):
         elif rng.random() < TRANSFER_INTERRUPT_PROBABILITY:
             ok = run_transfer_interrupt_case(wave, plan, checks)
         else:
-            ok = run_plain_install(wave, plan, checks, max_time_args)
+            # 静默旗标只加在普通安装这条路上：续传 / 限速 / 跳过证书那几个用例
+            # 各自要读进度与提示，静默会把它们的断言全废掉。
+            silent_flag, silent = maybe_silent(rng)
+            extra = list(max_time_args)
+            if silent_flag:
+                extra.append(silent_flag)
+            ok = run_plain_install(wave, plan, checks, extra, silent=silent)
 
         if ok:
             installed.append(plan)
@@ -939,15 +1002,22 @@ def phase_install_cycle(wave, rng, plans, checks):
     return installed
 
 
-def run_plain_install(wave, plan, checks, extra_args=()):
+def run_plain_install(wave, plan, checks, extra_args=(), silent=False):
     label = " ".join(["install", plan.token, *extra_args])
     result = wave.run(["install", plan.token, *extra_args])
     if is_rate_limited(result):
         checks.skip(label, "GitHub API 侧失败（限流/403），跳过断言")
         return False
-    expect(checks, result, 0, label,
-           must_contain=("Successfully installed",),
-           must_not_contain=("Server does not support resume",))
+    if silent:
+        # -s 的语义就是「成败只看退出码」，所以这里不要求任何输出，
+        # 反而要求一个字节都没有 —— 那是它区别于 -v 的地方。
+        expect(checks, result, 0, label)
+        checks.check(f"{label}: 静默时没有任何输出",
+                     not ((result.stdout or "") + (result.stderr or "")), describe(result))
+    else:
+        expect(checks, result, 0, label,
+               must_contain=("Successfully installed",),
+               must_not_contain=("Server does not support resume",))
     return verify_installed(wave, plan, checks, label)
 
 
@@ -1266,6 +1336,25 @@ def predict(cmd, argv, installed, links):
     if cmd == "selfupdate":
         return 0, ()
 
+    if cmd == "mirror":
+        # 四种输出格式互斥；--only-set / --show-password / --hide-user 只改排版
+        formats = [w.split("=")[0] for w in words if w.split("=")[0] in INFO_FORMAT_FLAGS]
+        if len(set(formats)) > 1:
+            return 1, ("mutually exclusive",)
+        known = set(INFO_FORMAT_FLAGS) | set(MIRROR_EXTRA_FLAGS) | {"-h", "--help"}
+        if any(w.startswith("-") and w.split("=")[0] not in known for w in words):
+            return 1, ("unknown option",)
+        return 0, ()
+    if cmd == "latest":
+        # --all 与包名互斥，两者都不给是「缺包名」；给了 --all 就只是报告，永远成功
+        everything = any(w in ("-a", "--all") for w in words)
+        operands = [w for w in words if not w.startswith("-")]
+        if everything and operands:
+            return 1, ("not both",)
+        if not everything and not operands:
+            return 1, ("Missing package name",)
+        return 0, ()
+
     operands = [w for w in words if not w.startswith("-")]
     everything = any(w in ("-a", "--all") for w in words)
 
@@ -1333,6 +1422,13 @@ def phase_command_battery(wave, rng, checks):
                 else:
                     target = rng.choice(names)
                     argv.append(f"{target}{rng.choice(('', '@latest'))}")
+                    if cmd == "info":
+                        argv += maybe_info_format(rng)
+            elif cmd == "mirror":
+                argv += maybe_mirror_args(rng)
+            elif cmd == "latest":
+                # --all 是 4.1.1 新增的写法，只报告不下载，比指定包名更稳
+                argv.append(random_flag(rng, "-a", "--all"))
             elif cmd == "selfupdate":
                 # selfupdate 也接受 --max-time，取值来源与安装一致
                 argv += maybe_max_time(rng)
@@ -1361,9 +1457,18 @@ def phase_uninstall_cycle(wave, rng, installed_plans, checks):
         illegal = maybe_illegal_arg(rng)
         if illegal:
             argv.append(illegal)
+        # 故意不跟非法参数混：静默会把「非法参数」的报错一起吞掉，那条断言就废了
+        silent_flag, silent = (None, False) if illegal else maybe_silent(rng)
+        if silent_flag:
+            argv.append(silent_flag)
         label = f"uninstall {plan.token}"
         result = wave.run(argv)
-        expect(checks, result, 0, label, must_contain=("Successfully uninstalled",))
+        if silent:
+            expect(checks, result, 0, label)
+            checks.check(f"{label}: 静默时没有任何输出",
+                         not ((result.stdout or "") + (result.stderr or "")), describe(result))
+        else:
+            expect(checks, result, 0, label, must_contain=("Successfully uninstalled",))
 
         bin_dir = wave.layout.base_dir / "bin" / f"{plan.bin_name}@{plan.version}"
         link = wave.layout.base_dir / "links" / plan.bin_name
@@ -1446,6 +1551,99 @@ def phase_max_time_forms(wave, checks):
     result = wave.run(["install", "jq", "--max-time="], timeout=60)
     expect(checks, result, 1, label, must_contain=("--max-time needs a value",),
            must_not_contain=("Traceback",))
+
+
+# -------------------- 阶段 7：4.x 新参数矩阵（离线） --------------------
+
+
+def phase_flag_matrix(wave, rng, checks):
+    """4.0 到未发布版本的每个新参数，都在「不联网、不改系统」的前提下过一遍。
+
+    全部调用都在解析阶段就退出：缺包名、缺值、格式冲突、用错命令 —— 一个请求都不发。
+    与阶段 1 / 3 的随机静默用例互补：那边证明「真装上、真卸掉，且静默时一个字节不输出」，
+    这里证明「每种写法都被接受，每种误用都说清原因」。
+    """
+    banner("阶段 7：4.x 新参数矩阵（离线）")
+
+    # 1) wave mirror（4.1.0）：四种输出格式、修饰旗标、格式互斥
+    expect(checks, wave.run(["mirror"], timeout=60), 0, "wave mirror",
+           must_contain=("Mirror configuration",))
+    for flag in INFO_FORMAT_FLAGS:
+        expect(checks, wave.run(["mirror", flag], timeout=60), 0, f"wave mirror {flag}")
+    expect(checks, wave.run(["mirror", "--raw", "--only-set"], timeout=60), 0,
+           "wave mirror --raw --only-set", must_contain=("# MacWave mirror",))
+    for flag in MIRROR_EXTRA_FLAGS:
+        expect(checks, wave.run(["mirror", flag], timeout=60), 0, f"wave mirror {flag}")
+    expect(checks, wave.run(["mirror", "--json", "--yaml"], timeout=60), 1,
+           "wave mirror --json --yaml（互斥）", must_contain=("mutually exclusive",))
+
+    # 2) wave info（4.1.1）的四种输出格式：用「缺包名」证明格式旗标本身被接受
+    for flag in INFO_FORMAT_FLAGS:
+        expect(checks, wave.run(["info", flag], timeout=60), 1,
+               f"wave info {flag}（缺包名）", must_contain=("Missing package name",))
+
+    # 3) -s 只对会改系统的命令生效；给只读命令必须明确拒绝
+    for cmd in READ_ONLY_COMMANDS:
+        expect(checks, wave.run([cmd, "-s"], timeout=60), 1, f"wave {cmd} -s（只读命令）",
+               must_contain=("only applies to",))
+
+    # 4) 静默三态：-s / -sS 一个字节都不输出，-S 仍把错误打出来
+    for flag in SILENT_FORMS:
+        label = f"wave install {flag}（缺包名，静默）"
+        result = wave.run(["install", flag], timeout=60)
+        expect(checks, result, 1, label)
+        checks.check(f"{label}: 一个字节都不输出",
+                     not ((result.stdout or "") + (result.stderr or "")), describe(result))
+    for flag in SHOW_ERROR_FORMS:
+        expect(checks, wave.run(["install", flag], timeout=60), 1,
+               f"wave install {flag}（缺包名）", must_contain=("no package name",))
+    # -sS 留下错误，但输出要给脚本读，所以不带 🌊
+    expect(checks, wave.run(["install", "-sS"], timeout=60), 1, "wave install -sS",
+           must_contain=("no package name",), must_not_contain=("🌊",))
+
+    # 5) 静默不改变退出码：卸载一个不存在的包照样是失败
+    result = wave.run(["uninstall", "no_such_package_mw", "-s"], timeout=60)
+    expect(checks, result, 1, "wave uninstall no_such_package_mw -s")
+    checks.check("wave uninstall no_such_package_mw -s: 一个字节都不输出",
+                 not ((result.stdout or "") + (result.stderr or "")), describe(result))
+    expect(checks, wave.run(["uninstall", "no_such_package_mw", "-sS"], timeout=60), 1,
+           "wave uninstall no_such_package_mw -sS",
+           must_contain=("no_such_package_mw",), must_not_contain=("🌊",))
+
+    # 6) upgrade 专属的 -X 四种等价写法，用错命令时要说清「属于谁」
+    for flag in REMOVE_OLD_FLAGS:
+        expect(checks, wave.run(["install", "jq", flag], timeout=60), 1,
+               f"wave install jq {flag}（upgrade 专属）",
+               must_contain=("only applies to `wave upgrade`",))
+
+    # 7) wave upgrade --all（4.1.4）的三条离线错误分支
+    expect(checks, wave.run(["upgrade"], timeout=60), 1, "wave upgrade（缺包名）",
+           must_contain=("Missing package name",))
+    for flag in ("--all", "-a"):
+        expect(checks, wave.run(["upgrade", flag, "jq"], timeout=60), 1,
+               f"wave upgrade {flag} jq（互斥）", must_contain=("drop the package name",))
+    expect(checks, wave.run(["upgrade", "jq@1.0"], timeout=60), 1,
+           "wave upgrade jq@1.0（升级不接受版本）",
+           must_contain=("always targets the latest version",))
+
+    # 8) 三档超时（后两档尚未发布）：每种写法都被接受，非法值干净拒绝
+    for flag in TIMEOUT_FLAGS:
+        for form in MAX_TIME_FORMS:
+            expect(checks, wave.run(["install", f"{flag}={form}"], timeout=60), 1,
+                   f"wave install {flag}={form}（缺包名）",
+                   must_contain=("no package name",), must_not_contain=("cannot parse",))
+        for form in MAX_TIME_ILLEGAL_FORMS:
+            expect(checks, wave.run(["install", "jq", f"{flag}={form}"], timeout=60), 1,
+                   f"wave install jq {flag}={form}（非法取值）",
+                   must_contain=(f"cannot parse {flag}",))
+        expect(checks, wave.run(["install", f"{flag}="], timeout=60), 1,
+               f"wave install {flag}=（空值）", must_contain=(f"{flag} needs a value",))
+
+    # 9) 4.0 的来源与代理：缺包名 / 缺值时都不该被当成「未知旗标」
+    expect(checks, wave.run(["install", "--install-from-source"], timeout=60), 1,
+           "wave install --install-from-source（缺包名）", must_contain=("no package name",))
+    expect(checks, wave.run(["install", "--proxy"], timeout=60), 1,
+           "wave install --proxy（缺值）", must_not_contain=("Traceback",))
 
 
 # -------------------- pty 执行 --------------------
@@ -1597,6 +1795,7 @@ def main():
         phase_global_invariants(wave, checks)
         phase_illegal_and_help(wave, rng, checks)
         phase_max_time_forms(wave, checks)
+        phase_flag_matrix(wave, rng, checks)
         print_summary(seed, layout, checks)
     except TimeBudgetExhausted:
         # 预算用尽是"这轮没跑完"，不是"回归失败"：标注清楚后照常汇总

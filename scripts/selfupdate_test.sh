@@ -242,17 +242,28 @@ spec = importlib.util.spec_from_file_location('selfupdate_module', selfupdate_py
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 
-# Python 侧：合法的原样留下，非法的当场拒绝
-assert module.max_time("wave selfupdate --max-time=1min") == ("1min", 60), module.max_time("wave selfupdate --max-time=1min")
-assert module.max_time("wave selfupdate --max-time 1min20s") == ("1min20s", 80)
-assert module.max_time("wave selfupdate")[0] == ""
+# Python 侧：合法的原样留下，非法的当场拒绝。
+# 4.1.5 起是三档（连接 / 读数据 / 总额），不再只有 --max-time。
+raws, budget = module.timeouts_from("wave selfupdate --max-time=1min")
+assert raws == {"--max-time": "1min"}, raws
+assert budget.total == 60, budget
+raws, budget = module.timeouts_from("wave selfupdate --max-time 1min20s")
+assert raws == {"--max-time": "1min20s"}, raws
+assert budget.total == 80, budget
+assert module.timeouts_from("wave selfupdate")[0] == {}
+# 三档各给一个，互不串档
+raws, budget = module.timeouts_from(
+    "wave selfupdate --connect-timeout=2s --content-time=3s --max-time=4s")
+assert raws == {"--connect-timeout": "2s", "--content-time": "3s", "--max-time": "4s"}, raws
+assert (budget.connect, budget.content, budget.total) == (2, 3, 4), budget
 for bad in ("abc", "1x", "-5"):
-    try:
-        module.max_time(f"wave selfupdate --max-time={bad}")
-    except SystemExit:
-        pass
-    else:
-        raise AssertionError(f"--max-time={bad} 本应被拒绝")
+    for flag in ("--max-time", "--connect-timeout", "--content-time"):
+        try:
+            module.timeouts_from(f"wave selfupdate {flag}={bad}")
+        except SystemExit:
+            pass
+        else:
+            raise AssertionError(f"{flag}={bad} 本应被拒绝")
 
 # shell 侧：规则必须与 Python 一致（否则同一条命令两层会算出不同超时）
 script = r'''
@@ -274,9 +285,10 @@ for value, shell_value in zip(cases, got):
     if value in invalid:
         assert shell_value == "REJECT", f"{value}: shell 本应拒绝，实际 {shell_value}"
         continue
-    raw, seconds = module.max_time(f"wave selfupdate --max-time={value}")
+    raws, budget = module.timeouts_from(f"wave selfupdate --max-time={value}")
+    raw = raws.get("--max-time", "")
     assert raw == value, f"{value}: 原始文本应原样往下传，实际 {raw!r}"
-    expected = str(module.curl_seconds(seconds))
+    expected = str(module.curl_seconds(budget.total))
     assert shell_value == expected, f"{value}: shell={shell_value} python={expected}"
 PYEOF
 then

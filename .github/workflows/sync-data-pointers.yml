@@ -12,7 +12,7 @@ name: Keep data pointers in sync
 
 on:
   push:
-    branches: [main, '4.0', '3.2']
+    branches: [main, '4.0', '4.1', '3.2']
   pull_request:
   schedule:
     # 每天一次。数据仓库通常由人手工加目录，定时兜底比事后追查划算。

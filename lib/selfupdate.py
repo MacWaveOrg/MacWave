@@ -24,6 +24,7 @@ RESET = '\033[0m'
 
 from configpaths import VERSION_FILE_NAME, config_dir_candidates, find_config_dir
 import domains
+import tls
 
 FETCH_TIMEOUT = 30
 UPDATE_TIMEOUT = 1800
@@ -31,57 +32,81 @@ UPDATE_TIMEOUT = 1800
 
 # -------------------- 超时 --------------------
 
-def max_time(input_string):
-    # `--max-time` 从**原始命令行**里取（规则见 pkginstaller._parse_duration），
-    # 本层只用它约束自己的请求；同一个值原样交给 selfupdate.sh，由那边再解析一次。
-    # 中间不替任何人算好，命令行怎么写就怎么生效。
-    # 返回 (原始文本, 秒数)：没有该旗标时原始文本为空、秒数取默认。
-    if not input_string:
-        return "", FETCH_TIMEOUT
+# 旗标名 → 传给 selfupdate.sh 的环境变量。原样传文本，让脚本自己再解析一次，
+# 保证「命令行怎么写就怎么生效」，两边不会各算一套。
+TIMEOUT_ENV = {
+    "--max-time": "MACWAVE_MAX_TIME",
+    "--connect-timeout": "MACWAVE_CONNECT_TIMEOUT",
+    "--content-time": "MACWAVE_CONTENT_TIME",
+}
 
-    from timeouts import _parse_duration, flag_value
 
-    raw = flag_value(input_string, "--max-time") or ""
-    if not raw:
-        return "", FETCH_TIMEOUT
+def timeouts_from(input_string):
+    """三档超时都从**原始命令行**里取，规则只有 lib/timeouts.py 一份。
 
-    seconds = _parse_duration(raw)
-    if seconds is None:
-        print(f"{RED_BOLD}🌊 Error: cannot parse --max-time value '{raw}'.{RESET}")
+    返回 (原始文本字典, Budget)。原始文本要原样交给 selfupdate.sh —— 那才是
+    真正发请求的一层，不能替它算好。
+    """
+    from timeouts import FLAG_FIELDS, flag_value, from_command_line
+
+    def reject(flag, raw):
+        print(f"{RED_BOLD}🌊 Error: cannot parse {flag} value '{raw}'.{RESET}")
         print(f"{RED_BOLD}🌊 Use a number of seconds or a suffix like 40s, 1min, 1min20s, 2h.{RESET}")
         sys.exit(1)
-    return raw, seconds
+
+    budget = from_command_line(input_string or "", fail=reject)
+    raws = {}
+    for flag in FLAG_FIELDS:
+        raw = flag_value(input_string or "", flag)
+        if raw:
+            raws[flag] = raw
+    return raws, budget
 
 
 def curl_seconds(timeout):
-    # curl 的 --max-time 收小数，但 0 表示「不限」，所以至少给 1 秒
+    # curl 收小数，但 0 表示「不限」，所以至少给 1 秒
     return max(1, int(round(timeout)))
+
+
+def curl_limit_args(budget):
+    """把 Budget 翻成 curl 的旗标。
+
+    curl 侧一一对应：握手是 --connect-timeout，总额是 --max-time；
+    「连上了多久收不到数据算失败」没有同名旗标，用 --speed-limit 1 --speed-time N
+    表达 —— 阈值压到 1 字节/秒，等价于「只要还在收数据就不算超时」。
+    """
+    return ["--max-time", str(curl_seconds(budget.total)),
+            "--connect-timeout", str(curl_seconds(budget.connect)),
+            "--speed-limit", "1", "--speed-time", str(curl_seconds(budget.content))]
 
 
 # -------------------- 版本数据 --------------------
 
-def fetch_text(url, timeout=FETCH_TIMEOUT):
+def fetch_text(url, budget, raws=()):
     # 优先用标准库；本地 Python 缺根证书（macOS 常见）时改走 curl。
     # 带凭据的 URL 直走 curl：urllib 不认 user:pass@，会把它当主机名，白失败一次。
-    if not domains._has_userinfo(url):
+    #
+    # 但 urllib 只有一个 socket 超时（连接与每次读共用），分不出三档。所以**只要
+    # 命令行里给了任意一档超时就走 curl** —— 只有它能把三档分别表达出来。
+    # 没给任何一档时照旧优先标准库，默认行为与以前一致。
+    if not raws and not domains._has_userinfo(url):
         try:
-            with urllib.request.urlopen(url, timeout=timeout) as response:
+            with urllib.request.urlopen(url, timeout=budget.total,
+                                        **tls.urlopen_kwargs()) as response:
                 return response.read().decode()
         except (urllib.error.URLError, UnicodeDecodeError, OSError):
             pass
 
-    result = subprocess.run(['curl', '-fsSL',
-                             '--max-time', str(curl_seconds(timeout)),
-                             '--retry', '2', '--retry-delay', '2', '--retry-connrefused',
-                             url],
-                            capture_output=True, text=True)
+    argv = ['curl', '-fsSL', '--retry', '2', '--retry-delay', '2',
+            '--retry-connrefused', *curl_limit_args(budget), *tls.curl_flags(), url]
+    result = subprocess.run(argv, capture_output=True, text=True)
     if result.returncode != 0:
         return None
     return result.stdout
 
 
-def fetch_version_data(timeout=FETCH_TIMEOUT):
-    return fetch_text(domains.selfupdate_latest_url(), timeout)
+def fetch_version_data(budget, raws=()):
+    return fetch_text(domains.selfupdate_latest_url(), budget, raws)
 
 
 def run_script(environment, overall_timeout):
@@ -159,12 +184,12 @@ def handle_selfupdate(input_string=""):
         print(f"{RED_BOLD}🌊 Error: MacWave is not installed. Run lib/install.sh first.{RESET}")
         sys.exit(1)
 
-    max_time_raw, timeout = max_time(input_string)
+    timeout_raws, budget = timeouts_from(input_string)
     install_python_from_source = "--install-python-from-source" in input_string.split()
 
     print("🌊 Fetching the latest version...")
 
-    text = fetch_version_data(timeout)
+    text = fetch_version_data(budget, timeout_raws)
     if text is None:
         print(f"{RED_BOLD}🌊 Error: Cannot reach the MacWave version data.{RESET}")
         print(f"{RED_BOLD}🌊 {domains.redact_url(domains.selfupdate_latest_url())}{RESET}")
@@ -197,12 +222,16 @@ def handle_selfupdate(input_string=""):
     if install_python_from_source:
         # 解释器默认从我们自己的 Python 仓库取；这个开关让 selfupdate.sh 回上游取
         environment["MACWAVE_INSTALL_PYTHON_FROM_SOURCE"] = "1"
-    if max_time_raw:
-        environment["MACWAVE_MAX_TIME"] = max_time_raw
+    # 三档超时原样交给脚本，由它自己再解析一次
+    for flag, value in timeout_raws.items():
+        environment[TIMEOUT_ENV[flag]] = value
+    if tls.enabled():
+        # 脚本里的 curl 也要知道：-k 与 requests 的 verify=False 同义
+        environment["MACWAVE_SKIP_SSL"] = "1"
 
     # 一轮更新要串行下载十几个文件，每个最多重试几次；单次超时被调大时，
     # 整体上限也要跟着放大，否则会在一半的地方被这里杀掉。
-    overall_timeout = max(UPDATE_TIMEOUT, int(timeout) * 20)
+    overall_timeout = max(UPDATE_TIMEOUT, int(budget.total) * 20)
 
     try:
         result = run_script(environment, overall_timeout)

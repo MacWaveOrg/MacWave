@@ -3,7 +3,7 @@
 面向 macOS / Linux 软件开发者的包管理器，主要托管 iOS/iPadOS 相关软件包。
 技术栈：Python + Shell。
 
-- `main` 与版本分支（当前的 `3.1`）：程序代码，两者保持同步
+- `main` 与版本分支（当前的 `4.1`）：程序代码，两者保持同步
 - `MacWaveOrg/configdata` 仓库的 `main` 分支：版本数据（`versiondata/latest_version` 给 `wave selfupdate` 判断有没有新版本，`versiondata/files_info` 是要更新的文件清单）
 - `MacWaveOrg/infosource` 仓库的 `main` 分支：纯数据（包与依赖的元数据、下载地址、校验值），依赖数据在 `deps/` 目录下
 
@@ -249,9 +249,9 @@ BASE_DIR/links/                  wget@1.25.0，以及每个依赖 bin/ 下可执
 
 ---
 
-## 九、新增版本分支（如 `3.1`）时要改的地方
+## 九、新增版本分支（如 `4.2`）时要改的地方
 
-`main` 与「发布分支」互为镜像，而**发布分支由数据决定**：`MacWaveOrg/configdata` 的 `versiondata/latest_version` 里的 `branch` 字段（现为 `3.1`）。`.github/workflows/sync-release-branch.yml` 会随之把两边保持同步（只做快进，分叉则报错交给人工），**这个工作流本身不用改**。
+`main` 与「发布分支」互为镜像，而**发布分支由数据决定**：`MacWaveOrg/configdata` 的 `versiondata/latest_version` 里的 `branch` 字段（现为 `4.1`）。`.github/workflows/sync-release-branch.yml` 会随之把两边保持同步（只做快进，分叉则报错交给人工），**这个工作流本身不用改**。
 
 新开一个版本分支时只需要：
 
@@ -259,7 +259,7 @@ BASE_DIR/links/                  wget@1.25.0，以及每个依赖 bin/ 下可执
 | --- | --- | --- |
 | 1 | `MacWaveOrg/configdata` 的 `versiondata/latest_version` | `branch` 指向新分支（新分支成为发布线时），`version` / `release_date` / `build_number` 一并更新 |
 | 2 | `.github/workflows/format-test.yml` | 把新分支名加进 `on.push.branches` 与 `on.pull_request.branches` |
-| 3 | `docs/PROJECT_CONTEXT.md` 开头的「版本分支（当前的 `3.1`）」 | 改成新分支 |
+| 3 | `docs/PROJECT_CONTEXT.md` 开头的「版本分支（当前的 `4.1`）」 | 改成新分支 |
 | 4 | `README.md` / `README.zh-Hans.md` 的 `Latest Version` / `最新版本` | 正式发布时更新 |
 | 5 | 站点 `index.html`（`MacWaveOrg/Pages`） | 版本行的版本号 |
 

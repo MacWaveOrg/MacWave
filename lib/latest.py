@@ -20,6 +20,7 @@ RESET = '\033[0m'
 
 from configpaths import load_base_dir, require_safe_token
 import domains
+import tls
 import steplog
 
 try:
@@ -57,7 +58,7 @@ def fetch_names(arch, timeout):
     url = domains.index_list_url(arch)
     try:
         response = requests.get(url, timeout=timeout.request_timeout,
-                                headers=headers(url))
+                                headers=headers(url), **tls.request_kwargs())
     except Exception as error:
         steplog.detail(f"package list failed: {error}")
         return None
@@ -73,7 +74,7 @@ def fetch_versions(package_name, arch, timeout):
     steplog.detail(f"GET {domains.redact_url(url)}")
     try:
         response = requests.get(url, timeout=timeout.request_timeout,
-                                headers=headers(url))
+                                headers=headers(url), **tls.request_kwargs())
     except Exception as error:
         return [], str(error)[:120]
     if response.status_code != 200:

@@ -164,8 +164,13 @@ def upgrade_everything(words, remove_old):
     由 handle_upgrade 打在终端上，这里只补汇总与退出码。
     """
     from latest import fetch_names, installed_bin_names, resolve_package_name
-    from pkginstaller import DEFAULT_TIMEOUT, detect_arch
+    from pkginstaller import confirm_skip_ssl, detect_arch
+    from timeouts import from_command_line
     from uninstaller import find_installed_versions
+
+    # 下面这一次取名字清单也走 HTTPS，所以 `--skip-ssl` 必须先有结论 ——
+    # 否则用户答应了跳过校验，第一个请求照样失败。批量模式只问一次。
+    confirm_skip_ssl(words)
 
     targets = installed_bin_names()
     if not targets:
@@ -175,7 +180,9 @@ def upgrade_everything(words, remove_old):
 
     # bin/ 里是 bin_name，索引里是包名，两者不一定相同（choma -> ChOma）。
     # 复用 latest 的对照逻辑，这样 `wave latest -a` 报的集合与这里逐个升级的集合一致。
-    index_names = fetch_names(detect_arch(), DEFAULT_TIMEOUT)
+    # 三档超时也要作用在这一步：它同样是请求。规则只有 lib/timeouts.py 一份，
+    # 所以从剥掉 upgrade 专属旗标之后剩下的词里解析。
+    index_names = fetch_names(detect_arch(), from_command_line(" ".join(words)))
     packages = [resolve_package_name(bin_name, index_names) for bin_name in targets]
 
     # 其余旗标原样带下去（--proxy / --max-time / -v…）。-X 被 split_input 剥掉了，

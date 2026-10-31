@@ -31,6 +31,7 @@ from configpaths import (
     require_safe_token,
 )
 import domains
+import tls
 from flags import describe as describe_flag
 import timeouts
 import quiet
@@ -68,8 +69,6 @@ DOWNLOAD_TMP = BASE_DIR / "downloads" / "tmp"
 try:
     import requests
     from requests.exceptions import HTTPError, ConnectionError, Timeout
-    from urllib3.exceptions import InsecureRequestWarning
-    import urllib3
 except ImportError:
     print(f"{RED_BOLD}🌊 Error: 'requests' library is not installed.{RESET}")
     print(f"{RED_BOLD}🌊 Please install it using: pip3 install requests{RESET}")
@@ -156,6 +155,41 @@ OTHER_COMMAND_FLAGS = {
     "-a": ("wave upgrade --all", "wave link --all"),
     "--all": ("wave upgrade --all", "wave link --all"),
 }
+
+def confirm_skip_ssl(flags):
+    """`--skip-ssl` 的安全询问，并同步 lib/tls.py 的状态。返回是否允许跳过校验。
+
+    单独提出来是因为 `upgrade --all` 也要问：它在确认之前就要先取索引里的名字清单，
+    若只在 handle_install 里问，那一次请求就享受不到这个旗标。已经授权过就不再问，
+    批量升级因此只问一次。
+    """
+    if tls.enabled():
+        return True
+    allowed = False
+    if "--skip-ssl" in flags:
+        if quiet.is_silent():
+            # 静默模式不提问，也**不**改走「按拒绝处理」那条路：
+            # 用户已经把旗标写出来了，那就是他的意思（与 -X 同一条原则）。
+            # 若这里默默拒绝，装失败时会抛一个 SSL 错误，而用户以为自己已经跳过了。
+            allowed = True
+        else:
+            print('🌊 You selected --skip-ssl, this will skip SSL certificate verification, which may cause security risks. Are you sure?')
+            try:
+                confirm = input().strip()
+            except (EOFError, KeyboardInterrupt):
+                # 非交互（CI / 脚本里 stdin 是 /dev/null）读不到答复：按拒绝处理，
+                # 也就是不跳过 SSL 校验 —— 缺省往安全的方向倒。
+                confirm = ""
+            allowed = confirm in ("Y", "y")
+
+    # 询问有结论之后才真正开关：答应（或静默模式）就授权，否则撤销请求，
+    # 保证下游任何一处都不会在用户拒绝后仍关掉校验。
+    if allowed:
+        tls.grant()
+    else:
+        tls.revoke()
+    return allowed
+
 
 def parse_flags(input_string, command="install", shown=None):
     """校验旗标白名单。
@@ -305,22 +339,7 @@ def handle_download_args(input_string):
     }
 
     # 1. --skip-ssl 安全询问
-    if "--skip-ssl" in flags:
-        if quiet.is_silent():
-            # 静默模式不提问，也**不**改走「按拒绝处理」那条路：
-            # 用户已经把旗标写出来了，那就是他的意思（与 -X 同一条原则）。
-            # 若这里默默拒绝，装失败时会抛一个 SSL 错误，而用户以为自己已经跳过了。
-            config["skip_ssl_verify"] = True
-        else:
-            print('🌊 You selected --skip-ssl, this will skip SSL certificate verification, which may cause security risks. Are you sure?')
-            try:
-                confirm = input().strip()
-            except (EOFError, KeyboardInterrupt):
-                # 非交互（CI / 脚本里 stdin 是 /dev/null）读不到答复：按拒绝处理，
-                # 也就是不跳过 SSL 校验 —— 缺省往安全的方向倒。
-                confirm = ""
-            if confirm in ("Y", "y"):
-                config["skip_ssl_verify"] = True
+    config["skip_ssl_verify"] = confirm_skip_ssl(flags)
 
     # 2. verbose 判定
     if "-v" in flags or "--verbose" in flags:
@@ -361,11 +380,9 @@ def download_file(url, temp_path, config, input_string, display_name):
     request_kwargs = {"stream": True}
 
     # SSL 验证（内部变量 SkipSSLVerify 逻辑）
-    if config["skip_ssl_verify"]:
-        request_kwargs["verify"] = False
-        urllib3.disable_warnings(InsecureRequestWarning)
-    else:
-        request_kwargs["verify"] = True
+    # 统一走 lib/tls.py：询问在 handle_download_args 里已经有结论，
+    # 这里不再自己判断 config["skip_ssl_verify"]，避免两处各说各的。
+    request_kwargs.update(tls.request_kwargs())
 
     # 简单代理检查，避免低级错误
     if config["proxy"]:
@@ -555,7 +572,8 @@ def fetch_common_fields(package_name, arch, timeout=DEFAULT_TIMEOUT):
     url = package_common_url(package_name, arch)
     steplog.detail(f"GET {domains.redact_url(url)}")
     try:
-        response = requests.get(url, timeout=_as_request_timeout(timeout))
+        response = requests.get(url, timeout=_as_request_timeout(timeout),
+                                **tls.request_kwargs())
         if response.status_code != 200:
             steplog.fail(
                 f"cannot read the @common metadata for {package_name}",
@@ -638,7 +656,8 @@ def fetch_max_version(package_name, arch, timeout=DEFAULT_TIMEOUT):
     steplog.detail(f"GET {domains.redact_url(api_url)}")
     try:
         response = requests.get(api_url, timeout=_as_request_timeout(timeout),
-                                headers=github_api_headers(api_url))
+                                headers=github_api_headers(api_url),
+                                **tls.request_kwargs())
         if response.status_code != 200:
             hint = []
             if response.status_code == 404:
@@ -754,7 +773,10 @@ def handle_install(input_string):
         steplog.detail(f"version from --ver: {ParsePkgVersion}")
     else:
         quiet.say("🌊 Fetching version info...")
-        ParsePkgVersion = fetch_max_version(ParsePkgName, ARCH)
+        # 必须把解析好的 Budget 传下去：不传就用 DEFAULT_TIMEOUT（30 秒），
+        # 于是 --connect-timeout / --content-time / --max-time 对这条命令的
+        # 第一个请求完全无效 —— 而这正是最容易卡住的那个请求。
+        ParsePkgVersion = fetch_max_version(ParsePkgName, ARCH, config["timeout"])
         quiet.say("🌊 Version info fetched successfully.")
 
     # 版本号同样会进 URL 与目录名：`%`、`/`、`..` 这类一律拒绝
@@ -781,7 +803,8 @@ def handle_install(input_string):
     pkg_version_url = f"{domains.api_domain()}/pkg/pkginfo_{ARCH}/{ParsePkgName}/_{ParsePkgName}@{ParsePkgVersion}"
     steplog.detail(f"GET {domains.redact_url(pkg_version_url)}")
     try:
-        resp = requests.get(pkg_version_url, timeout=config["timeout"].request_timeout)
+        resp = requests.get(pkg_version_url, timeout=config["timeout"].request_timeout,
+                            **tls.request_kwargs())
         if resp.status_code != 200:
             if config["verbose"]:
                 print(resp.text)
