@@ -1316,6 +1316,12 @@ def predict(cmd, argv, installed, links):
     if "-h" in words or "--help" in words:
         return 0, ("usage:",)
 
+    # 非法旗标一律失败，措辞随命令不同（install / latest 说 illegal option，
+    # info / mirror / list 说 unknown option），都含 "option"。
+    # selfupdate 例外：它没有旗标白名单，未知旗标会被忽略而不是报错。
+    if cmd != "selfupdate" and any(word in ILLEGAL_FLAGS for word in words):
+        return 1, ("option",)
+
     if cmd == "list":
         return 0, ()
     if cmd == "search":
