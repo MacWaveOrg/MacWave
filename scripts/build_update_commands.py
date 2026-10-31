@@ -169,9 +169,9 @@ def main():
     if args.new:
         fresh, dropped_new = sanitize(args.new, "--new")
         dropped = dropped + dropped_new
-        fresh = [path for path in fresh if path in delta]
+        # 去重后拼接：--new 里可能有重复项，也可能已列在 delta 的更前面
+        fresh = list(dict.fromkeys(path for path in fresh if path in delta))
         if fresh:
-            # 去重后再拼接：--new 里可能有已列在 delta 的更前面的项
             delta = fresh + [path for path in delta if path not in fresh]
 
     if dropped:

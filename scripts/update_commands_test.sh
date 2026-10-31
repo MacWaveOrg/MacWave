@@ -138,7 +138,40 @@ expect ".py 不带 +x" "$line_py" "lib/wave.py 0"
 expect ".sh 带 +x"   "$line_sh" "lib/selfupdate.sh 1"
 
 # ==========================================================
-echo "========== 6. 报错里的地址要打码 =========="
+echo "========== 6. --new 的文件必须排到 delta 最前面 =========="
+# ==========================================================
+# 新版引入的模块如果排在 delta 靠后，中途失败会留下一棵「import 一个还不存在
+# 的模块」的安装树，而 wave 自己就起不来了 —— 连 selfupdate 都救不回来。
+# 4.1.5 把 lib/tls.py 加进清单时踩到过这个位置问题。
+
+delta_lines() {  # 打印 install_delta() 里 want 的顺序
+    awk '/^install_delta\(\) \{/,/^\}/' "$1" | grep '^    want ' | awk '{print $2}'
+}
+
+gen "$WORK/new.sh" --files lib/wave.py lib/alpha.py pkg/beta.py \
+    --delta lib/wave.py lib/alpha.py pkg/beta.py --new lib/alpha.py >/dev/null
+first=$(delta_lines "$WORK/new.sh" | head -1)
+if [ "$first" = "lib/alpha.py" ]; then
+    pass "--new 的文件排在 delta 第一位"
+else
+    fail "--new 没有排到最前（第一位是 ${first:-空}）"
+fi
+expect "delta 的文件一个都没丢" "$(delta_lines "$WORK/new.sh" | wc -l | tr -d ' ')" "3"
+
+gen "$WORK/new2.sh" --files lib/wave.py lib/alpha.py pkg/beta.py \
+    --delta lib/wave.py lib/alpha.py pkg/beta.py --new lib/alpha.py lib/alpha.py >/dev/null
+expect "重复的 --new 项只出现一次" \
+    "$(delta_lines "$WORK/new2.sh" | grep -c 'lib/alpha.py')" "1"
+
+gen "$WORK/new3.sh" --files lib/wave.py pkg/beta.py \
+    --delta lib/wave.py pkg/beta.py --new lib/ghost.py >/dev/null
+expect_absent "--new 里不在 delta 的文件被丢掉" "$(delta_lines "$WORK/new3.sh")" "ghost"
+
+gen "$WORK/new4.sh" --files lib/wave.py pkg/beta.py --new lib/ghost.py >/dev/null
+expect_absent "没给 --delta 时 --new 不会凭空加文件" "$(delta_lines "$WORK/new4.sh")" "ghost"
+
+# ==========================================================
+echo "========== 7. 报错里的地址要打码 =========="
 # ==========================================================
 
 # 把模板里的 redact_url 单独抽出来测，不必跑完整脚本
@@ -166,7 +199,7 @@ else
 fi
 
 # ==========================================================
-echo "========== 7. 文件下不到必须让整次更新失败 =========="
+echo "========== 8. 文件下不到必须让整次更新失败 =========="
 # ==========================================================
 
 if command -v python3 >/dev/null 2>&1; then
@@ -222,7 +255,7 @@ else
 fi
 
 # ==========================================================
-echo "========== 8. 就位与 +x 失败也必须失败 =========="
+echo "========== 9. 就位与 +x 失败也必须失败 =========="
 # ==========================================================
 
 # chmod 失败（例如安装树是 root 装的、当前用户只是 sudo 拿到了写权限）

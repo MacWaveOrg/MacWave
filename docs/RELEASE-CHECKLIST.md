@@ -93,11 +93,20 @@ git merge --no-ff 4.1 -m "Merge 4.1 into main"
 ### 第 4 步：生成并推送 `update_commands.sh`
 
 ```bash
+PREV=$(git describe --tags --abbrev=0)   # 上一个正式 tag
+
 python3 scripts/build_update_commands.py \
     --version <新版本> \
-    --branch <新分支> \
+    --branch  <新分支> \
+    --delta "$(git diff --name-only "$PREV" <新分支> -- lib pkg surfboard | grep -E '\.(py|sh)$')" \
+    --new   "$(git diff --diff-filter=A --name-only "$PREV" <新分支> -- lib pkg surfboard | grep -E '\.(py|sh)$')" \
     --out /tmp/update_commands.sh
 ```
+
+**`--new` 不能省。** 它把「上一版还不存在」的文件排到 delta 的最前面。
+不排在最前，升级中途一旦失败，安装树里就会出现「某个模块 import 一个还没下载到的
+模块」的状态 —— `wave` 自身起不来，连 `wave selfupdate` 都救不回来，只能人工重装。
+4.1.5 加入 `lib/tls.py` 时就踩在这一点上。
 
 **不要手写 `--files 'pkg/*'` 这类通配符。** 4.1.1 就是这么发出去的，而且出了两个问题：
 
