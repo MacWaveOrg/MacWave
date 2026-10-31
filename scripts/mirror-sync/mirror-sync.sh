@@ -214,7 +214,7 @@ tree infosource infosource main "$DEST/infosource"
 tree selfupdate Selfupdate main "$DEST/selfupdate"
 # pythondata/<版本>/*.tar.gz 是自带解释器的产物，仓库里没有（二进制不进 git），
 # 由下一步单独补。这里不排除的话，--delete 会先把它删掉，镜像就装不了解释器。
-tree python     Python     main "$DEST/python" '*.tar.gz' 
+tree python     Python     main "$DEST/python" '*.tar.gz'
 
 hr
 say "第 3/6 步 · 同步 core 分支（客户端拼的是 <CORE>/<分支>/…）"

@@ -1,0 +1,71 @@
+# .pre-commit-config.yaml
+#
+# 提交前自动跑一遍 CI 会跑的东西。装一次：
+#
+#   pip install pre-commit && pre-commit install
+#
+# 为什么值得：S 级那几项配置（pyproject.toml 的 ruff 规则、.shellcheckrc）写好之后
+# 没人跑就是摆设。CI 会在推送后告诉你，但那时提交已经在历史里了 ——
+# 要么补一个"修 lint"的提交，要么 amend。这一步把反馈提前到提交之前。
+#
+# 为什么用 `language: python` 装 ruff/shellcheck 而不用各自的系统包：
+# 版本随仓库走，而不是随每个人机器上恰好装了什么。CI 里也是这么装的。
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      # 行尾空白会让 diff 里出现看不见的改动
+      - id: trailing-whitespace
+        # Markdown 里行尾两个空格是换行语法，不能删；
+        # 早期伪代码与个人草稿不该被格式化（改了只在 git 历史里造噪音）
+        exclude: '(\.md$|^\.Pseudocode/|^\.templates/|^notes/)'
+      - id: end-of-file-fixer
+        # 早期伪代码与个人草稿不是「代码」，改它们只会在 git 历史里造噪音
+        exclude: '^(\.Pseudocode|\.templates|notes)/'
+      - id: check-yaml
+      # 合并冲突标记漏进提交是真实发生过的事
+      - id: check-merge-conflict
+      # 大文件进 git 之后很难清掉，100 MiB 是 GitHub 的硬限
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+      # 可执行位丢失过一次（4.1 的 contents API 提交），这条能提早发现
+      - id: check-executables-have-shebangs
+        types: [shell, python]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.3
+    hooks:
+      # 配置在 pyproject.toml，与 CI 用同一份
+      - id: ruff
+        args: ["--fix"]
+        files: '^(lib|pkg|surfboard|scripts)/.*\.py$'
+
+
+  - repo: local
+    hooks:
+      # koalaman/shellcheck-precommit 需要 docker，而 macOS Runner 与本机都没有。
+      # shellcheck-py 把二进制打进了 wheel，装完就能用，版本也随仓库钉住。
+      - id: shellcheck
+        name: ShellCheck
+        entry: shellcheck
+        language: python
+        additional_dependencies: ["shellcheck-py==0.11.0.1"]
+        # 与 CI 一致：note 级的风格建议不拦
+        args: ["-S", "warning"]
+        files: '^(lib|pkg|surfboard|scripts)/.*\.sh$'
+
+      # 依赖清单走散是「推送后某个 CI 里 ImportError」，代价高、修起来便宜
+      - id: depsync
+        name: dependency declarations agree
+        entry: bash scripts/depsync_test.sh
+        language: system
+        files: '^(pyproject\.toml|lib/install\.sh|lib/selfupdate\.sh|scripts/sandbox_test\.sh|\.github/workflows/.*\.yml|\.circleci/config\.yml)$'
+        pass_filenames: false
+
+      # 改 shell 脚本时顺手确认语法（比 shellcheck 更快，先失败）
+      - id: bash-syntax
+        name: bash syntax
+        entry: bash -n
+        language: system
+        files: '^(lib|pkg|surfboard|scripts)/.*\.sh$'

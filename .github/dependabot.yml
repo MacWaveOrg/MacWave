@@ -1,0 +1,41 @@
+# dependabot.yml
+# 自动跟进依赖版本。两类都跟：
+#   github-actions —— workflow 里的 action 钉着 v4 / v5，靠人记着升级最后一定落后
+#   pip             —— pyproject.toml 里声明的运行时依赖
+#
+# 为什么每周一次而不是每天：这个仓库的发布节奏是按周/按需，每天开 PR 只会积压。
+# 为什么分组：actions 的补丁升级单独看没有意义，合成一个 PR 一次过。
+
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    # 与 Format Test 的分支策略一致：只有发布线与 main 需要跟。
+    target-branch: "4.1"
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    target-branch: "4.1"
+    commit-message:
+      prefix: "deps"
+    open-pull-requests-limit: 3
+    groups:
+      python:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      # rich 只在有进度条时用到，大版本升级要先看 breaking change，
+      # 不让 bot 替我们决定。
+      - dependency-name: "rich"
+        update-types: ["version-update:semver-major"]

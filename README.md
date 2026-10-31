@@ -500,5 +500,3 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 ## 🌊 Contact Us
 
 Email：[hi@macwave.org](mailto:hi@macwave.org)
-
-

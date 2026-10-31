@@ -1,0 +1,23 @@
+# .git-blame-ignore-revs
+#
+# `git blame` 可以跳过的提交：纯格式化、纯重排，不改变行为。
+# 不跳过的后果是「这行代码是谁写的」变成「谁跑了格式化」。
+#
+# 用法（每台机器设一次，或者用下面的命令临时指定）：
+#
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+#   # 一次性：
+#   git blame --ignore-revs-file .git-blame-ignore-revs lib/wave.py
+#
+# GitHub 网页版的 blame 目前不读这个文件；命令行读。
+#
+# 加进来的条件 —— 两个都要满足：
+#   1. 提交只改空白/引号/import 顺序，没有任何语义变化
+#   2. 该提交单独一次跑过完整测试且全绿
+#
+# 现在为空：仓库还没有过大规模格式化。将来第一次跑 `ruff format` 时，
+# 把那次提交的完整 SHA 加在下面。用完整 SHA，不要用短 SHA —— 短 SHA 可能撞。
+
+# 例：
+# 0123456789abcdef0123456789abcdef01234567  # ruff format（全仓）
