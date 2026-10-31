@@ -326,11 +326,15 @@ def print_version():
 
 
 def print_error_help(suggestion=None, unknown_flags=None):
-    """未知命令或参数时：先报错，能猜到本该打什么就给出改法，最后输出完整帮助。
+    """未知命令或参数时：先报错，能猜到本该打什么就给出改法。
 
     suggestion 由 wave.py 传入（打错的词表与命令清单都只在那里一份，这里不重复维护）。
     unknown_flags 是「不属于任何命令」的旗标：命令名错了时它们轮不到校验，
     不单独报出来就会被一起吞掉，而下面那句建议会把它原样抄进去。
+
+    猜到该敲什么时**不再输出整篇帮助**：那五六十行会把唯一有用的那一句
+    （「你要敲的是 upgrade」）淹掉，而用户此刻需要的正是那一句。真正不知道该
+    敲什么时才展开完整清单，并留一行告诉他以后怎么自查。
     """
     print(f"{BOLD}{RED}🌊 Error: Unknown command or argument.{RESET}")
 
@@ -338,8 +342,6 @@ def print_error_help(suggestion=None, unknown_flags=None):
         listed = ", ".join(unknown_flags)
         print(f"{BOLD}{RED}🌊 Error: Unknown flag{'s' if len(unknown_flags) > 1 else ''}: "
               f"{listed}{RESET}")
-        print(f"   `wave --help` lists the global flags; "
-              f"`wave <command> --help` lists the rest.")
 
     if suggestion:
         fixed, wrong, right = suggestion
@@ -347,6 +349,13 @@ def print_error_help(suggestion=None, unknown_flags=None):
         print(f"{BOLD}🌊 Did you mean:{RESET} {GREEN}{fixed}{RESET}")
         print(f"   {YELLOW}{wrong}{RESET} is not a command. "
               f"The one you want is {GREEN}{right}{RESET}.")
+        print()
+        print(f"   For the full list: {GREEN}wave --help{RESET}")
+        return
+
+    if unknown_flags:
+        print(f"   `wave --help` lists the global flags; "
+              f"`wave <command> --help` lists the rest.")
 
     print()
     print_custom_help()

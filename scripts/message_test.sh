@@ -115,7 +115,10 @@ echo "========== 1. 命令打错：update → upgrade =========="
 out=$(wave update jq -Xv --max-time=120s 2>&1)
 ok     "给出完整的改法（参数与旗标原样保留）" "$out" "wave upgrade jq -Xv --max-time=120s"
 ok     "说明哪个词打错了"                   "$out" "is not a command"
-ok     "仍然打印完整帮助"                   "$out" "Commands:"
+# 猜到该敲什么时不再展开整篇帮助：那五六十行会淹掉唯一有用的那一句。
+# 但也得留一个自查入口，否则用户想知道还有哪些命令就没地方去了。
+not_ok "猜对时不再打印整篇帮助"               "$out" "Commands:"
+ok     "改而指向 wave --help"                 "$out" "wave --help"
 
 wave update jq >/dev/null 2>&1
 if [[ $? -eq 1 ]]; then pass "退出码是 1"; else fail "退出码应当为 1"; fi
