@@ -118,7 +118,8 @@ def print_custom_help():
 
     _print_section("Global Flags (can be used with any command)", [
         (_flag("-s, --silent"), "Print nothing at all; the exit code is the signal (beats -v; install / upgrade / uninstall / link / unlink / selfupdate)"),
-        (_flag("-S, --show-error"), "With -s, still print the error when a command fails"),
+        (_flag("-S, --show-error"), "With -s, still print the error when a command fails "
+                                    "(without the 🌊, so scripts can parse it)"),
         (_flag("-C, --continue"), "Resume interrupted downloads (like curl -C -)"),
         (_flag("--proxy", "<string>"), "Specify an HTTP/HTTPS proxy (e.g., http://127.0.0.1:8080)"),
         (_flag("--skip-ssl"), "Skip SSL certificate verification (insecure)"),

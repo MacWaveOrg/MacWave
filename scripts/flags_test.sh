@@ -209,6 +209,27 @@ else
     fail "-sS 混进了进度噪音"
 fi
 
+# -sS 的输出是给脚本读的，一律不带 🌊；而普通模式必须保留（那是给人看的）
+NOSUCH=$(cd "$RUN_DIR" && MACWAVE_TEST="$RUN_DIR/root" \
+    python3 lib/wave.py uninstall no_such_pkg -sS 2>&1 || true)
+if [[ -n "$NOSUCH" && "$NOSUCH" != *"🌊"* ]]; then
+    pass "-sS 输出不含 🌊"
+else
+    fail "-sS 输出仍带 🌊（实际：${NOSUCH:0:120}）"
+fi
+if [[ "$NOSUCH" == *"Error:"* ]]; then
+    pass "-sS 去掉了 🌊 但保留错误文字"
+else
+    fail "-sS 把错误文字也弄丢了（实际：${NOSUCH:0:120}）"
+fi
+PLAIN=$(cd "$RUN_DIR" && MACWAVE_TEST="$RUN_DIR/root" \
+    python3 lib/wave.py uninstall no_such_pkg 2>&1 || true)
+if [[ "$PLAIN" == *"🌊"* ]]; then
+    pass "非静默仍保留 🌊"
+else
+    fail "非静默的 🌊 被误删（实际：${PLAIN:0:120}）"
+fi
+
 echo
 echo "=========================================="
 echo -e "🌊 Passed: $PASSED"

@@ -19,6 +19,7 @@
 #      所以不用改那几十处 print —— 子进程的输出也一并消失。
 
 import os
+import re
 import sys
 
 
@@ -39,6 +40,70 @@ def is_silent():
 def is_show_error():
     """-S / --show-error：静默但保留错误输出。"""
     return _show_error
+
+
+# -------------------- 静默时的机器可读输出 --------------------
+#
+# `-sS` 的输出去给脚本读（人只在失败时才看）。`🌊 ` 对脚本是噪音：每行都得多剥
+# 一次，剥漏了就解析失败。所以静默模式下**所有输出一律不带 🌊**，其余文字、
+# 缩进与颜色码原样保留。
+#
+# 为什么在流上做而不是改调用点：全仓七十多处带 🌊 的 print 散在 lib/ pkg/
+# surfboard/ 三个目录，逐个改必然漏，而漏掉一处就是「-sS 的输出里还有 emoji」。
+# 换一层流是唯一能保证「一律」的地方。
+
+_ANSI_AT_START = re.compile(r"^(?:\x1b\[[0-9;]*m)*")
+_ITEM = "\U0001F30A"          # 🌊
+
+
+def _strip_item(line):
+    # 只处理行首（可能先有几个颜色码）的 🌊 与紧跟的一个空格
+    match = _ANSI_AT_START.match(line)
+    head, rest = line[:match.end()], line[match.end():]
+    if rest.startswith(_ITEM):
+        rest = rest[len(_ITEM):]
+        if rest.startswith(" "):
+            rest = rest[1:]
+    return head + rest
+
+
+class _MachineStream:
+    """包一层输出流，按行剥掉行首 🌊。
+
+    行缓冲：攒到换行才写出，这样一次 write 的碎片不会把一行切两半。
+    flush() 会把残留的半个行也写出去 —— 进度条那种不换行的写法靠它。
+    """
+
+    def __init__(self, stream):
+        self._stream = stream
+        self._pending = ""
+
+    def write(self, text):
+        self._pending += text
+        out = []
+        while "\n" in self._pending:
+            line, self._pending = self._pending.split("\n", 1)
+            out.append(_strip_item(line) + "\n")
+        if out:
+            self._stream.write("".join(out))
+        return len(text)
+
+    def flush(self):
+        if self._pending:
+            self._stream.write(_strip_item(self._pending))
+            self._pending = ""
+        self._stream.flush()
+
+    def __getattr__(self, name):
+        return getattr(self._stream, name)
+
+
+def machine_readable():
+    """`-sS` 时把 stdout/stderr 换成不带 🌊 的版本。"""
+    if not _show_error:
+        return
+    sys.stdout = _MachineStream(sys.stdout)
+    sys.stderr = _MachineStream(sys.stderr)
 
 
 def silence_everything():

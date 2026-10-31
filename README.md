@@ -272,7 +272,8 @@ Flags:
 
 Global Flags (can be used with any command):
   -s, --silent            Print nothing at all; the exit code is the signal
-  -S, --show-error        With -s, still print the error when a command fails
+  -S, --show-error        With -s, still print the error (without the 🌊 prefix,
+                          so scripts can parse it)
   -C, --continue          Resume interrupted downloads (like curl -C -)
       --proxy string      Specify an HTTP/HTTPS proxy (e.g., http://127.0.0.1:8080)
       --skip-ssl          Skip SSL certificate verification (insecure)

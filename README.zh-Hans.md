@@ -266,7 +266,7 @@ Flags:
 
 Global Flags (can be used with any command):
   -s, --silent            什么都不打印，靠退出码判断成败
-  -S, --show-error        配合 -s：失败时仍然打印错误原因
+  -S, --show-error        配合 -s：失败时仍然打印错误原因（不带 🌊，方便脚本解析）
   -C, --continue          Resume interrupted downloads (like curl -C -)
       --proxy string      Specify an HTTP/HTTPS proxy (e.g., http://127.0.0.1:8080)
       --skip-ssl          Skip SSL certificate verification (insecure)

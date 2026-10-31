@@ -192,7 +192,10 @@ def main():
                 sys.exit(1)
             # 单给 -s 时连错误一起吞（curl 语义）；-sS 才留错误。
             quiet.set_silent(True, show_error=show_error)
-            if not show_error:
+            if show_error:
+                # -sS：输出给脚本读，一律不带 🌊（见 quiet.machine_readable）
+                quiet.machine_readable()
+            else:
                 quiet.silence_everything()
             # 子脚本（pkginstaller.sh、depsmanager.sh…）也要知道：它们的输出
             # 虽然由 Python 重印，但 update_commands 那类直接写终端的脚本
