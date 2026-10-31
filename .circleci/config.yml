@@ -1,0 +1,95 @@
+# .circleci/config.yml
+#
+# CircleCI 在这个仓库里的角色：**快速反馈**。
+#
+# 权威 CI 仍是 GitHub Actions 的 Format Test（macOS runner，跑全部端到端）。
+# 但那条线要装 3.14 / 3.15 两套解释器、要 macOS 工具、要联网取数据，一次十几分钟。
+# 这里只跑「与平台无关、不碰网络」的那批：提交后一两分钟就知道逻辑有没有坏，
+# 不用等全套跑完才发现一个拼写错误。
+#
+# 刻意设计成**零配置**：不需要环境变量、不需要 SSH key、不需要 sudo、不检出第二个
+# 仓库。所以除了在 CircleCI 里授权这个仓库，没有别的准备工作。
+
+version: 2.1
+
+# 需要 macOS 工具（otool / install_name_tool / codesign）、需要真实下载、
+# 或者需要检出 infosource 数据的测试，一律留在这批之外 —— 它们在这里跑不了，
+# 硬跑只会给出假绿灯。
+#
+#   format_test        解压后调 otool 重写 Mach-O
+#   deps_test          要 infosource 数据 + 真实下载
+#   selfupdate_test    写真实安装目录，依赖 macOS 的权限与签名行为
+#   mirror_test        读 macOS 的 defaults
+#   configpath_test    依赖 macOS 的默认路径布局
+#   link_test          依赖 macOS 的符号链接语义（Linux 上结果不同，不是缺陷）
+
+jobs:
+  offline-tests:
+    docker:
+      # cimg 是 CircleCI 维护的镜像，自带 git / curl / sudo 与常用构建工具。
+      # 项目下限是 3.14（`.conda` 需要 compression.zstd）。
+      # 若这个 tag 哪天不存在，换成同小版本的可用 tag 或 python:3.14 即可 ——
+      # 下面的步骤不依赖 cimg 的任何专有内容。
+      - image: cimg/python:3.14
+
+    steps:
+      - checkout
+
+      - run:
+          name: Show the interpreter
+          command: |
+            python3 -V
+            python3 -c 'import sys; assert sys.version_info >= (3, 14), sys.version'
+
+      - run:
+          name: Install Python dependencies
+          # 测试只用到 requests；rich 覆盖进度条那条路径，packaging 给版本比较。
+          command: python3 -m pip install --quiet requests packaging rich
+
+      - run:
+          name: Compile every Python file
+          # 比任何测试都快，也最先抓到语法错误。
+          command: python3 -m compileall -q lib pkg surfboard scripts
+
+      - run:
+          name: Check shell syntax
+          # bash -n 只解析不执行，能在不跑测试的前提下抓到 if/fi、引号不配对。
+          command: |
+            for file in lib/*.sh pkg/*.sh surfboard/*.sh scripts/*.sh; do
+                bash -n "$file" || { echo "syntax error: $file"; exit 1; }
+            done
+            echo "all shell files parse"
+
+      - run:
+          name: Flag and suggestion tests
+          command: |
+            bash scripts/flags_test.sh
+            bash scripts/suggest_test.sh
+
+      - run:
+          name: Message and domain tests
+          command: |
+            bash scripts/message_test.sh
+            bash scripts/domains_test.sh
+
+      - run:
+          name: Output format and update-command tests
+          command: |
+            bash scripts/info_format_test.sh
+            bash scripts/update_commands_test.sh
+
+workflows:
+  quick-feedback:
+    jobs:
+      - offline-tests:
+          filters:
+            branches:
+              # 与 Format Test 的触发分支保持一致。加新发布分支时两处一起改，
+              # 否则这条线会静默不跑。
+              only:
+                - main
+                - "4.1"
+                - "4.0"
+                - "3.2"
+                - "3.1"
+                - "3.0"

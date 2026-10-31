@@ -1,0 +1,12 @@
+# Codex 的项目级配置。
+#
+# 这是 Codex 唯一认的项目配置路径（`.codex/config.toml`，TOML 格式）。
+# 原来的 `.codex/settings.json` 只有一个字节 `1`，Codex 不会读它 ——
+# 那不是 Codex 认识的任何格式，也不在它查找的位置上。
+#
+# 缩进约定不写在这里：Codex 不提供「tab 宽度」这类编辑器设置，
+# 它靠 AGENTS.md 里的项目指令来遵守代码风格。见仓库根目录的 AGENTS.md。
+
+# 留空表示沿用用户级 ~/.codex/config.toml 的模型与审批设置。
+# 需要固定时在这里显式写，例如：
+#   model = "gpt-5.1"

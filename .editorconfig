@@ -1,0 +1,27 @@
+# .editorconfig
+# 缩进约定的单一来源。PyCharm、VS Code、Codex 以及绝大多数编辑器都原生读它 ——
+# 这比给每个 IDE 各写一份配置更可靠：`.pycharm/settings.json` 从来不是 PyCharm
+# 认的路径（它读 `.idea/` 或者这份文件），原来那个 1 字节文件谁也没读过。
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# 本仓库没有 `tab` 缩进的代码，一律 4 空格。
+# Shell 沿用同一规则：现有脚本就是 4 空格。
+[*.{py,sh}]
+indent_style = space
+indent_size = 4
+
+# JSON / YAML 用 2 空格（编辑器与 CI 配置的既成事实，改成 4 会制造无谓 diff）
+[*.{json,yaml,yml}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
