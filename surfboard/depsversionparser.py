@@ -10,17 +10,15 @@ from configpaths import require_safe_token
 # -------------------- 颜色定义 --------------------
 
 RED_BOLD = '\033[1;31m'
+YELLOW = '\033[33m'
 RESET = '\033[0m'
 
 # -------------------- 依赖库检查 --------------------
 
 try:
-    from pkgversionparser import (
-        is_special_version,
-        safe_parse_pkg_version,
-        sort_versions,
-        get_max_version,
-    )
+    # 只导入真正用到的那个；这一层的目的是尽早发现 pkgversionparser 缺失，
+    # 多导入几个用不上的名字只是噪音。
+    from pkgversionparser import get_max_version
 except ModuleNotFoundError as error:
     if error.name == "pkgversionparser":
         print(f"{RED_BOLD}🌊 Error: 'pkgversionparser' module is not available.{RESET}")

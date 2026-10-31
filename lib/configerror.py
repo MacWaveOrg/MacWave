@@ -52,7 +52,7 @@ def check_dependencies():
 # -------------------- 环境检测与报错 --------------------
 
 def check_environment():
-    
+
     # 检测当前环境
     # - 如果 /opt/macwave_config/config.json 或 ~/.config/macwave_config/config.json
     #   存在，说明已正式安装，正常继续。

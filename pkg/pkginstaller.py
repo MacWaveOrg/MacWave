@@ -5,7 +5,6 @@
 import os
 import sys
 import json
-import hashlib
 import shutil
 import time
 import platform
@@ -77,7 +76,10 @@ except ImportError:
     sys.exit(1)
 
 try:
-    from packaging.version import parse as parse_version, InvalidVersion
+    # 这里只为了确认 packaging 可用：真正用到它的是 pkgversionparser，
+    # 但那条路要等到比较版本号时才会走到，而缺依赖应当在启动时就说清楚。
+    # 导入后的名字不参与计算，所以显式标 F401。
+    from packaging.version import parse as parse_version, InvalidVersion  # noqa: F401
 except ImportError:
     print(f"{RED_BOLD}🌊 Error: 'packaging' library is not installed.{RESET}")
     print(f"{RED_BOLD}🌊 Please install it using: pip3 install packaging{RESET}")

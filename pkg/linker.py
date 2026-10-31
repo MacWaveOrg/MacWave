@@ -23,7 +23,7 @@ RESET = '\033[0m'
 
 # -------------------- 配置加载 --------------------
 
-from configpaths import assert_inside, assert_inside_entry, load_base_dir, require_safe_token
+from configpaths import assert_inside_entry, load_base_dir, require_safe_token
 
 
 BASE_DIR = load_base_dir()

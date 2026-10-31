@@ -370,8 +370,8 @@ def print_error_help(suggestion=None, unknown_flags=None):
         return
 
     if unknown_flags:
-        print(f"   `wave --help` lists the global flags; "
-              f"`wave <command> --help` lists the rest.")
+        print("   `wave --help` lists the global flags; "
+              "`wave <command> --help` lists the rest.")
 
     print()
     print_custom_help()

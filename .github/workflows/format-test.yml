@@ -67,7 +67,7 @@ jobs:
           python3 -c 'import sys; v = "%d.%d" % sys.version_info[:2]; assert v == "${{ matrix.python-version }}", v'
 
       - name: Install Python dependencies
-        run: python3 -m pip install requests packaging rich
+        run: python3 -m pip install requests packaging urllib3 rich
 
       - name: Setup MacWave config
         run: |
@@ -160,6 +160,23 @@ jobs:
         run: |
           bash scripts/suggest_test.sh
 
+      # 依赖清单曾散在六处，改一处漏五处。这条断言它们与 pyproject.toml 一致。
+      - name: Run dependency declaration test
+        run: |
+          bash scripts/depsync_test.sh
+
+      # 静态检查：配置在 pyproject.toml 与 .shellcheckrc 里。
+      # 只装工具、不自动修 —— CI 的职责是「报告」，改动应当由人提交。
+      - name: Lint Python
+        run: |
+          python3 -m pip install --quiet ruff
+          ruff check lib pkg surfboard scripts
+
+      - name: Lint shell
+        run: |
+          python3 -m pip install --quiet shellcheck-py
+          shellcheck -S warning lib/*.sh pkg/*.sh surfboard/*.sh scripts/*.sh
+
   # 随机化端到端回归：每次抽 10~20 个包 + 随机参数/随机打断 + 固定命令覆盖。
   # 自带安装目录挑选、部署与清理，所以不需要上面那一套 sudo 配置。
   random-test:
@@ -211,7 +228,7 @@ jobs:
           python3 -c 'import sys; v = "%d.%d" % sys.version_info[:2]; assert v == "${{ matrix.python-version }}", v'
 
       - name: Install Python dependencies
-        run: python3 -m pip install requests packaging rich
+        run: python3 -m pip install requests packaging urllib3 rich
 
       # 步骤级 timeout 低于 job 级：超时是"步骤失败"，这样下面的 always() 仍会上传日志
       - name: Run randomized regression

@@ -1,0 +1,35 @@
+# .shellcheckrc
+#
+# 26 个 shell 脚本的静态检查标准。-s warning 以上的问题一律要修，
+# 不是「看见了再说」。
+#
+# 检查方式：
+#   shellcheck lib/*.sh pkg/*.sh surfboard/*.sh scripts/*.sh
+#
+# 只忽略下面这些 —— 每一条都写清为什么，免得以后有人以为是懒得改。
+
+# 脚本之间互相 source，且路径相对脚本自身而不是当前目录。
+# 不设这两条时 SC1090/SC1091 会把每次 source 都报成「无法跟随」。
+external-sources=true
+source-path=SCRIPTDIR
+
+# SC2034：变量「未使用」。
+#
+# 本项目这个告警基本都是误报：脚本把变量 export 给子进程（Python 读环境变量），
+# 或者通过长字符串一次性传给 bash 子脚本 —— shellcheck 的静态分析看不到那些
+# 消费者。真有未使用变量时，它不影响正确性；而误报会让这条告警失去意义。
+disable=SC2034
+
+# SC2010：`ls | grep`。
+#
+# 只在 scripts/link_test.sh 里出现，用来断言「某个名字在不在 bin/ 下」。
+# 那条路的文件名由测试自己造（t1 / t2 这类），不含空格或特殊字符。
+# 换成 glob 反而更难读。生产代码里不写这种写法。
+disable=SC2010
+
+# SC1090：`source "$VAR"` 这种变量路径。
+#
+# 本项目的 source 路径在运行时才确定（安装目录由用户选，脚本在 $BASE_DIR 下）。
+# shellcheck 静态分析不可能知道它指向哪里，`external-sources` 也救不了变量路径。
+# 真有路径错误时，脚本运行时会立刻报「No such file」，不需要静态检查兜底。
+disable=SC1090

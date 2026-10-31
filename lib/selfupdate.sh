@@ -469,7 +469,8 @@ export MACWAVE_BRANCH="$BRANCH"
 export MACWAVE_TARGET_VERSION="$VERSION"
 export MACWAVE_CURRENT_VERSION="$CURRENT_VERSION"
 export MACWAVE_FILE_TIMEOUT="$FILE_TIMEOUT"
-export MACWAVE_NEED_SUDO="$([ "$NEED_SUDO" = "true" ] && echo 1 || echo "")"
+MACWAVE_NEED_SUDO="$([ "$NEED_SUDO" = "true" ] && echo 1 || echo "")"
+export MACWAVE_NEED_SUDO
 export MACWAVE_SILENT=""
 
 if ! bash "$UPDATE_COMMANDS_TMP"; then
@@ -713,7 +714,7 @@ if [[ -n "$PYTHON_BIN" ]]; then
             # --index-url 与 install.sh 用同一个变量：换个索引两处一起生效。
             run_cmd "$VENV_PY" -m pip install --quiet --disable-pip-version-check \
                 --timeout 30 --retries 2 --index-url "$PIP_INDEX_URL" \
-                requests packaging rich >/dev/null 2>&1 || \
+                requests packaging urllib3 rich >/dev/null 2>&1 || \
                 echo -e "${YELLOW}🌊 Warning: the private environment is incomplete; the launcher will fall back.${RESET}"
         fi
     fi

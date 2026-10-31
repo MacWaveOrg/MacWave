@@ -453,7 +453,7 @@ scenario_link_regression() {
         return
     fi
     (
-        cd "$MIRROR_BASE"
+        cd "$MIRROR_BASE" || exit 1
         HOME="$FAKE_HOME" bash scripts/link_test.sh
     ) > "$OUT" 2>&1
     check "link_test.sh 全部通过" "$(count_in "$OUT" "FAIL")" "0"
@@ -526,7 +526,7 @@ done
 
 # 安装器会在缺依赖时跑 pip，而 pip 写不到沙箱外。缺了就在这里说清楚，
 # 免得后面收到一堆「中途失败」的假失败。
-for mod in requests packaging rich; do
+for mod in requests packaging urllib3 rich; do
     if ! python3 -c "import $mod" 2>/dev/null; then
         echo -e "${RED_BOLD}🌊 Error: python3 is missing '$mod'.${RESET}"
         echo "🌊 The installer would try to pip install it, which the sandbox forbids."

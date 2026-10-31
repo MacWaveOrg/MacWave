@@ -70,10 +70,10 @@ def get_arch():
 
 
 def parse_pkg_from_bin(dirname):
-    
+
     # 从 bin 目录下的目录名解析出包名和版本。
     # 形如 ldid@2.1.5-procursus7 -> ("ldid", "2.1.5-procursus7")
-    
+
     if "@" in dirname:
         name, version = dirname.split("@", 1)
         return name, version
@@ -81,11 +81,11 @@ def parse_pkg_from_bin(dirname):
 
 
 def fetch_remote_versions(pkg_name, arch, budget=None):
-    
+
     # 通过索引列出可安装版本，返回所有可安装版本号列表。
     # 默认走 GitHub API 读 infosource，设了索引镜像时读镜像自己的清单
     # （见 domains.index_list_url）。
-    
+
     pkg_name = require_safe_token(pkg_name, "package name")
     api_url = domains.index_list_url(arch, pkg_name)
     try:
@@ -105,13 +105,13 @@ def fetch_remote_versions(pkg_name, arch, budget=None):
 
 
 def fetch_remote_info(pkg_name, arch, budget=None):
-    
+
     # 从数据仓库拉取 @common 文件，返回 (解析后的字段, 原文)。
     #
     # 原文要留着：`wave info --raw` 输出的就是它 —— 想知道「作者名为什么是这样」时，
     # 看格式化之后的几行没有意义，得看索引里到底写了什么。
     # 拉不到时返回 (None, None)，调用方据此区分「没这条记录」和「有记录但没字段」。
-    
+
     pkg_name = require_safe_token(pkg_name, "package name")
     common_url = f"{domains.api_domain()}/pkg/pkginfo_{arch}/{pkg_name}/_{pkg_name}@common"
     try:
@@ -132,10 +132,10 @@ def fetch_remote_info(pkg_name, arch, budget=None):
 # -------------------- list --------------------
 
 def handle_list(budget=None):
-    
+
     # 直接扫描 BASE_DIR/bin 目录下的子目录，列出所有已安装的包
     # （2.2 起每个包是一个 <包名>@<版本号> 目录）。
-    
+
     if not BIN_DIR.exists():
         print("🌊 No packages installed yet.")
         return
@@ -152,10 +152,10 @@ def handle_list(budget=None):
 # -------------------- search --------------------
 
 def handle_search(query, budget=None):
-    
+
     # 远程搜索索引里的所有包名，匹配查询词。
     # 默认走 GitHub API 读 infosource，设了索引镜像时读镜像自己的清单。
-    
+
     arch = get_arch()
 
     api_url = domains.index_list_url(arch)
@@ -266,10 +266,10 @@ def render_info(output_format, pkg_name, remote, record_text,
 
 
 def handle_info(pkg_name, output_format=None, budget=None):
-    
+
     # 先扫描本地 bin 目录，已安装则输出本地信息；
     # 未安装则拉远程 @common 文件。
-    
+
     arch = get_arch()
 
     # 1. 扫描本地 bin 目录，找出所有该包的已安装版本
@@ -312,7 +312,7 @@ def handle_info(pkg_name, output_format=None, budget=None):
         for ver in installed_versions[1:]:
             print(f"                       {ver}")
     else:
-        print(f"🌊 Installed versions: None")
+        print("🌊 Installed versions: None")
 
     if available_versions:
         print(f"🌊 Available versions: {available_versions[0]}")
@@ -393,9 +393,9 @@ def _budget(input_string):
 
 
 def handle_info_command(input_string):
-  
+
     # 解析完整输入字符串（如 "wave info ldid"），分派到 list / search / info
-  
+
     words = input_string.split()
     if len(words) < 2:
         print(f"{RED_BOLD}🌊 Error: Missing subcommand.{RESET}")

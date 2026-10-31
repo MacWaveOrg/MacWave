@@ -669,8 +669,9 @@ export MACWAVE_BRANCH="$BRANCH"
 export MACWAVE_TARGET_VERSION="$MACWAVE_VERSION"
 export MACWAVE_CURRENT_VERSION=""
 export MACWAVE_FILE_TIMEOUT=60
-export MACWAVE_NEED_SUDO="$([ "$NEED_SUDO" = "true" ] && echo 1 || echo "")"
-export MACWAVE_SILENT="$([ "$CLI_CI" = "true" ] && echo 1 || echo "")"
+MACWAVE_NEED_SUDO="$([ "$NEED_SUDO" = "true" ] && echo 1 || echo "")"
+MACWAVE_SILENT="$([ "$CLI_CI" = "true" ] && echo 1 || echo "")"
+export MACWAVE_NEED_SUDO MACWAVE_SILENT
 
 if ! bash "$UPDATE_COMMANDS_TMP"; then
     echo -e "${RED_BOLD}🌊 Error: the update commands for $MACWAVE_VERSION failed.${RESET}"
@@ -909,7 +910,7 @@ fi
 
 # pip 的公共参数。--index-url 指向 MACWAVE_PIP_INDEX（默认官方 PyPI）；
 # 国内直连 pypi.org 常超时，用户可以把它换成本地镜像。
-PIP_DEPS=(requests packaging rich)
+PIP_DEPS=(requests packaging urllib3 rich)
 PIP_FLAGS=(--quiet --disable-pip-version-check --timeout 30 --retries 2
            --index-url "$PIP_INDEX_URL")
 

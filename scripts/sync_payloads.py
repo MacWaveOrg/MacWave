@@ -23,7 +23,6 @@
 import argparse
 import concurrent.futures as futures
 import hashlib
-import os
 import re
 import sys
 from pathlib import Path
@@ -212,8 +211,8 @@ def main():
         return 1
 
     print(f"🌊 Mirror root: {args.out}")
-    print(f"🌊   MACWAVE_BOTTLE_DOMAIN=<该目录对外地址>/bottle")
-    print(f"🌊   MACWAVE_DEPS_DOMAIN=<该目录对外地址>/deps")
+    print("🌊   MACWAVE_BOTTLE_DOMAIN=<该目录对外地址>/bottle")
+    print("🌊   MACWAVE_DEPS_DOMAIN=<该目录对外地址>/deps")
     return 0
 
 

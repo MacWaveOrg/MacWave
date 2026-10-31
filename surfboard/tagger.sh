@@ -56,7 +56,8 @@ tagger_delete() {
     local name="$3"
     local version="$4"
 
-    local mark="$dir/$(tagger_mark_name "$kind" "$name" "$version")"
+    local mark
+    mark="$dir/$(tagger_mark_name "$kind" "$name" "$version")"
     if [[ -e "$mark" ]]; then
         rm -f "$mark"
     fi

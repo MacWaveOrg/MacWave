@@ -188,7 +188,7 @@ PYEOF
 run_case() {
     local description="$1" installed="$2" arguments="$3" stdin_data="$4" expected="$5"
 
-    rm -rf "$BASE/bin" "$BASE/links"
+    rm -rf "${BASE:?}/bin" "${BASE:?}/links"
     mkdir -p "$BASE/bin" "$BASE/links"
     local version
     for version in $installed; do
@@ -229,7 +229,7 @@ echo "========== 批量升级（--all） =========="
 # run_all <描述> "<pkg@ver ...>" "<参数>" "<期望留下的 bin 目录>"
 run_all() {
     local description="$1" installed="$2" arguments="$3" expected="$4"
-    rm -rf "$BASE/bin" "$BASE/links"
+    rm -rf "${BASE:?}/bin" "${BASE:?}/links"
     mkdir -p "$BASE/bin" "$BASE/links"
     local item name version
     for item in $installed; do
@@ -271,7 +271,7 @@ else
 fi
 
 # 一个包失败不能拖累其余的：curl 在索引里不存在时，jq 仍要被升级
-rm -rf "$BASE/bin" "$BASE/links"; mkdir -p "$BASE/bin" "$BASE/links"
+rm -rf "${BASE:?}/bin" "${BASE:?}/links"; mkdir -p "$BASE/bin" "$BASE/links"
 mkdir -p "$BASE/bin/jq@1.6" "$BASE/bin/zzz@1.0"
 printf '#!/bin/sh\n' > "$BASE/bin/jq@1.6/jq"
 printf '#!/bin/sh\n' > "$BASE/bin/zzz@1.0/zzz"
@@ -349,7 +349,7 @@ else
 fi
 
 # 索引落后于本机时不能降级
-rm -rf "$BASE/bin" "$BASE/links"; mkdir -p "$BASE/bin" "$BASE/links"
+rm -rf "${BASE:?}/bin" "${BASE:?}/links"; mkdir -p "$BASE/bin" "$BASE/links"
 mkdir -p "$BASE/bin/jq@1.9"; printf '#!/bin/sh\n' > "$BASE/bin/jq@1.9/jq"
 printf '' | STUB_LATEST=1.7.1 MACWAVE_TEST="$ROOT" \
     python3 "$WORK/harness.py" jq --rov > "$WORK/behind.log" 2>&1 || true
@@ -362,7 +362,7 @@ else
 fi
 
 # 升级后不带版本号的链接必须指向新版本
-rm -rf "$BASE/bin" "$BASE/links"; mkdir -p "$BASE/bin" "$BASE/links"
+rm -rf "${BASE:?}/bin" "${BASE:?}/links"; mkdir -p "$BASE/bin" "$BASE/links"
 mkdir -p "$BASE/bin/jq@1.6"; printf '#!/bin/sh\n' > "$BASE/bin/jq@1.6/jq"
 printf '' | STUB_LATEST=1.7.1 MACWAVE_TEST="$ROOT" \
     python3 "$WORK/harness.py" jq > /dev/null 2>&1 || true

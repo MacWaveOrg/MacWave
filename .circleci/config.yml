@@ -44,7 +44,22 @@ jobs:
       - run:
           name: Install Python dependencies
           # 测试只用到 requests；rich 覆盖进度条那条路径，packaging 给版本比较。
-          command: python3 -m pip install --quiet requests packaging rich
+          command: python3 -m pip install --quiet requests packaging urllib3 rich
+
+      - run:
+          name: Lint Python with ruff
+          # 配置在 pyproject.toml：规则集 E/F/W，行宽 100，忽略 E501/E402。
+          # 只报告不自动修 —— 改动应当由人提交，CI 不该替人写代码。
+          command: |
+            python3 -m pip install --quiet ruff
+            ruff check lib pkg surfboard scripts
+
+      - run:
+          name: Lint shell scripts
+          # 配置在 .shellcheckrc。--severity=warning：note 级的风格建议不拦。
+          command: |
+            python3 -m pip install --quiet shellcheck-py
+            shellcheck -S warning lib/*.sh pkg/*.sh surfboard/*.sh scripts/*.sh
 
       - run:
           name: Compile every Python file
@@ -65,6 +80,11 @@ jobs:
           command: |
             bash scripts/flags_test.sh
             bash scripts/suggest_test.sh
+
+      - run:
+          name: Dependency declarations agree
+          # pyproject.toml 与六处安装/CI 配置必须说同一件事
+          command: bash scripts/depsync_test.sh
 
       - run:
           name: Message and domain tests

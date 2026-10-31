@@ -1,0 +1,86 @@
+# pyproject.toml
+#
+# 这个文件有两个作用，都不是「把 MacWave 打包上 PyPI」——
+# MacWave 由 lib/install.sh 安装，不通过 pip 分发。
+#
+#   1. 声明运行时依赖，作为**唯一的事实来源**
+#   2. 给 ruff 一份配置，让每个人的格式化与检查结果一致
+#
+# 为什么需要第 1 条：同一份依赖清单原先散在六处 ——
+#   lib/install.sh            PIP_DEPS=(requests packaging rich)
+#   lib/selfupdate.sh         直接写 requests packaging rich
+#   .github/workflows/*.yml   两处 pip install
+#   scripts/sandbox_test.sh   for mod in requests packaging rich
+#   .circleci/config.yml      又一处
+# 改一处漏五处，症状是「某个 CI 里 ImportError」。现在由
+# scripts/depsync_test.sh 断言两边一致，走散就红。
+#
+# 注意 `dependencies` 不等于 install.sh 要装的全部：install.sh 连可选依赖
+# （rich，进度条）也一并装上，因为它要的是开箱即用的体验。两者的一致性
+# 由那条测试按「必需 + 可选」的并集比对。
+
+[project]
+name = "macwave"
+# 真实版本号在 configdata 仓库的 versiondata/latest_version —— 那是客户端与
+# 安装脚本读取的唯一来源。这里是 PEP 621 的必填项，不参与任何判断。
+version = "0.0.0"
+description = "A package manager for macOS software developers."
+readme = "README.md"
+requires-python = ">=3.14"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "MacWave Team" }]
+
+# 运行时**必需**：缺一个就起不来。
+#   requests   —— 所有 HTTP
+#   packaging  —— 版本号比较
+#   urllib3    —— --skip-ssl 时抑制 InsecureRequestWarning，硬编码导入
+dependencies = [
+    "requests>=2.20",
+    "packaging>=21.0",
+    "urllib3>=1.25",
+]
+
+[project.optional-dependencies]
+# 可选：没有它只是没有进度条（pkg/pkginstaller.py 里 RICH_AVAILABLE 会退回
+# 无进度条路径）。install.sh 默认装它。
+progress = ["rich>=12.0"]
+
+[project.urls]
+Homepage = "https://macwave.org"
+Repository = "https://github.com/MacWaveOrg/MacWave"
+Issues = "https://github.com/MacWaveOrg/MacWave/issues"
+Documentation = "https://docs.macwave.org"
+
+# -------------------- ruff --------------------
+#
+# .vscode/settings.json 早就把 ruff 指定为默认格式化器，但一直没有配置文件 ——
+# 于是每个人保存时用的规则取决于各自装的 ruff 版本与默认值，格式化结果互相打架。
+
+[tool.ruff]
+# 100 而不是 ruff 的默认 88：现有代码 6245 行里有 5914 行在 79 字符内，
+# 用 88 会把三百多行判为超长；用 100 只剩 138 行，且绝大多数是长字符串。
+line-length = 100
+target-version = "py314"
+
+# 早期伪代码，与现行代码不同构（.cursorignore 也排除了它）
+extend-exclude = [".Pseudocode"]
+
+[tool.ruff.lint]
+# 起步只开 E/F/W：这三类是「几乎确定是 bug」的集合。
+# 完整规则集有几百条，一上来全开会让所有人淹没在告警里，然后集体学会忽略它。
+select = ["E", "F", "W"]
+
+ignore = [
+    # 长行。能折的 formatter 会折，剩下的都是折不断的错误消息与 URL。
+    # 强行断言行长只会逼人去拆字符串。
+    "E501",
+    # 导入不在文件顶部 —— 这里是有意的：模块先 sys.path.insert 再导入。
+    "E402",
+]
+
+[tool.ruff.format]
+# 现有代码双引号 1271 处、单引号 200 处，ruff 默认就是 double，保持一致即可。
+quote-style = "double"
+# 缩进与 .editorconfig 一致（4 空格）
+indent-style = "space"
