@@ -175,7 +175,7 @@ def handle_upgrade(input_string):
     timeout = parse_timeout(probe, flags)
 
     arch = detect_arch()
-    print(f"🌊 Checking the latest version of {package_name}...")
+    quiet.say(f"🌊 Checking the latest version of {package_name}...")
     latest = fetch_max_version(package_name, arch, timeout)
 
     # 包名与 bin_name 不一定相同（choma -> ChOma），而 bin/ 与 links/ 用的是 bin_name
@@ -198,13 +198,13 @@ def handle_upgrade(input_string):
         print(f"{YELLOW}🌊 Leaving it in place; nothing was downloaded.{RESET}")
     elif latest in installed:
         keep = latest
-        print(f"{GREEN}🌊 {bin_name} is already at the latest version ({latest}).{RESET}")
+        quiet.say(f"{GREEN}🌊 {bin_name} is already at the latest version ({latest}).{RESET}")
     else:
         keep = latest
         if installed:
-            print(f"🌊 Upgrading {bin_name}: {installed[0]} -> {latest}")
+            quiet.say(f"🌊 Upgrading {bin_name}: {installed[0]} -> {latest}")
         else:
-            print(f"🌊 {bin_name} is not installed; installing {latest}.")
+            quiet.say(f"🌊 {bin_name} is not installed; installing {latest}.")
         # 整个安装流水线（含依赖、路径重写、建链接）都复用 install，
         # 只把包名换成「包名@最新版本」，其余旗标原样带下去
         install_words = list(words)
@@ -224,7 +224,7 @@ def handle_upgrade(input_string):
             from linker import link_package
             linked = link_package(bin_name, keep)
             if linked:
-                print(f"🌊 Linked {bin_name} -> {bin_name}@{linked}")
+                quiet.say(f"🌊 Linked {bin_name} -> {bin_name}@{linked}")
         except Exception as error:
             print(f"{YELLOW}🌊 Warning: could not re-point the unversioned link ({error}).{RESET}")
 
@@ -236,5 +236,5 @@ if __name__ == "__main__":
     try:
         handle_upgrade(" ".join(sys.argv[1:]))
     except KeyboardInterrupt:
-        print("🌊 Operation cancelled by user.")
+        quiet.say("🌊 Operation cancelled by user.")
         sys.exit(130)

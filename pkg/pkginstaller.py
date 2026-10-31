@@ -329,15 +329,21 @@ def handle_download_args(input_string):
 
     # 1. --skip-ssl 安全询问
     if "--skip-ssl" in flags:
-        print('🌊 You selected --skip-ssl, this will skip SSL certificate verification, which may cause security risks. Are you sure?')
-        try:
-            confirm = input().strip()
-        except (EOFError, KeyboardInterrupt):
-            # 非交互（CI / 脚本里 stdin 是 /dev/null）读不到答复：按拒绝处理，
-            # 也就是不跳过 SSL 校验 —— 缺省往安全的方向倒。
-            confirm = ""
-        if confirm in ("Y", "y"):
+        if quiet.is_silent():
+            # 静默模式不提问，也**不**改走「按拒绝处理」那条路：
+            # 用户已经把旗标写出来了，那就是他的意思（与 -X 同一条原则）。
+            # 若这里默默拒绝，装失败时会抛一个 SSL 错误，而用户以为自己已经跳过了。
             config["skip_ssl_verify"] = True
+        else:
+            print('🌊 You selected --skip-ssl, this will skip SSL certificate verification, which may cause security risks. Are you sure?')
+            try:
+                confirm = input().strip()
+            except (EOFError, KeyboardInterrupt):
+                # 非交互（CI / 脚本里 stdin 是 /dev/null）读不到答复：按拒绝处理，
+                # 也就是不跳过 SSL 校验 —— 缺省往安全的方向倒。
+                confirm = ""
+            if confirm in ("Y", "y"):
+                config["skip_ssl_verify"] = True
 
     # 2. verbose 判定
     if "-v" in flags or "--verbose" in flags:

@@ -23,6 +23,10 @@ RESET = '\033[0m'
 from configpaths import assert_inside, assert_inside_entry, load_base_dir, require_safe_token
 import quiet
 
+# 只取「任何命令都接受」的那一组；模块名不用 flags ——
+# 这个函数里已经有个局部变量叫 flags（argv 里剥出来的旗标集合）。
+from flags import GLOBAL as GLOBAL_FLAGS
+
 
 BASE_DIR = load_base_dir()
 BIN_DIR = BASE_DIR / "bin"
@@ -363,7 +367,11 @@ def handle_uninstall(input_string):
     operands = [word for word in parts[2:] if not word.startswith("-")]
     keep_link = "--unlink" in flags
 
-    for unknown in sorted(flags - {"--unlink"}):
+    # `-C` / `-v` / `--proxy` 这些在帮助里写着「can be used with any command」，
+    # 却在这里被当成未知旗标告警 —— 于是 `wave uninstall x -sv` 在静默模式下
+    # 也会漏出一行，而那句话本身还是错的。帮助是承诺，这里按承诺放行。
+    tolerated = {"--unlink"} | GLOBAL_FLAGS
+    for unknown in sorted(flags - tolerated):
         print(f"{YELLOW}🌊 Warning: unknown flag '{unknown}' ignored.{RESET}")
 
     if not operands:
