@@ -230,6 +230,46 @@ gh release view "$TAG" -R MacWaveOrg/MacWave --json assets --jq '.assets | lengt
   先确认触发，再说「绿」。
 - 合并提交内容零变化时也应重跑一遍确认。
 
+#### 两条覆盖的范围不同，一条绿不能替另一条
+
+`random-test` 只在 GitHub Actions 里跑，CircleCI 没有它；CircleCI 的离线段
+GitHub 也跑，但慢得多。**2026-10-31 发 4.1.5 时实测过**：提交 `668083c` 的
+CircleCI 是绿的，而 GitHub 的 `random-test (3.15)` 因为一处预测错误红了。
+只看一边就会把红当成绿。
+
+#### 本机怎么查 CircleCI
+
+装一次（1.13 起 `setup` 改成必须显式传参、且会校验 token，不再支持交互式）：
+
+```bash
+brew install circleci
+circleci auth login          # 浏览器授权，不产生长期 token
+```
+
+查最近几次运行 —— **必须在仓库目录里跑**，否则它读不到 git remote 推不出项目：
+
+```bash
+cd MacWave
+circleci run list --project gh/MacWaveOrg/MacWave --branch 4.1 --limit 5
+```
+
+输出里 `Status` 一列就是结论（`succeeded` / `failed` / `running`）。单个运行看细节：
+
+```bash
+circleci run get <ID>            # ID 是上面表格里那一列
+circleci workflow list           # 该运行里有哪些 job
+```
+
+若改用 Personal API Token 而不是浏览器授权，**不要用 `circleci setup`**（token 会
+留在 shell 历史里），直接写配置文件（`read -rs` 不回显）：
+
+```bash
+mkdir -p ~/.circleci && umask 077
+read -rsp "token: " T; echo
+printf 'host: https://circleci.com\ntoken: %s\n' "$T" > ~/.circleci/cli.yml
+unset T && chmod 600 ~/.circleci/cli.yml
+```
+
 ---
 
 ## 三、为什么 `configdata` 必须**先**改
