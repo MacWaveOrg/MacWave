@@ -61,20 +61,20 @@ MacWave 是一个**面向 macOS 的包管理器**，用于分发 macOS 软件开
 
 ```bash
 # 脚本已在本地
-bash install.sh --silent --dir-option=1
+bash install.sh --ci --dir-option=1
 
 # 直接从仓库执行
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/install.sh)" \
-  -- --silent --dir-option=2
+  -- --ci --dir-option=2
 ```
 
-`--silent`（`-S`）会自动应答目录菜单与许可协议；当选中的目录需要提权时，它要求免密 sudo
+`--ci`（也可写 `--CI`）会自动应答目录菜单与许可协议；当选中的目录需要提权时，它要求免密 sudo
 或以 root 运行。`--dir-option=N` 免菜单直接选定第 `N` 项（Intel 机器为 1-4，Apple 芯片为
 1-3）；自定义项要附上路径，写成 `--dir-option=4=/opt/my-macwave`，或直接写 `--dir-option=~/my-macwave`。
 完整参数列表可运行 `install.sh --help` 查看。
 
 > **注意参数的位置。** 写成
-> `/bin/bash -c "$(curl ...)" --silent` 会让 `--silent` 变成脚本名（`$0`），从而被静默丢弃；
+> `/bin/bash -c "$(curl ...)" --ci` 会让 `--ci` 变成脚本名（`$0`），从而被静默丢弃；
 > 安装器检测到这种用法时会给出警告。正确写法是把参数放在 `--` 之后。
 
 `uninstall.sh` 同样支持脚本化调用：`--force` 跳过确认，而确认本身需要一个终端

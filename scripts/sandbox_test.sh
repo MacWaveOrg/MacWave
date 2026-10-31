@@ -87,7 +87,7 @@ count_in() {
 
 # 目录菜单的项数随架构变化：Intel 多一个 /usr/local/macwave。
 # 每行是「--dir-option= 后面的值 / 安装目录 / 配置目录 / 显示路径」；自定义项要把
-# 目录一起带上（否则 --silent 下会以「缺路径」提前退出，走不到沙箱边界）。
+# 目录一起带上（否则 --ci 下会以「缺路径」提前退出，走不到沙箱边界）。
 case "$(uname -m)" in
     x86_64|amd64)
         CUSTOM_OPTION=4
@@ -152,7 +152,7 @@ base_dir_for_args() {
                 return 0 ;;
         esac
     done
-    # 没给 --dir-option 时，--silent 走第 1 项
+    # 没给 --dir-option 时，--ci 走第 1 项
     echo "$FAKE_HOME/.local/macwave"
     return 0
 }
@@ -209,7 +209,7 @@ scenario_system_dirs() {
     while read -r arg dir cfg display; do
         [[ -z "$arg" ]] && continue
         reset_state
-        install_run --silent "--dir-option=$arg"
+        install_run --ci "--dir-option=$arg"
         rc=$?
         check "--dir-option=$arg 在沙箱外应失败" "$([[ "$rc" -ne 0 ]] && echo yes || echo no)" "yes"
         contains "  --dir-option=$arg 失败时给出指引" "$OUT" "Installation did not finish"
@@ -225,7 +225,7 @@ scenario_install_dirs() {
     echo "========== 1a. 用户级安装目录（端到端） =========="
 
     reset_state
-    install_run --silent --dir-option=1
+    install_run --ci --dir-option=1
     check "选项 1 安装成功" "$?" "0"
     check "选项 1 安装树就位" "$([[ -d "$FAKE_HOME/.local/macwave" ]] && echo yes || echo no)" "yes"
     check "选项 1 文件数 20" \
@@ -244,7 +244,7 @@ scenario_install_dirs() {
 
     # 家目录内的自定义目录：无需提权，走的是同一条用户级分支
     reset_state
-    install_run --silent "--dir-option=$CUSTOM_OPTION=$FAKE_HOME/my-macwave"
+    install_run --ci "--dir-option=$CUSTOM_OPTION=$FAKE_HOME/my-macwave"
     check "家目录内自定义目录安装成功" "$?" "0"
     check "自定义目录安装树就位" "$([[ -d "$FAKE_HOME/my-macwave" ]] && echo yes || echo no)" "yes"
     check "自定义目录的配置落在用户级" \
@@ -252,7 +252,7 @@ scenario_install_dirs() {
 
     # --dir-option=<路径> 简写：省掉菜单号码，直接给目录（等同自定义项）
     reset_state
-    install_run --silent "--dir-option=$FAKE_HOME/shorthand-macwave"
+    install_run --ci "--dir-option=$FAKE_HOME/shorthand-macwave"
     check "简写 --dir-option=<路径> 安装成功" "$?" "0"
     check "简写安装树就位" "$([[ -d "$FAKE_HOME/shorthand-macwave" ]] && echo yes || echo no)" "yes"
     check "简写配置落在用户级" \
@@ -260,7 +260,7 @@ scenario_install_dirs() {
 
     # 路径带空格：需要用户自己加引号，其余照常
     reset_state
-    install_run --silent "--dir-option=$FAKE_HOME/space dir"
+    install_run --ci "--dir-option=$FAKE_HOME/space dir"
     check "空格路径安装成功" "$?" "0"
     check "空格路径安装树就位" "$([[ -d "$FAKE_HOME/space dir" ]] && echo yes || echo no)" "yes"
     check "空格路径配置落在用户级" \
@@ -272,11 +272,11 @@ scenario_cli_errors() {
     echo "========== 2. 参数校验 =========="
 
     reset_state
-    install_run --silent "--dir-option=$CUSTOM_OPTION"
-    check "--silent 下自定义项缺路径应报错" "$?" "1"
+    install_run --ci "--dir-option=$CUSTOM_OPTION"
+    check "--ci 下自定义项缺路径应报错" "$?" "1"
 
     reset_state
-    install_run --silent --dir-option=9
+    install_run --ci --dir-option=9
     check "--dir-option=9 越界应报错" "$?" "1"
 
     reset_state
@@ -284,12 +284,12 @@ scenario_cli_errors() {
     check "未知参数应报错" "$?" "1"
 
     reset_state
-    install_run --silent "--dir-option=$CUSTOM_OPTION=../evil"
+    install_run --ci "--dir-option=$CUSTOM_OPTION=../evil"
     check "自定义目录拒绝路径穿越" "$?" "1"
 
     # 给非自定义项传目录：照抄另一架构的编号时最危险的用法
     reset_state
-    install_run --silent "--dir-option=1=/tmp/x"
+    install_run --ci "--dir-option=1=/tmp/x"
     check "非自定义项带目录应报错" "$?" "1"
 
     reset_state
@@ -303,7 +303,7 @@ scenario_agreement() {
     echo "========== 3. 许可协议：顺序与拒绝后的回滚 =========="
 
     reset_state
-    install_run --silent --dir-option=1
+    install_run --ci --dir-option=1
     local n_agree n_done
     n_agree=$(grep -n "Please read the agreement" "$OUT" | head -1 | cut -d: -f1)
     n_done=$(grep -n "Installation complete" "$OUT" | head -1 | cut -d: -f1)
@@ -330,7 +330,7 @@ scenario_mid_failure() {
     local victim="$MIRROR_BASE/lib/help.py" rc
     mv "$victim" "$victim.off"
     reset_state
-    install_run --silent --dir-option=1
+    install_run --ci --dir-option=1
     rc=$?
     check "中途失败时退出码非 0" "$([[ "$rc" -ne 0 ]] && echo yes || echo no)" "yes"
     contains "失败时说明安装未完成" "$OUT" "Installation did not finish"
@@ -343,7 +343,7 @@ scenario_mid_failure() {
     mv "$victim.off" "$victim"
 
     reset_state
-    install_run --silent --dir-option=1
+    install_run --ci --dir-option=1
     check "修好后重跑可自愈" "$?" "0"
     check "自愈后文件数 20" \
         "$(find "$FAKE_HOME/.local/macwave" -type f | wc -l | tr -d ' ')" "20"
@@ -356,7 +356,7 @@ scenario_uninstall_confirm() {
 
     # 5.1 无终端：必须拒绝，不能把 EOF 当成同意
     reset_state
-    install_run --silent --dir-option=1
+    install_run --ci --dir-option=1
     run_without_tty "$SANDBOX_DIR/source-uninstall.sh" > "$OUT" 2>&1
     check "无终端时退出码非 0" "$([[ "$?" -ne 0 ]] && echo yes || echo no)" "yes"
     check "无终端时什么都不删" \
@@ -364,7 +364,7 @@ scenario_uninstall_confirm() {
     contains "无终端时提示改用 --force" "$OUT" "--force"
 
     # 5.2 回答 n → 取消
-    install_run --silent --dir-option=1
+    install_run --ci --dir-option=1
     uninstall_copy_fresh
     run_on_pty n "$SCRATCH/uninstall.sh" > "$OUT" 2>&1
     check "答 n 时取消卸载" \
@@ -372,7 +372,7 @@ scenario_uninstall_confirm() {
     contains "答 n 时输出已取消" "$OUT" "Uninstall cancelled"
 
     # 5.3 回答 y → 删除
-    install_run --silent --dir-option=1
+    install_run --ci --dir-option=1
     uninstall_copy_fresh
     run_on_pty y "$SCRATCH/uninstall.sh" > "$OUT" 2>&1
     check "答 y 时卸载完成" \
@@ -380,7 +380,7 @@ scenario_uninstall_confirm() {
 
     # 5.4 --force：无需终端
     reset_state
-    install_run --silent --dir-option=1
+    install_run --ci --dir-option=1
     uninstall_run --force
     check "--force 无人值守卸载成功" "$?" "0"
     check "--force 后安装树已删" \
@@ -391,7 +391,7 @@ scenario_uninstall_confirm() {
 
     # 5.5 --remove-user 只为与 LinuxWave 的参数兼容，不该出错
     reset_state
-    install_run --silent --dir-option=1
+    install_run --ci --dir-option=1
     uninstall_run --force --remove-user
     check "--force --remove-user 仍成功" "$?" "0"
 }
@@ -401,7 +401,7 @@ scenario_self_delete() {
     echo "========== 6. 卸载器自删（\$0 的取值） =========="
 
     reset_state
-    install_run --silent --dir-option=1
+    install_run --ci --dir-option=1
     check "安装成功（自删场景前置）" "$?" "0"
     uninstall_copy_fresh
     /bin/bash "$SCRATCH/uninstall.sh" --force > "$OUT" 2>&1
@@ -409,14 +409,14 @@ scenario_self_delete() {
 
     # 用文档推荐的 /bin/bash -c 运行时 $0 是解释器自身；曾经这里会把 /bin/bash 删掉
     reset_state
-    install_run --silent --dir-option=1
+    install_run --ci --dir-option=1
     uninstall_run --force
     check "以 /bin/bash -c 运行卸载成功" "$?" "0"
     check "以 /bin/bash -c 运行不误删解释器" "$([[ -x /bin/bash ]] && echo yes || echo no)" "yes"
 
     # $0 是 `--` 时（带参数的推荐写法）也不该自删或报错
     reset_state
-    install_run --silent --dir-option=1
+    install_run --ci --dir-option=1
     /bin/bash -c "$(cat "$SANDBOX_DIR/source-uninstall.sh")" -- --force > "$OUT" 2>&1
     check "带参数的推荐写法卸载成功" "$?" "0"
     check "带参数的推荐写法不误删解释器" "$([[ -x /bin/bash ]] && echo yes || echo no)" "yes"
@@ -445,7 +445,7 @@ scenario_link_regression() {
     echo "========== 8. 软链接回归（复用 link_test.sh） =========="
 
     reset_state
-    install_run --silent --dir-option=1
+    install_run --ci --dir-option=1
     check "安装成功（软链接回归前置）" "$?" "0"
 
     if [[ ! -f "$MIRROR_BASE/scripts/link_test.sh" ]]; then

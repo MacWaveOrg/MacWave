@@ -3,7 +3,7 @@
 # MacWave 🌊 Official Installer
 # This script downloads wave.py, installs dependencies, and configures PATH.
 # Usage: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/main/lib/install.sh)"
-# Unattended: /bin/bash -c "$(curl -fsSL .../main/lib/install.sh)" -- --silent --dir-option=1
+# Unattended (CI): /bin/bash -c "$(curl -fsSL .../main/lib/install.sh)" -- --ci --dir-option=1
 
 # -------------------- 测试根（隔离） --------------------
 # MACWAVE_TEST 指向一个目录时，把它当作 /：HOME 和所有系统路径都挂到它下面，
@@ -242,7 +242,7 @@ print_dir_menu() {
 # 命令行参数（批量 / 脚本化安装）
 # ==========================================
 
-CLI_SILENT=false
+CLI_CI=false
 CLI_DIR_OPTION=""
 CLI_CUSTOM_DIR=""
 # 默认从我们自己的 Python 仓库取解释器；这个开关让它回上游取
@@ -256,7 +256,7 @@ Usage:
   install.sh [options]
 
 Options:
-  -S, --silent            No interaction at all: the directory menu and the
+      --ci, --CI          No interaction at all: the directory menu and the
                           agreement are answered automatically. Without
                           --dir-option the default (option 1) is used.
                           Requires passwordless sudo when privilege is needed.
@@ -275,20 +275,20 @@ Directory menu:
 $(print_dir_menu | sed 's/^/  /')
 
 Examples:
-  install.sh --silent --dir-option=1
-  install.sh -S --dir-option=2
-  install.sh --silent --dir-option=$CUSTOM_OPTION=/opt/my-macwave
-  install.sh --silent --dir-option=/opt/my-macwave
+  install.sh --ci --dir-option=1
+  install.sh --CI --dir-option=2
+  install.sh --ci --dir-option=$CUSTOM_OPTION=/opt/my-macwave
+  install.sh --ci --dir-option=/opt/my-macwave
 
 Running it straight from the repository (options go after '--'):
-  /bin/bash -c "\$(curl -fsSL <url>)" -- --silent --dir-option=1
+  /bin/bash -c "\$(curl -fsSL <url>)" -- --ci --dir-option=1
 USAGE_EOF
 }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        -S|--silent)
-            CLI_SILENT=true
+        --ci|--CI)
+            CLI_CI=true
             ;;
         --dir-option=*)
             _value="${1#--dir-option=}"
@@ -317,7 +317,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # 通过管道安装时，选项很容易被当成脚本名传进来：
-#   bash -c "$(curl ...)" --silent     ← --silent 变成 $0，被静默丢掉
+#   bash -c "$(curl ...)" --ci         ← --ci 变成 $0，被静默丢掉
 # 这里明确提示，避免「静默模式没生效、脚本却卡在交互上」。
 case "$0" in
     --) ;;              # 正确写法：`--` 之后的参数才轮到脚本
@@ -345,8 +345,8 @@ if [[ -n "$CLI_CUSTOM_DIR" && "$CLI_DIR_OPTION" != "$CUSTOM_OPTION" ]]; then
     exit 1
 fi
 
-if [[ "$CLI_DIR_OPTION" == "$CUSTOM_OPTION" && -z "$CLI_CUSTOM_DIR" && "$CLI_SILENT" == "true" ]]; then
-    echo -e "${RED_BOLD}🌊 Error: --dir-option=$CUSTOM_OPTION needs a directory in --silent mode.${RESET}" >&2
+if [[ "$CLI_DIR_OPTION" == "$CUSTOM_OPTION" && -z "$CLI_CUSTOM_DIR" && "$CLI_CI" == "true" ]]; then
+    echo -e "${RED_BOLD}🌊 Error: --dir-option=$CUSTOM_OPTION needs a directory in --ci mode.${RESET}" >&2
     echo -e "${RED_BOLD}🌊 Use --dir-option=$CUSTOM_OPTION=/some/dir${RESET}" >&2
     exit 1
 fi
@@ -380,15 +380,15 @@ echo ""
 echo "🌊 Detected architecture: $ARCH"
 
 # ==========================================
-# 选择安装目录（交互式 / --dir-option / --silent 默认）
+# 选择安装目录（交互式 / --dir-option / --ci 默认）
 # ==========================================
 
 if [[ -n "$CLI_DIR_OPTION" ]]; then
     choice="$CLI_DIR_OPTION"
     echo "🌊 Directory option: $choice (from --dir-option)"
-elif [[ "$CLI_SILENT" == "true" ]]; then
+elif [[ "$CLI_CI" == "true" ]]; then
     choice="1"
-    echo "🌊 --silent: using the default directory option 1."
+    echo "🌊 --ci: using the default directory option 1."
 else
     echo -e "${YELLOW}Where do you want to install MacWave? (Enter the number)${RESET}"
     print_dir_menu
@@ -444,10 +444,10 @@ run_cmd() {
 }
 
 if [[ "$NEED_SUDO" == "true" ]]; then
-    if [[ "$CLI_SILENT" == "true" ]]; then
-        # --silent 不能停下来等密码：要么已经是 root，要么已有免密 sudo
+    if [[ "$CLI_CI" == "true" ]]; then
+        # --ci 不能停下来等密码：要么已经是 root，要么已有免密 sudo
         if ! sudo -n true 2> /dev/null; then
-            echo -e "${RED_BOLD}🌊 Error: this install needs privilege, but --silent cannot ask for a password.${RESET}" >&2
+            echo -e "${RED_BOLD}🌊 Error: this install needs privilege, but --ci cannot ask for a password.${RESET}" >&2
             echo -e "${RED_BOLD}🌊 Run as root, or configure passwordless sudo for the install user.${RESET}" >&2
             exit 1
         fi
@@ -670,7 +670,7 @@ export MACWAVE_TARGET_VERSION="$MACWAVE_VERSION"
 export MACWAVE_CURRENT_VERSION=""
 export MACWAVE_FILE_TIMEOUT=60
 export MACWAVE_NEED_SUDO="$([ "$NEED_SUDO" = "true" ] && echo 1 || echo "")"
-export MACWAVE_SILENT="$([ "$CLI_SILENT" = "true" ] && echo 1 || echo "")"
+export MACWAVE_SILENT="$([ "$CLI_CI" = "true" ] && echo 1 || echo "")"
 
 if ! bash "$UPDATE_COMMANDS_TMP"; then
     echo -e "${RED_BOLD}🌊 Error: the update commands for $MACWAVE_VERSION failed.${RESET}"
@@ -1083,8 +1083,8 @@ fi
 
 echo ""
 echo -e "${YELLOW}Please read the agreement before use (see bottom of https://macwave.org).${RESET}"
-if [[ "$CLI_SILENT" == "true" ]]; then
-    echo "🌊 --silent: the agreement is accepted automatically."
+if [[ "$CLI_CI" == "true" ]]; then
+    echo "🌊 --ci: the agreement is accepted automatically."
     agreement="y"
 else
     echo -e "${YELLOW}Have you read and agreed to the agreement? [Y/n]${RESET}"
