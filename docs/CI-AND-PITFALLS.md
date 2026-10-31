@@ -8,6 +8,16 @@
 
 ## 一、CI 长什么样
 
+项目有**两条独立的流水线**，发版时**两条都绿才算通过**（见
+[RELEASE-CHECKLIST.md](./RELEASE-CHECKLIST.md) 第 8 步）：
+
+| 流水线 | 角色 |
+| --- | --- |
+| GitHub Actions `Format Test` | 权威：macOS runner，跑全部端到端，十几分钟 |
+| CircleCI `quick-feedback` | 快速反馈：Docker、纯离线，一两分钟给结论 |
+
+CircleCI 红而 GitHub 绿，同样是**不能发版**的状态 —— 只是它更早告诉你。
+
 `.github/workflows/format-test.yml` 里两个 job，各自跑 `['3.14', '3.15']` 矩阵
 （`fail-fast: false`，一条挂了不取消另一条，否则看不出是哪个 Python 的问题）：
 

@@ -212,9 +212,23 @@ gh release view "$TAG" -R MacWaveOrg/MacWave --json assets --jq '.assets | lengt
 `want`），Release 资产不参与安装流程。附源码是为了给人看 —— 离线核对、第三方审计、
 以及「这一版到底包含哪些文件」有个确定的答案。
 
-### 第 8 步：等 CI 绿
+### 第 8 步：等 CI 绿 —— 两条流水线都要绿
 
-`Format Test` 的 4 个 job 全绿才算发布完成。合并提交内容零变化时也应重跑一遍确认。
+**GitHub Actions 与 CircleCI 都成功，才算发布完成。缺一条就不算通过。**
+
+| 流水线 | 在哪看 | 跑什么 |
+| --- | --- | --- |
+| GitHub Actions `Format Test` | 仓库 Actions 页 | 4 个 job（3.14 / 3.15 × `format-test` / `random-test`），macOS runner，含真实下载与端到端 |
+| CircleCI `quick-feedback` | CircleCI 面板 | 纯离线那批：ruff、shellcheck、`domains` / `flags` / `depsync` / `message` / `markdown` 等 |
+
+几条不能含糊的：
+
+- **任一为红就停下，不要发版。** CircleCI 只跑离线的子集，定位是「一两分钟给结论」，
+  但这不等于它是可选项 —— 它红说明这份代码本身有问题，不能因为 `Format Test` 绿就跳过。
+- **两条都在 push 时触发**，`4.1` 与 `main` 各自都要确认，不能只看一边。
+- CircleCI 需要 GitHub App 授权才会跑。面板上**看不到 pipeline** 本身就是问题，
+  先确认触发，再说「绿」。
+- 合并提交内容零变化时也应重跑一遍确认。
 
 ---
 

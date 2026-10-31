@@ -101,6 +101,17 @@ CI 会预先写好那份文件，于是同一个脚本在 CI 上读到的是宿�
 | `python3 scripts/random_test.py` | 随机化端到端，自建沙箱（随机 `HOME` + 随机 `base_dir`） |
 | `python3 scripts/random_test.py --dry-run` | 只选包与生成参数，不执行任何 `wave` 命令 |
 
+### CI 两条都要绿
+
+合并与发版的判据是**两条流水线都成功**，缺一条都不算通过：
+
+- **GitHub Actions `Format Test`** —— 权威，macOS runner，跑全部端到端（十几个分钟）；
+- **CircleCI `quick-feedback`** —— Docker、纯离线，一两分钟给结论。
+
+有一条红就停下，别因为另一条绿就放过。CircleCI 只跑离线的子集，但这不代表它是可选项；
+面板上看不到 pipeline 也不等于绿，先确认 GitHub App 触发是否还生效。
+详见 [`docs/RELEASE-CHECKLIST.md`](./docs/RELEASE-CHECKLIST.md) 第 8 步。
+
 ## 其它约定
 
 细节在 [`.cursor/rules/style.mdc`](./.cursor/rules/style.mdc)，要点：
