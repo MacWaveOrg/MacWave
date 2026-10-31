@@ -90,6 +90,9 @@ ILLEGAL_VERSIONS = ("not-a-version", "1.0.0-!!!", "..%2f..%2fetc%2fpasswd", "v1.
 
 ILLEGAL_FLAGS = ("--bogus", "-Z", "--no-such-flag", "-Q", "--definitely-not-a-flag")
 
+# 会按白名单校验旗标的命令；不在名单里的对未知旗标是静默忽略的（见 predict 的说明）。
+FLAG_VALIDATING_COMMANDS = {"install", "upgrade", "info", "mirror", "latest"}
+
 # 4.x 新增的参数。比例按代价定：离线的、只读的多跑，联网的、会改系统的少跑。
 # 归属以 docs/RELEASE-4.0.0.md ~ RELEASE-4.1.4.md 为准；`--connect-timeout` /
 # `--content-time` 还没发布（在 v4.1.4 之后），一并覆盖，免得发版时才发现没测。
@@ -1316,10 +1319,11 @@ def predict(cmd, argv, installed, links):
     if "-h" in words or "--help" in words:
         return 0, ("usage:",)
 
-    # 非法旗标一律失败，措辞随命令不同（install / latest 说 illegal option，
-    # info / mirror / list 说 unknown option），都含 "option"。
-    # selfupdate 例外：它没有旗标白名单，未知旗标会被忽略而不是报错。
-    if cmd != "selfupdate" and any(word in ILLEGAL_FLAGS for word in words):
+    # 只有校验旗标白名单的命令会因非法旗标失败。事实是实测出来的：
+    #   install / upgrade / info / mirror / latest  → 拒绝（措辞不同，但都含 "option"）
+    #   list / search / link / unlink / linkquery / selfupdate / uninstall → 静默忽略
+    # 按「一律失败」建模会让被忽略的那些误判成失败，反过来漏掉又会让拒绝的误判成成功。
+    if cmd in FLAG_VALIDATING_COMMANDS and any(word in ILLEGAL_FLAGS for word in words):
         return 1, ("option",)
 
     if cmd == "list":
