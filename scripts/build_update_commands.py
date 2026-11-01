@@ -38,19 +38,13 @@ REPO_DIR = Path(__file__).resolve().parent.parent
 #
 # 清单的唯一来源是 scripts/components.txt —— 与 lib/wave.py 的 sys.path、测试沙箱的
 # 拷贝、CI 的工作目录共用同一份。加一个顶层组件只改那份文件。
-COMPONENTS_FILE = Path(__file__).resolve().parent / "components.txt"
+# 清单由 scripts/components.py 读（与 components.sh 同源）。
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from components import names as component_names  # noqa: E402
 
-
-def installed_dirs():
-    lines = COMPONENTS_FILE.read_text(encoding="utf-8").splitlines()
-    names = (line.split("#", 1)[0].strip() for line in lines)
-    dirs = tuple(name for name in names if name)
-    if not dirs:
-        raise SystemExit(f"🌊 Error: {COMPONENTS_FILE} lists no component directory.")
-    return dirs
-
-
-INSTALLED_DIRS = installed_dirs()
+INSTALLED_DIRS = tuple(component_names())
+if not INSTALLED_DIRS:
+    raise SystemExit("🌊 Error: scripts/components.txt lists no component directory.")
 
 # 运行时由客户端生成、不从仓库复制的文件：
 #   lib/wave        启动器，write_launcher 按私有 venv 与解释器路径生成

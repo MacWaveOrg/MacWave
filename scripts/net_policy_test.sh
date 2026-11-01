@@ -143,19 +143,19 @@ def check_curl():
 def check_ssl_switch():
     problems = []
     for path in py_files():
-        if path == repo / "lib" / "tls.py":
+        if path == repo / "net" / "tls.py":
             continue
         for node in ast.walk(parse(path)):
             if isinstance(node, ast.Import):
                 for alias in node.names:
                     if alias.name.split(".")[0] in ("ssl", "urllib3"):
                         problems.append(f"{rel(path)}:{node.lineno} 直接 import {alias.name}；"
-                                        f"SSL 开关只允许出现在 lib/tls.py")
+                                        f"SSL 开关只允许出现在 net/tls.py")
             elif isinstance(node, ast.ImportFrom):
                 module = (node.module or "").split(".")[0]
                 if module in ("ssl", "urllib3"):
                     problems.append(f"{rel(path)}:{node.lineno} 直接 import {node.module}；"
-                                    f"SSL 开关只允许出现在 lib/tls.py")
+                                    f"SSL 开关只允许出现在 net/tls.py")
             elif isinstance(node, ast.Call) and any(kw.arg == "verify" for kw in node.keywords):
                 problems.append(f"{rel(path)}:{node.lineno} 自己传 verify=；"
                                 f"只允许经 tls.request_kwargs()")
@@ -166,7 +166,7 @@ CHECKS = [
     ("requests", "每个 requests 调用都带 **tls.request_kwargs()", check_requests),
     ("urlopen", "每个 urlopen 调用都带 **tls.urlopen_kwargs()", check_urlopen),
     ("curl", "每个 curl 都有超时，SSL 旗标只来自 tls.curl_flags()", check_curl),
-    ("ssl", "SSL 开关只出现在 lib/tls.py", check_ssl_switch),
+    ("ssl", "SSL 开关只出现在 net/tls.py", check_ssl_switch),
 ]
 
 for name, title, func in CHECKS:

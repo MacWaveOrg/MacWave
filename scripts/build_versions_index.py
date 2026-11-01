@@ -24,7 +24,9 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
-sys.path.insert(0, str(SCRIPT_DIR.parent / "lib"))
+import components  # noqa: E402
+
+components.add_to_sys_path()
 
 import domains  # noqa: E402
 from sync_payloads import read_record, records  # noqa: E402

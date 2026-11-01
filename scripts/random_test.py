@@ -110,7 +110,7 @@ INFO_FORMAT_FLAGS = ("--json", "--yaml", "--toml", "--raw")
 # 刻意不含 --show-password：随机测试会把命令与输出一起写进日志，而镜像地址里
 # 可能带着密码（~/.zshrc 里的 MACWAVE_*_DOMAIN）。默认的六个星号才是要验的东西。
 MIRROR_EXTRA_FLAGS = ("--only-set", "--hide-user")
-# 三档超时同源（lib/timeouts.py 的 FLAG_FIELDS），写法也同一套
+# 三档超时同源（net/timeouts.py 的 FLAG_FIELDS），写法也同一套
 TIMEOUT_FLAGS = ("--max-time", "--connect-timeout", "--content-time")
 # -s 只对会改系统的命令生效，给只读命令会被明确拒绝（4.1.4）
 READ_ONLY_COMMANDS = ("list", "search", "info", "latest", "mirror")
@@ -337,9 +337,9 @@ def latest_version_source():
     # 「最新版本」从哪个仓库读，由被测代码决定，不按分支名猜：
     #   4.0 起 selfupdate 读 Selfupdate 仓库的 macwavedata/latest.toml；
     #   3.x 读 configdata 的 versiondata/latest_version。
-    # 以 lib/domains.py 里有没有 selfupdate_latest_url 作为判据。
+    # 以 net/domains.py 里有没有 selfupdate_latest_url 作为判据。
     try:
-        domains_py = (REPO_DIR / "lib" / "domains.py").read_text()
+        domains_py = (REPO_DIR / "net" / "domains.py").read_text()
     except OSError:
         return CONFIGDATA_LATEST_URL, r'version:\s*"([^"]+)"'
     if "def selfupdate_latest_url" in domains_py:

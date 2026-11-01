@@ -111,7 +111,7 @@ def get_deps(fields):
 
 def request_timeout(input_string):
     # 超时从**原始命令行**里取，与软件包安装侧用同一套规则：
-    # lib/timeouts.py 的 FLAG_FIELDS 是唯一来源，三档（连接 / 读数据 / 总时长）
+    # net/timeouts.py 的 FLAG_FIELDS 是唯一来源，三档（连接 / 读数据 / 总时长）
     # 都从那张表来。这里不接收调用方解析好的对象，保证「命令怎么写的，就怎么生效」，
     # 也避免两处解析逻辑漂移。
     #

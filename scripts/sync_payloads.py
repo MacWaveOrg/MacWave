@@ -29,7 +29,10 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_DIR = SCRIPT_DIR.parent
-sys.path.insert(0, str(REPO_DIR / "lib"))
+sys.path.insert(0, str(SCRIPT_DIR))
+import components  # noqa: E402
+
+components.add_to_sys_path()
 
 import domains  # noqa: E402  —— 命名规则只此一份，避免脚本与客户端各写一套
 

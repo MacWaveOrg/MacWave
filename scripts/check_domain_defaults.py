@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # check_domain_defaults.py
-# 比对 lib/domains.py 与两份 shell 脚本里的域名默认值。
+# 比对 net/domains.py 与两份 shell 脚本里的域名默认值。
 #
 # install.sh 与 selfupdate.sh 各带一份域名块（它们都是被 curl 下来直接执行的，
 # 没有本地文件可以 source），domains.py 是 Python 侧的那一份。三处必须同源，
@@ -28,7 +28,7 @@ SHELL_FILES = ("lib/install.sh", "lib/selfupdate.sh")
 
 def python_defaults(repo):
     values = {}
-    for line in (repo / "lib" / "domains.py").read_text().splitlines():
+    for line in (repo / "net" / "domains.py").read_text().splitlines():
         match = DEFAULTS_RE.match(line)
         if match:
             values[match.group(1)] = match.group(2)
@@ -51,14 +51,14 @@ def main():
             expected = defaults.get(kind)
             actual = shell_default(repo, script, env_name)
             if actual != expected:
-                print(f"  {script}: {env_name} = {actual!r}, lib/domains.py = {expected!r}")
+                print(f"  {script}: {env_name} = {actual!r}, net/domains.py = {expected!r}")
                 problems += 1
 
     if problems:
         print(f"  {problems} mismatch(es): shell and Python disagree on where files come from")
         return 1
 
-    print(f"  {len(SHELL_FILES)} shell files x {len(SHELL_VARS)} domains match lib/domains.py")
+    print(f"  {len(SHELL_FILES)} shell files x {len(SHELL_VARS)} domains match net/domains.py")
     return 0
 
 

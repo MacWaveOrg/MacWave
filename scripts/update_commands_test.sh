@@ -306,11 +306,14 @@ echo "========== 10. 子目录要被递归列举 =========="
 # 钉住递归行为。
 NESTED_REPO="$WORK/nested-repo"
 rm -rf "$NESTED_REPO"
-mkdir -p "$NESTED_REPO/lib/net" "$NESTED_REPO/pkg" "$NESTED_REPO/surfboard"
+# 组件目录按清单建：清单里加了新组件（net/ 就是一个），这里自动跟上
+for component in $(sed -e 's/#.*//' "$SCRIPT_DIR/components.txt"); do
+    mkdir -p "$NESTED_REPO/$component"
+    printf '# %s\n' "$component" > "$NESTED_REPO/$component/sample.py"
+done
+mkdir -p "$NESTED_REPO/lib/nested"
 printf 'a = 1\n' > "$NESTED_REPO/lib/a.py"
-printf 'b = 2\n' > "$NESTED_REPO/lib/net/tls.py"
-printf 'c = 3\n' > "$NESTED_REPO/pkg/run.sh"
-printf 'd = 4\n' > "$NESTED_REPO/surfboard/s.sh"
+printf 'b = 2\n' > "$NESTED_REPO/lib/nested/tls.py"
 (cd "$NESTED_REPO" && git init -q . && git add -A \
     && git -c user.email=t@example.com -c user.name=t commit -qm init) 2>/dev/null
 
@@ -329,12 +332,12 @@ for path in module.files_from_git("HEAD") or []:
 PY
 )"
 
-if grep -qx "lib/net/tls.py" <<< "$NESTED_LIST"; then
+if grep -qx "lib/nested/tls.py" <<< "$NESTED_LIST"; then
     pass "子目录里的文件被递归列出"
 else
     fail "子目录里的文件没被列出（清单：$(echo "$NESTED_LIST" | tr '\n' ' ')）"
 fi
-if grep -qx "lib/net" <<< "$NESTED_LIST"; then
+if grep -qx "lib/nested" <<< "$NESTED_LIST"; then
     fail "把目录当成了文件列进清单（客户端会 404）"
 else
     pass "目录本身没有被当成文件"

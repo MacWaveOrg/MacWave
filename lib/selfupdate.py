@@ -42,7 +42,7 @@ TIMEOUT_ENV = {
 
 
 def timeouts_from(input_string):
-    """三档超时都从**原始命令行**里取，规则只有 lib/timeouts.py 一份。
+    """三档超时都从**原始命令行**里取，规则只有 net/timeouts.py 一份。
 
     返回 (原始文本字典, Budget)。原始文本要原样交给 selfupdate.sh —— 那才是
     真正发请求的一层，不能替它算好。

@@ -18,12 +18,15 @@ from configpaths import load_base_dir
 
 BASE_DIR = load_base_dir()
 LIB_DIR = BASE_DIR / "lib"
+NET_DIR = BASE_DIR / "net"
 PKG_DIR = BASE_DIR / "pkg"
 SURFBOARD_DIR = BASE_DIR / "surfboard"
 
-sys.path.insert(0, str(LIB_DIR))
-sys.path.insert(0, str(PKG_DIR))
+# 顺序与 scripts/components.txt 一致；net/ 里是传输层（domains / tls / timeouts）。
 sys.path.insert(0, str(SURFBOARD_DIR))
+sys.path.insert(0, str(PKG_DIR))
+sys.path.insert(0, str(NET_DIR))
+sys.path.insert(0, str(LIB_DIR))
 
 # 放在顶层：「未知命令」那条分支也要用它，而那条分支在分发之前
 import quiet
@@ -172,7 +175,7 @@ def main():
         from configpaths import apply_proxy_from_command_line
         apply_proxy_from_command_line(words)
 
-        # `--skip-ssl` 在这里只**记录**，真正生效要等确认之后（见 lib/tls.py）。
+        # `--skip-ssl` 在这里只**记录**，真正生效要等确认之后（见 net/tls.py）。
         # install / upgrade 会先弹一句安全询问，用户答否时不能跳过校验；
         # 其余命令没有那道询问，直接授权。
         import tls
