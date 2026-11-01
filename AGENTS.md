@@ -112,6 +112,53 @@ CI 会预先写好那份文件，于是同一个脚本在 CI 上读到的是宿�
 面板上看不到 pipeline 也不等于绿，先确认 GitHub App 触发是否还生效。
 详见 [`docs/RELEASE-CHECKLIST.md`](./docs/RELEASE-CHECKLIST.md) 第 8 步。
 
+### 随机测试里的假设必须能确定性证伪
+
+`random_test.py` 随机选包、随机拼参数去跑真实命令，再拿 `predict()` 的结果和实际退出码
+比对。这个结构有个反复咬人的失效模式：**`predict()` 里只要有一条分支是凭印象写的，
+红的是测试而不是代码**，而且由随机种子决定哪天红 —— 你不知道自己什么时候会撞上。
+
+2026-10-31 一天里它连红四次，四次都是同一类错误：把注释或经验当成了事实。
+
+| 断言 | 实际行为 | 我原来的假设 |
+| --- | --- | --- |
+| `latest --all --bogus` | 拒绝，exit 1 | 静默忽略 |
+| 未知旗标 | 只有 `install`/`upgrade`/`info`/`mirror`/`latest` 拒绝 | 所有命令都拒绝 |
+| `install -CsX` | `-X` 对 install 非法、被 `-s` 吞掉、零输出 | 抄了 upgrade 的例子，当成合法 |
+| `mirror --only-set` | 必须配 `--raw`，否则 exit 1 | 一律成功 |
+
+**规矩：新增或修改 `predict()` 的任何一条分支，先在本地把这些分支穷举钉死，再推。**
+
+做法是直接调用被测的真实解析器（`help.py`、`mirrorinfo.parse_args` 等），把所有参数组合
+跑一遍，与 `predict()` 逐组比对 —— 而不是等随机种子抽到某一组：
+
+```python
+# 例：mirror 的 7 个旗标，取 0~3 个，共 64 组，逐组比对退出码
+for n in range(4):
+    for combo in itertools.combinations(FLAGS, n):
+        ...
+```
+
+几十行、一两秒的事，比一次 CI 往返便宜得多。阶段 0（`phase_flag_sanity`）与阶段 7
+（`phase_flag_matrix`）就是把这几处踩过的假设固化成了常驻断言：以后加命令或加旗标，
+往这两处补一条，不要只靠随机抽样兜底。
+
+## 推送（仅限本仓库）
+
+**CircleCI 的额度有限**，每次 push 都要花掉一轮 `quick-feedback`。所以：
+
+- **没有实质内容的改动不要单独推。** 只改文档、README、注释、版本号这类，留在本地提交里，
+  攒到下一次真正改代码时一起推。
+- **一次改动只推一次。** 改一处推一次，额度全花在往返上，还把「是哪次提交坏的」搅浑。
+- **不要为了看 CI 变绿去推空提交或 `--allow-empty`。** 想验证行为用
+  `python3 scripts/random_test.py --dry-run` 或对应的本地脚本。
+- **提交本身不受限制** —— 本地随时可以提交，受限的只是推送频率。
+- **例外：要进发布的内容必须在打 tag 前推上去。** 文档改动攒着没问题，但
+  `docs/RELEASE-*.md` 这类要随 tag 一起交付的，得在打 tag 前那一次推送里带上，否则
+  tag 里就缺文件（3.2.1 的 tar 就少过两个文件）。
+
+这条规则只对 MacWave 生效，本机其它仓库不适用。
+
 ## 其它约定
 
 细节在 [`.cursor/rules/style.mdc`](./.cursor/rules/style.mdc)，要点：
@@ -120,7 +167,8 @@ CI 会预先写好那份文件，于是同一个脚本在 CI 上读到的是宿�
 - 注释与文档用中文；终端文案用英文（终端可能没有中文 locale）
 - 终端输出以 `🌊` 开头；但 `-sS` 的输出例外，一律不带 `🌊`（脚本要读它）
 - 报错必须给出下一步；地址进输出前必须打码
-- 测试：见上节「测试」—— 会改动系统的测试必须先设 `MACWAVE_TEST`
+- 测试：见「测试」一节 —— 会改动系统的测试必须先设 `MACWAVE_TEST`
+- 推送：见「推送」一节 —— 没有实质内容不要单独推，CircleCI 额度有限
 
 发布流程见 [`docs/RELEASE-CHECKLIST.md`](./docs/RELEASE-CHECKLIST.md)，
 加软件包见 [`docs/ADD-PACKAGE-CHECKLIST.md`](./docs/ADD-PACKAGE-CHECKLIST.md)。

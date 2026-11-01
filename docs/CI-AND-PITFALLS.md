@@ -18,6 +18,10 @@
 
 CircleCI 红而 GitHub 绿，同样是**不能发版**的状态 —— 只是它更早告诉你。
 
+两条流水线都在 push 时触发，而 **CircleCI 的额度有限**：没有实质内容的改动（只改文档、
+README、注释）不要单独推一次，攒到下一次真正改代码时一起推；也不要用空提交去试探 CI。
+这条只针对 MacWave 仓库，细则见 [AGENTS.md](../AGENTS.md) 的「推送」一节。
+
 `.github/workflows/format-test.yml` 里两个 job，各自跑 `['3.14', '3.15']` 矩阵
 （`fail-fast: false`，一条挂了不取消另一条，否则看不出是哪个 Python 的问题）：
 

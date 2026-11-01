@@ -279,6 +279,18 @@ printf 'host: https://circleci.com\ntoken: %s\n' "$T" > ~/.circleci/cli.yml
 unset T && chmod 600 ~/.circleci/cli.yml
 ```
 
+#### 少推送：CircleCI 额度有限
+
+两条流水线都在 push 时触发，CircleCI 的额度是有限的。所以发版相关的推送要克制：
+
+- **没有实质内容的改动不要单独推**：只改文档、README、注释、版本号，留在本地攒着，
+  跟下一次真正改代码的提交一起推。
+- **一次改动只推一次**；不要用空提交去「试探」CI 是否会跑。
+- **例外**：要随 tag 交付的文件（`docs/RELEASE-*.md`、`lib/`、`pkg/` 等）必须在
+  打 tag **之前**推上去 —— 文档攒着没问题，但漏推会让 tag 里缺文件（3.2.1 的 tar
+  就少过两个文件，见第 7 步）。
+- 该规则只针对 MacWave 仓库，详见 [AGENTS.md](../AGENTS.md) 的「推送」一节。
+
 ---
 
 ## 三、为什么 `configdata` 必须**先**改
