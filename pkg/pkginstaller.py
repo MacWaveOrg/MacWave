@@ -638,7 +638,7 @@ def suggest_package_name(package_name, arch, timeout=DEFAULT_TIMEOUT):
     try:
         names_url = domains.index_list_url(arch)
         response = requests.get(names_url, timeout=_as_request_timeout(timeout),
-                                headers=github_api_headers(names_url))
+                                headers=github_api_headers(names_url), **tls.request_kwargs())
         if response.status_code != 200:
             return None
         names = domains.listing_names(response.text)

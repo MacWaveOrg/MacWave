@@ -433,19 +433,22 @@ def fetch_text(url, timeout=30):
     # 带凭据的 URL 例外：urllib 不会把 user:pass@ 当成认证信息，而是把它整个当主机名，
     # 于是必然抛一次 DNS 失败才轮到 curl。取版本数据、取更新脚本都走这里，
     # 每次都白等一轮就没必要了，直接交给 curl。
+    import tls
     import subprocess
     import urllib.error
     import urllib.request
 
     if not _has_userinfo(url):
         try:
-            with urllib.request.urlopen(url, timeout=timeout) as response:
+            with urllib.request.urlopen(url, timeout=timeout,
+                                        **tls.urlopen_kwargs()) as response:
                 return response.read().decode()
         except (urllib.error.URLError, UnicodeDecodeError, OSError):
             pass
 
     result = subprocess.run(["curl", "-fsSL", "--max-time", str(max(1, int(timeout))),
-                             "--retry", "2", "--retry-delay", "2", "--retry-connrefused", url],
+                             "--retry", "2", "--retry-delay", "2", "--retry-connrefused",
+                             *tls.curl_flags(), url],
                             capture_output=True, text=True)
     if result.returncode != 0:
         return None
