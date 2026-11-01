@@ -80,12 +80,22 @@ for name in components:
         problems.append(f"lib/install.sh 没有为组件 {name} 准备目录（$BASE_DIR/{name}）")
 report("install", "lib/install.sh 为每个组件准备了目录", problems)
 
+# selfupdate.sh 也要认识每个组件：它升级前会清掉各目录的 __pycache__，
+# 漏一个就会留着旧字节码，后面排查「改了代码没生效」时非常费时间。
 problems = []
-workflow_text = workflow.read_text(encoding="utf-8")
-if "components.txt" not in workflow_text:
-    problems.append(".github/workflows/format-test.yml 仍在手写组件清单；"
-                    "应当读 scripts/components.txt")
-report("workflow", "CI 的测试沙箱读同一份清单", problems)
+selfupdate_text = (repo / "lib" / "selfupdate.sh").read_text(encoding="utf-8")
+for name in components:
+    if f"$BASE_DIR/{name}" not in selfupdate_text:
+        problems.append(f"lib/selfupdate.sh 不认识组件 {name}（$BASE_DIR/{name}）")
+report("selfupdate", "lib/selfupdate.sh 也认识每个组件", problems)
+
+problems = []
+for name, path in (("GitHub Actions", workflow),
+                   ("CircleCI", repo / ".circleci" / "config.yml")):
+    text = path.read_text(encoding="utf-8")
+    if "components.txt" not in text:
+        problems.append(f"{name} 的配置仍在手写组件清单；应当读 scripts/components.txt")
+report("workflow", "两条流水线的测试沙箱与 lint 目标都读同一份清单", problems)
 
 # 手写「三连」= 第二份清单。允许 lib/wave.py 逐行列（那是运行时的自我描述，
 # 由上面那条检查盯着），不许脚本、CI、其它模块再抄一份。

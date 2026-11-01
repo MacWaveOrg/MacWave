@@ -13,6 +13,7 @@
 
 ```
 lib/          入口与帮助
+net/          传输层（地址表、TLS 策略、三档超时）
 pkg/          安装与查询核心
 surfboard/    依赖处理
 scripts/      回归测试脚本
@@ -29,7 +30,7 @@ README.md     用户文档
 
 | 文件 | 作用 |
 | --- | --- |
-| `wave.py` | 主入口。读配置目录（`config.json`）的 `base_dir`，把 `lib/`、`pkg/`、`surfboard/` 注入 `sys.path`；用 `COMMANDS` 字典把 `install / uninstall / list / search / info / version / selfupdate / link / unlink / linkquery` 分发到对应模块，`ARGUMENTS` 处理 `-h/--help/-V/--version`；命令分发**之前**先拦下 `wave <命令> -h|--help`，交给 `help.print_command_help` 打印该命令自己的用法（否则各 handler 的白名单不认 `--help`：`install` 报错、`list` 静默忽略、`selfupdate` 会真的开始自更新） |
+| `wave.py` | 主入口。读配置目录（`config.json`）的 `base_dir`，把 `lib/`、`net/`、`pkg/`、`surfboard/` 注入 `sys.path`；用 `COMMANDS` 字典把 `install / uninstall / list / search / info / version / selfupdate / link / unlink / linkquery` 分发到对应模块，`ARGUMENTS` 处理 `-h/--help/-V/--version`；命令分发**之前**先拦下 `wave <命令> -h|--help`，交给 `help.print_command_help` 打印该命令自己的用法（否则各 handler 的白名单不认 `--help`：`install` 报错、`list` 静默忽略、`selfupdate` 会真的开始自更新） |
 | `configpaths.py` | **配置目录解析**（`find_config_dir` / `load_base_dir` / `CONFIG_FILE` / `VERSION_FILE`）：系统级 `/opt/macwave_config` 优先，其次用户级 `~/.config/macwave_config`；系统级配置损坏或缺 `base_dir` 时也回落用户级。其余模块都从这里取配置，不再各自写死路径 |
 | `configerror.py` | 启动前的环境自检：只要两处配置目录里有一处装了 MacWave 就放行；都没装且在 git 仓库里时，报错并提示用 `lib/install.sh` 正式安装 |
 | `help.py` | 帮助与版本文本：`print_custom_help`（`-h` / `--help` 的用法，命令与旗标列表与 README 的 Command Reference 对齐）、`print_version`、`print_error_help`（未知命令时先报错再打帮助）；另有 `COMMAND_HELP` 表与 `print_command_help`（`wave <命令> --help` 的子命令用法，旗标只列该 handler 白名单里真正接受的，不承诺做不到的事） |
@@ -37,6 +38,19 @@ README.md     用户文档
 | `uninstall.sh` | 卸载 MacWave 本体：读两处配置定位 `BASE_DIR`（都读不到则遍历候选路径，Intel 才把 `/usr/local/macwave` 算进候选）、确认后删除安装目录与两处配置目录、清掉 rc 文件里的 PATH 行、最后自删。确认从 **`/dev/tty`** 读，读不到就**中止并退 1**（删除不可逆，stdin 是 EOF 时不能当同意；无人值守请显式 `--force`）。自删有守卫：只有 `$0` 是**含本脚本标记的普通文件**时才删 —— 文档推荐的 `/bin/bash -c "$(curl ...)"` 下 `$0` 是解释器路径或 `--`，旧写法会把 `/bin/bash` 删掉。支持批量/脚本化卸载：`--force` 跳过确认、`--remove-user`（仅为与 LinuxWave 的参数兼容 —— MacWave 没有专用账号，实际不做任何事）、`-h/--help` |
 | `selfupdate.py` | `wave selfupdate`：拉 `configdata` 分支的 `versiondata/latest_version`，取其 `version` 与当前生效的 `VERSION.json` 比较（只比数字段，`2.3` == `2.3.0`）；已是最新则直接返回，否则把 `update_command` 中 `<<<` / `>>>` 之间的内容交给 `/bin/bash -c` 执行（用环境变量 `MACWAVE_UPDATE_VERSION` / `MACWAVE_UPDATE_BRANCH` 把目标版本与分支传下去）。因为 `bash -c "$(curl …)"` 在 curl 失败时仍返回 0，执行完会**回读 `VERSION.json` 复核**，没变就报错 |
 | `selfupdate.sh` | 自更新脚本，由 `latest_version` 的 `update_command` 调用（也可 `bash lib/selfupdate.sh [分支]`）：按「系统级 → 用户级」定位配置目录与 `BASE_DIR` → 拉 `configdata/versiondata/files_info`（一份**只写仓库路径**的缩进树，`/` 开头是安装根、以 `/` 结尾表示目录、`#` 开始是注释；缩进每层 4 空格，Tab 与之等价，也可行内直接写 `pkg/linker.py` 这样的完整路径）→ **用脚本内置的 `python3` 解析它**（不能做成单独的 `.py` 文件，否则新文件本身又得先被下载 —— 鸡生蛋）→ 逐个从 `$BRANCH` 下载并复位可执行位（`lib/wave.py` 特例装成可执行的 `lib/wave`；其余 `*.sh` 加 +x）→ 清掉 `__pycache__` → 重写 `VERSION.json`。**以后新增文件只改 configdata 的 files_info，不用再动本脚本** |
+
+### net/ —— 传输层
+
+「怎么连、连多久、连到哪」。**唯一允许发请求的层**：`pkg/` 与 `surfboard/` 里的请求
+都只调用这里的策略。
+
+| 文件 | 作用 |
+| --- | --- |
+| `domains.py` | 所有对外地址的唯一来源（七个 `MACWAVE_*_DOMAIN` 环境变量、默认值、校验与归一化） |
+| `tls.py` | `--skip-ssl` 的唯一实现：`request_kwargs()` / `urlopen_kwargs()` / `curl_flags()`，分「请求」与「授权」两段 |
+| `timeouts.py` | 三档超时（连接 / 读数据 / 总时长）的解析与折算，唯一来源是 `FLAG_FIELDS` |
+
+契约由 `scripts/net_policy_test.sh` 用 AST 检查：缺 `**tls.request_kwargs()` 之类就红。
 
 ### pkg/ —— 安装与查询核心
 
@@ -73,7 +87,7 @@ README.md     用户文档
 | `scripts/link_test.sh` | **不带版本号软链接回归**：装完自动建链接 → 不带版本号能跑 → `link` / `unlink` / `linkquery` → `-a` 批量 → 卸掉最高版自动降级（先复制一份目录造出 2.0，不依赖 infosource 真有该版本）→ `uninstall --unlink` 不降级 → `install --unlink` 不建链接 → 卸掉最后一个版本时删掉链接 |
 | `scripts/configpath_test.sh` | **配置目录解析回归**（离线）：把 `configpaths` 的两个候选目录换成临时目录，验证「系统级优先 / 用户级回落 / 系统级损坏或缺字段也回落 / 都没有则退 1」 |
 | `scripts/sandbox_test.sh` | **安装器 / 卸载器隔离回归**（仅 macOS）：用 `sandbox-exec` 起一个「默认拒绝、只允许写沙箱目录 + `/dev` + 临时目录」的沙箱，配合 `file://` 离线镜像与替身 `sudo`，**不需要网络、也写不到 `/opt`、`/usr/local`、`/etc` 与真实家目录**。64 条断言覆盖：用户级安装目录端到端、系统级目录的落位（越过沙箱边界即失败，并打印选中的安装/配置目录）、参数校验、协议顺序与拒绝后的回滚、中途失败的指引且不误删、卸载确认语义（无终端 / n / y / `--force`）、卸载器自删（`$0` 是文件 vs 解释器，且 `/bin/bash` 必须存活）、复用 `link_test.sh`。沙箱自检那组用来证明隔离真的生效 |
-| `.github/workflows/format-test.yml` | 在 `macos-latest` 上把 `lib/`、`pkg/`、`surfboard/` 部署到 `/tmp/macwave-test`，依次跑配置目录回归、依赖审计、格式回归、依赖链回归、链接回归、**selfupdate 回归** |
+| `.github/workflows/format-test.yml` | 在 `macos-latest` 上按 `scripts/components.txt` 把各组件目录部署到 `/tmp/macwave-test`，依次跑配置目录回归、依赖审计、格式回归、依赖链回归、链接回归、**selfupdate 回归** |
 
 ## 三、安装后的运行时目录
 
@@ -178,7 +192,7 @@ updatedata/{版本号}/transfer_commands      Y/y 时执行这个脚本（bash -
 
 | # | 程序 | 做什么 |
 | --- | --- | --- |
-| 1 | `lib/wave.py` | 读 `base_dir`，把 `lib/`、`pkg/`、`surfboard/` 注入 `sys.path`；按 `COMMANDS` 字典把 `install` 分发给 `pkginstaller.handle_install("wave install wget@1.25.0")` |
+| 1 | `lib/wave.py` | 读 `base_dir`，把 `lib/`、`net/`、`pkg/`、`surfboard/` 注入 `sys.path`；按 `COMMANDS` 字典把 `install` 分发给 `pkginstaller.handle_install("wave install wget@1.25.0")` |
 | 2 | `pkg/pkginstaller.py` | 解析下载参数（`-v` / `-C` / `--skip-ssl` / `--limit-rate` / `--proxy`，白名单校验）；解析包名与架构 |
 | 3 | `pkg/pkginstaller.py` | 定版本：`@版本号` → `--ver` → 都没有则调 `fetch_max_version()`（GitHub API，`MacWaveOrg/infosource` 仓库的 main，带 `?ref=main`） |
 | 4 | `pkg/pkginstaller.py` | 拉 `_wget@common`，解析出 `bin_name`（缺失即报错） |

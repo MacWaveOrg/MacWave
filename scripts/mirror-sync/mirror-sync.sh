@@ -248,7 +248,7 @@ say "第 4/6 步 · 补齐自带解释器的压缩包"
 
 # python_url.toml 记的是**上游**地址，而客户端默认从镜像的
 #   <PYTHON>/pythondata/<版本>/<文件名>
-# 取那份字节（见 lib/domains.py 的 python_archive_url）。仓库里只有 toml、没有二进制，
+# 取那份字节（见 net/domains.py 的 python_archive_url）。仓库里只有 toml、没有二进制，
 # 所以这一步必须由镜像自己做，否则装不了自带解释器。
 #
 # 两个架构都补，与这台机器是什么架构无关 —— 镜像要同时服务两种 Mac。

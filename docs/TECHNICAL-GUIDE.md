@@ -518,7 +518,7 @@ https://github.com/MacWaveOrg/Bottle/releases/download/jq/jq%401.8.2.arm64
 配置校验在拼地址之前完成：非 https（本机回环除外）、带空白或引号的值一律拒绝，
 因为它们会进 URL、也会进错误信息。值末尾的斜杠会被去掉，所以镜像地址写不写 `/` 都行。
 
-Python 与 shell 各有一份实现（`lib/domains.py` 与两份脚本里的 `mw_domain` 块，
+Python 与 shell 各有一份实现（`net/domains.py` 与两份脚本里的 `mw_domain` 块，
 后者是 `curl | bash` 执行、没有本地文件可 source）。三处的默认值由
 `scripts/check_domain_defaults.py` 比对，漂移会让 shell 下的地址和 Python 下的不一致。
 

@@ -161,10 +161,20 @@ main() {
     fi
 
     # ── 目录结构变更的迁移写在这里 ──
-    # 本版本没有变更，所以这段是空的。需要时按下面的形状追加：
-    #   按 ${MACWAVE_CURRENT_VERSION} 判断是否早于分界版本，再搬迁、改路径。
-    # 约束与以前一样：以当前用户身份执行，需要管理员权限时自己 sudo，
-    # 失败要 exit 非零，且必须幂等。
+    # 约束：以当前用户身份执行，需要管理员权限时自己 sudo，失败要 exit 非零，
+    # 且必须幂等。
+
+    # 4.1.6：传输层从 lib/ 搬到 net/。新位置的三个文件已由 install_delta 下好
+    # （发版时用 --new 把它们排在 delta 最前面），这里只清掉旧位置的同名文件。
+    # 不删其实也能跑 —— 没有代码再 import 它们 —— 但留着会让「安装树里到底有哪份
+    # tls.py」变成两说，下次改策略时容易改到没人用的那一份。
+    for stale in "$MACWAVE_INSTALL_DIR/lib/tls.py" \
+                 "$MACWAVE_INSTALL_DIR/lib/timeouts.py" \
+                 "$MACWAVE_INSTALL_DIR/lib/domains.py"; do
+        if [ -f "$stale" ]; then
+            run rm -f "$stale" || exit 1
+        fi
+    done
 
     return 0
 }

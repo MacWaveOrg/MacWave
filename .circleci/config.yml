@@ -60,25 +60,30 @@ jobs:
           # 只报告不自动修 —— 改动应当由人提交，CI 不该替人写代码。
           command: |
             python3 -m pip install --quiet ruff
-            ruff check lib pkg surfboard scripts
+            dirs="$(sed -e 's/#.*//' scripts/components.txt)"
+            ruff check $dirs scripts
 
       - run:
           name: Lint shell scripts
           # 配置在 .shellcheckrc。--severity=warning：note 级的风格建议不拦。
           command: |
             python3 -m pip install --quiet shellcheck-py
-            shellcheck -S warning lib/*.sh pkg/*.sh surfboard/*.sh scripts/*.sh
+            dirs="$(sed -e 's/#.*//' scripts/components.txt)"
+            shellcheck -S warning $(find $dirs -maxdepth 1 -name '*.sh') scripts/*.sh
 
       - run:
           name: Compile every Python file
           # 比任何测试都快，也最先抓到语法错误。
-          command: python3 -m compileall -q lib pkg surfboard scripts
+          command: |
+            dirs="$(sed -e 's/#.*//' scripts/components.txt)"
+            python3 -m compileall -q $dirs scripts
 
       - run:
           name: Check shell syntax
           # bash -n 只解析不执行，能在不跑测试的前提下抓到 if/fi、引号不配对。
           command: |
-            for file in lib/*.sh pkg/*.sh surfboard/*.sh scripts/*.sh; do
+            dirs="$(sed -e 's/#.*//' scripts/components.txt)"
+            for file in $(find $dirs -maxdepth 1 -name '*.sh') scripts/*.sh; do
                 bash -n "$file" || { echo "syntax error: $file"; exit 1; }
             done
             echo "all shell files parse"

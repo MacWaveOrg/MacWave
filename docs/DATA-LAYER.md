@@ -17,7 +17,7 @@
 
 ## 二、七个地址
 
-所有对外地址只有一个来源：[`lib/domains.py`](../lib/domains.py) 的 `ENV_NAME` / `DEFAULTS`。
+所有对外地址只有一个来源：[`net/domains.py`](../net/domains.py) 的 `ENV_NAME` / `DEFAULTS`。
 shell 侧（`install.sh`、`selfupdate.sh`）有一份逐字对应的副本，因为安装器是
 `curl | bash` 直接执行的，没有本地文件可以 `source`。
 

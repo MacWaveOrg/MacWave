@@ -194,12 +194,14 @@ jobs:
       - name: Lint Python
         run: |
           python3 -m pip install --quiet ruff
-          ruff check lib pkg surfboard scripts
+          dirs="$(sed -e 's/#.*//' scripts/components.txt)"
+          ruff check $dirs scripts
 
       - name: Lint shell
         run: |
           python3 -m pip install --quiet shellcheck-py
-          shellcheck -S warning lib/*.sh pkg/*.sh surfboard/*.sh scripts/*.sh
+          dirs="$(sed -e 's/#.*//' scripts/components.txt)"
+          shellcheck -S warning $(find $dirs -maxdepth 1 -name '*.sh') scripts/*.sh
 
   # 随机化端到端回归：每次抽 10~20 个包 + 随机参数/随机打断 + 固定命令覆盖。
   # 自带安装目录挑选、部署与清理，所以不需要上面那一套 sudo 配置。

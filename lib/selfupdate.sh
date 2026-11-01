@@ -283,6 +283,7 @@ if [[ -z "$BASE_DIR" || ! -d "$BASE_DIR" ]]; then
 fi
 
 LIB_DIR="$BASE_DIR/lib"
+NET_DIR="$BASE_DIR/net"
 PKG_DIR="$BASE_DIR/pkg"
 SURFBOARD_DIR="$BASE_DIR/surfboard"
 
@@ -522,7 +523,8 @@ fi
 # 清理旧的字节码缓存
 # ==========================================
 
-for cache in "$LIB_DIR/__pycache__" "$PKG_DIR/__pycache__" "$SURFBOARD_DIR/__pycache__"; do
+for cache in "$LIB_DIR/__pycache__" "$NET_DIR/__pycache__" \
+             "$PKG_DIR/__pycache__" "$SURFBOARD_DIR/__pycache__"; do
     if [[ -d "$cache" ]]; then
         echo "🌊 Removing stale bytecode cache: ${cache#"$BASE_DIR"/}"
         run_cmd rm -rf "$cache"

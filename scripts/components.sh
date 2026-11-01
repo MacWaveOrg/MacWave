@@ -48,5 +48,6 @@ component_paths() {
 # 内嵌 python 段很多，逐个传参容易漏。source 之后两个变量就在环境里：
 #   MACWAVE_COMPONENT_PATHS  绝对路径，冒号分隔 → split(os.pathsep)
 #   MACWAVE_COMPONENT_NAMES  目录名，空格分隔       → split()
-export MACWAVE_COMPONENT_PATHS="$(component_paths)"
-export MACWAVE_COMPONENT_NAMES="$(components)"
+MACWAVE_COMPONENT_PATHS="$(component_paths)"
+MACWAVE_COMPONENT_NAMES="$(components)"
+export MACWAVE_COMPONENT_PATHS MACWAVE_COMPONENT_NAMES

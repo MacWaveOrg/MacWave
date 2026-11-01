@@ -345,6 +345,61 @@ fi
 
 # ==========================================================
 echo
+echo "========== 11. 迁移段清掉旧位置的传输层模块 =========="
+# 4.1.6 把 tls/timeouts/domains 从 lib/ 搬到 net/。老用户升级时新文件由
+# install_delta 下到 net/，旧位置的同名文件要靠迁移段删掉 —— 留在那儿等于安装树里
+# 有两份 tls.py，下次改策略很容易改到没人用的那一份。
+if command -v python3 >/dev/null 2>&1; then
+    mkdir -p "$WORK/www3/main/net"
+    printf 'new tls\n' > "$WORK/www3/main/net/tls.py"
+    gen "$WORK/migrate.sh" --files net/tls.py >/dev/null 2>&1
+
+    INSTALL3="$WORK/install3"
+    mkdir -p "$INSTALL3/lib"
+    printf 'old wave\n' > "$INSTALL3/lib/wave.py"          # 让它走 install_delta
+    printf 'old tls\n' > "$INSTALL3/lib/tls.py"
+    printf 'old timeouts\n' > "$INSTALL3/lib/timeouts.py"
+    printf 'old domains\n' > "$INSTALL3/lib/domains.py"
+
+    PORT3=$(( 19500 + (RANDOM % 400) ))
+    ( cd "$WORK/www3" && exec python3 -m http.server "$PORT3" --bind 127.0.0.1 ) >/dev/null 2>&1 &
+    server3=$!
+    for _ in $(seq 1 40); do
+        if python3 -c "import socket,sys; s=socket.socket(); s.settimeout(0.2); sys.exit(0 if s.connect_ex(('127.0.0.1',$PORT3))==0 else 1)"; then
+            break
+        fi
+        sleep 0.1
+    done
+
+    out=$(MACWAVE_INSTALL_DIR="$INSTALL3" \
+          MACWAVE_CORE_URL="http://127.0.0.1:$PORT3" \
+          MACWAVE_BRANCH=main \
+          MACWAVE_CURRENT_VERSION=4.1.5 \
+          bash "$WORK/migrate.sh" 2>&1)
+    rc=$?
+
+    kill "$server3" 2>/dev/null || true
+    wait "$server3" 2>/dev/null || true
+
+    if [ "$rc" -eq 0 ]; then
+        pass "有迁移段时升级仍然成功"
+    else
+        fail "迁移段让升级失败了（退出码 ${rc}）：$(printf '%.160s' "$out")"
+    fi
+    expect "新位置的文件已落地" "$(cat "$INSTALL3/net/tls.py" 2>/dev/null)" "new tls"
+    for stale in lib/tls.py lib/timeouts.py lib/domains.py; do
+        if [ -e "$INSTALL3/$stale" ]; then
+            fail "旧文件还在：$stale"
+        else
+            pass "旧文件已清理：$stale"
+        fi
+    done
+else
+    echo "  ·  跳过：没有 python3 起本地服务"
+fi
+
+# ==========================================================
+echo
 echo "=========================================="
 echo -e "🌊 Passed: $PASSED"
 echo -e "🌊 Failed: $FAILED"

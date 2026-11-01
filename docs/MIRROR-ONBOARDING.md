@@ -239,7 +239,7 @@ GitHub 那 45 个走 `gh api -H "Accept: application/octet-stream"` 取，实测
 | `LINUXWAVE_BOTTLE_DOMAIN` | — | — | — | ❌ 已定义未接线 |
 | `LINUXWAVE_DEPS_DOMAIN` | — | — | — | ❌ 已定义未接线 |
 
-原因：`lib/domains.py` 的 `resolve_payload()`（决定「从哪取、文件叫什么」）**没有调用方**，
+原因：`net/domains.py` 的 `resolve_payload()`（决定「从哪取、文件叫什么」）**没有调用方**，
 `pkg/pkginstaller.py:602→641` 仍然读索引的 `url` 直连上游。所以镜像的 588 MB 产物
 在这个接线完成之前不会被任何客户端取用。已提 `LinuxWaveOrg/LinuxWave#3` 记录此状态。
 

@@ -91,7 +91,7 @@ MACWAVE_TEST=/tmp/mw-probe python3 lib/wave.py mirror
 CI 会预先写好那份文件，于是同一个脚本在 CI 上读到的是宿主配置，本地却因为文件
 不存在而一直是绿的 —— 本地绿、CI 红，报错还指不到原因。同一个脚本里有多个互不
 相干的沙箱时，每个沙箱要有**自己的**测试根，否则共享的 `MACWAVE_TEST` 会让它们
-互相看见。细节见 [`docs/CODE-MAP.md`](./docs/CODE-MAP.md) 的 2.5 节与 3.5 节。
+互相看见。细节见 [`docs/CODE-MAP.md`](./docs/CODE-MAP.md) 的 2.6 节与 3.5 节。
 
 ### 怎么跑
 

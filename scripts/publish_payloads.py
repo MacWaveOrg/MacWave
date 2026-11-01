@@ -3,7 +3,7 @@
 # publish_payloads.py
 # 把 sync_payloads.py 生成的暂存目录发布到 Bottle / Deps 仓库的 Release。
 #
-# 约定（与 lib/domains.py 的 payload_url 一一对应）：
+# 约定（与 net/domains.py 的 payload_url 一一对应）：
 #
 #   <包名>/<包名>@<版本>.<架构><扩展名>
 #   ↓

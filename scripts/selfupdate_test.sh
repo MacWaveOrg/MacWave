@@ -103,11 +103,13 @@ echo "========== parse version data =========="
 
 if python3 - "$SELFUPDATE_PY" << 'PYEOF'
 import importlib.util
+import os
 import sys
 from pathlib import Path
 
 selfupdate_py = Path(sys.argv[1])
-sys.path.insert(0, str(selfupdate_py.parent))   # selfupdate.py 会 import configpaths
+# selfupdate.py 会 import configpaths（lib/）与 domains/tls（net/），两处都要在路径上。
+sys.path[:0] = os.environ["MACWAVE_COMPONENT_PATHS"].split(os.pathsep) + [str(selfupdate_py.parent)]
 spec = importlib.util.spec_from_file_location('selfupdate_module', selfupdate_py)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)

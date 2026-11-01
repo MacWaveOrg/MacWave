@@ -186,7 +186,7 @@ Actions → Sync payloads → Run workflow
   infosource_ref = <分支>
 ```
 
-产物的形状是固定的（由 `lib/domains.py` 决定，别自己拼）：
+产物的形状是固定的（由 `net/domains.py` 决定，别自己拼）：
 
 ```
 Bottle Release tag  = <包名>
