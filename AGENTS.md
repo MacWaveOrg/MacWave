@@ -157,6 +157,30 @@ for n in range(4):
   `docs/RELEASE-*.md` 这类要随 tag 一起交付的，得在打 tag 前那一次推送里带上，否则
   tag 里就缺文件（3.2.1 的 tar 就少过两个文件）。
 
+### 纯文档推送用 `[skip ci]`
+
+CircleCI 与 GitHub Actions 都认提交信息里的 `[ci skip]` / `[skip ci]`：只要推送里
+**最后一条**提交带这个标记，整次推送都不建 pipeline，CircleCI 面板上也不会出现这条
+记录。纯文档、注释、README 的推送就走这条路 —— 既不给 CircleCI 花额度，也不用等
+`Format Test` 跑十几分钟：
+
+```bash
+git commit -m "docs: 补充发布说明 [skip ci]"
+git push origin 4.1
+```
+
+四条注意：
+
+- **只标记纯文档提交。** 碰了 `lib/`、`pkg/`、`surfboard/`、`scripts/` 就照常跑，
+  双绿门槛见上一节。
+- **`sync-release-branch.yml` 也会被跳过** —— 往 `4.1` 推 `[skip ci]` 之后 `main`
+  不会自动跟上。要么等下一次正常推送（它会自己补），要么手动跑一次：
+  `gh workflow run sync-release-branch.yml --repo MacWaveOrg/MacWave`。
+- **被跳过的提交不显示任何状态**，别把「没看到红线」当成「绿了」。要发版的内容
+  该跑还得跑，被跳过的提交从未被验证过。
+- 通过 API、定时任务触发的 pipeline **不会被跳过**，`[skip ci]` 只对 push 有效；
+  fork 的 PR 也不支持。
+
 这条规则只对 MacWave 生效，本机其它仓库不适用。
 
 ## 其它约定

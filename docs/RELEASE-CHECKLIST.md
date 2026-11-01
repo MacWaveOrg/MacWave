@@ -289,6 +289,10 @@ unset T && chmod 600 ~/.circleci/cli.yml
 - **例外**：要随 tag 交付的文件（`docs/RELEASE-*.md`、`lib/`、`pkg/` 等）必须在
   打 tag **之前**推上去 —— 文档攒着没问题，但漏推会让 tag 里缺文件（3.2.1 的 tar
   就少过两个文件，见第 7 步）。
+- **纯文档推送用 `[skip ci]`**：提交信息里带这个标记，整次推送两条流水线都不跑，
+  不花 CircleCI 额度。但 `sync-release-branch.yml` 同样会被跳过，`main` 不会自动
+  跟上，需要手动补跑：`gh workflow run sync-release-branch.yml --repo MacWaveOrg/MacWave`。
+  代码改动与发版前的提交不要带这个标记。
 - 该规则只针对 MacWave 仓库，详见 [AGENTS.md](../AGENTS.md) 的「推送」一节。
 
 ---
