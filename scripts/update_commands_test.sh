@@ -299,6 +299,49 @@ fi
 
 # ==========================================================
 echo
+echo "========== 10. 子目录要被递归列举 =========="
+# 加一个顶层组件（例如把传输层拆成 net/）时，清单生成器如果还用不递归的
+# `git ls-tree`，子目录只会出现它自己的名字 `lib/net` —— 那是一条「文件」，
+# 客户端会去 curl 它并拿到 404，安装直接失败。这里用一棵带子目录的临时仓库
+# 钉住递归行为。
+NESTED_REPO="$WORK/nested-repo"
+rm -rf "$NESTED_REPO"
+mkdir -p "$NESTED_REPO/lib/net" "$NESTED_REPO/pkg" "$NESTED_REPO/surfboard"
+printf 'a = 1\n' > "$NESTED_REPO/lib/a.py"
+printf 'b = 2\n' > "$NESTED_REPO/lib/net/tls.py"
+printf 'c = 3\n' > "$NESTED_REPO/pkg/run.sh"
+printf 'd = 4\n' > "$NESTED_REPO/surfboard/s.sh"
+(cd "$NESTED_REPO" && git init -q . && git add -A \
+    && git -c user.email=t@example.com -c user.name=t commit -qm init) 2>/dev/null
+
+NESTED_LIST="$("$PYTHON" - "$REPO_DIR" "$NESTED_REPO" <<'PY'
+import importlib.util
+import pathlib
+import sys
+
+repo, temp = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+spec = importlib.util.spec_from_file_location("builder", repo / "scripts" / "build_update_commands.py")
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+module.REPO_DIR = temp          # 只换仓库根，其余逻辑照旧
+for path in module.files_from_git("HEAD") or []:
+    print(path)
+PY
+)"
+
+if grep -qx "lib/net/tls.py" <<< "$NESTED_LIST"; then
+    pass "子目录里的文件被递归列出"
+else
+    fail "子目录里的文件没被列出（清单：$(echo "$NESTED_LIST" | tr '\n' ' ')）"
+fi
+if grep -qx "lib/net" <<< "$NESTED_LIST"; then
+    fail "把目录当成了文件列进清单（客户端会 404）"
+else
+    pass "目录本身没有被当成文件"
+fi
+
+# ==========================================================
+echo
 echo "=========================================="
 echo -e "🌊 Passed: $PASSED"
 echo -e "🌊 Failed: $FAILED"

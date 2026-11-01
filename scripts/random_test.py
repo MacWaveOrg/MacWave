@@ -146,6 +146,12 @@ LIMIT_RATE_MAX_ARTIFACT = 20 * 1024 * 1024   # --limit-rate 挑中小包：上�
 LIMIT_RATE_MIN_ARTIFACT = 2 * 1024 * 1024    # 限速测试挑够大的包才测得出速度
 
 REPO_DIR = Path(__file__).resolve().parent.parent
+
+# 运行时组件目录的唯一来源，与安装清单、lib/wave.py 的 sys.path 共用。
+COMPONENTS = [line.split("#", 1)[0].strip()
+              for line in (REPO_DIR / "scripts" / "components.txt")
+              .read_text(encoding="utf-8").splitlines()]
+COMPONENTS = [name for name in COMPONENTS if name]
 ARCH_MAP = {"aarch64": "arm64", "arm64": "arm64", "x86_64": "amd64", "amd64": "amd64"}
 
 SELFUPDATE_LATEST_URL = "https://raw.githubusercontent.com/MacWaveOrg/Selfupdate/main/macwavedata/latest.toml"
@@ -288,26 +294,22 @@ def setup_environment(layout):
         layout.created_home = True
 
     shutil.rmtree(layout.base_dir, ignore_errors=True)
-    for name in ("bin", "links", "pkg", "surfboard", "lib", "deps", "downloads/tmp"):
+    for name in ("bin", "links", *COMPONENTS, "deps", "downloads/tmp"):
         (layout.base_dir / name).mkdir(parents=True, exist_ok=True)
     (layout.base_dir / MARKER_NAME).write_text("created by scripts/random_test.py\n")
     layout.created_base = True
 
-    for src, dst in (
-        (REPO_DIR / "pkg", layout.base_dir / "pkg"),
-        (REPO_DIR / "surfboard", layout.base_dir / "surfboard"),
-        (REPO_DIR / "lib", layout.base_dir / "lib"),
-    ):
+    for name in COMPONENTS:
+        src, dst = REPO_DIR / name, layout.base_dir / name
         for item in src.iterdir():
             if item.suffix in (".py", ".sh"):
                 shutil.copy2(item, dst / item.name)
 
     shutil.copy2(REPO_DIR / "lib" / "wave.py", layout.base_dir / "lib" / "wave")
 
-    for target in list((layout.base_dir / "lib").glob("*")) + \
-                  list((layout.base_dir / "pkg").glob("*.sh")) + \
-                  list((layout.base_dir / "surfboard").glob("*.sh")) + \
-                  [layout.base_dir / "lib" / "wave"]:
+    executables = [item for name in COMPONENTS
+                   for item in list((layout.base_dir / name).glob("*"))]
+    for target in executables + [layout.base_dir / "lib" / "wave"]:
         target.chmod(0o755)
 
     layout.config_dir.mkdir(parents=True, exist_ok=True)
@@ -469,12 +471,13 @@ def get_deps(fields):
 
 def max_version(versions):
     """复用仓库自己的版本排序，避免在这里另造一套规则。"""
-    sys.path.insert(0, str(REPO_DIR / "pkg"))
+    added = [str(REPO_DIR / name) for name in COMPONENTS]
+    sys.path[:0] = added
     try:
         from pkgversionparser import get_max_version
         return get_max_version(list(versions))
     finally:
-        sys.path.pop(0)
+        del sys.path[:len(added)]
 
 
 class Tee:

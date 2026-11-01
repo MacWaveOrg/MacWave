@@ -79,18 +79,27 @@ jobs:
           {"version": "2.1.0"}
           EOF
           sudo chown -R $(whoami) /opt/macwave_config
-          mkdir -p /tmp/macwave-test/bin /tmp/macwave-test/links /tmp/macwave-test/pkg /tmp/macwave-test/surfboard /tmp/macwave-test/downloads/tmp
+          mkdir -p /tmp/macwave-test/bin /tmp/macwave-test/links /tmp/macwave-test/downloads/tmp
+          for dir in $(sed -e 's/#.*//' scripts/components.txt); do
+            mkdir -p "/tmp/macwave-test/$dir"
+          done
 
       - name: Deploy scripts
+        # 组件目录取自 scripts/components.txt —— 与安装清单（build_update_commands.py）、
+        # 运行时（lib/wave.py 的 sys.path）共用同一份。加一个顶层组件时三者自动跟着走。
         run: |
-          cp pkg/*.py pkg/*.sh /tmp/macwave-test/pkg/
-          cp surfboard/*.py surfboard/*.sh /tmp/macwave-test/surfboard/
-          chmod +x /tmp/macwave-test/surfboard/*.sh
-          mkdir -p /tmp/macwave-test/lib
-          cp lib/*.py /tmp/macwave-test/lib/
-          cp lib/*.sh /tmp/macwave-test/lib/
+          for dir in $(sed -e 's/#.*//' scripts/components.txt); do
+            mkdir -p "/tmp/macwave-test/$dir"
+            if compgen -G "$dir/*.py" > /dev/null; then
+              cp "$dir"/*.py "/tmp/macwave-test/$dir/"
+            fi
+            if compgen -G "$dir/*.sh" > /dev/null; then
+              cp "$dir"/*.sh "/tmp/macwave-test/$dir/"
+              chmod +x "/tmp/macwave-test/$dir"/*.sh
+            fi
+          done
           cp lib/wave.py /tmp/macwave-test/lib/wave
-          chmod +x /tmp/macwave-test/lib/wave /tmp/macwave-test/lib/*.sh
+          chmod +x /tmp/macwave-test/lib/wave
 
       - name: Run config path test
         run: |
@@ -101,6 +110,16 @@ jobs:
       - name: Run domain test
         run: |
           bash scripts/domains_test.sh
+
+      # 结构：components.txt 与 wave.py / install.sh / CI 是否对得上。
+      - name: Check project structure
+        run: |
+          bash scripts/structure_test.sh
+
+      # 传输层契约：每个请求点都带策略（AST 检查，不是 grep）。
+      - name: Check transport-layer contracts
+        run: |
+          bash scripts/net_policy_test.sh
 
       - name: Audit dependency data
         run: |

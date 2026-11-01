@@ -13,6 +13,7 @@ RESET='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
+source "$SCRIPT_DIR/components.sh"
 WAVE_BIN="$REPO_DIR/lib/wave.py"
 SELFUPDATE_PY="$REPO_DIR/lib/selfupdate.py"
 SELFUPDATE_SH="$REPO_DIR/lib/selfupdate.sh"
@@ -228,15 +229,16 @@ echo "========== max-time duration parsing =========="
 
 if python3 - "$SELFUPDATE_PY" "$SELFUPDATE_SH" << 'PYEOF'
 import importlib.util
+import os
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 selfupdate_py, selfupdate_sh = Path(sys.argv[1]), Path(sys.argv[2])
-sys.path.insert(0, str(selfupdate_py.parent))
-sys.path.insert(0, str(selfupdate_py.parent.parent / "pkg"))         # pkginstaller（共用时长规则）
-sys.path.insert(0, str(selfupdate_py.parent.parent / "surfboard"))  # pkginstaller 会连带 import 它
+# 组件目录由 scripts/components.txt 决定；pkginstaller（共用时长规则）与它
+# 连带 import 的模块都在其中，selfupdate.py 自己在 lib/，一并加进来。
+sys.path[:0] = os.environ["MACWAVE_COMPONENT_PATHS"].split(os.pathsep) + [str(selfupdate_py.parent)]
 
 spec = importlib.util.spec_from_file_location('selfupdate_module', selfupdate_py)
 module = importlib.util.module_from_spec(spec)
@@ -559,7 +561,7 @@ if not commands:
 missing = []
 for command, module in commands:
     if not any(os.path.exists(os.path.join(base_dir, folder, module + '.py'))
-               for folder in ('lib', 'pkg', 'surfboard')):
+               for folder in os.environ["MACWAVE_COMPONENT_NAMES"].split()):
         missing.append(f'{command} -> {module}.py')
 
 if missing:

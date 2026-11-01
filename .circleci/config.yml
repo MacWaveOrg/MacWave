@@ -106,6 +106,14 @@ jobs:
             bash scripts/domains_test.sh
 
       - run:
+          name: Project structure and transport-layer contracts
+          # components.txt 与 wave.py/install.sh/CI 是否一致；每个请求点是否都带
+          # --skip-ssl 与超时策略（AST 检查）。两条都是纯离线、秒级。
+          command: |
+            bash scripts/structure_test.sh
+            bash scripts/net_policy_test.sh
+
+      - run:
           name: Output format and update-command tests
           command: |
             bash scripts/info_format_test.sh

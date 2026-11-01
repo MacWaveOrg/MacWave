@@ -15,6 +15,7 @@ RESET='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
+source "$SCRIPT_DIR/components.sh"
 WAVE_SRC="$REPO_DIR/lib/wave.py"
 
 if [[ ! -f "$WAVE_SRC" ]]; then
@@ -69,7 +70,7 @@ TEST_ROOT="$WORK/root"
 # 一个都认不出来，12 项断言全挂 —— 而本地没有那个文件，所以本地一直是绿的。
 export MACWAVE_TEST="$TEST_ROOT"
 mkdir -p "$TEST_ROOT/opt/macwave_config" "$HOME_DIR/.config/macwave_config" "$BASE"
-cp -R "$REPO_DIR/lib" "$REPO_DIR/pkg" "$REPO_DIR/surfboard" "$BASE/"
+copy_components "$BASE/"
 printf '{"version": "4.1.0"}\n' > "$BASE/VERSION.json"
 # 两处都写：系统级是首选，用户级兜底
 printf '{"base_dir": "%s"}\n' "$BASE" > "$TEST_ROOT/opt/macwave_config/config.json"
@@ -195,7 +196,7 @@ out=$(wave latest -a)
 ok "-a 是 --all 的短形式" "$out" "1 of 3 package(s) have an update"
 
 mkdir -p "$WORK/empty/base" "$WORK/empty/home/.config/macwave_config"
-cp -R "$REPO_DIR/lib" "$REPO_DIR/pkg" "$REPO_DIR/surfboard" "$WORK/empty/base/"
+copy_components "$WORK/empty/base/"
 # 这个用例要一个「什么都没装」的根，必须与主沙箱分开：MACWAVE_TEST 是全局导出的，
 # 沿用主沙箱的测试根就会读到主沙箱那份 config.json，三条包记录全被认成已安装。
 mkdir -p "$WORK/empty/root/opt/macwave_config"

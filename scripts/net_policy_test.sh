@@ -45,7 +45,11 @@ import sys
 
 repo = pathlib.Path(sys.argv[1]).resolve()
 
-SHIPPED_DIRS = ("lib", "pkg", "surfboard")
+# 组件目录的唯一来源；扫描范围就是「装进用户机器的那些目录」。
+SHIPPED_DIRS = [line.split("#", 1)[0].strip()
+                for line in (repo / "scripts" / "components.txt")
+                .read_text(encoding="utf-8").splitlines()]
+SHIPPED_DIRS = [name for name in SHIPPED_DIRS if name]
 REQUEST_METHODS = {"get", "post", "put", "patch", "delete", "head", "request"}
 SHELL_FILES = [path for directory in SHIPPED_DIRS
                for path in sorted((repo / directory).glob("*.sh"))]
@@ -167,8 +171,8 @@ CHECKS = [
 
 for name, title, func in CHECKS:
     problems = func()
-    if problems:
-        print("DETAIL\t" + "\n".join(problems))
+    for problem in problems:
+        print(f"DETAIL\t{problem}")
     print(f"CHECK\t{name}\t{title}\t{'0' if problems else '1'}")
 PY
 

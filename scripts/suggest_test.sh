@@ -17,6 +17,7 @@ RESET='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
+source "$SCRIPT_DIR/components.sh"
 
 PASSED=0
 FAILED=0
@@ -25,12 +26,15 @@ fail() { echo -e "  ${RED_BOLD}❌ $1${RESET}"; FAILED=$((FAILED + 1)); }
 
 echo "========== closest_name =========="
 
-python3 - "$REPO_DIR" <<'PY'
+MACWAVE_COMPONENT_PATHS="$(component_paths)" \
+MACWAVE_COMPONENT_NAMES="$(components)" \
+    python3 - "$REPO_DIR" <<'PY'
+import os
 import sys
 from pathlib import Path
 
 repo = Path(sys.argv[1])
-sys.path[:0] = [str(repo / "lib"), str(repo / "pkg"), str(repo / "surfboard")]
+sys.path[:0] = os.environ["MACWAVE_COMPONENT_PATHS"].split(os.pathsep)
 
 # 只导入纯函数所在的模块。
 import importlib.util
@@ -121,15 +125,17 @@ echo "========== budget 参数的完整性 =========="
 # 但某个函数签名里根本没有 budget —— NameError 被同层的
 # `except Exception: return None, None` 吞掉，表现成「索引里没有这条记录」，
 # 看着像数据问题，实际上是代码错。用静态检查挡住这一类。
-python3 - "$REPO_DIR" <<'PY'
-import ast, sys
+MACWAVE_COMPONENT_PATHS="$(component_paths)" \
+MACWAVE_COMPONENT_NAMES="$(components)" \
+    python3 - "$REPO_DIR" <<'PY'
+import ast, os, sys
 from pathlib import Path
 
 repo = Path(sys.argv[1])
 problems = []
 
 files = []
-for folder in ("pkg", "lib", "surfboard"):
+for folder in os.environ["MACWAVE_COMPONENT_NAMES"].split():
     files.extend(sorted((repo / folder).glob("*.py")))
 
 for path in files:
@@ -175,12 +181,15 @@ fi
 
 echo "========== 三档超时 =========="
 
-python3 - "$REPO_DIR" <<'PY'
+MACWAVE_COMPONENT_PATHS="$(component_paths)" \
+MACWAVE_COMPONENT_NAMES="$(components)" \
+    python3 - "$REPO_DIR" <<'PY'
+import os
 import sys
 from pathlib import Path
 
 repo = Path(sys.argv[1])
-sys.path[:0] = [str(repo / "lib"), str(repo / "pkg"), str(repo / "surfboard")]
+sys.path[:0] = os.environ["MACWAVE_COMPONENT_PATHS"].split(os.pathsep)
 import timeouts as T
 
 problems = []

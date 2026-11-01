@@ -42,9 +42,10 @@
 
 | 路径 | 是什么 | 维护建议 |
 | --- | --- | --- |
-| `lib/` | 入口、帮助、配置解析、安装与自更新脚本 | 核心，改动需测试 |
+| `lib/` | 入口、帮助、配置解析、安装与自更新脚本，以及传输层（`tls.py` / `timeouts.py` / `domains.py`） | 核心，改动需测试 |
 | `pkg/` | 软件包安装、查询、卸载、链接、解压、版本比较 | 核心，改动需跑端到端 |
 | `surfboard/` | 依赖处理与动态库路径重写 | 最复杂，改动需跑依赖链测试 |
+| `scripts/components.txt` | **运行时组件目录的唯一清单**：安装树装哪些目录、`wave.py` 的 sys.path、测试沙箱拷哪些目录，三处都读它。加一个顶层组件只改这里 | 改动它等于改安装布局，必须同时改 `wave.py` 与 `install.sh`（`structure_test.sh` 会对着改） |
 | `scripts/` | 回归测试与数据审计；另有 `build_portable_python.sh`（自建便携解释器，只在上游归档不可达或需要镜像时用；默认路径是直连上游） | 改核心逻辑时同步更新 |
 | `docs/` | 技术手册与本文 | 随代码更新 |
 | `.github/workflows/` | 持续集成与分支镜像 | 见 2.6 |
@@ -147,14 +148,16 @@
 | `sandbox_test.sh` | 安装器/卸载器在系统沙箱里跑，宿主除沙箱外零写入，且离线 |
 | `configpath_test.sh` | 配置目录解析的优先级与容错回落 |
 | `audit_deps.py` | 数据审计：检查数据完整性，或把已装产物的实际动态库引用与声明对比 |
+| `structure_test.sh` | 项目结构自检：`scripts/components.txt` 里的每个组件，`wave.py` 都建了 sys.path、`install.sh` 都建了目录、CI 都覆盖；并且脚本与 CI 里不许再手写一份「lib pkg surfboard」 |
+| `net_policy_test.sh` | 传输层契约（AST，不是 grep）：每个 `requests` 调用都带 `**tls.request_kwargs()`、每个 `urlopen` 都带 `**tls.urlopen_kwargs()`、每个 `curl` 都有超时且 SSL 旗标只来自 `tls.curl_flags()`、SSL 开关只出现在 `lib/tls.py` |
 | `domains_test.sh` | 地址层：默认值、环境变量覆盖与校验、`url` 只在 `--install-from-source` 下被读、两份 shell 脚本的域名块与 `domains.py` 是否一致。纯离线，所以放在需联网的测试之前 |
 | `check_domain_defaults.py` | 只做一件事：比对 `domains.py` 与两份 shell 脚本里的域名默认值。三处同源，靠脚本盯着 |
 | `sync_payloads.py` | 把索引里登记的产物取回本地并按 4.0 的命名摆好，落盘前核对索引里的 sha256。`--source payload` 时从我们自己的 Release 取（给镜像站同步用） |
 | `publish_payloads.py` | 把上一步的结果发布到 `Bottle` / `Deps` 的 Release：tag 是包名，只增不删，同名同大小跳过 |
 | `backfill_file_field.py` | 数据迁移：给 3.x 的版本记录补上 4.0 需要的 `file` 字段（取 `url` 末段，与 3.x 实际用过的名字一致）。幂等 |
-| `build_update_commands.py` | 生成 `Selfupdate/macwavedata/<版本>/update_commands.sh`。**发版必跑**：漏一个文件，升级后的安装就找不到自己的命令。清单来源两条路（`--files` 或 `--ref` 读仓库树），**过滤统一在 `sanitize()` 里做**，不管走哪条都挡掉 `__pycache__` / `.pyc` / `EXCLUDED` / 不在 `lib pkg surfboard` 之下的路径 —— 4.1.1 曾因为 `--files pkg/*` 把 `pkg/__pycache__` 与 `lib/install.sh` 写进清单，客户端对前者 404、对后者覆盖了安装目录里的副本。`--delta` 过滤后为空要硬失败，否则升级会「成功」但一个文件都不换 |
+| `build_update_commands.py` | 生成 `Selfupdate/macwavedata/<版本>/update_commands.sh`。**发版必跑**：漏一个文件，升级后的安装就找不到自己的命令。清单来源两条路（`--files` 或 `--ref` 读仓库树），**过滤统一在 `sanitize()` 里做**，不管走哪条都挡掉 `__pycache__` / `.pyc` / `EXCLUDED` / 不在 `scripts/components.txt` 列出的组件目录之下的路径 —— 4.1.1 曾因为 `--files pkg/*` 把 `pkg/__pycache__` 与 `lib/install.sh` 写进清单，客户端对前者 404、对后者覆盖了安装目录里的副本。`--delta` 过滤后为空要硬失败，否则升级会「成功」但一个文件都不换 |
 | `update_commands.template.sh` | 升级脚本的模板。`want` 失败一律 `exit 1`（不是 `return`）—— 调用方是一串裸的 `want`，脚本没有 `set -e`、也不看返回值，`return` 会让「有文件没下到」被当成成功。`mv` 就位、`chmod +x` 同样要检查。报错里的地址过 `redact_url`，用镜像时不会把密码打进终端 |
-| `update_commands_test.sh` | 上面两件的回归（30 条）：脏清单过滤、`--delta` 空集拒绝、可执行位、报错打码的四种输入、404 必须让整次失败、`mv` 覆盖失败（用 `chflags uchg` 制造）也必须失败 |
+| `update_commands_test.sh` | 上面两件的回归（37 条）：脏清单过滤、`--delta` 空集拒绝、可执行位、报错打码的四种输入、404 必须让整次失败、`mv` 覆盖失败（用 `chflags uchg` 制造）也必须失败 |
 | `update_commands.template.sh` | 上面那份生成脚本的模板，改清单结构时改这里（失败语义与地址打码的细节见上一行） |
 | `build_versions_index.py` | 生成索引仓库的 `versions` 文件（包名 → 版本清单） |
 | `sync_latest_pointer.py` | 把 `Selfupdate` 的 `latest.toml` 推到指定版本，供发版流程调用 |

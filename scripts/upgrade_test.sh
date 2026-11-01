@@ -19,6 +19,7 @@ RESET='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
+source "$SCRIPT_DIR/components.sh"
 
 if [[ ! -f "$REPO_DIR/lib/wave.py" ]]; then
     echo -e "${RED_BOLD}🌊 Error: wave.py not found under $REPO_DIR${RESET}"
@@ -50,11 +51,12 @@ check() {
 echo "========== 参数解析（离线） =========="
 
 python3 - "$REPO_DIR" << 'PYEOF'
+import os
 import sys
 from pathlib import Path
 
 repo = Path(sys.argv[1])
-sys.path[:0] = [str(repo / "pkg"), str(repo / "surfboard"), str(repo / "lib")]
+sys.path[:0] = os.environ["MACWAVE_COMPONENT_PATHS"].split(os.pathsep)
 
 import upgrader
 from pkginstaller import first_package_token, package_index
@@ -146,7 +148,7 @@ cat > "$WORK/harness.py" << PYEOF
 import os, sys
 
 os.environ["MACWAVE_TEST"] = "$ROOT"
-sys.path[:0] = ["$REPO_DIR/pkg", "$REPO_DIR/surfboard", "$REPO_DIR/lib"]
+sys.path[:0] = [p for p in "$(component_paths)".split(":") if p]
 
 import upgrader, pkginstaller
 from configpaths import load_base_dir
@@ -278,7 +280,7 @@ printf '#!/bin/sh\n' > "$BASE/bin/zzz@1.0/zzz"
 cat > "$WORK/fail_one.py" <<'PYEOF2'
 import os, sys
 os.environ["MACWAVE_TEST"] = os.environ["TEST_ROOT"]
-sys.path[:0] = [os.environ["PKG"], os.environ["SURF"], os.environ["LIB"]]
+sys.path[:0] = os.environ["MACWAVE_COMPONENT_PATHS"].split(os.pathsep)
 import upgrader, pkginstaller, latest
 
 
@@ -307,7 +309,7 @@ try:
 except SystemExit as request:
     raise SystemExit(request.code or 0)
 PYEOF2
-TEST_ROOT="$ROOT" PKG="$REPO_DIR/pkg" SURF="$REPO_DIR/surfboard" LIB="$REPO_DIR/lib" \
+TEST_ROOT="$ROOT" MACWAVE_COMPONENT_PATHS="$(component_paths)" \
     python3 "$WORK/fail_one.py" > "$WORK/fail_one.log" 2>&1 && FAIL_ONE_RC=0 || FAIL_ONE_RC=$?
 check "一个包失败，其余的照常升级" \
     "$(cd "$BASE/bin" && ls -1 | sort | tr '\n' ' ' | sed 's/ $//')" "jq@1.6 jq@1.7.1 zzz@1.0"

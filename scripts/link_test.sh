@@ -14,6 +14,7 @@ RESET='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
+source "$SCRIPT_DIR/components.sh"
 WAVE_BIN="$REPO_DIR/lib/wave.py"
 
 if [[ ! -f "$WAVE_BIN" ]]; then
@@ -148,9 +149,10 @@ check "--unlink 后仍指向 2.0" "$(python3 "$WAVE_BIN" linkquery "$PKG")" "�
 
 echo ""
 echo "========== 6. 安装器接受 --unlink（离线）=========="
-FLAG_CHECK=$(cd "$BASE_DIR" && python3 -c "
+FLAG_CHECK=$(cd "$BASE_DIR" && MACWAVE_COMPONENT_NAMES="$(components)" python3 -c "
+import os
 import sys
-sys.path[:0] = ['lib', 'pkg', 'surfboard']
+sys.path[:0] = os.environ['MACWAVE_COMPONENT_NAMES'].split()
 import pkginstaller as p
 ok = '--unlink' in p.ALLOWED_FLAGS and '--unlink' in p.parse_flags('wave install test_bin_zip@1.0 --unlink')
 print('yes' if ok else 'no')

@@ -16,6 +16,7 @@ RESET='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
+source "$SCRIPT_DIR/components.sh"
 WAVE_SRC="$REPO_DIR/lib/wave.py"
 
 if [[ ! -f "$WAVE_SRC" ]]; then
@@ -64,7 +65,7 @@ trap cleanup EXIT
 HOME_DIR="$WORK/home"
 BASE="$WORK/base"
 mkdir -p "$HOME_DIR/.config/macwave_config" "$BASE"
-cp -R "$REPO_DIR/lib" "$REPO_DIR/pkg" "$REPO_DIR/surfboard" "$BASE/"
+copy_components "$BASE/"
 printf '{"version": "4.1.0"}\n' > "$BASE/VERSION.json"
 printf '{"base_dir": "%s"}\n' "$BASE" > "$HOME_DIR/.config/macwave_config/config.json"
 

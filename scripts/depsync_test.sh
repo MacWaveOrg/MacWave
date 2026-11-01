@@ -19,6 +19,7 @@ RESET='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
+source "$SCRIPT_DIR/components.sh"
 
 PASSED=0
 FAILED=0
@@ -27,7 +28,8 @@ fail() { echo -e "  ${RED_BOLD}❌ $1${RESET}"; FAILED=$((FAILED + 1)); }
 
 echo "========== 依赖声明一致性 =========="
 
-python3 - "$REPO_DIR" <<'PY'
+MACWAVE_COMPONENT_NAMES="$(components)" python3 - "$REPO_DIR" <<'PY'
+import os
 import re
 import sys
 import tomllib
@@ -129,7 +131,7 @@ if match:
 # 5) 代码里真正 import 的三方库，必须都在声明里
 third_party = {"requests", "packaging", "rich", "urllib3"}
 imported = set()
-for folder in ("lib", "pkg", "surfboard", "scripts"):
+for folder in os.environ["MACWAVE_COMPONENT_NAMES"].split() + ["scripts"]:
     for path in (repo / folder).glob("*.py"):
         for line in path.read_text().splitlines():
             match = re.match(r"\s*(?:import|from)\s+([a-z0-9_]+)", line)

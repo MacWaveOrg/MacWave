@@ -97,7 +97,9 @@ CI 会预先写好那份文件，于是同一个脚本在 CI 上读到的是宿�
 
 | 命令 | 说明 |
 | --- | --- |
-| `bash scripts/<name>_test.sh` | 回归脚本，共 17 个；按上面分类判断要不要额外隔离 |
+| `bash scripts/<name>_test.sh` | 回归脚本，共 19 个；按上面分类判断要不要额外隔离 |
+| `bash scripts/structure_test.sh` | 项目结构自检：组件清单与 `wave.py` / `install.sh` / CI 是否一致。纯离线、秒级 |
+| `bash scripts/net_policy_test.sh` | 传输层契约：每个请求点是否都带策略。纯离线、秒级 |
 | `python3 scripts/random_test.py` | 随机化端到端，自建沙箱（随机 `HOME` + 随机 `base_dir`） |
 | `python3 scripts/random_test.py --dry-run` | 只选包与生成参数，不执行任何 `wave` 命令 |
 

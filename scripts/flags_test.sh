@@ -18,6 +18,7 @@ RESET='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
+source "$SCRIPT_DIR/components.sh"
 
 PASSED=0
 FAILED=0
@@ -144,7 +145,7 @@ fi
 # wave.py 拒绝在 git 检出里运行，所以先复制一份不带 .git 的运行树
 RUN_DIR=$(mktemp -d)
 trap 'rm -rf "$RUN_DIR"' EXIT
-cp -R "$REPO_DIR/lib" "$REPO_DIR/pkg" "$REPO_DIR/surfboard" "$RUN_DIR/"
+copy_components "$RUN_DIR/"
 # 没有配置文件会在 check_environment 阶段就退出，先写一份最小的
 mkdir -p "$RUN_DIR/root/opt/macwave_config"
 printf '{"base_dir": "%s"}\n' "$RUN_DIR" > "$RUN_DIR/root/opt/macwave_config/config.json"
