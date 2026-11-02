@@ -129,6 +129,9 @@ def create_link(name, version):
     if link.is_symlink() or link.exists():
         link.unlink()
 
+    # 这个链接由我们自己按固定形状生成（相对路径，永远指向 bin/ 下），不来自产物，
+    # 所以它不可能越界 —— 与「包自带的符号链接必须检查目标」那条规则（见
+    # SECURITY.md）是两回事。产物里的链接由解压产生，需要在解压后单独遍历检查。
     link.symlink_to(f"../bin/{name}@{version}/{name}")
     return link
 

@@ -120,7 +120,7 @@
 | --- | --- | --- |
 | `pkginstaller.py` | 安装编排：解析参数与架构、定版本、取元数据、取版本记录、下载、调脚本、递归装依赖、收尾建链接 | 全流程最长的一个文件；下载器支持进度条、断点续传、限速、代理、超时重试询问、磁盘空间检查 |
 | `pkginstaller.sh` | 安装入口（软件包形态） | 只做参数组装与结果落库，真正的安装动作复用依赖层的通用核心 |
-| `pkgunzip.sh` | 按扩展名解压 | 八种常规格式 + conda 特殊格式；裸 xz 走 Python 标准库；conda 只取载荷、保留符号链接、挡掉危险路径 |
+| `pkgunzip.sh` | 按扩展名解压 | 八种常规格式 + conda 特殊格式；裸 xz 走 Python 标准库；conda 只取载荷、保留符号链接、挡掉危险**路径**。注意 `filter='tar'` 不管**链接目标** —— 越界链接由解压后的 `mw_assert_no_escaping_links` 拦，规则见 `SECURITY.md` 与 TECHNICAL-GUIDE 7.5.1 |
 | `pkgversionparser.py` | 版本解析、比较、排序 | 处理预发布与社区特有后缀；约定两段与三段版本等价 |
 | `pkginfohelper.py` | `list` / `search` / `info` 三个查询命令 | 需要区分「本地已装」与「远程可装」两套数据 |
 | `upgrader.py` | 升级：取最新版本、复用安装流水线、按需清理旧版本；`--all` 逐个包升级 | 只做决策，真正的下载与安装交给 `pkginstaller`；「删哪些版本」的判定在这里，非交互时一律不删（`--all` 除外：批量模式下 `-X` 既然是对每个包说的，就直接全删、不再逐个问）。移除旧版本有四种等价写法（`--remove-old-version` / `--remove-old-versions` / `--rov` / `-X`），`-X` 也认 `-Xv` 这种簇。批量模式下单个包失败只记账，不影响其余包，最后汇总并以非零码退出 |
@@ -164,6 +164,7 @@
 | `sandbox_test.sh` | 安装器/卸载器在系统沙箱里跑，宿主除沙箱外零写入，且离线 |
 | `configpath_test.sh` | 配置目录解析的优先级与容错回落 |
 | `audit_deps.py` | 数据审计：检查数据完整性，或把已装产物的实际动态库引用与声明对比 |
+| `linksafety_test.sh` | 产物里的符号链接：树内与系统位置放行、越界拒绝（绝对路径 / 相对爬出 / 指向目录 / 悬空但指向外面）、真实漏斗拒绝且不留半成品、合法产物不被误杀 |
 | `structure_test.sh` | 项目结构自检：`scripts/components.txt` 里的每个组件，`wave.py` 都建了 sys.path、`install.sh` 都建了目录、CI 都覆盖；并且脚本与 CI 里不许再手写一份「lib pkg surfboard」 |
 | `net_policy_test.sh` | 传输层契约（AST，不是 grep）：每个 `requests` 调用都带 `**tls.request_kwargs()`、每个 `urlopen` 都带 `**tls.urlopen_kwargs()`、每个 `curl` 都有超时且 SSL 旗标只来自 `tls.curl_flags()`、SSL 开关只出现在 `net/tls.py` |
 | `domains_test.sh` | 地址层：默认值、环境变量覆盖与校验、`url` 只在 `--install-from-source` 下被读、两份 shell 脚本的域名块与 `domains.py` 是否一致。纯离线，所以放在需联网的测试之前 |

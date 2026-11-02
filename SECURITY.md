@@ -34,6 +34,66 @@ vulnerability:
 | **Package-controlled names cannot escape their directory.** Package names, versions and `bin_name` come from remote data but are used as path components, so they pass a whitelist and a containment check. | `lib/configpaths.py` |
 | **Credentials do not appear in output.** Mirror URLs carry a user and password; anything printed or logged is redacted first. | `lib/domains.py` (`redact_url`) |
 | **Extraction stays inside the target directory.** `.conda` payloads go through Python's `filter='tar'`, which is explicit; plain `.zip` / `.tar.*` rely on `unzip` and `tar` themselves refusing `../` entries. | `pkg/pkgunzip.sh` |
+| **A payload's links cannot leave the install root.** After extraction, every symbolic link in the tree is resolved and rejected if it lands outside `base_dir`, except the exempt system locations listed below. A refusal removes the extracted tree, so nothing half-installed is left behind. | `lib/configpaths.py` (`assert_links_inside`), `surfboard/depsmanager.sh` |
+
+### Symbolic links: the rule and its one exception
+
+**If a package contains symbolic links, every link must be checked for whether it
+escapes `base_dir`. A link that resolves outside the install root is a defect and
+must be refused.**
+
+The threat is two-sided, and both halves matter:
+
+| What a malicious package could do with an escaping link | Why it is a vulnerability |
+| --- | --- |
+| Point a link at a private file (`~/.ssh/id_rsa`, `~/Library/Messages/…`) and ship a binary that reads through it | Exfiltrates data the user never granted access to |
+| Point a link at a path MacWave later **writes** through — the `install_name_tool` rewrite in `surfboard/transfer.sh`, the `.part` → `mv` rename, an uninstall `rm -rf` | Writes or deletes files outside the install tree, as the user |
+
+**Status: enforced from 4.2 onward.** The extraction tools do not provide this, so
+it is checked afterwards, on the extracted tree, before anything is installed:
+
+| Path | Escaping symlink reaches disk | Then checked |
+| --- | --- | --- |
+| `.zip` / `.tar.*` via `unzip` / `tar` | yes | ✓ refused |
+| `.conda` via `tarfile.extractall(filter='tar')` | yes | ✓ refused |
+
+`filter='data'` would refuse absolute link targets by itself, but it also refuses
+what conda packages legitimately need, so the check cannot be delegated to it.
+The enforcement lives in `lib/configpaths.py` (`escaping_links` /
+`assert_links_inside`) and is called from `surfboard/depsmanager.sh` right after
+extraction, for both the `tree` and `binary` install shapes. On refusal the
+extraction directory is removed, so a rejected payload does not stay on disk.
+
+This is separate from the "`../` entries in an archive" check above. An archive can
+contain a perfectly legal member whose *name* stays inside the destination while its
+*link target* points anywhere:
+
+```
+lib/innocent.dylib -> /Users/someone/.ssh/id_rsa
+```
+
+`../` filtering does not see that. Neither does `tar`'s.
+
+**System library locations are exempt.** A link landing under the system locations
+below is not refused:
+
+```
+/bin   /sbin   /usr/bin   /usr/sbin   /usr/lib   /usr/libexec
+/System   /Library/Apple      (and subdirectories)
+```
+
+Two reasons, and both are needed:
+
+1. **SIP protects them.** System Integrity Protection (SIP) refuses writes to these
+   paths even from root, so the "write through the link" half of the threat does not
+   apply. A link into `/usr/bin` is also how some upstream payloads legitimately
+   reference the system tools they expect.
+2. **They hold no private files.** The read half does not apply either: these trees
+   contain only operating-system binaries and libraries, nothing user-specific.
+
+Everything else stays inside the rule. `/Users`, `/Applications`, `/Library` outside
+`Apple/`, `/private`, `/opt`, `/etc`, `/var` are **not** exempt — those hold user data,
+and SIP does not protect most of them.
 
 Also in scope:
 
@@ -41,6 +101,8 @@ Also in scope:
 - making `wave selfupdate` fetch code from somewhere other than the configured source
 - a crafted index record that makes the client delete files outside its own tree
 - leaking the mirror password through an error message, a log, or a `-v` trace
+- a payload whose symbolic link resolves outside `base_dir`, other than into the
+  exempt system locations listed above
 
 ## Not security issues
 

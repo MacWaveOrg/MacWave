@@ -251,6 +251,12 @@ def assert_inside(path, root, what):
     # 归一化后确认路径没有跑到 root 外面（防 ../ 与软链接穿越）。
     # 只做校验、不改写调用方的路径，避免改变既有行为。
     # **跟随**最后一段的软链接：用于会被写进去或递归删除的路径。
+    #
+    # 这里是路径越界规则的唯一实现。软件包**自带**的符号链接走的是另一条路：
+    # 它们由解压产生，需要单独遍历整棵树、逐个解析目标 —— 规则是「解析后落在
+    # base_dir 之外就拒绝」，唯一例外是 /bin /sbin /usr/bin /usr/sbin /usr/lib
+    # /usr/libexec /System /Library/Apple（SIP 保护，且不含隐私文件）。
+    # 详见 SECURITY.md「Symbolic links: the rule and its one exception」。
     resolved_root = Path(root).resolve()
     resolved = Path(path).resolve()
     if resolved != resolved_root and resolved_root not in resolved.parents:
@@ -262,6 +268,9 @@ def assert_inside_entry(path, root, what):
     # 与 assert_inside 相同，但**不跟随**最后一段的软链接。links/ 下的链接本身就
     # 是软链接，指向 bin/ 里的可执行文件：跟随过去会把"删除/重指这个链接"这种
     # 再正常不过的操作误判成越界。只能用于"操作链接本身"、不会穿透写入的调用点。
+    #
+    # 选哪个：「这个链接文件本身在不在树内」用这个；「顺着它写会不会跑出去」用
+    # assert_inside。两者不能互换。
     resolved_root = Path(root).resolve()
     candidate = Path(path)
     if candidate.name in ("", ".", ".."):
@@ -272,6 +281,95 @@ def assert_inside_entry(path, root, what):
     return resolved
 
 
+# -------------------- 产物里的符号链接 --------------------
+#
+# 规则（SECURITY.md「Symbolic links: the rule and its one exception」）：
+# 软件包里带的符号链接，解析后必须落在 base_dir 内；落在外面一律拒绝。
+#
+# 为什么要单独做这件事：归档解压只过滤成员**名字**里的 `../`，与链接**目标**无关。
+# 实测 Python 3.15 的 tarfile：filter='tar' 会把 `x -> /etc/hosts` 原样解出来，
+# 只有 filter='data' 才拒绝（但它连 conda 包需要的合法链接一起拒）。
+# unzip 与 tar 命令行同样不管目标。所以越界链接只能解压之后自己扫。
+#
+# 危害两头：链接指向隐私文件 → 随包附带的程序读到不该读的东西；链接指向
+# MacWave 之后要写的路径（transfer.sh 的重定位改写、.part → mv、卸载的 rm -rf）
+# → 以用户身份在树外写或删。
+#
+# 例外只给系统库位置，两个条件必须同时成立：SIP 连 root 都拒绝写这些路径，
+# 且那里只有操作系统自带的二进制与库、没有用户数据。
+
+SYSTEM_LINK_PREFIXES = (
+    "/bin",
+    "/sbin",
+    "/usr/bin",
+    "/usr/sbin",
+    "/usr/lib",
+    "/usr/libexec",
+    "/System",
+    "/Library/Apple",
+)
+
+
+def _under(path, prefix):
+    return path == prefix or path.startswith(prefix + os.sep)
+
+
+def is_system_link_target(resolved):
+    """链接目标是否落在豁免的系统库位置（SIP 保护、不含隐私文件）。"""
+    text = str(resolved)
+    return any(_under(text, prefix) for prefix in SYSTEM_LINK_PREFIXES)
+
+
+def escaping_links(root):
+    """遍历 root，返回 [(链接, 解析后的目标)] —— 只在解析后落在 root 与豁免之外。
+
+    不跟随目录软链接（否则可能绕进别的树里无限走），但**每个链接本身**都会被解析，
+    包括指向目录的链接：指向树外的目录链接同样是"顺着它能读写树外"。
+    悬空链接也照常判定 —— resolve() 不要求目标存在，词法上跑出 root 就算越界。
+    """
+    resolved_root = Path(root).resolve()
+    found = []
+    for dirpath, dirnames, filenames in os.walk(resolved_root, followlinks=False):
+        for name in dirnames + filenames:
+            candidate = Path(dirpath) / name
+            if not candidate.is_symlink():
+                continue
+            try:
+                target = Path(os.readlink(candidate))
+            except OSError:
+                continue
+            if not target.is_absolute():
+                target = candidate.parent / target
+            try:
+                resolved = target.resolve()
+            except (OSError, RuntimeError):
+                # 自我引用或过长的链：没法解析，按越界处理（拒绝比放行安全）
+                found.append((candidate, target))
+                continue
+            if resolved != resolved_root and resolved_root not in resolved.parents:
+                if not is_system_link_target(resolved):
+                    found.append((candidate, resolved))
+    return found
+
+
+def assert_links_inside(root, what):
+    """把一个树里越界的符号链接当作致命错误。返回通过检查的链接数不划算，故返回 None。"""
+    offenders = escaping_links(root)
+    if not offenders:
+        return
+    print(f"{RED_BOLD}🌊 Error: {len(offenders)} symbolic link(s) in {what} point outside "
+          f"{Path(root).resolve()}{RESET}", file=sys.stderr)
+    for link, target in offenders[:10]:
+        print(f"   {link} -> {target}", file=sys.stderr)
+    if len(offenders) > 10:
+        print(f"   … and {len(offenders) - 10} more", file=sys.stderr)
+    print("🌊 A link that leaves the install root can read private files, or make a later "
+          "write (relocation, rename, uninstall) land outside the tree.", file=sys.stderr)
+    print(f"🌊 Only these locations are exempt: {', '.join(SYSTEM_LINK_PREFIXES)}", file=sys.stderr)
+    print("🌊 Refusing this payload. Report it to the index maintainer.", file=sys.stderr)
+    sys.exit(1)
+
+
 # -------------------- 当前生效的配置 --------------------
 
 CONFIG_DIR = find_config_dir() or SYSTEM_CONFIG_DIR
@@ -280,6 +378,11 @@ VERSION_FILE = CONFIG_DIR / VERSION_FILE_NAME
 
 
 if __name__ == "__main__":
+    # 唯一的命令行入口：解压之后由 depsmanager.sh 调用，检查产物里的符号链接。
+    #   python3 lib/configpaths.py --check-links <目录> <描述，仅用于报错>
+    if len(sys.argv) >= 3 and sys.argv[1] == "--check-links":
+        assert_links_inside(sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else sys.argv[2])
+        sys.exit(0)
     print("🌊 This module is not meant to be run directly.")
     print("🌊 It is used internally by the other MacWave modules.")
     sys.exit(1)

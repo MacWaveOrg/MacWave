@@ -46,6 +46,69 @@ gh api repos/MacWaveOrg/MacWave/contents/lib/wave.py \
   用 `gh api` 绕过去等于没测。
 - **`git` / `gh` 拉代码不受影响**，只有「用 curl 抓单个 raw 文件」这条路会挂。
 
+## 安全：符号链接不得跳出 base_dir
+
+**若一个软件包（payload）里含有符号链接，必须检测它是否跳转到 `base_dir` 之外。
+凡是解析后落在安装根目录外的链接，一律当作缺陷处理，不许跟随。**
+
+这条规则防两件事，缺一半都不成立：
+
+| 攻击者用越界链接能做什么 | 为什么算漏洞 |
+| --- | --- |
+| 链接指向隐私文件（`~/.ssh/id_rsa`、`~/Library/Messages/…`），再附带一个读它的程序 | 读到用户从未授权的内容 |
+| 链接指向 MacWave 之后**要写入**的路径 —— `surfboard/transfer.sh` 的 `install_name_tool` 改写、`.part` → `mv` 落盘、卸载时的 `rm -rf` | 以用户身份在安装树之外写文件、删文件 |
+
+这与「归档里的 `../` 条目」不是同一件事。一个成员的名字可以老老实实待在目标目录内，
+而它的**链接目标**指向任何地方：
+
+```
+lib/innocent.dylib -> /Users/someone/.ssh/id_rsa
+```
+
+`../` 过滤看不见这个，`tar` 自己也不管。
+
+### 唯一的例外：系统库位置
+
+链接落在下面这些位置（含子目录）时不算越界：
+
+```
+/bin   /sbin   /usr/bin   /usr/sbin   /usr/lib   /usr/libexec
+/System   /Library/Apple
+```
+
+两条理由必须同时成立，所以只给这几处开口子：
+
+1. **SIP 提供保护。** 系统完整性保护（SIP）连 root 都拒绝写这些路径，
+   「顺着链接去写」那半边威胁不成立；而上游产物里本来就有指向 `/usr/bin` 的正常引用。
+2. **那里不含隐私文件。** 只有操作系统自带的二进制与库，没有用户数据，
+   「顺着链接去读」那半边也不成立。
+
+其余一律不例外：`/Users`、`/Applications`、`/Library` 里 `Apple/` 以外的部分、`/private`、
+`/opt`、`/etc`、`/var` —— 都有用户数据，且大多不受 SIP 保护。
+
+### 实现位置（4.2 起生效）
+
+解压工具自己不做这件事，所以检查放在**解压之后、落盘之前**：
+
+| 环节 | 位置 |
+| --- | --- |
+| 规则与豁免清单 | [`lib/configpaths.py`](./lib/configpaths.py) 的 `SYSTEM_LINK_PREFIXES` / `escaping_links()` / `assert_links_inside()` |
+| 调用点 | [`surfboard/depsmanager.sh`](./surfboard/depsmanager.sh) 的 `mw_assert_no_escaping_links()`，`tree` 与 `binary` 两种形态都调 |
+| 回归 | [`scripts/linksafety_test.sh`](./scripts/linksafety_test.sh)：六种链接的判定、报错内容、真实漏斗拒绝且不留半成品、「合法产物不被误杀」 |
+
+`assert_links_inside()` 是唯一实现，别在别处抄第二份。拒绝时会先删掉解压临时目录
+再退出 —— 正常路径上由调用方在装完之后删，而这条路径是 `exit`，轮不到那一步。
+
+新增或修改解压、落盘、重定位、卸载这几条路径时，按这条规则处理链接：
+
+- 落点在 `base_dir` 内 → 放行；
+- 落在上面那几处系统位置 → 放行；
+- 其它 → 拒绝，且报错要指出是哪个成员、指向哪里。
+
+相邻的两个工具函数别混用：[`lib/configpaths.py`](./lib/configpaths.py) 里
+`assert_inside()` 会跟随最后一段软链接，`assert_inside_entry()` 不跟随 —— 判断
+「链接本身在不在树内」用后者，判断「顺着它写会不会跑出去」用前者。
+
 ## 代码风格
 
 - **缩进一律 4 个空格**，不用制表符。`python` 与 `shell` 都是。
@@ -97,9 +160,10 @@ CI 会预先写好那份文件，于是同一个脚本在 CI 上读到的是宿�
 
 | 命令 | 说明 |
 | --- | --- |
-| `bash scripts/<name>_test.sh` | 回归脚本，共 19 个；按上面分类判断要不要额外隔离 |
+| `bash scripts/<name>_test.sh` | 回归脚本，共 20 个；按上面分类判断要不要额外隔离 |
 | `bash scripts/structure_test.sh` | 项目结构自检：组件清单与 `wave.py` / `install.sh` / CI 是否一致。纯离线、秒级 |
 | `bash scripts/net_policy_test.sh` | 传输层契约：每个请求点是否都带策略。纯离线、秒级 |
+| `bash scripts/linksafety_test.sh` | 产物里的符号链接不得跳出 base_dir（系统库位置除外）。纯离线、秒级 |
 | `python3 scripts/random_test.py` | 随机化端到端，自建沙箱（随机 `HOME` + 随机 `base_dir`） |
 | `python3 scripts/random_test.py --dry-run` | 只选包与生成参数，不执行任何 `wave` 命令 |
 

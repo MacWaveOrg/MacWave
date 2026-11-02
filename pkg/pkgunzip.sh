@@ -2,6 +2,13 @@
 
 # pkgunzip.sh - 负责解压预编译软件包（压缩包）
 # 用法: bash pkgunzip.sh <压缩包路径> <解压目录>
+#
+# 安全规则（SECURITY.md / AGENTS.md）：解压出来的**符号链接**必须逐个检查目标是否
+# 落在 base_dir 之外，除了 /bin /sbin /usr/bin /usr/sbin /usr/lib /usr/libexec
+# /System /Library/Apple 这几处（SIP 保护，且不含隐私文件）。越界链接要拒绝。
+#
+# 本脚本目前**没有**这道检查，各分支能把越界链接解出来。改这里时按上面规则处理：
+# 落点在 base_dir 内或上述系统位置 → 放行；其它 → 拒绝并指出是哪个成员、指向哪里。
 
 set -e
 
@@ -86,7 +93,20 @@ with zipfile.ZipFile(archive_path) as archive:
 
     with archive.open(payloads[0]) as raw:
         with zstd.ZstdFile(raw, 'rb') as decompressed:
-            # filter='tar'：保留符号链接（conda 包里大量使用），仍会挡掉危险项
+            # filter='tar'：保留符号链接（conda 包里大量使用），但仍会挡掉
+            # `../` 这类危险**路径**。
+            #
+            # 注意它**不检查链接目标**：实测 Python 3.15 下，
+            #   filter='tar'   → `lib/x -> /Users/someone/.ssh/id_rsa` 照样解出来
+            #   filter='data'  → 拒绝（AbsoluteLinkError），但 conda 包要用的合法
+            #                    链接会一起被拒，所以不能直接换
+            # 也就是说越界链接的检测必须**解压之后**自己做一遍，不能指望 filter。
+            #
+            # 规则见 SECURITY.md「Symbolic links: the rule and its one exception」与
+            # AGENTS.md「安全：符号链接不得跳出 base_dir」：任何解析后落在 base_dir
+            # 之外的链接都要拒绝，只有 /bin /sbin /usr/bin /usr/sbin /usr/lib
+            # /usr/libexec /System /Library/Apple 例外（SIP 保护且不含隐私文件）。
+            # 下面这些 shell 分支（unzip / tar）连 `../` 都靠工具自己，更没有链接检查。
             with tarfile.open(fileobj=decompressed, mode='r|') as tar:
                 tar.extractall(extract_dir, filter='tar')
 PYEOF
