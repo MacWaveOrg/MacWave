@@ -14,7 +14,7 @@ Linux? View [LinuxWave](https://github.com/LinuxWaveOrg/LinuxWave)
 macOS Sonoma 14 and above
 ## 🌊 Latest Version
 
-4.1.5, Release on 2026-10-31
+4.1.6, Release on 2026-11-02
 
 ## 🌊 About MacWave 
 

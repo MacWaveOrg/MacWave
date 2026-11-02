@@ -14,7 +14,7 @@ Linux 用户？请看 [LinuxWave](https://github.com/LinuxWaveOrg/LinuxWave)
 macOS Sonoma 14 及以上
 ## 🌊 最新版本
 
-4.1.5，发布于 2026-10-31
+4.1.6，发布于 2026-11-02
 
 ## 🌊 关于MacWave
 
