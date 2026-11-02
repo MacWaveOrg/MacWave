@@ -495,7 +495,7 @@ one, and state which you ran. A bug report is most useful with the output of
 
 ## ☕️ Donation
 
-The project requires about **¥150 CNY (about $22 USD)** per month to keep running. If you like it, please buy me a coffee ☕️. Thank you very much! No matter the amount, it's a token of your support!
+The project requires about **¥349 CNY (about $52 USD)** per month to keep running. If you like it, please buy me a coffee ☕️. Thank you very much! No matter the amount, it's a token of your support!
 
 *(☕️ The coffee machine is warming up. Donation links are being configured. Stay tuned!)*。
 
@@ -503,10 +503,10 @@ The project requires about **¥150 CNY (about $22 USD)** per month to keep runni
 
 | Item | Type/Content | Amount CNY | Amount USD |
 | :--- | :--- | :--- | :--- |
-| Domains | `macwave.org` and 3 other domains | ¥49.54 | $7.38 |
+| Domains | `macwave.org` | ¥8.39 | $1.25 |
 | Server | Hong Kong cloud server (mirror/official website) | ¥56.00 | $8.34 |
-| AI-assisted development (API) | DeepSeek API (usage-based, variable) | Partially offset | Partially offset |
-| **Total** | | **Approx. ¥150** | **Approx. $22** |  
+| AI-assisted development (API) | DeepSeek API (usage-based, variable) | ¥285.00 | $42.45 |
+| **Total** | | **¥349.39** | **$52.04** |  
 
 ## 🌊 License
 
