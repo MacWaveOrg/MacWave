@@ -493,20 +493,20 @@ pushes and branch deletion are blocked. Run the scripts above before opening
 one, and state which you ran. A bug report is most useful with the output of
 `wave --version`, `sw_vers`, and `uname -m`.
 
-## ☕️ 捐赠 / Donation
+## ☕️ Donation
 
-项目每月需要约 **¥150 CNY (约 $22 USD)** 以维持运转，如果你喜欢，请帮我买杯咖啡☕️，非常感谢！无论多少，都是一份心意！
+The project requires about **¥150 CNY (about $22 USD)** per month to keep running. If you like it, please buy me a coffee ☕️. Thank you very much! No matter the amount, it's a token of your support!
 
-**当前费用明细 (Cost Breakdown):**
+*(☕️ The coffee machine is warming up. Donation links are being configured. Stay tuned!)*。
 
-| 项目 (Item) | 类型/内容 (Type) | 金额 CNY | 金额 USD |
+**Current Cost Breakdown:**
+
+| Item | Type/Content | Amount CNY | Amount USD |
 | :--- | :--- | :--- | :--- |
-| 域名 (Domains) | `macwave.org` 等 4 个域名 | ¥49.54 | $7.38 |
-| 服务器 (Server) | 香港云服务器 (镜像/官网) | ¥56.00 | $8.34 |
-| AI 辅助开发 (API) | DeepSeek API (按量浮动) | 部分抵扣 | 部分抵扣 |
-| **总计 (Total)** | | **约 ¥150** | **约 $22** |
-
-*(注：☕️ 咖啡机正在预热，收款通道配置中，敬请期待！)*
+| Domains | `macwave.org` and 3 other domains | ¥49.54 | $7.38 |
+| Server | Hong Kong cloud server (mirror/official website) | ¥56.00 | $8.34 |
+| AI-assisted development (API) | DeepSeek API (usage-based, variable) | Partially offset | Partially offset |
+| **Total** | | **Approx. ¥150** | **Approx. $22** |  
 
 ## 🌊 License
 
