@@ -946,7 +946,7 @@ def handle_install(input_string):
             extra="this machine runs "
                   + ".".join(str(part) for part in (running or ())),
             hint=["nothing was downloaded or installed",
-                  f"re-run with --force to install it anyway",
+                  "re-run with --force to install it anyway",
                   f"`wave info {ParsePkgName}` shows the declaration"])
 
     # 6. 从哪儿取、文件叫什么，交给 domains.resolve_payload 决定。
