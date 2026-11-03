@@ -166,6 +166,7 @@
 | `configpath_test.sh` | 配置目录解析的优先级与容错回落 |
 | `audit_deps.py` | 数据审计：检查数据完整性，或把已装产物的实际动态库引用与声明对比 |
 | `linksafety_test.sh` | 产物里的符号链接：树内与系统位置放行、越界拒绝（绝对路径 / 相对爬出 / 指向目录 / 悬空但指向外面）、真实漏斗拒绝且不留半成品、合法产物不被误杀 |
+| `minos_test.sh` | `min_os`（实验性，4.3 转正）：版本串解析（位数不同也比）、低于声明才提醒、字段缺失必须静默、非交互往安全侧倒、`--force` 越过、info 三种格式里没有声明时不出现、回填脚本幂等。离线 |
 | `structure_test.sh` | 项目结构自检：`scripts/components.txt` 里的每个组件，`wave.py` 都建了 sys.path、`install.sh` 都建了目录、CI 都覆盖；并且脚本与 CI 里不许再手写一份「lib pkg surfboard」 |
 | `net_policy_test.sh` | 传输层契约（AST，不是 grep）：每个 `requests` 调用都带 `**tls.request_kwargs()`、每个 `urlopen` 都带 `**tls.urlopen_kwargs()`、每个 `curl` 都有超时且 SSL 旗标只来自 `tls.curl_flags()`、SSL 开关只出现在 `net/tls.py` |
 | `domains_test.sh` | 地址层：默认值、环境变量覆盖与校验、`url` 只在 `--install-from-source` 下被读、两份 shell 脚本的域名块与 `domains.py` 是否一致。纯离线，所以放在需联网的测试之前 |

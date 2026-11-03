@@ -132,6 +132,29 @@ def fetch_remote_info(pkg_name, arch, budget=None):
     return result, resp.text
 
 
+def fetch_version_min_os(pkg_name, arch, version, budget=None):
+
+    # 读某个版本的记录，返回它的 min_os 声明原文（没有则 None）。
+    #
+    # 与 fetch_remote_info 分开：min_os 写在版本记录而不是 @common，因为同一个包
+    # 的不同版本可以要求不同的系统版本。info 只展示最新版的那一份。
+
+    pkg_name = require_safe_token(pkg_name, "package name")
+    version = require_safe_token(version, "version")
+    version_url = f"{domains.api_domain()}/pkg/pkginfo_{arch}/{pkg_name}/_{pkg_name}@{version}"
+    try:
+        resp = requests.get(version_url, timeout=_to(budget or _fallback()),
+                            headers=github_api_headers(version_url),
+                            **tls.request_kwargs())
+        if resp.status_code != 200:
+            return None
+    except Exception:
+        return None
+
+    match = re.search(r'min_os:\s*"([^"]*)"', resp.text)
+    return match.group(1) if match else None
+
+
 # -------------------- list --------------------
 
 def handle_list(budget=None):
@@ -200,9 +223,9 @@ def handle_search(query, budget=None):
 INFO_FORMATS = ("json", "yaml", "toml", "raw")
 
 
-def info_fields(pkg_name, remote, installed_versions, available_versions):
+def info_fields(pkg_name, remote, installed_versions, available_versions, min_os=None):
     remote = remote or {}
-    return {
+    fields = {
         "name": pkg_name,
         "author": remote.get("aut"),
         "description": remote.get("des"),
@@ -212,6 +235,10 @@ def info_fields(pkg_name, remote, installed_versions, available_versions):
         "available": list(available_versions),
         "latest": available_versions[0] if available_versions else None,
     }
+    # 实验性字段：没声明就不出现，让 json / yaml / toml 三种输出保持一致
+    if min_os:
+        fields["min_os"] = min_os
+    return fields
 
 
 def info_as_json(fields):
@@ -251,7 +278,7 @@ def info_as_toml(fields):
 
 
 def render_info(output_format, pkg_name, remote, record_text,
-                installed_versions, available_versions):
+                installed_versions, available_versions, min_os=None):
     if output_format == "raw":
         # 索引里没有这条记录时没什么可打印的。打印空行等于让人以为「这条记录是空的」，
         # 而实际原因是「压根没有这条记录」—— 两者要分清楚。
@@ -261,7 +288,7 @@ def render_info(output_format, pkg_name, remote, record_text,
             sys.exit(1)
         return record_text
 
-    fields = info_fields(pkg_name, remote, installed_versions, available_versions)
+    fields = info_fields(pkg_name, remote, installed_versions, available_versions, min_os)
     if output_format == "json":
         return info_as_json(fields)
     if output_format == "yaml":
@@ -295,10 +322,16 @@ def handle_info(pkg_name, output_format=None, budget=None):
     available_versions = fetch_remote_versions(pkg_name, arch, budget)
     available_versions = sort_versions(available_versions)
 
+    # 3.1 实验性：最新版的 min_os 声明（4.3 转正）。没有声明时为 None，
+    # 三种格式化输出都不带这一行，与字段尚未普及的现状一致。
+    min_os = None
+    if available_versions:
+        min_os = fetch_version_min_os(pkg_name, arch, available_versions[0], budget)
+
     # 4. 输出
     if output_format:
         text = render_info(output_format, pkg_name, remote, record_text,
-                           installed_versions, available_versions)
+                           installed_versions, available_versions, min_os)
         if text is not None:
             print(text)
         return
@@ -322,6 +355,10 @@ def handle_info(pkg_name, output_format=None, budget=None):
         print(f"🌊 Available versions: {available_versions[0]}")
         for ver in available_versions[1:]:
             print(f"                       {ver}")
+
+    # 实验性（4.3 转正）：只在索引真的声明了才打印，缺字段的包与以前一致
+    if min_os:
+        print(f"🌊 Requires macOS:     {min_os} or later")
 
 
 # -------------------- 入口 --------------------

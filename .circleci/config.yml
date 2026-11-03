@@ -119,6 +119,7 @@ jobs:
             bash scripts/structure_test.sh
             bash scripts/net_policy_test.sh
             bash scripts/linksafety_test.sh
+            bash scripts/minos_test.sh
 
       - run:
           name: Output format and update-command tests

@@ -122,6 +122,40 @@ lib/innocent.dylib -> /Users/someone/.ssh/id_rsa
 细则与命令见 [`docs/RELEASE-CHECKLIST.md`](./docs/RELEASE-CHECKLIST.md) 第 7 步，
 样板是 [`docs/RELEASE-4.2.0.md`](./docs/RELEASE-4.2.0.md) 第一节。
 
+## 包级元数据：`min_os`（实验性，4.3 转正）
+
+索引的版本记录可以带 `min_os: "12.1"`，声明这个包要求的 macOS 下限。
+
+**它只是提示，不是安全边界。** `minos` 是构建时写进 Mach-O 的最低声明，不等于
+真实 API 需求：`jq@1.8.2` 声明 14.0，在 12.7.6 上实测照常运行；`pandoc@3.13`
+声明 15.0 则可能真的调到新符号。客户端分辨不了这两种情况，所以把决定权交给用户。
+
+行为矩阵（4.3 之前保持这个形状，不要单方面改成硬拦截）：
+
+| 情况 | 行为 |
+| --- | --- |
+| 记录里没有 `min_os` | 静默放行 —— 字段还没普及，误报会让所有人以为坏了 |
+| 本机版本 ≥ 声明 | 静默放行 |
+| 本机版本 < 声明，交互 | 警告 + 询问，默认 N |
+| 同上，答复 `y` | 越过，继续安装 |
+| 同上，非交互（stdin 是 `/dev/null`） | 按拒绝处理，提示 `--force` |
+| 同上，`--force` | 静默越过 |
+| `wave info` | 打印 `Requires macOS: <ver> or later` |
+
+**加新包时**：产物在 macOS 14 上构建，`min_os` 就是 14.x，旧系统用户会看到提示。
+这不是错误，但要知道它会挡住一部分人。
+
+落点：
+
+| 做什么 | 在哪 |
+| --- | --- |
+| 安装前判断 | [`pkg/pkginstaller.py`](./pkg/pkginstaller.py) 的 `check_min_os`，位于版本记录读完之后、下载之前（`step 6/11`） |
+| info 展示 | [`pkg/pkginfohelper.py`](./pkg/pkginfohelper.py) 的 `fetch_version_min_os` |
+| 数据回填 | `infosource` 仓库的 `scripts/backfill_min_os.py`，从产物里的 `LC_BUILD_VERSION` 自动提取，取整包最大值 |
+| 回归 | [`scripts/minos_test.sh`](./scripts/minos_test.sh)，双 CI 都跑 |
+
+4.3 转正要做什么，见 [`docs/RELEASE-CHECKLIST.md`](./docs/RELEASE-CHECKLIST.md)。
+
 ## 代码风格
 
 - **缩进一律 4 个空格**，不用制表符。`python` 与 `shell` 都是。

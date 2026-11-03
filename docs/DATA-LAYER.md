@@ -97,6 +97,24 @@ sha256: "..."
 - `url` 在 4.0 **不读**，除非带 `--install-from-source`。
 - 3.x 不认 `file`，会忽略，所以这次改动对 3.x 是安全的。
 
+4.2 起多了一个**可选**字段 `min_os`（实验性，4.3 转正）：
+
+```
+min_os: "12.1"
+```
+
+| 项 | 说明 |
+| --- | --- |
+| 语义 | 这个包要求的 macOS 下限 |
+| 来源 | 产物里所有 Mach-O 的 `LC_BUILD_VERSION` 取**最大值**（`tmux@3.6` 本体 12.0，带的 `libevent` dylib 是 12.1，所以整包是 12.1） |
+| 必填？ | **否**。缺失时客户端静默放行 —— 字段还没普及，误报的代价比漏报大 |
+| 位置 | 只在版本记录里，不在 `@common`：同一包的不同版本可以要求不同系统版本 |
+| 用途 | 只提示，**不拦截**。它是构建时的声明，不等于真实 API 需求（`jq@1.8.2` 声明 14.0 却在 12.7.6 上实测能跑） |
+| 回填 | `scripts/backfill_min_os.py`，幂等，支持 `--dry-run` |
+
+行为矩阵与转正清单见 [`AGENTS.md`](../AGENTS.md) 的「包级元数据」与
+[`RELEASE-CHECKLIST.md`](./RELEASE-CHECKLIST.md) 第 1 步。
+
 「列出版本 / 列出软件包」目前走 GitHub contents API，它属于 `api.github.com`，与索引不是
 一台机器，镜像站无法等价提供。因此设置了 `MACWAVE_API_DOMAIN` 时要求镜像自己提供清单：
 

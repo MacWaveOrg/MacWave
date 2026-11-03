@@ -126,6 +126,12 @@ jobs:
         run: |
           bash scripts/linksafety_test.sh
 
+      # min_os（实验性，4.3 转正）：版本解析、安装前提醒、info 展示。
+      # 字段还没在索引里普及，所以「缺失必须静默」也是断言的一部分。
+      - name: Check min_os handling
+        run: |
+          bash scripts/minos_test.sh
+
       - name: Audit dependency data
         run: |
           python3 scripts/audit_deps.py data --data-dir infosource-data
