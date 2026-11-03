@@ -14,7 +14,7 @@ updates:
       interval: "weekly"
       day: "monday"
     # 与 Format Test 的分支策略一致：只有发布线与 main 需要跟。
-    target-branch: "4.1"
+    target-branch: "4.2"
     commit-message:
       prefix: "ci"
     groups:
@@ -26,7 +26,7 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
-    target-branch: "4.1"
+    target-branch: "4.2"
     commit-message:
       prefix: "deps"
     open-pull-requests-limit: 3
