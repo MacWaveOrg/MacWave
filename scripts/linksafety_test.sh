@@ -19,6 +19,10 @@
 # 全程离线。
 
 set -u
+# 关掉 -e：本脚本**故意**执行会失败的命令（每个用例都期望 rc=1）。
+# CI 会用 `bash -e` 起脚本，继承到的 -e 会让第一个预期失败的用例直接结束整个脚本 ——
+# 表现成「跑到一半就没输出了」，而不是一条 FAIL。
+set +e
 
 RED_BOLD='\033[1;31m'
 GREEN='\033[32m'
@@ -48,7 +52,7 @@ expect_rc() {  # expect_rc 描述 期望退出码
     if [[ "$RC" -eq "$2" ]]; then
         pass "$1"
     else
-        fail "$1（期望 rc=$2，实际 $RC）输出：$(printf '%.200s' "$OUT")"
+        fail "$1（期望 rc=$2，实际 ${RC}）输出：$(printf '%.200s' "$OUT")"
     fi
 }
 
@@ -160,7 +164,7 @@ evil-1.0.tar.gz\" '' 'tree'
 RC=$?
 
 if [[ "$RC" -ne 0 ]]; then
-    pass "带越界链接的产物被拒绝（rc=$RC）"
+    pass "带越界链接的产物被拒绝（rc=${RC}）"
 else
     fail "带越界链接的产物居然装成功了"
 fi
@@ -208,7 +212,7 @@ RC=$?
 if [[ "$RC" -eq 0 ]]; then
     pass "合法产物（含系统位置链接）安装成功"
 else
-    fail "合法产物被误杀（rc=$RC）：$(printf '%.200s' "$OUT")"
+    fail "合法产物被误杀（rc=${RC}）：$(printf '%.200s' "$OUT")"
 fi
 if [[ -L "$BASE/deps/good/good@1.0/lib/fine" && -L "$BASE/deps/good/good@1.0/lib/system" ]]; then
     pass "两条合法链接都落盘了"
