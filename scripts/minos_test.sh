@@ -271,7 +271,7 @@ PYEOF
     FAILED=$((FAILED + $(echo "$OUTPUT" | grep -c '^FAIL: ')))
     echo "$OUTPUT" | grep '^FAIL: '
 else
-    echo "SKIP: 未找到 $BACKFILL（infosource 与 MacWave 不在同一父目录）"
+    echo "SKIP: 未找到 ${BACKFILL}（infosource 与 MacWave 不在同一父目录）"
 fi
 
 FAILED=$((FAILED + HARD_FAIL))
