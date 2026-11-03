@@ -166,6 +166,45 @@ gh release create v<版本> --repo MacWaveOrg/MacWave --title "MacWave <版本>"
 先建 tag 再建 Release。`--target-commitish` 只在 tag 不存在时有效，
 tag 已存在却仍传 `--target` 会报 `Release.target_commitish is invalid`。
 
+#### 安全版本：标题带前缀，正文带证据
+
+**凡属安全修复的版本，标题必须加 `[安全更新 Security update]` 前缀。**
+理由很实际：Release 列表里一眼扫过去，读者需要知道「这一版要不要立刻升」。
+没有前缀时，一次堵住提权路径的修复和一次调超时的改动长得一模一样。
+
+```bash
+# 安全版本
+gh release create v<版本> --repo MacWaveOrg/MacWave \
+  --title "[安全更新 Security update] MacWave <版本>" --notes-file docs/RELEASE-<版本>.md
+
+# 非安全版本
+gh release create v<版本> --repo MacWaveOrg/MacWave \
+  --title "MacWave <版本>" --notes-file docs/RELEASE-<版本>.md
+```
+
+已经发布但漏了前缀时补上：
+
+```bash
+gh release edit v<版本> --repo MacWaveOrg/MacWave --title "[安全更新 Security update] MacWave <版本>"
+```
+
+**正文里要有可复现的证据，而不是只写「修了 X」。** 一份安全版本的说明至少包含：
+
+| 要素 | 为什么 |
+| --- | --- |
+| 一个**具体**的威胁场景（哪个文件、哪条路径、能读到或写到什么） | 「存在路径穿越风险」不构成让人升级的理由 |
+| **旧版本与新版并排的实测数据**（表格：旧版怎么样、新版怎么样） | 让人相信这不是推演出来的 |
+| 拒绝之后**没有留下副作用**（安装目录、临时目录、数据文件逐项核对） | 否则读者会怀疑「拦是拦了，东西是不是已经落地了」 |
+| 一个**正面对照**（合法的东西照常工作） | 否则读者会怀疑新版本会误杀自己常用的包 |
+| 用户**自己能跑**的验证命令，并写清旧版本上的输出为什么看起来不同 | 让人亲眼确认自己是否已受保护 |
+
+4.2.0 是这一条的样板：`docs/RELEASE-4.2.0.md` 第一节用一份 776 字节的包做了
+四种安装方式的对照，并附上了旧版本上「读 / 执行 / 写」三条逃逸的实际输出。
+
+**判色要按读者的利益来。** 对照表里「攻击是否成功」和「防护是否生效」是反的，
+用 ✅ 表示「攻击成功」会让人读成「没问题」。统一规定：**✅ = 被拦住（对用户安全）、
+❌ = 逃逸成功（对用户危险）**，并在表头写明这句。
+
 #### Release 上必须附全部源码
 
 每个 Release 除了 GitHub 自动生成的 Source code，还要**手工再附两样东西**，
@@ -462,3 +501,6 @@ rsync -a --chown=www:www --chmod=D755,F644 \
 → 改 Selfupdate 的 latest.toml → 官网与 Release → 建 tag → 等 CI
 → 镜像：pull 索引 / 拉产物 / 生成清单 / rsync 清单
 ```
+
+安全版本额外两条：**标题加 `[安全更新 Security update]`**、**正文带可复现的对照数据**
+（见第 7 步）。

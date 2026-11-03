@@ -109,6 +109,19 @@ lib/innocent.dylib -> /Users/someone/.ssh/id_rsa
 `assert_inside()` 会跟随最后一段软链接，`assert_inside_entry()` 不跟随 —— 判断
 「链接本身在不在树内」用后者，判断「顺着它写会不会跑出去」用前者。
 
+### 安全版本怎么对外说
+
+安全修复的版本，**Release 标题必须带 `[安全更新 Security update]` 前缀**，正文要有
+可复现的证据而不是「修了 X」：具体威胁场景、新旧版本并排的实测数据、拒绝之后没有
+副作用、一个正面对照、以及用户自己能跑的自查命令。
+
+**对照表里的 ✅/❌ 一律按读者的利益着色**：✅ = 被拦住（对用户安全）、
+❌ = 逃逸成功（对用户危险），并在表头写明这句 —— 「攻击是否成功」和「防护是否生效」
+是反的，不写清楚就会被读反。
+
+细则与命令见 [`docs/RELEASE-CHECKLIST.md`](./docs/RELEASE-CHECKLIST.md) 第 7 步，
+样板是 [`docs/RELEASE-4.2.0.md`](./docs/RELEASE-4.2.0.md) 第一节。
+
 ## 代码风格
 
 - **缩进一律 4 个空格**，不用制表符。`python` 与 `shell` 都是。
