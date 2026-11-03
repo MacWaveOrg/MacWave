@@ -92,7 +92,13 @@ running = inst.current_macos_version()
 if running is None:
     print("SKIP: 非 macOS，跳过「高于本机」一组")
 else:
-    declared = ".".join(str(part) for part in running + (0,))
+    # 造一个「比本机高」的合法声明：末段 +1，段数不变。
+    # 不要用 running + (0,) —— 本机两段会得到三段，但 macOS 26.6.2 这类三段
+    # 的机器会拼出四段 "26.6.2.0"，而 _parse_dotted_version 最多收三段，
+    # 于是静默放行、断言全绿。CI 就是这个组合。
+    bumped = list(running)
+    bumped[-1] += 1
+    declared = ".".join(str(part) for part in bumped)
     check("高于本机 + --force：放行",
           inst.check_min_os(record(declared), "jq", "1.8.2", True), True)
     # stdin 已被这里占住，非交互分支在下面由 shell 单独跑
@@ -129,7 +135,9 @@ if running is None:
     print("SKIP")
     sys.exit(0)
 
-declared = ".".join(str(part) for part in running + (0,))
+bumped = list(running)
+bumped[-1] += 1
+declared = ".".join(str(part) for part in bumped)
 record = 'sha256:"' + "a" * 64 + f'"\nmin_os: "{declared}"\n'
 print("RESULT", inst.check_min_os(record, "jq", "1.8.2", False))
 PYEOF
