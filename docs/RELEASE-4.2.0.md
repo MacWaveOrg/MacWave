@@ -19,15 +19,98 @@ lib/innocent.dylib -> /Users/someone/.ssh/id_rsa
 
 名字老实待在目标目录内，指向的地方却是任何位置。本版把这个口子堵上。
 
+**如果你还在 4.1.x 或更早的版本上，请尽快升级。** 这不是一次常规改进 —— 下面这个
+实验里，一个 776 字节的包在旧版本上可以读完你的私钥、并用你的身份往任意路径写文件。
+4.2.0 是第一个拦住它的版本。数据见第一节。
+
 | 你会看到 | 说明 |
 | --- | --- |
 | 安装时多一行 `🌊 Running security checks...` | 解压之后、落盘之前的一步，正常情况下不会再有别的输出 |
-| 恶意产物被拒绝，指明是哪个链接指向哪里 | 见第一节 |
-| 正常包完全不受影响 | 本机已装树的 2413 个链接全部合规，见第三节 |
+| 恶意产物被拒绝，指明是哪个链接指向哪里 | 见第二节的报错形状 |
+| 正常包完全不受影响 | 本机已装树的 2413 个链接全部合规，见第四节 |
 
 ---
 
-## 一、产物里的符号链接不得跳出安装根目录
+## 一、实验：旧版本上，一个 776 字节的包能做到什么
+
+这不是推演出来的风险。下面这个包只有 776 字节，内容就是三个符号链接加一个短脚本：
+
+```
+./lib/evil_read   -> /usr/local/test/test_read      读：任意可读文件
+./lib/evil_write  -> /usr/local/test/test_write     写：任意可写路径
+./lib/evil_exec   -> /usr/local/test/test_excute    执行：任意可执行文件
+./lib/hook.sh     通过上面三个链接依次「读 → 执行 → 写」
+```
+
+靶子放在 `/usr/local/test/` 下 —— 那里**不在**本版的豁免清单里（SIP 不保护它，
+也可能有用户数据），所以它能检验规则不是「按路径前缀一刀切放行」。
+
+### 四种安装方式的对照
+
+| 安装方式 | 结果 | 读到 `test_read` | 执行 `test_excute` | 写入 `test_write` |
+| --- | --- | --- | --- | --- |
+| 直接 `tar xzf`（没有包管理器） | 链接原样解开 | ✅ | ✅ | ✅ |
+| **MacWave 4.1.5** | 链接原样落进安装树 | ✅ | ✅ | ✅ |
+| **MacWave 4.2.0**（依赖形态 `tree`） | **拒绝安装** | — | — | — |
+| **MacWave 4.2.0**（软件包形态 `binary`） | **拒绝安装** | — | — | — |
+
+在 4.1.5 上跑那个载荷，实际输出是：
+
+```
+--- READ  through evil_read ---
+    Try to READ the file!
+
+    BAD! YOU READ IT!
+--- EXEC  through evil_exec ---
+    Execution successful!
+    BAD!
+--- WRITE through evil_write ---
+    wrote write_on_purpose
+```
+
+三行 `BAD!` 就是答案：**旧版本上一份 776 字节的产物，能读、能执行、能写安装树之外的
+任意位置**。如果那个读的目标换成 `~/.ssh/id_rsa`，换成 cookie、换成 Keychain 导出的
+私钥，效果一样 —— 区别只在于靶子文件名。
+
+在 4.2.0 上，同一份包停在这里：
+
+```
+🌊 Extraction successful!
+🌊 Running security checks...
+🌊 Error: 3 symbolic link(s) in evil@1.0 point outside /…/extract_24397
+   …/lib/evil_write -> /usr/local/test/test_write
+   …/lib/evil_exec  -> /usr/local/test/test_excute
+   …/lib/evil_read  -> /usr/local/test/test_read
+🌊 Only these locations are exempt: /bin, /sbin, /usr/bin, /usr/sbin, /usr/lib, /usr/libexec, /System, /Library/Apple
+🌊 Refusing this payload. Report it to the index maintainer.
+🌊 Error: evil@1.0 was not installed.
+```
+
+### 拒绝之后没有留下任何东西
+
+| 检查 | 结果 |
+| --- | --- |
+| 安装目录 | 没有创建 |
+| 解压临时目录 | 已清空（只剩原始 tar） |
+| 靶子文件 | 与测试前逐字节一致，**一次都没被写过** |
+
+最后一行是关键：被拒绝时先删掉解压临时目录再退出，否则恶意文件会原样躺在
+`downloads/tmp` 里等着下一次被碰到。
+
+### 同一份 4.2.0 代码，合法包照常装
+
+为了防止把「拦截」做成「误杀」，用同一个安装流程装了一个含下列链接的合法包 ——
+**通过并落盘**：
+
+```
+ok_rel    -> ./tool                                          树内相对
+ok_system -> /usr/bin/php                                    豁免
+ok_fw     -> /System/Library/Frameworks/AppKit.framework/AppKit   豁免
+```
+
+---
+
+## 二、产物里的符号链接不得跳出安装根目录
 
 新增的规则：**一个产物自带的符号链接，解析后必须落在安装根目录内；落在外面一律拒绝。**
 
@@ -106,7 +189,7 @@ lib/innocent.dylib -> /Users/someone/.ssh/id_rsa
 
 ---
 
-## 二、测试
+## 三、测试
 
 新增 `scripts/linksafety_test.sh`，25 条断言，纯离线：
 
@@ -123,7 +206,7 @@ lib/innocent.dylib -> /Users/someone/.ssh/id_rsa
 
 ---
 
-## 三、为什么不担心误杀
+## 四、为什么不担心误杀
 
 上线前扫过本机已装树：**2413 个符号链接，全部落在安装根目录内**，没有一个越界、
 也没有一个指向系统位置。这些都是从同一批 Deps 产物里解出来的，所以「合法产物里
@@ -147,6 +230,25 @@ wave selfupdate
 ```
 
 4.x 内部升级，不需要 sudo，不改数据格式，无迁移步骤。
+
+**升级完可以自己验证一次**（0.2 秒，不需要装任何东西）：
+
+```bash
+mkdir -p /tmp/t/lib && ln -s /etc/hosts /tmp/t/lib/evil && touch /tmp/t/lib/ok && ln -s ./ok /tmp/t/lib/fine
+python3 ~/.local/macwave/lib/configpaths.py --check-links /tmp/t
+```
+
+| 版本 | 实际输出 | 退出码 |
+| --- | --- | --- |
+| 4.2.0 起 | `Error: 1 symbolic link(s) in /tmp/t point outside /private/tmp/t`，并指出 `lib/evil -> /private/etc/hosts` | 1 |
+| 4.1.x | `This module is not meant to be run directly.` | 1 |
+
+4.1.x 那两行不是「检查通过」，而是**它根本不认识这个入口** —— 那道检查在旧版本里
+不存在。想确认自己在哪个版本上，看输出里有没有点名那个越界的链接即可。
+
+删掉 `/tmp/t/lib/evil` 再跑一次，4.2.0 会安静返回 0（这正是「放行合法链接」的日常形态）。
+
+系统前缀安装的把路径换成 `/opt/macwave/lib/configpaths.py`。
 
 ---
 
