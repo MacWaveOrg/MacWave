@@ -25,9 +25,9 @@ lib/innocent.dylib -> /Users/someone/.ssh/id_rsa
 
 | 你会看到 | 说明 |
 | --- | --- |
-| 安装时多一行 `🌊 Running security checks...` | 解压之后、落盘之前的一步，正常情况下不会再有别的输出 |
-| 恶意产物被拒绝，指明是哪个链接指向哪里 | 见第二节的报错形状 |
-| 正常包完全不受影响 | 本机已装树的 2413 个链接全部合规，见第四节 |
+| ✅ 安装时多一行 `🌊 Running security checks...` | 解压之后、落盘之前的一步，正常情况下不会再有别的输出 |
+| ✅ 恶意产物被拒绝，指明是哪个链接指向哪里 | 见第二节的报错形状 |
+| ✅ 正常包完全不受影响 | 本机已装树的 2413 个链接全部合规，见第四节 |
 
 ---
 
@@ -47,32 +47,35 @@ lib/innocent.dylib -> /Users/someone/.ssh/id_rsa
 
 ### 四种安装方式的对照
 
-| 安装方式 | 结果 | 读到 `test_read` | 执行 `test_excute` | 写入 `test_write` |
-| --- | --- | --- | --- | --- |
-| 直接 `tar xzf`（没有包管理器） | 链接原样解开 | ✅ | ✅ | ✅ |
-| **MacWave 4.1.5** | 链接原样落进安装树 | ✅ | ✅ | ✅ |
-| **MacWave 4.2.0**（依赖形态 `tree`） | **拒绝安装** | — | — | — |
-| **MacWave 4.2.0**（软件包形态 `binary`） | **拒绝安装** | — | — | — |
+> 表中 **✅ = 被拦住（对你安全）**，**❌ = 逃逸成功（对你危险）** —— 两种视角容易看反，
+> 这里统一按「你的利益」着色。
 
-在 4.1.5 上跑那个载荷，实际输出是：
+| 安装方式 | 读到 `test_read` | 执行 `test_excute` | 写入 `test_write` | 判定 |
+| --- | --- | --- | --- | --- |
+| 直接 `tar xzf`（无包管理器） | ❌ 读到 `BAD! YOU READ IT!` | ❌ 打印 `Execution successful!` | ❌ 被写成 `write_on_purpose` | 💀 完全暴露 |
+| **MacWave 4.1.5** | ❌ 同上 | ❌ 同上 | ❌ 同上 | 💀 完全暴露 |
+| **MacWave 4.2.0** · 依赖形态 `tree` | ✅ 拒绝安装 | ✅ 拒绝安装 | ✅ 拒绝安装 | 🛡️ 已拦住 |
+| **MacWave 4.2.0** · 软件包形态 `binary` | ✅ 拒绝安装 | ✅ 拒绝安装 | ✅ 拒绝安装 | 🛡️ 已拦住 |
+
+**旧版本（直接解包与 4.1.5 完全一致）的实际输出：**
 
 ```
 --- READ  through evil_read ---
     Try to READ the file!
 
-    BAD! YOU READ IT!
+    BAD! YOU READ IT!          ← 读穿到树外
 --- EXEC  through evil_exec ---
     Execution successful!
-    BAD!
+    BAD!                       ← 执行了树外的可执行文件
 --- WRITE through evil_write ---
-    wrote write_on_purpose
+    wrote write_on_purpose     ← 往树外写了文件
 ```
 
 三行 `BAD!` 就是答案：**旧版本上一份 776 字节的产物，能读、能执行、能写安装树之外的
-任意位置**。如果那个读的目标换成 `~/.ssh/id_rsa`，换成 cookie、换成 Keychain 导出的
-私钥，效果一样 —— 区别只在于靶子文件名。
+任意位置**。如果那个读的目标换成 `~/.ssh/id_rsa`、浏览器 cookie、Keychain 导出的私钥，
+效果一样 —— 区别只在于靶子文件名。
 
-在 4.2.0 上，同一份包停在这里：
+**4.2.0 上，同一份包停在这里：**
 
 ```
 🌊 Extraction successful!
@@ -86,27 +89,32 @@ lib/innocent.dylib -> /Users/someone/.ssh/id_rsa
 🌊 Error: evil@1.0 was not installed.
 ```
 
+三条链接**全部点名**，一条都没漏。
+
 ### 拒绝之后没有留下任何东西
 
-| 检查 | 结果 |
-| --- | --- |
-| 安装目录 | 没有创建 |
-| 解压临时目录 | 已清空（只剩原始 tar） |
-| 靶子文件 | 与测试前逐字节一致，**一次都没被写过** |
+| 检查项 | 期望 | 实测 |
+| --- | --- | --- |
+| 安装目录 `deps/evil/evil@1.0` | 不应存在 | ✅ 没有创建 |
+| 解压临时目录 `downloads/tmp/extract_*` | 应被清掉 | ✅ 已清空，只剩原始 tar |
+| 靶子 `test_write` | 不应被写 | ✅ 与测试前逐字节一致 |
+| 靶子 `test_read` | 不应被改 | ✅ 未变动 |
+| 靶子 `test_excute` | 不应被改 | ✅ 未变动 |
 
-最后一行是关键：被拒绝时先删掉解压临时目录再退出，否则恶意文件会原样躺在
-`downloads/tmp` 里等着下一次被碰到。
+第一行与第二行是关键：被拒绝时先删掉解压临时目录再退出，否则恶意文件会原样躺在
+`downloads/tmp` 里，等着下一次被碰到或被打包带走。
 
 ### 同一份 4.2.0 代码，合法包照常装
 
-为了防止把「拦截」做成「误杀」，用同一个安装流程装了一个含下列链接的合法包 ——
-**通过并落盘**：
+为了防止把「拦截」做成「误杀」，用**同一个安装流程**装了一个含下列链接的合法包：
 
-```
-ok_rel    -> ./tool                                          树内相对
-ok_system -> /usr/bin/php                                    豁免
-ok_fw     -> /System/Library/Frameworks/AppKit.framework/AppKit   豁免
-```
+| 包内链接 | 指向 | 类型 | 结果 |
+| --- | --- | --- | --- |
+| `ok_rel` | `./tool` | 树内相对 | ✅ 放行并落盘 |
+| `ok_system` | `/usr/bin/php` | 例外：`/usr/bin` | ✅ 放行并落盘 |
+| `ok_fw` | `/System/Library/Frameworks/AppKit.framework/AppKit` | 例外：`/System` | ✅ 放行并落盘 |
+
+三条都没被误判。也就是说这道防线区分的是「在不在安装根目录内」，不是「像不像系统路径」。
 
 ---
 
@@ -208,9 +216,17 @@ ok_fw     -> /System/Library/Frameworks/AppKit.framework/AppKit   豁免
 
 ## 四、为什么不担心误杀
 
-上线前扫过本机已装树：**2413 个符号链接，全部落在安装根目录内**，没有一个越界、
-也没有一个指向系统位置。这些都是从同一批 Deps 产物里解出来的，所以「合法产物里
-的链接长什么样」有实测依据。
+上线前扫过本机已装树（`deps/`、`bin/`、`links/` 三个目录，不跟随目录链接）：
+
+| 分类 | 数量 | 判定 |
+| --- | --- | --- |
+| 落在安装根目录内 | **2413** | ✅ 放行 |
+| 落在豁免的系统位置 | 0 | ✅ 放行 |
+| 越界（会被拒绝） | **0** | — |
+| 悬空且指向树外 | 0 | — |
+
+2413 个链接全部合规 —— 这些都是从同一批 Deps 产物里解出来的，所以「合法产物里的
+链接长什么样」有实测依据，不是按直觉设计出来的规则。
 
 ---
 
@@ -238,10 +254,10 @@ mkdir -p /tmp/t/lib && ln -s /etc/hosts /tmp/t/lib/evil && touch /tmp/t/lib/ok &
 python3 ~/.local/macwave/lib/configpaths.py --check-links /tmp/t
 ```
 
-| 版本 | 实际输出 | 退出码 |
-| --- | --- | --- |
-| 4.2.0 起 | `Error: 1 symbolic link(s) in /tmp/t point outside /private/tmp/t`，并指出 `lib/evil -> /private/etc/hosts` | 1 |
-| 4.1.x | `This module is not meant to be run directly.` | 1 |
+| 版本 | 实际输出 | 退出码 | 判定 |
+| --- | --- | --- | --- |
+| **4.2.0 起** | `Error: 1 symbolic link(s) in /tmp/t point outside /private/tmp/t`，并指出 `lib/evil -> /private/etc/hosts` | 1 | ✅ 查到了 |
+| **4.1.x** | `This module is not meant to be run directly.` | 1 | ❌ 没有这道检查 |
 
 4.1.x 那两行不是「检查通过」，而是**它根本不认识这个入口** —— 那道检查在旧版本里
 不存在。想确认自己在哪个版本上，看输出里有没有点名那个越界的链接即可。
