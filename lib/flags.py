@@ -35,10 +35,12 @@ GLOBAL = {
 }
 
 # 单条命令独有的
-install = set()
+# --force 越过 min_os 兼容性提示（实验性，4.3 转正）。upgrade 复用 install 那份
+# 白名单，所以两组都要列，describe() 才能把「用错命令」指到正确的地方。
+install = {"--force"}
 uninstall = {"--unlink"}
 upgrade = {"-X", "--remove-old-version", "--remove-old-versions", "--rov",
-           "-a", "--all"}
+           "-a", "--all", "--force"}
 link = {"-a", "--all"}
 unlink = {"-a", "--all"}
 linkquery = {"-a", "--all"}
