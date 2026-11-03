@@ -56,6 +56,7 @@
 | `test/` | 负向测试样本的载荷（缺 sha256 / sha256 错误），由索引里的 `test_*` 包引用 | 改名或移动会立刻让对应包 404，见 `docs/CI-AND-PITFALLS_20261018.md` 第十三节 |
 | `images/` | README 演示图 | 仅文档用 |
 | `docs/PROJECT_CONTEXT.md` | 项目结构说明（偏实现细节） | 与本文有重叠，以本文为准 |
+| `docs/GH-PAGES-HISTORY.md` | 已删除的 `gh-pages` 分支编年史（292 提交 / 08-05~10-07），由 `ghpages/*` 六个 tag 锚定 | **只读历史**，不再往里写新进展 |
 | `README.md`、`README.zh-Hans.md` | 面向用户的说明 | 发版时更新版本号与包列表 |
 | `docs/STYLE.md` | 代码风格约定 | 很短，但必须遵守 |
 | `docs/STATEMENT.md` | 贡献声明：禁止使用特定 AI 产品提交 PR | 合并前核对 |
