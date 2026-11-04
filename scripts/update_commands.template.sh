@@ -17,7 +17,7 @@
 #   MACWAVE_CURRENT_VERSION  当前已装版本；首次安装时为空
 #   MACWAVE_FILE_TIMEOUT     单个文件的超时秒数
 #   MACWAVE_NEED_SUDO        1 = 安装目录需要 sudo 才能写
-#   MACWAVE_SILENT           1 = 少打印
+#   MACWAVE_LANG             zh = 中文输出；未设置或其它值 = 英文
 #   MACWAVE_DRY_RUN          1 = 只报告将要做什么，不落盘
 #
 # 约定：
@@ -28,6 +28,16 @@ set -u
 
 : "${MACWAVE_INSTALL_DIR:?MACWAVE_INSTALL_DIR is required}"
 : "${MACWAVE_CORE_URL:?MACWAVE_CORE_URL is required}"
+
+# 语言：install.sh 通过 MACWAVE_LANG 传进来。老版本客户端不会传，所以默认英文。
+# 与 lib/install.sh 用同一套约定（say "<English>" "<中文>"），不引 gettext。
+MW_LANG="${MACWAVE_LANG:-en}"
+say() {
+    if [[ "$MW_LANG" == "zh" ]]; then printf '%b\n' "$2"; else printf '%b\n' "$1"; fi
+}
+say_err() {
+    if [[ "$MW_LANG" == "zh" ]]; then printf '%b\n' "$2" >&2; else printf '%b\n' "$1" >&2; fi
+}
 : "${MACWAVE_BRANCH:?MACWAVE_BRANCH is required}"
 
 VERSION="@@VERSION@@"
@@ -86,7 +96,7 @@ fetch() {
             # 目标位置是旧的甚至不存在。以前这里不看返回值，于是「下载成功但没就位」
             # 会被当成这一步成功 —— 和 want 里那个 return/exit 是同一类问题。
             if ! run mv -f "$partial" "$destination"; then
-                echo "🌊 Error: cannot move $partial into place" >&2
+                say_err "🌊 Error: cannot move $partial into place" "🌊 错误：无法把 $partial 移动到目标位置"
                 run rm -f "$partial" 2>/dev/null || true
                 return 1
             fi
@@ -107,15 +117,15 @@ want() {
     local url="$MACWAVE_CORE_URL/$MACWAVE_BRANCH/$repo_path"
 
     if [ "${MACWAVE_DRY_RUN:-}" = "1" ]; then
-        echo "would fetch $repo_path"
+        say "would fetch $repo_path" "将获取 $repo_path"
         return 0
     fi
 
     if [ "${MACWAVE_SILENT:-}" != "1" ]; then
-        echo "🌊 Downloading $repo_path..."
+        say "🌊 Downloading $repo_path..." "🌊 正在下载 $repo_path……"
     fi
     if ! fetch "$url" "$destination"; then
-        echo "🌊 Error: cannot download $repo_path" >&2
+        say_err "🌊 Error: cannot download $repo_path" "🌊 错误：无法下载 $repo_path"
         echo "🌊   $(redact_url "$url")" >&2
         # 必须 exit 而不是 return：install_fresh / install_delta 是一串裸的
         # `want ...`，没有 `|| exit`，脚本也没有 set -e。用 return 1 的话
@@ -128,7 +138,7 @@ want() {
     if [ "$exec_flag" = "1" ]; then
         # 加不上 +x 的后果是「命令找不到」，比下载失败更难懂，所以这里也要拦住
         if ! run chmod +x "$destination"; then
-            echo "🌊 Error: cannot make $repo_path executable" >&2
+            say_err "🌊 Error: cannot make $repo_path executable" "🌊 错误：无法把 $repo_path 设为可执行"
             exit 1
         fi
     fi
@@ -148,15 +158,15 @@ install_delta() {
 
 main() {
     if [ "${MACWAVE_CURRENT_VERSION:-}" = "$VERSION" ]; then
-        echo "🌊 Already at $VERSION; nothing to download."
+        say "🌊 Already at $VERSION; nothing to download." "🌊 已经是 $VERSION，无需下载。"
         return 0
     fi
 
     if [ -f "$MACWAVE_INSTALL_DIR/lib/wave.py" ]; then
-        echo "🌊 Updating MacWave ${MACWAVE_CURRENT_VERSION:-unknown} -> $VERSION"
+        say "🌊 Updating MacWave ${MACWAVE_CURRENT_VERSION:-unknown} -> $VERSION" "🌊 正在更新 MacWave ${MACWAVE_CURRENT_VERSION:-unknown} -> $VERSION"
         install_delta || return 1
     else
-        echo "🌊 Installing MacWave $VERSION"
+        say "🌊 Installing MacWave $VERSION" "🌊 正在安装 MacWave $VERSION"
         install_fresh || return 1
     fi
 

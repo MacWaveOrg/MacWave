@@ -29,7 +29,7 @@ if [[ -n "${MACWAVE_TEST:-}" ]]; then
     esac
     export MACWAVE_TEST_ROOT="$SYS_ROOT"
     mkdir -p "$HOME"
-    echo "🌊 Test root: $SYS_ROOT"
+    say "🌊 Test root: $SYS_ROOT" "🌊 测试根目录：$SYS_ROOT"
 fi
 
 set -eE
@@ -44,6 +44,32 @@ RED_BOLD='\033[1;31m'
 GREEN='\033[32m'
 YELLOW='\033[33m'
 RESET='\033[0m'
+
+# ==========================================
+# 语言
+# ==========================================
+# 不做 gettext、不依赖外部工具 —— 这个脚本要在裸 macOS 上跑，多一个依赖就多一处
+# 装不上。文案直接写两份，由 say() 按 --zh 选。默认英文：终端不一定有中文
+# locale，反过来会让英文用户看到乱码或问号。
+MW_LANG="en"
+
+say() {
+    # say "<English>" "<中文>"
+    if [[ "$MW_LANG" == "zh" ]]; then
+        printf '%b\n' "$2"
+    else
+        printf '%b\n' "$1"
+    fi
+}
+
+say_err() {
+    if [[ "$MW_LANG" == "zh" ]]; then
+        printf '%b\n' "$2" >&2
+    else
+        printf '%b\n' "$1" >&2
+    fi
+}
+
 
 # ==========================================
 # 域名（4.0：每个对外地址都能用环境变量换掉）
@@ -174,22 +200,22 @@ validate_custom_dir() {
     local dir="$1"
 
     if [[ -z "$dir" ]]; then
-        echo -e "${RED_BOLD}🌊 Error: Empty path is not allowed.${RESET}" >&2
+        say_err "${RED_BOLD}🌊 Error: Empty path is not allowed.${RESET}" "${RED_BOLD}🌊 错误：路径不能为空。${RESET}"
         return 1
     fi
 
     if [[ "$dir" == *".."* ]]; then
-        echo -e "${RED_BOLD}🌊 Error: Path traversal ('..') is not allowed.${RESET}" >&2
+        say_err "${RED_BOLD}🌊 Error: Path traversal ('..') is not allowed.${RESET}" "${RED_BOLD}🌊 错误：路径中不允许出现 '..'。${RESET}"
         return 1
     fi
 
     if [[ "$dir" == *$'\n'* ]] || [[ "$dir" == *$'\r'* ]] || [[ "$dir" == *$'\t'* ]]; then
-        echo -e "${RED_BOLD}🌊 Error: Invalid control characters in path.${RESET}" >&2
+        say_err "${RED_BOLD}🌊 Error: Invalid control characters in path.${RESET}" "${RED_BOLD}🌊 错误：路径中包含非法控制字符。${RESET}"
         return 1
     fi
 
     if LC_ALL=C grep -q '[^a-zA-Z0-9/_.~ -]' <<< "$dir"; then
-        echo -e "${RED_BOLD}🌊 Error: Path contains non-ASCII or invalid characters.${RESET}" >&2
+        say_err "${RED_BOLD}🌊 Error: Path contains non-ASCII or invalid characters.${RESET}" "${RED_BOLD}🌊 错误：路径包含非 ASCII 字符或非法字符。${RESET}"
         echo -e "${RED_BOLD}🌊 Only ASCII letters, digits, '/', '-', '_', '.', '~', and spaces are allowed.${RESET}" >&2
         return 1
     fi
@@ -197,17 +223,17 @@ validate_custom_dir() {
     local expanded="${dir/#\~/$HOME}"
 
     if [[ "$expanded" != /* ]]; then
-        echo -e "${RED_BOLD}🌊 Error: Please use an absolute path (starting with / or ~).${RESET}" >&2
+        say_err "${RED_BOLD}🌊 Error: Please use an absolute path (starting with / or ~).${RESET}" "${RED_BOLD}🌊 错误：请使用绝对路径（以 / 或 ~ 开头）。${RESET}"
         return 1
     fi
 
     if [[ "$expanded" == *"//"* ]]; then
-        echo -e "${RED_BOLD}🌊 Error: Path contains consecutive slashes.${RESET}" >&2
+        say_err "${RED_BOLD}🌊 Error: Path contains consecutive slashes.${RESET}" "${RED_BOLD}🌊 错误：路径中包含连续的斜杠。${RESET}"
         return 1
     fi
 
     if [[ "$expanded" == "/" ]]; then
-        echo -e "${RED_BOLD}🌊 Error: Cannot install to root directory.${RESET}" >&2
+        say_err "${RED_BOLD}🌊 Error: Cannot install to root directory.${RESET}" "${RED_BOLD}🌊 错误：不能安装到根目录。${RESET}"
         return 1
     fi
 
@@ -237,7 +263,7 @@ print_dir_menu() {
     if [[ "$CUSTOM_OPTION" == "4" ]]; then
         echo "3. /usr/local/macwave"
     fi
-    echo "$CUSTOM_OPTION. other (enter custom directory)"
+    say "$CUSTOM_OPTION. other (enter custom directory)" "$CUSTOM_OPTION. 其他（输入自定义目录）"
 }
 
 # ==========================================
@@ -251,6 +277,14 @@ CLI_CUSTOM_DIR=""
 INSTALL_PYTHON_FROM_SOURCE=""
 
 usage() {
+    if [[ "$MW_LANG" == "zh" ]]; then
+        usage_zh
+    else
+        usage_en
+    fi
+}
+
+usage_en() {
     cat <<USAGE_EOF
 MacWave installer
 
@@ -271,6 +305,7 @@ Options:
                             Download the bundled CPython from its upstream URL
                             (recorded in pythondata/<version>/python_url.toml)
                             instead of from MacWave's own Python repository.
+      --zh                Print in Chinese (English by default).
   -h, --help              Show this help.
 
 Directory menu:
@@ -286,6 +321,51 @@ Running it straight from the repository (options go after '--'):
   /bin/bash -c "\$(curl -fsSL <url>)" -- --ci --dir-option=1
 USAGE_EOF
 }
+
+usage_zh() {
+    cat <<USAGE_EOF
+MacWave 安装程序
+
+用法：
+  install.sh [选项]
+
+选项：
+      --ci, --CI          完全不交互：目录菜单与用户协议都自动应答。不带
+                          --dir-option 时使用默认项（第 1 项）。
+                          需要提权时要求 sudo 免密。
+      --dir-option=N      不提问，直接选菜单第 N 项（1-$CUSTOM_OPTION）。
+      --dir-option=DIR    用 DIR 作为安装目录（等价于
+                          --dir-option=$CUSTOM_OPTION=DIR）。
+      --dir-option=N=DIR  选第 N 项，并在自定义项（$CUSTOM_OPTION）时用 DIR
+                          作为安装目录。
+        --install-python-from-source
+                            自带 CPython 改从上游 URL 下载（记录在
+                            pythondata/<version>/python_url.toml），
+                            而不是从 MacWave 自己的 Python 仓库取。
+      --zh                用中文输出（默认英文）。
+  -h, --help              显示本帮助。
+
+目录菜单：
+$(print_dir_menu | sed 's/^/  /')
+
+示例：
+  install.sh --ci --dir-option=1
+  install.sh --CI --dir-option=2
+  install.sh --ci --dir-option=$CUSTOM_OPTION=/opt/my-macwave
+  install.sh --ci --dir-option=/opt/my-macwave
+
+直接从仓库运行（选项放在 '--' 之后）：
+  /bin/bash -c "\$(curl -fsSL <url>)" -- --ci --dir-option=1
+USAGE_EOF
+}
+
+# 先扫一遍 --zh：否则 `--help --zh` 会因为 --help 先被处理而输出英文。
+# 这里只看语言，不消费参数 —— 真正的解析仍在下面。
+for _mw_arg in "$@"; do
+    case "$_mw_arg" in
+        --zh|--ZH) MW_LANG="zh" ;;
+    esac
+done
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -306,12 +386,15 @@ while [[ $# -gt 0 ]]; do
         --install-python-from-source)
             INSTALL_PYTHON_FROM_SOURCE=1
             ;;
+        --zh|--ZH)
+            MW_LANG="zh"
+            ;;
         -h|--help)
             usage
             exit 0
             ;;
         *)
-            echo -e "${RED_BOLD}🌊 Error: unknown option '$1'. Try --help.${RESET}" >&2
+            say_err "${RED_BOLD}🌊 Error: unknown option '$1'. Try --help.${RESET}" "${RED_BOLD}🌊 错误：未知选项 '$1'。可试 --help。${RESET}"
             exit 1
             ;;
     esac
@@ -358,9 +441,9 @@ resolve_custom_dir() {
     local custom_dir validated
     if [[ -n "$CLI_CUSTOM_DIR" ]]; then
         custom_dir="$CLI_CUSTOM_DIR"
-        echo "🌊 Installation directory: $custom_dir (from --dir-option)"
+        say "🌊 Installation directory: $custom_dir (from --dir-option)" "🌊 安装目录：$custom_dir（来自 --dir-option）"
     else
-        echo -e "${YELLOW}Please enter the installation directory:${RESET}"
+        say "${YELLOW}Please enter the installation directory:${RESET}" "${YELLOW}请输入安装目录：${RESET}"
         read -r custom_dir < /dev/tty
     fi
     validated=$(validate_custom_dir "$custom_dir") || exit 1
@@ -370,16 +453,15 @@ resolve_custom_dir() {
 # ==========================================
 # 显示欢迎信息
 # ==========================================
-
-echo "🌊 Welcome to MacWave $MACWAVE_VERSION!"
+say "🌊 Welcome to MacWave $MACWAVE_VERSION!" "🌊 欢迎使用 MacWave $MACWAVE_VERSION！"
 
 if [[ "$CORE_URL" != "https://raw.githubusercontent.com/MacWaveOrg/MacWave" ]]; then
-    echo "🌊 Install from mirror: $(mw_redact "$CORE_URL")"
+    say "🌊 Install from mirror: $(mw_redact "$CORE_URL")" "🌊 从镜像安装：$(mw_redact "$CORE_URL")"
 fi
 
 echo ""
 
-echo "🌊 Detected architecture: $ARCH"
+say "🌊 Detected architecture: $ARCH" "🌊 检测到架构：$ARCH"
 
 # ==========================================
 # 选择安装目录（交互式 / --dir-option / --ci 默认）
@@ -387,15 +469,15 @@ echo "🌊 Detected architecture: $ARCH"
 
 if [[ -n "$CLI_DIR_OPTION" ]]; then
     choice="$CLI_DIR_OPTION"
-    echo "🌊 Directory option: $choice (from --dir-option)"
+    say "🌊 Directory option: $choice (from --dir-option)" "🌊 目录选项：$choice（来自 --dir-option）"
 elif [[ "$CLI_CI" == "true" ]]; then
     choice="1"
-    echo "🌊 --ci: using the default directory option 1."
+    say "🌊 --ci: using the default directory option 1." "🌊 --ci：使用默认目录选项 1。"
 else
-    echo -e "${YELLOW}Where do you want to install MacWave? (Enter the number)${RESET}"
+    say "${YELLOW}Where do you want to install MacWave? (Enter the number)${RESET}" "${YELLOW}要把 MacWave 安装到哪里？（输入编号）${RESET}"
     print_dir_menu
     echo ""
-    echo -e "${YELLOW}Enter your choice:${RESET}"
+    say "${YELLOW}Enter your choice:${RESET}" "${YELLOW}请输入选择：${RESET}"
 
     read -r choice < /dev/tty
 fi
@@ -418,7 +500,7 @@ case "$choice" in
         resolve_custom_dir
         ;;
     *)
-        echo -e "${RED_BOLD}🌊 Invalid choice. Using default: ~/.local/macwave${RESET}"
+        say "${RED_BOLD}🌊 Invalid choice. Using default: ~/.local/macwave${RESET}" "${RED_BOLD}🌊 选择无效，改用默认目录：~/.local/macwave${RESET}"
         BASE_DIR="$HOME/.local/macwave"
         ;;
 esac
@@ -454,7 +536,7 @@ if [[ "$NEED_SUDO" == "true" ]]; then
             exit 1
         fi
     else
-        echo -e "${YELLOW}🌊 Granting temporary administrator access for installation...${RESET}"
+        say "${YELLOW}🌊 Granting temporary administrator access for installation...${RESET}" "${YELLOW}🌊 正在申请临时管理员权限以完成安装……${RESET}"
         sudo -v
     fi
 fi
@@ -481,7 +563,7 @@ cleanup_update_commands() {
 }
 trap cleanup_update_commands EXIT
 
-echo "🌊 Fetching the update commands..."
+say "🌊 Fetching the update commands..." "🌊 正在获取更新命令……"
 
 UPDATE_COMMANDS_OK=false
 for attempt in 1 2 3; do
@@ -490,7 +572,7 @@ for attempt in 1 2 3; do
         break
     fi
     if [[ "$attempt" -lt 3 ]]; then
-        echo -e "${YELLOW}🌊 Retrying the update commands ($((attempt + 1))/3)...${RESET}"
+        say "${YELLOW}🌊 Retrying the update commands ($((attempt + 1))/3)...${RESET}" "${YELLOW}🌊 正在重试获取更新命令（$((attempt + 1))/3）……${RESET}"
     fi
 done
 
@@ -563,11 +645,11 @@ install_failed() {
 
     echo "" >&2
     echo -e "${RED_BOLD}🌊 Installation did not finish (exit $code).${RESET}" >&2
-    echo "🌊 Nothing was removed. Files already downloaded may be left in:" >&2
+    say_err "🌊 Nothing was removed. Files already downloaded may be left in:" "🌊 没有删除任何内容。已下载的文件可能留在："
     echo "     ${BASE_DIR:-<not chosen yet>}" >&2
     echo "     ${CONFIG_DIR:-<not chosen yet>}" >&2
-    echo "🌊 Fix the cause (network, permissions, disk space) and run the installer again;" >&2
-    echo "🌊 a repeated install overwrites what it downloaded and is safe to rerun." >&2
+    say_err "🌊 Fix the cause (network, permissions, disk space) and run the installer again;" "🌊 请排除原因（网络、权限、磁盘空间）后重新运行安装程序；"
+    say_err "🌊 a repeated install overwrites what it downloaded and is safe to rerun." "🌊 重复安装会覆盖已下载的内容，可以安全重跑。"
 }
 trap install_failed ERR
 
@@ -617,8 +699,8 @@ run_cmd chmod 755 "$CONFIG_DIR"
 run_cmd chmod 644 "$CONFIG_FILE"
 run_cmd chmod 644 "$VERSION_FILE"
 
-echo "🌊 Configuration saved to $CONFIG_FILE"
-echo "🌊 Version saved to $VERSION_FILE"
+say "🌊 Configuration saved to $CONFIG_FILE" "🌊 配置已保存到 $CONFIG_FILE"
+say "🌊 Version saved to $VERSION_FILE" "🌊 版本信息已保存到 $VERSION_FILE"
 
 # ==========================================
 # 删除1.x旧版 repo.json，软件包索引现已网络实时拉取，不再依赖需要记得刷新（否则安装不到新版）、冗余（用户还得下载且没什么用）的本地索引
@@ -626,7 +708,7 @@ echo "🌊 Version saved to $VERSION_FILE"
 
 OLD_JSON="$REPO_DIR/repo.json"
 if [ -f "$OLD_JSON" ]; then
-    echo "🌊 Removing old repo.json (legacy format)..."
+    say "🌊 Removing old repo.json (legacy format)..." "🌊 正在删除旧格式的 repo.json……"
     run_cmd rm -f "$OLD_JSON"
 fi
 
@@ -652,11 +734,11 @@ fi
 # ==========================================
 
 if command -v otool > /dev/null 2>&1 && command -v install_name_tool > /dev/null 2>&1 && command -v codesign > /dev/null 2>&1; then
-    echo "🌊 Xcode Command Line Tools detected (otool / install_name_tool / codesign)."
+    say "🌊 Xcode Command Line Tools detected (otool / install_name_tool / codesign)." "🌊 已检测到 Xcode Command Line Tools（otool / install_name_tool / codesign）。"
 else
-    echo -e "${YELLOW}🌊 Warning: Xcode Command Line Tools not found.${RESET}"
-    echo -e "${YELLOW}🌊 Dependency libraries cannot be relocated, so some packages may fail to run.${RESET}"
-    echo "🌊 You can install them later with: xcode-select --install"
+    say "${YELLOW}🌊 Warning: Xcode Command Line Tools not found.${RESET}" "${YELLOW}🌊 警告：未检测到 Xcode Command Line Tools。${RESET}"
+    say "${YELLOW}🌊 Dependency libraries cannot be relocated, so some packages may fail to run.${RESET}" "${YELLOW}🌊 依赖库无法重定位，部分软件包可能运行不起来。${RESET}"
+    say "🌊 You can install them later with: xcode-select --install" "🌊 之后可用这条命令安装：xcode-select --install"
 fi
 
 # ==========================================
@@ -667,6 +749,8 @@ fi
 # MACWAVE_CURRENT_VERSION 留空 → 脚本走「首次安装」那条路，下载全部文件。
 
 export MACWAVE_INSTALL_DIR="$BASE_DIR"
+# 语言一路传到底下的更新脚本，否则安装过程会中英混杂。
+export MACWAVE_LANG="$MW_LANG"
 export MACWAVE_CONFIG_DIR="$CONFIG_DIR"
 export MACWAVE_CORE_URL="$CORE_URL"
 export MACWAVE_BRANCH="$BRANCH"
@@ -789,7 +873,7 @@ ensure_portable_python() {
     # 这一步失败不算错：网络不好时继续用本机已有的那份，安装照常完成。
     # 但**必须先问一次**，否则「本机已有 3.14.9」会让升级到「要求 3.15」的版本时
     # 永远发现不了自己落后 —— 这正是 per-version 目录存在的理由。
-    echo "🌊 Checking the bundled Python version..." >&2
+    say_err "🌊 Checking the bundled Python version..." "🌊 正在检查自带 Python 版本……"
     latest_file="$(mktemp -t macwave-pylatest)"
     if curl -fsSL --max-time 30 -o "$latest_file" "$PYTHON_DOMAIN_URL/pythondata/latest.toml" 2>/dev/null; then
         version="$(read_toml_string "$(cat "$latest_file")" version)"
@@ -820,7 +904,7 @@ ensure_portable_python() {
     fi
 
     # ── 第二步：这个版本各架构的地址与校验值 ──
-    echo "🌊 Fetching the bundled Python $version definition..." >&2
+    say_err "🌊 Fetching the bundled Python $version definition..." "🌊 正在获取自带 Python $version 的定义……"
     url_file="$(mktemp -t macwave-pyurl)"
     if ! curl -fsSL --max-time 30 -o "$url_file" \
          "$PYTHON_DOMAIN_URL/pythondata/$version/python_url.toml" 2>/dev/null; then
@@ -845,7 +929,7 @@ ensure_portable_python() {
     fi
 
     # ── 第三步：下载并校验 ──
-    echo "🌊 Downloading the bundled Python $version (about 26 MB)..." >&2
+    say_err "🌊 Downloading the bundled Python $version (about 26 MB)..." "🌊 正在下载自带 Python $version（约 26 MB）……"
     archive="$base_dir/downloads/tmp/portable-python-$version.tar.gz"
     mkdir -p "$base_dir/downloads/tmp" 2>/dev/null || true
     if ! curl -fsSL --max-time 900 -o "$archive" "$archive_url" 2>/dev/null; then
@@ -888,7 +972,7 @@ BUNDLED_PY="$MW_OPTIONAL_RESULT"
 if [[ -n "$BUNDLED_PY" ]]; then
     PYTHON_BIN="$BUNDLED_PY"
     PYTHON_SOURCE="bundled"
-    echo "🌊 Using the bundled Python: ${BUNDLED_PY#"$BASE_DIR"/}"
+    say "🌊 Using the bundled Python: ${BUNDLED_PY#"$BASE_DIR"/}" "🌊 使用自带的 Python：${BUNDLED_PY#"$BASE_DIR"/}"
 else
     PYTHON_BIN="$(command -v python3 || true)"
     PYTHON_SOURCE="system"
@@ -901,13 +985,13 @@ else
     echo -e "${YELLOW}🌊 Re-run the installer when the network is available to make this installation self-contained.${RESET}"
 fi
 
-echo "🌊 Creating the private Python environment..."
+say "🌊 Creating the private Python environment..." "🌊 正在创建独立的 Python 环境……"
 mkdir -p "$VENV_DIR" 2>/dev/null || true
 
 if "$PYTHON_BIN" -m venv "$VENV_DIR" >/dev/null 2>&1; then
     VENV_PY="$VENV_DIR/bin/python3"
     [[ -x "$VENV_PY" ]] || VENV_PY="$VENV_DIR/bin/python"
-    echo "🌊 Private Python environment ready: ${VENV_DIR#"$BASE_DIR"/}"
+    say "🌊 Private Python environment ready: ${VENV_DIR#"$BASE_DIR"/}" "🌊 独立 Python 环境已就绪：${VENV_DIR#"$BASE_DIR"/}"
 else
     echo -e "${YELLOW}🌊 Warning: could not create a private virtualenv; using the ${PYTHON_SOURCE} interpreter directly.${RESET}"
 fi
@@ -919,10 +1003,10 @@ PIP_FLAGS=(--quiet --disable-pip-version-check --timeout 30 --retries 2
            --index-url "$PIP_INDEX_URL")
 
 if [[ -n "$VENV_PY" && -x "$VENV_PY" ]]; then
-    echo "🌊 Installing Python dependencies into the private environment..."
+    say "🌊 Installing Python dependencies into the private environment..." "🌊 正在向独立环境安装 Python 依赖……"
     # pip 默认会无限等下去，网络不好时看上去就是卡死。给它超时与重试，
     # 并说明这一步可能要一会儿，免得用户以为程序挂了。
-    echo "🌊 Installing Python dependencies into the private environment (this can take a minute)..."
+    say "🌊 Installing Python dependencies into the private environment (this can take a minute)..." "🌊 正在向独立环境安装 Python 依赖（可能需要一分钟）……"
     "$VENV_PY" -m pip install "${PIP_FLAGS[@]}" --upgrade pip >/dev/null 2>&1 || true
     if ! "$VENV_PY" -m pip install "${PIP_FLAGS[@]}" "${PIP_DEPS[@]}"; then
         echo -e "${RED_BOLD}🌊 Error: failed to install the Python dependencies.${RESET}"
@@ -932,7 +1016,7 @@ if [[ -n "$VENV_PY" && -x "$VENV_PY" ]]; then
         exit 1
     fi
 else
-    echo "🌊 Installing Python dependencies into $PYTHON_BIN..."
+    say "🌊 Installing Python dependencies into $PYTHON_BIN..." "🌊 正在向 $PYTHON_BIN 安装 Python 依赖……"
     if ! "$PYTHON_BIN" -m pip install "${PIP_FLAGS[@]}" "${PIP_DEPS[@]}" 2>/dev/null; then
         if ! "$PYTHON_BIN" -m pip install "${PIP_FLAGS[@]}" --user --break-system-packages "${PIP_DEPS[@]}"; then
             echo -e "${RED_BOLD}🌊 Error: failed to install the Python dependencies.${RESET}"
@@ -1006,8 +1090,8 @@ if command -v python3 >/dev/null 2>&1; then
     exec python3 "$entry" "$@"
 fi
 
-echo "🌊 Error: no usable Python 3 interpreter was found." >&2
-echo "🌊 Reinstall MacWave with lib/install.sh." >&2
+say_err "🌊 Error: no usable Python 3 interpreter was found." "🌊 错误：找不到可用的 Python 3 解释器。"
+say_err "🌊 Reinstall MacWave with lib/install.sh." "🌊 请用 lib/install.sh 重新安装 MacWave。"
 exit 1
 LAUNCHER
 
@@ -1060,20 +1144,20 @@ remove_lw_path_entries() {
     grep -v -F -e "$PATH_LINE" -e "# MacWave" "$rc" > "$rc.macwave.tmp" || true
     cat "$rc.macwave.tmp" > "$rc"
     rm -f "$rc.macwave.tmp"
-    echo "🌊 Removed MacWave PATH entries from $rc"
+    say "🌊 Removed MacWave PATH entries from $rc" "🌊 已从 $rc 移除 MacWave 的 PATH 条目"
 }
 
 if grep -qF "$PATH_LINE" "$RC_FILE" 2>/dev/null; then
-    echo "🌊 MacWave is already in your PATH."
+    say "🌊 MacWave is already in your PATH." "🌊 MacWave 已在 PATH 中。"
 else
     if grep -qF "$INSTALL_DIR" "$RC_FILE" 2>/dev/null; then
         # 旧版本（如 2.1.0）的 PATH 行只有 bin/ 与 lib/，升级后需要换成含 links/ 的新行
-        echo "🌊 Replacing old MacWave PATH entry in $RC_FILE..."
+        say "🌊 Replacing old MacWave PATH entry in $RC_FILE..." "🌊 正在替换 $RC_FILE 里的旧 PATH 条目……"
         grep -v -F "export PATH=\"$INSTALL_DIR" "$RC_FILE" > "$RC_FILE.macwave.tmp" || true
         cat "$RC_FILE.macwave.tmp" > "$RC_FILE"
         rm -f "$RC_FILE.macwave.tmp"
     else
-        echo "🌊 Adding MacWave to PATH in $RC_FILE..."
+        say "🌊 Adding MacWave to PATH in $RC_FILE..." "🌊 正在把 MacWave 加入 $RC_FILE 的 PATH……"
         echo "" >> "$RC_FILE"
         echo "# MacWave" >> "$RC_FILE"
     fi
@@ -1087,25 +1171,25 @@ fi
 # 必须放在「安装完成」之前：否则先告诉用户已经装好，随后又因为不同意而全部删除。
 
 echo ""
-echo -e "${YELLOW}Please read the agreement before use (see bottom of https://macwave.org).${RESET}"
+say "${YELLOW}Please read the agreement before use (see bottom of https://macwave.org).${RESET}" "${YELLOW}使用前请先阅读用户协议（见 https://macwave.org 页面底部）。${RESET}"
 if [[ "$CLI_CI" == "true" ]]; then
-    echo "🌊 --ci: the agreement is accepted automatically."
+    say "🌊 --ci: the agreement is accepted automatically." "🌊 --ci：自动接受用户协议。"
     agreement="y"
 else
-    echo -e "${YELLOW}Have you read and agreed to the agreement? [Y/n]${RESET}"
+    say "${YELLOW}Have you read and agreed to the agreement? [Y/n]${RESET}" "${YELLOW}你是否已阅读并同意该协议？[Y/n]${RESET}"
     read -r agreement < /dev/tty
 fi
 if [[ -z "$agreement" || "$agreement" =~ ^[Yy]$ ]]; then
-    echo -e "${GREEN}You have agreed to the agreement.${RESET}"
+    say "${GREEN}You have agreed to the agreement.${RESET}" "${GREEN}已记录你的同意。${RESET}"
 else
     # 回滚要连 rc 里的 PATH 一起清掉，否则会留下指向已删除目录的一行。
     # 这里不写死 sudo：用户级安装全程无需提权，回滚也不该突然要密码。
-    echo -e "${RED_BOLD}You do not agree to the agreement. Installation stopped.${RESET}"
-    echo -e "${RED_BOLD}🌊 Cleaning up downloaded files...${RESET}"
+    say "${RED_BOLD}You do not agree to the agreement. Installation stopped.${RESET}" "${RED_BOLD}你未同意该协议，安装已停止。${RESET}"
+    say "${RED_BOLD}🌊 Cleaning up downloaded files...${RESET}" "${RED_BOLD}🌊 正在清理已下载的文件……${RESET}"
     run_cmd rm -rf "$BASE_DIR"
     run_cmd rm -rf "$CONFIG_DIR"
     remove_lw_path_entries "$RC_FILE"
-    echo -e "${RED_BOLD}🌊 All files have been deleted.${RESET}"
+    say "${RED_BOLD}🌊 All files have been deleted.${RESET}" "${RED_BOLD}🌊 所有文件已删除。${RESET}"
     exit 1
 fi
 
@@ -1114,12 +1198,12 @@ fi
 # ==========================================
 
 echo ""
-echo "🌊 Installation complete!"
-echo "🌊 MacWave installed to: $DISPLAY_DIR"
-echo "🌊 Architecture: $ARCH"
+say "🌊 Installation complete!" "🌊 安装完成！"
+say "🌊 MacWave installed to: $DISPLAY_DIR" "🌊 MacWave 已安装到：$DISPLAY_DIR"
+say "🌊 Architecture: $ARCH" "🌊 架构：$ARCH"
 echo ""
 RC_DISPLAY=$(home_to_tilde "$RC_FILE")
-echo "🌊 To use 'wave' immediately in this terminal, run:"
+say "🌊 To use 'wave' immediately in this terminal, run:" "🌊 想在当前终端立刻使用 wave，请运行："
 echo -e "${YELLOW}    source $RC_DISPLAY${RESET}"
-echo "🌊 Or simply open a new terminal window."
+say "🌊 Or simply open a new terminal window." "🌊 或者直接打开一个新终端窗口。"
 echo ""

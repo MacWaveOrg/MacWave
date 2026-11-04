@@ -22,7 +22,7 @@ that is what we promise. Individual packages may declare their own minimum;
 
 ## 🌊 Latest Version
 
-4.2.0, Release on 2026-11-03
+4.2.1, Release on 2026-11-04
 
 ## 🌊 About MacWave 
 
@@ -49,6 +49,15 @@ In the terminal, run:
 ```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/install.sh)" && source ~/.zshrc
 ```
+
+Installer options go after `--`, which ends bash's own options:
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/install.sh)" -- --zh
+```
+
+`--zh` prints the installer in Chinese. `--ci --dir-option=1` installs with no
+prompt. `install.sh --help` lists the rest.
 
 (If you are using bash instead of zsh, run ```source ~/.bashrc```)
 

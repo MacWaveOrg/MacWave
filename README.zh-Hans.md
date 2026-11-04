@@ -21,7 +21,7 @@ Catalina —— 但 12 以下没有做过端到端实测，所以我们只承诺
 
 ## 🌊 最新版本
 
-4.2.0，发布于 2026-11-03
+4.2.1，发布于 2026-11-04
 
 ## 🌊 关于MacWave
 
@@ -48,6 +48,15 @@ MacWave 是一个**面向 macOS 的包管理器**，用于分发 macOS 软件开
 ```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/install.sh)" && source ~/.zshrc
 ```
+
+安装选项写在 `--` 之后（那个 `--` 用来结束 bash 自己的选项）：
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/install.sh)" -- --zh
+```
+
+`--zh` 让安装程序用中文输出。`--ci --dir-option=1` 全程无交互安装。
+其余选项见 `install.sh --help`。
 
 （如果你使用的是 bash 而非 zsh，请运行 ```source ~/.bashrc```）
 
