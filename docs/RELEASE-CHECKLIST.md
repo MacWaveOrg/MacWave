@@ -260,10 +260,28 @@ gh release view "$TAG" -R MacWaveOrg/MacWave --json assets --jq '.assets | lengt
 # 应等于 py/sh 文件数 + 2（4.1.0 是 46 + 2 = 48）
 ```
 
-四个容易踩的点：
+五个容易踩的点：
 
-- **文件名会撞。** `.Pseudocode/pkg/pkginstaller.py` 与 `pkg/pkginstaller.py` 同名，扁平化后只剩一个。
-  所以第 1 步要 `grep -v '^\.'` —— 那个目录只是早期伪代码，本来就不该出现在资产里。
+- **文件名会撞。** 扁平化后同名的两个文件只会剩一个，而且**后写的那个静默覆盖前一个**，
+  不报错、资产数少一也不明显。已知两处：
+  - `.Pseudocode/pkg/pkginstaller.py` 与 `pkg/pkginstaller.py` 同名。
+    所以第 1 步要 `grep -v '^\.'` —— 那个目录只是早期伪代码，本来就不该出现在资产里。
+  - `lib/install.sh`（主安装器）与 `scripts/mirror-check/install.sh`（镜像巡检）同名。
+    主安装器保留原名，巡检脚本上传为 `mirror-check-install.sh`（4.3.0 起）。
+
+  上传前先自查撞名，再逐文件比对 blob 哈希（只数个数看不出覆盖）：
+
+  ```bash
+  # 撞名自查：应为空
+  while read -r p; do basename "$p"; done < /tmp/src.txt | sort | uniq -d
+
+  # 内容自查：把 <改名的映射> 写进循环，其余同名
+  while read -r p; do
+    want=$(git rev-parse "$TAG:$p"); got=$(git hash-object "/tmp/rel/$(basename "$p")")
+    [ "$want" = "$got" ] || echo "不一致: $p"
+  done < /tmp/src.txt
+  ```
+
 - **`gh release upload` 必须带 `--clobber`。** 否则重跑报 422。
 - **macOS 上打归档要加 `--no-xattrs`。** 不加时 bsdtar 会把扩展属性写进 pax 头，Linux 解包多出 `._*`。
   打完务必解包 `diff -r` 一遍，确认与原树逐文件一致。
