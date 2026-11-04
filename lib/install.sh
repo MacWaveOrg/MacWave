@@ -60,11 +60,14 @@ MW_LANG="en"
 # “波浪（🌊）执行下列命令将 MacWave 添加到 PATH，eval（还念成了 evil）…………（此处省略若干字）”
 # 以后谁也不许把函数命名为 say！
 # 甚至 Siri 把 eval 念成 evil，导致作者获得外号“Evil哥”！
+# 谁敢让我的 Mac 发出一点声音，我跟他拼了！ ———— Sha0huaZhang，2026
 #
 # During one debugging session, the author accidentally pasted code containing the say part into a bash terminal in the meeting room, and his Mac started loudly announcing the commands:
 # "Wave (🌊) Execute the following command to add MacWave to PATH, eval (which was also pronounced as evil) ………… (several words omitted here)"
 # From now on, no one is allowed to name a function say!
 # Even Siri pronounced eval as evil, which earned the author the nickname "Brother Evil"!
+# Whoever dares to make my Mac emit even a single sound—I'll fight them to the death! ———— Sha0huaZhang, 2026
+
 # ⚠️⚠️⚠️-------------------------------------
 # 原因很简单：macOS 自带 /usr/bin/say —— 一个把参数念出来的朗读命令。函数一旦
 # 也叫 say，任何一行 `say "…" "…"` 被粘进终端（从文档、从源码、从聊天记录里）
@@ -151,8 +154,8 @@ mw_check_say_hijack() {
     fi
 }
 
-mw_check_say_hijack
-unset -f mw_check_say_hijack   # 用完即删，避免污染后面的函数命名空间
+# 调用点不在这里：这段代码跑在参数解析**之前**，那时还不知道有没有 --no-noise。
+# 见下面参数解析之后的调用。函数定义先留着。
 
 # 💀💀💀=====================================
 
@@ -423,6 +426,9 @@ print_dir_menu() {
 # ==========================================
 
 CLI_CI=false
+# --no-noise：额外做一次「mw_say 有没有被劫持成 /usr/bin/say」的检查。
+# 默认不查：那件事只影响开发机，普通人装个包不该被前置闸门挡住拦下。
+NO_NOISE=false
 CLI_DIR_OPTION=""
 CLI_CUSTOM_DIR=""
 # 默认从我们自己的 Python 仓库取解释器；这个开关让它回上游取
@@ -457,6 +463,9 @@ Options:
                             Download the bundled CPython from its upstream URL
                             (recorded in pythondata/<version>/python_url.toml)
                             instead of from MacWave's own Python repository.
+        --no-noise          Also check that mw_say has not been hijacked by
+                            /usr/bin/say (the macOS spoken-text command).
+                            Off by default; --NO-NOISE and --No-Noise work too.
       --zh                Print in Chinese (English by default).
   -h, --help              Show this help.
 
@@ -494,6 +503,8 @@ MacWave 安装程序
                             自带 CPython 改从上游 URL 下载（记录在
                             pythondata/<version>/python_url.toml），
                             而不是从 MacWave 自己的 Python 仓库取。
+        --no-noise          额外检查 mw_say 有没有被 /usr/bin/say（macOS 的朗读
+                            命令）劫持。默认不查；--NO-NOISE、--No-Noise 也认。
       --zh                用中文输出（默认英文）。
   -h, --help              显示本帮助。
 
@@ -538,6 +549,11 @@ while [[ $# -gt 0 ]]; do
         --install-python-from-source)
             INSTALL_PYTHON_FROM_SOURCE=1
             ;;
+        # --no-noise / --NO-NOISE / --No-Noise 都认：这是给自己人用的开关，
+        # 强求统一大小写只会浪费一次重敲。
+        --[Nn][Oo]-[Nn][Oo][Ii][Ss][Ee])
+            NO_NOISE=true
+            ;;
         --zh|--ZH)
             MW_LANG="zh"
             ;;
@@ -552,6 +568,16 @@ while [[ $# -gt 0 ]]; do
     esac
     shift
 done
+
+# --no-noise 的正事。必须放在解析之后 —— 放前面的话 NO_NOISE 还是默认值 false，
+# 旗标永远不会生效（第一版就是这么错的，实测三种写法全都没触发）。
+#
+# 默认不查的理由：这个检查防的是「开发机上的 mw_say 被劫持成朗读命令」，
+# 与普通人装包无关；默认拦下来只会让人一脸问号地装不上。
+if [[ "$NO_NOISE" == "true" ]]; then
+    mw_check_say_hijack
+fi
+unset -f mw_check_say_hijack   # 用完即删，避免污染后面的函数命名空间
 
 # 通过管道安装时，选项很容易被当成脚本名传进来：
 #   bash -c "$(curl ...)" --ci         ← --ci 变成 $0，被静默丢掉
