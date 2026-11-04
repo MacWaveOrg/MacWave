@@ -11,7 +11,15 @@ Linux? View [LinuxWave](https://github.com/LinuxWaveOrg/LinuxWave)
 [macwave.org](https://macwave.org)
 
 ## 🌊 Supported macOS Version
-macOS Sonoma 14 and above
+
+**macOS Monterey 12 and above.**
+
+Verified on macOS 12.7.6 (2015 MacBook Air, Intel, Xcode CLT 14.2). The bundled
+CPython declares `minos 10.15` on x86_64 and `11.0` on arm64, so Catalina is the
+theoretical floor on Intel — but nothing below 12 has been tested end to end, so
+that is what we promise. Individual packages may declare their own minimum;
+`wave info <package>` shows it, and the installer asks before going ahead.
+
 ## 🌊 Latest Version
 
 4.2.0, Release on 2026-11-03
@@ -44,7 +52,7 @@ In the terminal, run:
 
 (If you are using bash instead of zsh, run ```source ~/.bashrc```)
 
-**Requirements: macOS Sonoma 14 or later, Xcode Command Line Tools (14.0 or later).**
+**Requirements: macOS Monterey 12 or later, Xcode Command Line Tools.**
 
 **You do not need to install Python.** MacWave ships its own CPython under
 `<install-dir>/python/` and runs from a private environment beside it, so the

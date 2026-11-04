@@ -78,7 +78,7 @@ git switch -c 4.1          # 从 main 切出，保证历史连续
 | ~~把 `infosource` 全库的 `min_os` 回填完（`arm64` 与 `amd64` 两套）~~ **已完成**（`infosource` `c92d1fc`） | 覆盖到真实软件包 100%；缺的只有 `test_*` 与 `fileicon`，它们本来就没有 Mach-O |
 | `backfill_min_os_from_bottle.py --dry-run` 要看到真实包 `no-minos=0` | 有产物读不出 `minos`，说明提取漏了某种形态（裸二进制 / tar / zip / `.conda` / 单文件 `.gz` / `LC_VERSION_MIN_MACOSX`） |
 | 复核「询问式」是否仍是想要的形态 | 现在是：警告 + `[y/N]`，只有 `y`/`Y` 继续；`-s` 直接拒绝、`-sS` 才说原因；`-F` 强制越过。改成硬拦截前必须确认 `jq` 这类「声明保守」的包不被误杀 —— 它声明 14.0 却在 12.7.6 上实测能跑 |
-| 更新对外文案（官网与 Release） | 官网现在说 `Sonoma 14+`，与索引里的真实下限不一致 |
+| ~~更新对外文案（官网与 Release）~~ **已完成** | 官网与两个 README 改成 `macOS Monterey 12 and above`（实测下限），README 里另写明 Intel 的理论地板 10.15 与「12 以下未实测」的边界 |
 | 在 `AGENTS.md`、本文件去掉「实验性」字样 | 否则后来的人会按旧语义改代码 |
 
 ### 第 2 步：**先改 `configdata` 的 `branch`，再合并到 main**

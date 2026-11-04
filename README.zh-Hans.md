@@ -11,7 +11,14 @@ Linux 用户？请看 [LinuxWave](https://github.com/LinuxWaveOrg/LinuxWave)
 [macwave.org](https://macwave.org)
 
 ## 🌊 支持的 macOS 版本
-macOS Sonoma 14 及以上
+
+**macOS Monterey 12 及以上。**
+
+实测于 macOS 12.7.6（2015 款 MacBook Air，Intel，Xcode CLT 14.2）。自带 CPython
+在 x86_64 上声明 `minos 10.15`、arm64 上是 `11.0`，所以 Intel 的理论地板是
+Catalina —— 但 12 以下没有做过端到端实测，所以我们只承诺 12。单个软件包可能有
+自己的下限，`wave info <包名>` 可以看到，安装时也会先问一句。
+
 ## 🌊 最新版本
 
 4.2.0，发布于 2026-11-03
@@ -44,7 +51,7 @@ MacWave 是一个**面向 macOS 的包管理器**，用于分发 macOS 软件开
 
 （如果你使用的是 bash 而非 zsh，请运行 ```source ~/.bashrc```）
 
-**环境要求：macOS Sonoma 14 及以上、Xcode Command Line Tools（14.0 及以上）。**
+**环境要求：macOS Monterey 12 及以上、Xcode Command Line Tools。**
 
 **你不需要自己安装 Python。** MacWave 自带一份 CPython，放在
 `<安装目录>/python/` 下，并在旁边建私有运行环境；因此 PATH 上的 `python3`
