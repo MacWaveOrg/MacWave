@@ -988,6 +988,12 @@ def phase_install_cycle(wave, rng, plans, checks):
         elif plan.mode == "resume":
             argv += [random_flag(rng, "-C", "--continue")]
 
+        # 强制放行 min_os 询问：随机抽到的包可能在声明上要求更高的系统
+        # （ipsw 声明 27.2，而 runner 是 26.6.2），非交互读不到答复就会中止，
+        # 于是「随机包装不成」被记成失败。这里测的是安装链路本身，询问与拒绝的
+        # 语义由 scripts/minos_test.sh 专门覆盖。
+        argv.append("-F")
+
         max_time_args = maybe_max_time(rng)
         argv += max_time_args
 
