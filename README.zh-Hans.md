@@ -344,7 +344,7 @@ wave latest --all                  Same, for every installed package
 ## 🌊 演示图片
 
 <p align="center">
-  <img src="images/demo1.png" alt="demo1" width="80%" style="max-width: 720px;">
+  <img src="images/demo1.gif" alt="wave install ffmpeg running in a terminal" width="80%" style="max-width: 720px;">
 </p>
 
 ## 🌊 支持的软件包

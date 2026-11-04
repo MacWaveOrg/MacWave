@@ -353,7 +353,7 @@ when that would leave the link pointing at the version you are removing.
 ## 🌊 Demo Pictures
 
 <p align="center">
-  <img src="images/demo1.png" alt="demo1" width="80%" style="max-width: 720px;">
+  <img src="images/demo1.gif" alt="wave install ffmpeg running in a terminal" width="80%" style="max-width: 720px;">
 </p>
 
 ## 🌊 Supported Packages
