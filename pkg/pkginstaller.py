@@ -140,7 +140,7 @@ ALLOWED_FLAGS = {
     "--limit-rate", "--proxy", "--unlink", "--ver", "--max-time",
     "--connect-timeout", "--content-time",
     "--install-from-source",
-    "--force",
+    "-F", "--force",
 }
 
 # 只对 upgrade 有意义的参数。单列出来是为了在 install 里用错时能说清原因，
@@ -177,12 +177,13 @@ def current_macos_version():
     return _parse_dotted_version(platform.mac_ver()[0] or "")
 
 
-def check_min_os(record_text, pkg_name, pkg_version, force):
-    """版本记录声明了 min_os 且本机低于它时提醒，返回是否继续安装。
+def confirm_min_os(record_text, pkg_name, pkg_version, force=False):
+    """版本记录声明了 min_os 且本机低于它时，警告并问一句。返回是否继续安装。
 
     **实验性，4.3 转正。** 这是兼容性提示，不是安全边界：声明偏保守与声明准确
-    两种情况都有 —— jq@1.8.2 声明 14.0 却在 12.7.6 上实测能跑，pandoc@3.13 声明
-    15.0 则可能真用到新 API。客户端分辨不了，所以把决定权交给用户。
+    两种情况都有 —— jq@1.8.2 声明 14.0 却在 12.7.6 上实测照常输出 jq-1.8.2，
+    pandoc@3.13 声明 15.0 则可能真用到新 API。客户端分辨不了，所以把选择交给
+    用户：只有明确答复 y/Y 才继续，其它一律中止。
 
     字段还没在索引里普及，缺失时静默跳过。读不到本机版本（非 darwin）也跳过。
     """
@@ -201,31 +202,31 @@ def check_min_os(record_text, pkg_name, pkg_version, force):
 
     declared = ".".join(str(part) for part in required)
     actual = ".".join(str(part) for part in running)
-
-    if force:
-        steplog.detail(f"min_os {declared} > running {actual}, --force given")
-        return True
-
     steplog.detail(f"min_os {declared} > running {actual}")
 
     warning = (f"{YELLOW}🌊 Warning: {pkg_name}@{pkg_version} declares macOS "
                f"{declared} or later, this machine is {actual}.{RESET}")
-    print(warning)
 
-    # 静默模式不提问：--quiet 表示「按你现有的判断走」，批量脚本不该被兼容性
-    # 提示打断。警告仍然打出来 —— 静默的是提问，不是事实。
-    if quiet.is_silent():
+    # -F/--force 越过询问，但警告照打 —— -s 时连警告一起静默（fd 上其实已经指向
+    # /dev/null 了，这里显式判断是让意图写在代码里，不依赖那层副作用）。
+    if force:
+        if not quiet.is_silent():
+            print(warning)
         return True
 
-    print("🌊          It may still work: the declaration is a build-time minimum,")
-    print("🌊          not a guarantee. Continuing is your call.")
-    print("🌊          Add --force to skip this question next time.")
-    print("🌊 Continue anyway? [y/N]")
+    # -s 问不到答复，直接拒绝，不询问。原因由调用点的 steplog.fail 输出：
+    # 纯 -s 时 fd 已指向 /dev/null（一个字节都不出去），-sS 时才留着错误。
+    if quiet.is_silent():
+        return False
+
+    print(warning)
+    print("🌊          It may still work — that declaration is the build-time")
+    print("🌊          minimum, not a guarantee.")
+    print("🌊 Continue installing anyway? [y/N]")
     try:
         answer = input().strip()
     except (EOFError, KeyboardInterrupt):
-        # 非交互（CI / 脚本里 stdin 是 /dev/null）读不到答复：按拒绝处理，
-        # 与 --skip-ssl 同一条原则 —— 缺省往安全的方向倒。
+        # 非交互（CI / 脚本里 stdin 是 /dev/null）读不到答复：同样按中止处理。
         answer = ""
     return answer in ("Y", "y")
 
@@ -410,8 +411,8 @@ def handle_download_args(input_string):
         # 4.0 只从 Bottle 存储取二进制，url 字段平时不读；
         # 只有这个开关会让安装绕开 Bottle，直接回上游取（含依赖）。
         "install_from_source": "--install-from-source" in flags,
-        # 4.3 起 min_os 检查转正后，这个旗标就是「我知道它要求更高的系统，仍要装」。
-        "force": "--force" in flags,
+        # 索引声明的最低系统版本高于本机时，跳过询问直接装。
+        "force": "-F" in flags or "--force" in flags,
     }
 
     # 1. --skip-ssl 安全询问
@@ -935,18 +936,15 @@ def handle_install(input_string):
     # 5.1 解析 deps 字段（写在版本文件里，可能多行），缺失视为无依赖
     dep_refs = get_deps(parse_common_fields(resp.text))
 
-    # 5.2 实验性：版本记录可以声明 min_os，低于它时提醒（4.3 转正）。
-    # 放在下载之前：声明不满足时不该先花带宽再报错。
-    if not check_min_os(resp.text, ParsePkgName, ParsePkgVersion, config["force"]):
-        declared = re.search(r'min_os:\s*"([^"]*)"', resp.text).group(1)
-        running = current_macos_version()
+    # 5.2 实验性：版本记录可以声明 min_os，低于它时警告并问一句（4.3 转正）。
+    # 放在下载之前：答复是「不装」时不该先花带宽。
+    if not confirm_min_os(resp.text, ParsePkgName, ParsePkgVersion, config["force"]):
         steplog.fail(
-            f"{ParsePkgName}@{ParsePkgVersion} declares macOS {declared} or later",
+            f"not installing {ParsePkgName}@{ParsePkgVersion}: "
+            "it declares a newer macOS than this machine runs",
             request=pkg_version_url,
-            extra="this machine runs "
-                  + ".".join(str(part) for part in (running or ())),
             hint=["nothing was downloaded or installed",
-                  "re-run with --force to install it anyway",
+                  "run it again and answer y at the prompt to install anyway",
                   f"`wave info {ParsePkgName}` shows the declaration"])
 
     # 6. 从哪儿取、文件叫什么，交给 domains.resolve_payload 决定。

@@ -132,7 +132,7 @@ def print_custom_help():
          "Give up if the server sends nothing for this long after connecting"),
         (_flag("--ver", "<string>"), "Install a specific version (install only; --ver=1.0 works too)"),
         (_flag("--install-from-source"), "Download from the upstream URL instead of MacWave's own store"),
-        (_flag("--force"), "Install anyway when the package declares a newer macOS than this machine runs (install / upgrade)"),
+        (_flag("-F, --force"), "Install anyway when the package declares a newer macOS than this machine runs (install / upgrade)"),
         (_flag("--install-python-from-source"), "Same, for the bundled Python (install / selfupdate)"),
         (_flag("MACWAVE_PIP_INDEX"), "Env var. pip index for the Python deps; default pypi.org/simple"),
     ])
@@ -180,7 +180,7 @@ COMMAND_HELP = {
             ("--unlink", "Do not create or re-point the unversioned link"),
             ("--install-from-source", "Download from the upstream URL in the index instead of "
                                       "MacWave's own bottle store (dependencies follow the same rule)"),
-            ("--force", "Install anyway when the package declares a newer macOS than this machine runs"),
+            ("-F, --force", "Install anyway when the package declares a newer macOS than this machine runs"),
             ("-v, --verbose", "Enable verbose output"),
         ],
         "examples": ["wave install jq", "wave install ffmpeg@6.1", "wave install jq --limit-rate 1M",
@@ -200,7 +200,7 @@ COMMAND_HELP = {
             ("--max-time <string>", "Total time limit for the request (40s, 1min, 1min20s, 2h; bare numbers are seconds)"),
             ("--connect-timeout <string>", "Give up if the handshake takes longer (like curl)"),
             ("--content-time <string>", "Give up if no data arrives for this long"),
-            ("--force", "Upgrade anyway when the package declares a newer macOS than this machine runs"),
+            ("-F, --force", "Upgrade anyway when the package declares a newer macOS than this machine runs"),
             ("-v, --verbose", "Enable verbose output"),
         ],
         "examples": ["wave upgrade jq", "wave upgrade jq -X", "wave upgrade --all",

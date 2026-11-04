@@ -1,20 +1,21 @@
 #!/bin/bash
 
 # minos_test.sh
-# min_os（实验性，4.3 转正）：版本解析、安装前提醒、info 展示。
+# min_os（实验性，4.3 转正）：版本解析、安装前警告、info 展示。
 #
 # 为什么需要它：这个字段的判断逻辑很窄，但错法很难在真机上复现 ——
-#   * 位数不同怎么比（10.15 与 10.15.7、14 与 14.0）
+#   * 位数不同怎么比（10.15 与 10.15.7、14 与 14.0、26.6.2 与 26.6.3）
 #   * 字段缺失必须**静默**：索引里绝大多数记录还没有它，误报会让所有人以为坏了
-#   * 非交互（CI / stdin 是 /dev/null）必须往安全侧倒，不能挂在那里等输入
+#   * 低于声明只警告、**不拦截**：jq 声明 14.0 却在 12.7.6 上实测跑得动，
+#     拦下来会误杀；所以这里钉住「警告照打、安装照走」
+#   * -s 要连警告一起静默（它自己的语义就是「什么都不打印」）
 #   * info 的 json / yaml / toml 三种输出里，没有声明时这一行都不该出现
 #
 # 用真实模块跑，不用 mock —— 上一轮随机测试的教训是：假设要能被确定性证伪。
 # 全程离线，不发请求。
 
 set -u
-# 关掉 -e：本脚本故意执行会返回 False 的路径（用户拒绝安装）。
-# CI 会用 `bash -e` 起脚本，继承到的 -e 会让第一个预期拒绝的用例结束整个脚本。
+# 关掉 -e：CI 会用 `bash -e` 起脚本，继承到的 -e 会让第一个非零退出结束整段。
 set +e
 
 RED_BOLD='\033[1;31m'
@@ -44,7 +45,9 @@ FAILED=0
 HARD_FAIL=0
 
 OUTPUT=$("$PYTHON" - "$REPO_DIR" <<'PYEOF'
+import io
 import sys
+from contextlib import redirect_stdout
 
 repo = sys.argv[1]
 for sub in ("pkg", "net", "lib", "surfboard"):
@@ -74,6 +77,14 @@ def record(min_os=None):
     return text
 
 
+def spoken(fn):
+    """跑一次，只返回它打到 stdout 的内容（steplog 走 stderr，不混进来）。"""
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        value = fn()
+    return buf.getvalue(), value
+
+
 # -------------------- 1. 版本解析 --------------------
 print("# parse")
 for text, want in [
@@ -89,41 +100,101 @@ for text, want in [
 ]:
     check(f"_parse_dotted_version({text!r})", inst._parse_dotted_version(text), want)
 
-# 位数不同时的比较方向：10.15 早于 10.15.7
+# 位数不同时的比较方向
 check("10.15 < 10.15.7",
       inst._parse_dotted_version("10.15") < inst._parse_dotted_version("10.15.7"), True)
 check("7.10 > 7.9",
       inst._parse_dotted_version("7.10") > inst._parse_dotted_version("7.9"), True)
 
-# -------------------- 2. 安装前的判断 --------------------
-print("# check")
-check("无 min_os 字段：放行", inst.check_min_os(record(), "jq", "1.8.2", False), True)
-check("低于本机：放行", inst.check_min_os(record("10.9"), "jq", "1.8.2", False), True)
-check("非法版本串：放行", inst.check_min_os(record("abc"), "jq", "1.8.2", False), True)
-check("空版本串：放行", inst.check_min_os(record(""), "jq", "1.8.2", False), True)
+# -------------------- 2. 该放行的必须放行，且一个字都不打 --------------------
+print("# silent pass-through")
+for label, text in [
+    ("无 min_os 字段", record()),
+    ("低于本机", record("10.9")),
+    ("非法版本串", record("abc")),
+    ("空版本串", record("")),
+]:
+    said, ret = spoken(lambda t=text: inst.confirm_min_os(t, "jq", "1.8.2"))
+    check(f"{label}：直接放行", ret, True)
+    check(f"{label}：一个字都不打", said, "")
 
+
+def ask(reply, text, *args):
+    """把 sys.stdin 换成给定答复，跑一次，返回 (打印内容, 返回值)。
+
+    直接调用会在真终端上阻塞等输入 —— 那会让本地跑脚本的人以为卡住了。
+    """
+    said, ret = "", None
+    old = sys.stdin
+    sys.stdin = io.StringIO(reply)
+    try:
+        said, ret = spoken(lambda: inst.confirm_min_os(text, *args))
+    finally:
+        sys.stdin = old
+    return said, ret
+
+
+# -------------------- 3. 低于声明：警告 + 问一句，y/Y 才继续 --------------------
+print("# warn and ask")
 running = inst.current_macos_version()
 if running is None:
     print("SKIP: 非 macOS，跳过「高于本机」一组")
 else:
     # 造一个「比本机高」的合法声明：末段 +1，段数不变。
-    # 不要用 running + (0,) —— 本机两段会得到三段，但 macOS 26.6.2 这类三段
-    # 的机器会拼出四段 "26.6.2.0"，而 _parse_dotted_version 最多收三段，
-    # 于是静默放行、断言全绿。CI 就是这个组合。
+    # 不要用 running + (0,) —— 两段机器会得到三段正好合法，但 macOS 26.6.2 这类
+    # 三段机器会拼出四段 "26.6.2.0"，_parse_dotted_version 不收，于是静默放行、
+    # 断言看起来全绿却什么都没验到。CI 就是这个组合。
     bumped = list(running)
     bumped[-1] += 1
     declared = ".".join(str(part) for part in bumped)
-    check("高于本机 + --force：放行",
-          inst.check_min_os(record(declared), "jq", "1.8.2", True), True)
-    # stdin 已被这里占住，非交互分支在下面由 shell 单独跑
-    print(f"NOTE: 本机 {running}，高于它的声明用 {declared}")
+    actual = ".".join(str(part) for part in running)
+    higher = record(declared)
+
+    said, ret = ask("y\n", higher, "jq", "1.8.2")
+    check("打出声明要求", declared in said, True)
+    check("打出本机版本", actual in said, True)
+    check("说明「可能仍然可用」", "may still work" in said, True)
+    check("问句带默认值 [y/N]", "[y/N]" in said, True)
+    check("是黄字", "\033[33m" in said and "\033[0m" in said, True)
+    check("答复 y：继续", ret, True)
+
+    check("答复 Y：继续", ask("Y\n", higher, "jq", "1.8.2")[1], True)
+    check("答复 n：中止", ask("n\n", higher, "jq", "1.8.2")[1], False)
+    check("直接回车（默认 N）：中止", ask("\n", higher, "jq", "1.8.2")[1], False)
+    check("答复 yes：中止（只认单个 y）", ask("yes\n", higher, "jq", "1.8.2")[1], False)
+    check("非交互（读不到答复）：中止", ask("", higher, "jq", "1.8.2")[1], False)
+
+    # -F / --force：越过询问，但警告照打
+    said, ret = ask("", higher, "jq", "1.8.2", True)
+    check("--force：不询问、直接继续", ret, True)
+    check("--force：不问句", "[y/N]" not in said, True)
+    check("--force：仍然打警告", declared in said, True)
+
+    # -s：不询问，直接拒绝。原因由调用点的 steplog.fail 负责输出
+    # （纯 -s 时 fd 已指向 /dev/null，一个字节都不出去；-sS 才留着错误）。
+    inst.quiet.set_silent(True)
+    said, ret = ask("y\n", higher, "jq", "1.8.2")
+    check("-s：一个字都不打", said, "")
+    check("-s：不询问、直接拒绝（答复被忽略）", ret, False)
+
+    # -s + -F：force 优先，仍然强制安装
+    said, ret = ask("", higher, "jq", "1.8.2", True)
+    check("-s + --force：仍然强制安装", ret, True)
+    check("-s + --force：也不打字", said, "")
+
+    # -sS：行为同 -s，只是错误留在输出里（由 steplog 决定，本函数不打）
+    inst.quiet.set_silent(True, show_error=True)
+    said, ret = ask("", higher, "jq", "1.8.2")
+    check("-sS：同样不询问、直接拒绝", ret, False)
+    check("-sS：本函数自己不打字", said, "")
+    inst.quiet.set_silent(False)
 
 print(f"# summary {passed} {failed}")
 PYEOF
 )
 
-# python 块崩溃时 PASS/FAIL 都不会打出来，统计会变成 0/0 然后"全绿" —— 必须单独抓
-[[ $? -eq 0 ]] || { HARD_FAIL=$((HARD_FAIL + 1)); echo -e "${RED_BOLD}🌊 FAIL: 版本解析段 python 异常退出${RESET}"; }
+# python 块崩溃时 PASS/FAIL 都不会打出来，统计会变成 0/0 然后「全绿」—— 必须单独抓
+[[ $? -eq 0 ]] || { HARD_FAIL=$((HARD_FAIL + 1)); echo -e "${RED_BOLD}🌊 FAIL: 版本与警告段 python 异常退出${RESET}"; }
 
 echo "$OUTPUT" | grep -v '^PASS: \|^FAIL: \|^NOTE: \|^SKIP: \|^#\|^$'
 
@@ -131,58 +202,6 @@ PASSED=$(echo "$OUTPUT" | grep -c '^PASS: ')
 FAILED=$(echo "$OUTPUT" | grep -c '^FAIL: ')
 echo "$OUTPUT" | grep '^FAIL: '
 echo "$OUTPUT" | grep '^SKIP: \|^NOTE: '
-
-# -------------------- 3. 非交互与用户答复 --------------------
-# 单独跑：这里要控制 stdin，不能和上面的断言共用同一个进程。
-
-cat > "$SCRIPT_DIR/.minos_probe.py" <<'PYEOF'
-import sys
-
-repo = sys.argv[1]
-for sub in ("pkg", "net", "lib", "surfboard"):
-    sys.path.insert(0, f"{repo}/{sub}")
-
-import pkginstaller as inst
-
-running = inst.current_macos_version()
-if running is None:
-    print("SKIP")
-    sys.exit(0)
-
-bumped = list(running)
-bumped[-1] += 1
-declared = ".".join(str(part) for part in bumped)
-record = 'sha256:"' + "a" * 64 + f'"\nmin_os: "{declared}"\n'
-print("RESULT", inst.check_min_os(record, "jq", "1.8.2", False))
-PYEOF
-
-probe() { "$PYTHON" "$SCRIPT_DIR/.minos_probe.py" "$REPO_DIR"; }
-
-verdict() {
-    local label="$1" want="$2" got="$3"
-    if [[ "$got" == "SKIP" ]]; then
-        echo "SKIP: $label"
-    elif [[ "$got" == "$want" ]]; then
-        PASSED=$((PASSED + 1))
-        echo -e "${GREEN}🌊 PASS: $label${RESET}"
-    else
-        FAILED=$((FAILED + 1))
-        echo -e "${RED_BOLD}🌊 FAIL: $label -> got $got, want $want${RESET}"
-    fi
-}
-
-verdict "交互答复 y：继续安装" \
-    "RESULT True"  "$(echo y | probe | tail -1)"
-verdict "交互答复 Y：继续安装" \
-    "RESULT True"  "$(echo Y | probe | tail -1)"
-verdict "交互答复 n：中止" \
-    "RESULT False" "$(echo n | probe | tail -1)"
-verdict "空答复（默认 N）：中止" \
-    "RESULT False" "$(echo '' | probe | tail -1)"
-verdict "非交互 /dev/null：中止（缺省往安全侧倒）" \
-    "RESULT False" "$(probe < /dev/null | tail -1)"
-
-rm -f "$SCRIPT_DIR/.minos_probe.py"
 
 # -------------------- 4. info 的输出 --------------------
 OUTPUT=$("$PYTHON" - "$REPO_DIR" <<'PYEOF'

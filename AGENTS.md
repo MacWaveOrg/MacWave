@@ -136,20 +136,29 @@ lib/innocent.dylib -> /Users/someone/.ssh/id_rsa
 | --- | --- |
 | 记录里没有 `min_os` | 静默放行 —— 字段还没普及，误报会让所有人以为坏了 |
 | 本机版本 ≥ 声明 | 静默放行 |
-| 本机版本 < 声明，交互 | 警告 + 询问，默认 N |
-| 同上，答复 `y` | 越过，继续安装 |
-| 同上，非交互（stdin 是 `/dev/null`） | 按拒绝处理，提示 `--force` |
-| 同上，`--force` | 静默越过 |
+| 本机 < 声明，默认 | 黄字警告 + 问 `Continue installing anyway? [y/N]` |
+| 同上，答复 `y` / `Y` | 越过，继续安装 |
+| 同上，其它任何答复（含直接回车、`yes`、非交互读不到） | 中止，**不下载** |
+| 同上，带 `-s`（含 `-sS`） | 不询问，直接中止。纯 `-s` 一个字节都不输出；`-sS` 才把原因打出来 |
+| 同上，`-F` / `--force` | 不问，直接装 —— **再看 `-s` 也压不住它** |
 | `wave info` | 打印 `Requires macOS: <ver> or later` |
 
-**加新包时**：产物在 macOS 14 上构建，`min_os` 就是 14.x，旧系统用户会看到提示。
-这不是错误，但要知道它会挡住一部分人。
+两条实现约定：
+
+- **`-s` 的静默不是靠「每个 print 都判断一下」**。`quiet.silence_everything()`
+  在 fd 层把 1、2 指向 `/dev/null`，子进程（curl、进度条）也一起闭嘴；带 `-S` 时
+  不换 fd，改由 `machine_readable()` 剥掉行首 🌊。
+- **`-F`/`--force` 的优先级最高**，判断在 `-s` 之前 —— 否则无人值守安装遇到声明
+  偏保守的包（`jq` 那种）就没有出路。
+
+**加新包时**：产物在 macOS 14 上构建，`min_os` 就是 14.x，旧系统用户会看到询问。
+这不是错误，但要知道它会挡住一部分人；`-F` 是给批量和 CI 场景留的门。
 
 落点：
 
 | 做什么 | 在哪 |
 | --- | --- |
-| 安装前判断 | [`pkg/pkginstaller.py`](./pkg/pkginstaller.py) 的 `check_min_os`，位于版本记录读完之后、下载之前（`step 6/11`） |
+| 安装前判断 | [`pkg/pkginstaller.py`](./pkg/pkginstaller.py) 的 `confirm_min_os`，位于版本记录读完之后、下载之前（`step 6/11`） |
 | info 展示 | [`pkg/pkginfohelper.py`](./pkg/pkginfohelper.py) 的 `fetch_version_min_os` |
 | 数据回填 | `infosource` 仓库的 `scripts/backfill_min_os.py`，从产物里的 `LC_BUILD_VERSION` 自动提取，取整包最大值 |
 | 回归 | [`scripts/minos_test.sh`](./scripts/minos_test.sh)，双 CI 都跑 |
