@@ -29,7 +29,7 @@ if [[ -n "${MACWAVE_TEST:-}" ]]; then
     esac
     export MACWAVE_TEST_ROOT="$SYS_ROOT"
     mkdir -p "$HOME"
-    say "🌊 Test root: $SYS_ROOT" "🌊 测试根目录：$SYS_ROOT"
+    mw_say "🌊 Test root: $SYS_ROOT" "🌊 测试根目录：$SYS_ROOT"
 fi
 
 set -eE
@@ -45,17 +45,119 @@ GREEN='\033[32m'
 YELLOW='\033[33m'
 RESET='\033[0m'
 SKY_BLUE='\033[38;5;74m'
+RED='\033[1;31m'
 
 # ==========================================
 # 语言
 # ==========================================
 # 不做 gettext、不依赖外部工具 —— 这个脚本要在裸 macOS 上跑，多一个依赖就多一处
-# 装不上。文案直接写两份，由 say() 按 --zh 选。默认英文：终端不一定有中文
+# 装不上。文案直接写两份，由 mw_say() 按 --zh 选。默认英文：终端不一定有中文
 # locale，反过来会让英文用户看到乱码或问号。
 MW_LANG="en"
 
-say() {
-    # say "<English>" "<中文>"
+# ⚠️⚠️⚠️=====================================
+# 一次调试时作者在会议室不小心把含有 say 部分的代码粘贴到 bash 终端，他的 Mac 开始大声播报命令：
+# “波浪（🌊）执行下列命令将 MacWave 添加到 PATH，eval（还念成了 evil）…………（此处省略若干字）”
+# 以后谁也不许把函数命名为 say！
+# 甚至 Siri 把 eval 念成 evil，导致作者获得外号“Evil哥”！
+#
+# During one debugging session, the author accidentally pasted code containing the say part into a bash terminal in the meeting room, and his Mac started loudly announcing the commands:
+# "Wave (🌊) Execute the following command to add MacWave to PATH, eval (which was also pronounced as evil) ………… (several words omitted here)"
+# From now on, no one is allowed to name a function say!
+# Even Siri pronounced eval as evil, which earned the author the nickname "Brother Evil"!
+# ⚠️⚠️⚠️-------------------------------------
+# 原因很简单：macOS 自带 /usr/bin/say —— 一个把参数念出来的朗读命令。函数一旦
+# 也叫 say，任何一行 `say "…" "…"` 被粘进终端（从文档、从源码、从聊天记录里）
+# 都不会报 command not found，而是把参数念给整个房间听。改成 mw_say 之后，同样的
+# 误粘贴只会得到一句 command not found，安静且无副作用。
+# ⚠️⚠️⚠️=====================================
+
+# ==========================================
+# 安全检查：mw_say 绝不能变成 /usr/bin/say
+# ==========================================
+# /usr/bin/say 是 macOS 的朗读命令。如果 mw_say 被劫持成它，
+# 任何 `mw_say "..."` 都会把参数念给整个房间听。
+# 三条路径都查：PATH 上的可执行文件、它的软链接目标、当前 shell profile 里的 alias/函数/export。
+
+
+# 💀💀💀=====================================
+
+mw_check_say_hijack() {
+    local bad=0 reason=""
+
+    # ---- 1) PATH 上的可执行文件 ----
+    # 用 type -P 强制只看 PATH 上的文件，忽略 shell 函数（此刻 mw_say 函数还没定义，
+    # 但如果用户 .zshrc 里定义了同名函数，type -P 也不会被骗）。
+    local found
+    found="$(type -P mw_say 2>/dev/null || true)"
+    if [[ -n "$found" ]]; then
+        # ---- 2) 软链接 ----
+        # -ef 比较 inode：即使中间有多层链接也能穿透。
+        if [ "$found" -ef /usr/bin/say ]; then
+            bad=1
+            reason="PATH entry '$found' is a symlink to /usr/bin/say"
+        fi
+        # 再补一道：直接 readlink 看是不是字面指向 /usr/bin/say（捕获 -ef 因权限/不存在失效的情况）
+        if [ "$bad" -eq 0 ] && [ -L "$found" ] && [ "$(readlink "$found")" = "/usr/bin/say" ]; then
+            bad=1
+            reason="PATH entry '$found' links directly to /usr/bin/say"
+        fi
+    fi
+
+    # ---- 3) 当前 shell 的 profile ----
+    # 检查用户 shell 配置里有没有把 mw_say 指向 say 的 alias / 函数 / export。
+    # 只看**当前** shell 对应的文件，避免误报别的 shell 的配置。
+    local rc candidates=()
+    case "${SHELL:-}" in
+        *zsh*)  candidates=("$HOME/.zshrc" "$HOME/.zprofile" "$HOME/.zshenv") ;;
+        *bash*) candidates=("$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile") ;;
+        *)      candidates=("$HOME/.profile") ;;
+    esac
+    for rc in "${candidates[@]}"; do
+        [ -f "$rc" ] || continue
+        # alias mw_say=...  或  alias mw_say = '...'（宽松匹配）
+        if grep -Eq "^[[:space:]]*alias[[:space:]]+mw_say[[:space:]]*=" "$rc" 2>/dev/null; then
+            # 只要 alias 值里出现 say 就拦（可以是 say、/usr/bin/say、say -v ...）
+            if grep -Eq "^[[:space:]]*alias[[:space:]]+mw_say[[:space:]]*=.*\bsay\b" "$rc" 2>/dev/null; then
+                bad=1
+                reason="$rc aliases mw_say to say"
+            fi
+        fi
+        # mw_say() { ... say ... }  函数定义里调用 say
+        if grep -Eq "^[[:space:]]*mw_say[[:space:]]*\(\)" "$rc" 2>/dev/null; then
+            bad=1
+            reason="$rc defines a mw_say shell function"
+        fi
+        # export PATH=... 把 /usr/bin 前置（极端情况，几乎不会有人这么干，但查一下）
+        # 只报「PATH 里显式把 /usr/bin 放在最前且同时提到 mw_say」这种，避免误报
+        if grep -Eq "^[[:space:]]*export[[:space:]]+PATH=.*/usr/bin" "$rc" 2>/dev/null \
+           && grep -q "mw_say" "$rc" 2>/dev/null; then
+            bad=1
+            reason="$rc prepends /usr/bin to PATH and mentions mw_say"
+        fi
+    done
+
+    if [ "$bad" -eq 1 ]; then
+    echo "" >&2
+    echo -e "${RED}██████╗  █████╗ ██████╗ ██╗${RESET}" >&2
+    echo -e "${RED}██╔══██╗██╔══██╗██╔══██╗██║${RESET}" >&2
+    echo -e "${RED}██████╔╝███████║██║  ██║██║${RESET}" >&2
+    echo -e "${RED}██╔══██╗██╔══██║██║  ██║╚═╝${RESET}" >&2
+    echo -e "${RED}██████╔╝██║  ██║██████╔╝██╗${RESET}" >&2
+    echo -e "${RED}╚═════╝ ╚═╝  ╚═╝╚═════╝ ╚═╝${RESET}" >&2
+    echo "" >&2
+    echo -e "${RED_BOLD}YOU, FAILED!${RESET}" >&2
+        exit 1
+    fi
+}
+
+mw_check_say_hijack
+unset -f mw_check_say_hijack   # 用完即删，避免污染后面的函数命名空间
+
+# 💀💀💀=====================================
+
+mw_say() {
+    # mw_say "<English>" "<中文>"
     if [[ "$MW_LANG" == "zh" ]]; then
         printf '%b\n' "$2"
     else
@@ -63,7 +165,7 @@ say() {
     fi
 }
 
-say_err() {
+mw_say_err() {
     if [[ "$MW_LANG" == "zh" ]]; then
         printf '%b\n' "$2" >&2
     else
@@ -201,22 +303,22 @@ validate_custom_dir() {
     local dir="$1"
 
     if [[ -z "$dir" ]]; then
-        say_err "${RED_BOLD}🌊 Error: Empty path is not allowed.${RESET}" "${RED_BOLD}🌊 错误：路径不能为空。${RESET}"
+        mw_say_err "${RED_BOLD}🌊 Error: Empty path is not allowed.${RESET}" "${RED_BOLD}🌊 错误：路径不能为空。${RESET}"
         return 1
     fi
 
     if [[ "$dir" == *".."* ]]; then
-        say_err "${RED_BOLD}🌊 Error: Path traversal ('..') is not allowed.${RESET}" "${RED_BOLD}🌊 错误：路径中不允许出现 '..'。${RESET}"
+        mw_say_err "${RED_BOLD}🌊 Error: Path traversal ('..') is not allowed.${RESET}" "${RED_BOLD}🌊 错误：路径中不允许出现 '..'。${RESET}"
         return 1
     fi
 
     if [[ "$dir" == *$'\n'* ]] || [[ "$dir" == *$'\r'* ]] || [[ "$dir" == *$'\t'* ]]; then
-        say_err "${RED_BOLD}🌊 Error: Invalid control characters in path.${RESET}" "${RED_BOLD}🌊 错误：路径中包含非法控制字符。${RESET}"
+        mw_say_err "${RED_BOLD}🌊 Error: Invalid control characters in path.${RESET}" "${RED_BOLD}🌊 错误：路径中包含非法控制字符。${RESET}"
         return 1
     fi
 
     if LC_ALL=C grep -q '[^a-zA-Z0-9/_.~ -]' <<< "$dir"; then
-        say_err "${RED_BOLD}🌊 Error: Path contains non-ASCII or invalid characters.${RESET}" "${RED_BOLD}🌊 错误：路径包含非 ASCII 字符或非法字符。${RESET}"
+        mw_say_err "${RED_BOLD}🌊 Error: Path contains non-ASCII or invalid characters.${RESET}" "${RED_BOLD}🌊 错误：路径包含非 ASCII 字符或非法字符。${RESET}"
         echo -e "${RED_BOLD}🌊 Only ASCII letters, digits, '/', '-', '_', '.', '~', and spaces are allowed.${RESET}" >&2
         return 1
     fi
@@ -224,17 +326,17 @@ validate_custom_dir() {
     local expanded="${dir/#\~/$HOME}"
 
     if [[ "$expanded" != /* ]]; then
-        say_err "${RED_BOLD}🌊 Error: Please use an absolute path (starting with / or ~).${RESET}" "${RED_BOLD}🌊 错误：请使用绝对路径（以 / 或 ~ 开头）。${RESET}"
+        mw_say_err "${RED_BOLD}🌊 Error: Please use an absolute path (starting with / or ~).${RESET}" "${RED_BOLD}🌊 错误：请使用绝对路径（以 / 或 ~ 开头）。${RESET}"
         return 1
     fi
 
     if [[ "$expanded" == *"//"* ]]; then
-        say_err "${RED_BOLD}🌊 Error: Path contains consecutive slashes.${RESET}" "${RED_BOLD}🌊 错误：路径中包含连续的斜杠。${RESET}"
+        mw_say_err "${RED_BOLD}🌊 Error: Path contains consecutive slashes.${RESET}" "${RED_BOLD}🌊 错误：路径中包含连续的斜杠。${RESET}"
         return 1
     fi
 
     if [[ "$expanded" == "/" ]]; then
-        say_err "${RED_BOLD}🌊 Error: Cannot install to root directory.${RESET}" "${RED_BOLD}🌊 错误：不能安装到根目录。${RESET}"
+        mw_say_err "${RED_BOLD}🌊 Error: Cannot install to root directory.${RESET}" "${RED_BOLD}🌊 错误：不能安装到根目录。${RESET}"
         return 1
     fi
 
@@ -254,9 +356,9 @@ validate_custom_dir() {
                      /usr/local /usr/share /opt /etc /var /tmp /private \
                      /System /Library /Applications /Users /Volumes /Network; do
         if [[ "$expanded" == "$_forbidden" ]]; then
-            say_err "${RED_BOLD}🌊 Error: '$expanded' is a system directory, not an install directory.${RESET}" \
+            mw_say_err "${RED_BOLD}🌊 Error: '$expanded' is a system directory, not an install directory.${RESET}" \
                     "${RED_BOLD}🌊 错误：'$expanded' 是系统目录，不能当作安装目录。${RESET}"
-            say_err "🌊 Pick a directory of its own, for example ${_forbidden}/macwave" \
+            mw_say_err "🌊 Pick a directory of its own, for example ${_forbidden}/macwave" \
                     "🌊 请用一个专属目录，例如 ${_forbidden}/macwave"
             return 1
         fi
@@ -265,9 +367,9 @@ validate_custom_dir() {
     # 2) 家目录本身同理。装进去会把 MacWave 的文件撒得到处都是，回滚时还会
     #    rm -rf 整个家目录。
     if [[ "$expanded" == "$HOME" ]]; then
-        say_err "${RED_BOLD}🌊 Error: Cannot install directly into your home directory.${RESET}" \
+        mw_say_err "${RED_BOLD}🌊 Error: Cannot install directly into your home directory.${RESET}" \
                 "${RED_BOLD}🌊 错误：不能直接装到家目录里。${RESET}"
-        say_err "🌊 Use a subdirectory such as ~/macwave" "🌊 请用一个子目录，例如 ~/macwave"
+        mw_say_err "🌊 Use a subdirectory such as ~/macwave" "🌊 请用一个子目录，例如 ~/macwave"
         return 1
     fi
 
@@ -277,11 +379,11 @@ validate_custom_dir() {
     #    与升级仍然放行，占用别人的目录则被挡住。
     if [[ -d "$expanded" && ! -f "$expanded/lib/wave.py" ]]; then
         if [[ -n "$(ls -A "$expanded" 2>/dev/null)" ]]; then
-            say_err "${RED_BOLD}🌊 Error: '$expanded' already exists and is not empty.${RESET}" \
+            mw_say_err "${RED_BOLD}🌊 Error: '$expanded' already exists and is not empty.${RESET}" \
                     "${RED_BOLD}🌊 错误：'$expanded' 已存在且非空。${RESET}"
-            say_err "🌊 Installing here would take ownership of files MacWave did not create;" \
+            mw_say_err "🌊 Installing here would take ownership of files MacWave did not create;" \
                     "🌊 装在这里会把 MacWave 没创建过的文件一并接管；"
-            say_err "🌊 pick a new or empty directory instead." \
+            mw_say_err "🌊 pick a new or empty directory instead." \
                     "🌊 请改用一个新的或空的目录。"
             return 1
         fi
@@ -313,7 +415,7 @@ print_dir_menu() {
     if [[ "$CUSTOM_OPTION" == "4" ]]; then
         echo "3. /usr/local/macwave"
     fi
-    say "$CUSTOM_OPTION. other (enter custom directory)" "$CUSTOM_OPTION. 其他（输入自定义目录）"
+    mw_say "$CUSTOM_OPTION. other (enter custom directory)" "$CUSTOM_OPTION. 其他（输入自定义目录）"
 }
 
 # ==========================================
@@ -444,7 +546,7 @@ while [[ $# -gt 0 ]]; do
             exit 0
             ;;
         *)
-            say_err "${RED_BOLD}🌊 Error: unknown option '$1'. Try --help.${RESET}" "${RED_BOLD}🌊 错误：未知选项 '$1'。可试 --help。${RESET}"
+            mw_say_err "${RED_BOLD}🌊 Error: unknown option '$1'. Try --help.${RESET}" "${RED_BOLD}🌊 错误：未知选项 '$1'。可试 --help。${RESET}"
             exit 1
             ;;
     esac
@@ -491,9 +593,9 @@ resolve_custom_dir() {
     local custom_dir validated
     if [[ -n "$CLI_CUSTOM_DIR" ]]; then
         custom_dir="$CLI_CUSTOM_DIR"
-        say "🌊 Installation directory: $custom_dir (from --dir-option)" "🌊 安装目录：${custom_dir}（来自 --dir-option）"
+        mw_say "🌊 Installation directory: $custom_dir (from --dir-option)" "🌊 安装目录：${custom_dir}（来自 --dir-option）"
     else
-        say "${YELLOW}Please enter the installation directory:${RESET}" "${YELLOW}请输入安装目录：${RESET}"
+        mw_say "${YELLOW}Please enter the installation directory:${RESET}" "${YELLOW}请输入安装目录：${RESET}"
         read -r custom_dir < /dev/tty
     fi
     validated=$(validate_custom_dir "$custom_dir") || exit 1
@@ -512,15 +614,15 @@ echo -e "${SKY_BLUE}██║███╗██║██╔══██║╚█
 echo -e "${SKY_BLUE}╚███╔███╔╝██║  ██║ ╚████╔╝ ███████╗${RESET}"
 echo -e "${SKY_BLUE} ╚══╝╚══╝ ╚═╝  ╚═╝  ╚═══╝  ╚══════╝${RESET}"
 echo ""
-say "🌊 Welcome to MacWave $MACWAVE_VERSION!" "🌊 欢迎使用 MacWave ${MACWAVE_VERSION}！"
+mw_say "🌊 Welcome to MacWave $MACWAVE_VERSION!" "🌊 欢迎使用 MacWave ${MACWAVE_VERSION}！"
 
 if [[ "$CORE_URL" != "https://raw.githubusercontent.com/MacWaveOrg/MacWave" ]]; then
-    say "🌊 Install from mirror: $(mw_redact "$CORE_URL")" "🌊 从镜像安装：$(mw_redact "$CORE_URL")"
+    mw_say "🌊 Install from mirror: $(mw_redact "$CORE_URL")" "🌊 从镜像安装：$(mw_redact "$CORE_URL")"
 fi
 
 echo ""
 
-say "🌊 Detected architecture: $ARCH" "🌊 检测到架构：$ARCH"
+mw_say "🌊 Detected architecture: $ARCH" "🌊 检测到架构：$ARCH"
 
 # ==========================================
 # 选择安装目录（交互式 / --dir-option / --ci 默认）
@@ -528,15 +630,15 @@ say "🌊 Detected architecture: $ARCH" "🌊 检测到架构：$ARCH"
 
 if [[ -n "$CLI_DIR_OPTION" ]]; then
     choice="$CLI_DIR_OPTION"
-    say "🌊 Directory option: $choice (from --dir-option)" "🌊 目录选项：${choice}（来自 --dir-option）"
+    mw_say "🌊 Directory option: $choice (from --dir-option)" "🌊 目录选项：${choice}（来自 --dir-option）"
 elif [[ "$CLI_CI" == "true" ]]; then
     choice="1"
-    say "🌊 --ci: using the default directory option 1." "🌊 --ci：使用默认目录选项 1。"
+    mw_say "🌊 --ci: using the default directory option 1." "🌊 --ci：使用默认目录选项 1。"
 else
-    say "${YELLOW}Where do you want to install MacWave? (Enter the number)${RESET}" "${YELLOW}要把 MacWave 安装到哪里？（输入编号）${RESET}"
+    mw_say "${YELLOW}Where do you want to install MacWave? (Enter the number)${RESET}" "${YELLOW}要把 MacWave 安装到哪里？（输入编号）${RESET}"
     print_dir_menu
     echo ""
-    say "${YELLOW}Enter your choice:${RESET}" "${YELLOW}请输入选择：${RESET}"
+    mw_say "${YELLOW}Enter your choice:${RESET}" "${YELLOW}请输入选择：${RESET}"
 
     read -r choice < /dev/tty
 fi
@@ -559,7 +661,7 @@ case "$choice" in
         resolve_custom_dir
         ;;
     *)
-        say "${RED_BOLD}🌊 Invalid choice. Using default: ~/.local/macwave${RESET}" "${RED_BOLD}🌊 选择无效，改用默认目录：~/.local/macwave${RESET}"
+        mw_say "${RED_BOLD}🌊 Invalid choice. Using default: ~/.local/macwave${RESET}" "${RED_BOLD}🌊 选择无效，改用默认目录：~/.local/macwave${RESET}"
         BASE_DIR="$HOME/.local/macwave"
         ;;
 esac
@@ -648,7 +750,7 @@ if [[ "$NEED_SUDO" == "true" ]]; then
             exit 1
         fi
     else
-        say "${YELLOW}🌊 Granting temporary administrator access for installation...${RESET}" "${YELLOW}🌊 正在申请临时管理员权限以完成安装……${RESET}"
+        mw_say "${YELLOW}🌊 Granting temporary administrator access for installation...${RESET}" "${YELLOW}🌊 正在申请临时管理员权限以完成安装……${RESET}"
         sudo -v
     fi
 fi
@@ -675,7 +777,7 @@ cleanup_update_commands() {
 }
 trap cleanup_update_commands EXIT
 
-say "🌊 Fetching the update commands..." "🌊 正在获取更新命令……"
+mw_say "🌊 Fetching the update commands..." "🌊 正在获取更新命令……"
 
 UPDATE_COMMANDS_OK=false
 for attempt in 1 2 3; do
@@ -684,7 +786,7 @@ for attempt in 1 2 3; do
         break
     fi
     if [[ "$attempt" -lt 3 ]]; then
-        say "${YELLOW}🌊 Retrying the update commands ($((attempt + 1))/3)...${RESET}" "${YELLOW}🌊 正在重试获取更新命令（$((attempt + 1))/3）……${RESET}"
+        mw_say "${YELLOW}🌊 Retrying the update commands ($((attempt + 1))/3)...${RESET}" "${YELLOW}🌊 正在重试获取更新命令（$((attempt + 1))/3）……${RESET}"
     fi
 done
 
@@ -757,11 +859,11 @@ install_failed() {
 
     echo "" >&2
     echo -e "${RED_BOLD}🌊 Installation did not finish (exit $code).${RESET}" >&2
-    say_err "🌊 Nothing was removed. Files already downloaded may be left in:" "🌊 没有删除任何内容。已下载的文件可能留在："
+    mw_say_err "🌊 Nothing was removed. Files already downloaded may be left in:" "🌊 没有删除任何内容。已下载的文件可能留在："
     echo "     ${BASE_DIR:-<not chosen yet>}" >&2
     echo "     ${CONFIG_DIR:-<not chosen yet>}" >&2
-    say_err "🌊 Fix the cause (network, permissions, disk space) and run the installer again;" "🌊 请排除原因（网络、权限、磁盘空间）后重新运行安装程序；"
-    say_err "🌊 a repeated install overwrites what it downloaded and is safe to rerun." "🌊 重复安装会覆盖已下载的内容，可以安全重跑。"
+    mw_say_err "🌊 Fix the cause (network, permissions, disk space) and run the installer again;" "🌊 请排除原因（网络、权限、磁盘空间）后重新运行安装程序；"
+    mw_say_err "🌊 a repeated install overwrites what it downloaded and is safe to rerun." "🌊 重复安装会覆盖已下载的内容，可以安全重跑。"
 }
 trap install_failed ERR
 
@@ -811,8 +913,8 @@ run_cmd chmod 755 "$CONFIG_DIR"
 run_cmd chmod 644 "$CONFIG_FILE"
 run_cmd chmod 644 "$VERSION_FILE"
 
-say "🌊 Configuration saved to $CONFIG_FILE" "🌊 配置已保存到 $CONFIG_FILE"
-say "🌊 Version saved to $VERSION_FILE" "🌊 版本信息已保存到 $VERSION_FILE"
+mw_say "🌊 Configuration saved to $CONFIG_FILE" "🌊 配置已保存到 $CONFIG_FILE"
+mw_say "🌊 Version saved to $VERSION_FILE" "🌊 版本信息已保存到 $VERSION_FILE"
 
 # ==========================================
 # 删除1.x旧版 repo.json，软件包索引现已网络实时拉取，不再依赖需要记得刷新（否则安装不到新版）、冗余（用户还得下载且没什么用）的本地索引
@@ -820,7 +922,7 @@ say "🌊 Version saved to $VERSION_FILE" "🌊 版本信息已保存到 $VERSIO
 
 OLD_JSON="$REPO_DIR/repo.json"
 if [ -f "$OLD_JSON" ]; then
-    say "🌊 Removing old repo.json (legacy format)..." "🌊 正在删除旧格式的 repo.json……"
+    mw_say "🌊 Removing old repo.json (legacy format)..." "🌊 正在删除旧格式的 repo.json……"
     run_cmd rm -f "$OLD_JSON"
 fi
 
@@ -846,11 +948,11 @@ fi
 # ==========================================
 
 if command -v otool > /dev/null 2>&1 && command -v install_name_tool > /dev/null 2>&1 && command -v codesign > /dev/null 2>&1; then
-    say "🌊 Xcode Command Line Tools detected (otool / install_name_tool / codesign)." "🌊 已检测到 Xcode Command Line Tools（otool / install_name_tool / codesign）。"
+    mw_say "🌊 Xcode Command Line Tools detected (otool / install_name_tool / codesign)." "🌊 已检测到 Xcode Command Line Tools（otool / install_name_tool / codesign）。"
 else
-    say "${YELLOW}🌊 Warning: Xcode Command Line Tools not found.${RESET}" "${YELLOW}🌊 警告：未检测到 Xcode Command Line Tools。${RESET}"
-    say "${YELLOW}🌊 Dependency libraries cannot be relocated, so some packages may fail to run.${RESET}" "${YELLOW}🌊 依赖库无法重定位，部分软件包可能运行不起来。${RESET}"
-    say "🌊 You can install them later with: xcode-select --install" "🌊 之后可用这条命令安装：xcode-select --install"
+    mw_say "${YELLOW}🌊 Warning: Xcode Command Line Tools not found.${RESET}" "${YELLOW}🌊 警告：未检测到 Xcode Command Line Tools。${RESET}"
+    mw_say "${YELLOW}🌊 Dependency libraries cannot be relocated, so some packages may fail to run.${RESET}" "${YELLOW}🌊 依赖库无法重定位，部分软件包可能运行不起来。${RESET}"
+    mw_say "🌊 You can install them later with: xcode-select --install" "🌊 之后可用这条命令安装：xcode-select --install"
 fi
 
 # ==========================================
@@ -985,7 +1087,7 @@ ensure_portable_python() {
     # 这一步失败不算错：网络不好时继续用本机已有的那份，安装照常完成。
     # 但**必须先问一次**，否则「本机已有 3.14.9」会让升级到「要求 3.15」的版本时
     # 永远发现不了自己落后 —— 这正是 per-version 目录存在的理由。
-    say_err "🌊 Checking the bundled Python version..." "🌊 正在检查自带 Python 版本……"
+    mw_say_err "🌊 Checking the bundled Python version..." "🌊 正在检查自带 Python 版本……"
     latest_file="$(mktemp -t macwave-pylatest)"
     if curl -fsSL --max-time 30 -o "$latest_file" "$PYTHON_DOMAIN_URL/pythondata/latest.toml" 2>/dev/null; then
         version="$(read_toml_string "$(cat "$latest_file")" version)"
@@ -1016,7 +1118,7 @@ ensure_portable_python() {
     fi
 
     # ── 第二步：这个版本各架构的地址与校验值 ──
-    say_err "🌊 Fetching the bundled Python $version definition..." "🌊 正在获取自带 Python $version 的定义……"
+    mw_say_err "🌊 Fetching the bundled Python $version definition..." "🌊 正在获取自带 Python $version 的定义……"
     url_file="$(mktemp -t macwave-pyurl)"
     if ! curl -fsSL --max-time 30 -o "$url_file" \
          "$PYTHON_DOMAIN_URL/pythondata/$version/python_url.toml" 2>/dev/null; then
@@ -1041,7 +1143,7 @@ ensure_portable_python() {
     fi
 
     # ── 第三步：下载并校验 ──
-    say_err "🌊 Downloading the bundled Python $version (about 26 MB)..." "🌊 正在下载自带 Python ${version}（约 26 MB）……"
+    mw_say_err "🌊 Downloading the bundled Python $version (about 26 MB)..." "🌊 正在下载自带 Python ${version}（约 26 MB）……"
     archive="$base_dir/downloads/tmp/portable-python-$version.tar.gz"
     mkdir -p "$base_dir/downloads/tmp" 2>/dev/null || true
     if ! curl -fsSL --max-time 900 -o "$archive" "$archive_url" 2>/dev/null; then
@@ -1084,7 +1186,7 @@ BUNDLED_PY="$MW_OPTIONAL_RESULT"
 if [[ -n "$BUNDLED_PY" ]]; then
     PYTHON_BIN="$BUNDLED_PY"
     PYTHON_SOURCE="bundled"
-    say "🌊 Using the bundled Python: ${BUNDLED_PY#"$BASE_DIR"/}" "🌊 使用自带的 Python：${BUNDLED_PY#"$BASE_DIR"/}"
+    mw_say "🌊 Using the bundled Python: ${BUNDLED_PY#"$BASE_DIR"/}" "🌊 使用自带的 Python：${BUNDLED_PY#"$BASE_DIR"/}"
 else
     PYTHON_BIN="$(command -v python3 || true)"
     PYTHON_SOURCE="system"
@@ -1097,13 +1199,13 @@ else
     echo -e "${YELLOW}🌊 Re-run the installer when the network is available to make this installation self-contained.${RESET}"
 fi
 
-say "🌊 Creating the private Python environment..." "🌊 正在创建独立的 Python 环境……"
+mw_say "🌊 Creating the private Python environment..." "🌊 正在创建独立的 Python 环境……"
 mkdir -p "$VENV_DIR" 2>/dev/null || true
 
 if "$PYTHON_BIN" -m venv "$VENV_DIR" >/dev/null 2>&1; then
     VENV_PY="$VENV_DIR/bin/python3"
     [[ -x "$VENV_PY" ]] || VENV_PY="$VENV_DIR/bin/python"
-    say "🌊 Private Python environment ready: ${VENV_DIR#"$BASE_DIR"/}" "🌊 独立 Python 环境已就绪：${VENV_DIR#"$BASE_DIR"/}"
+    mw_say "🌊 Private Python environment ready: ${VENV_DIR#"$BASE_DIR"/}" "🌊 独立 Python 环境已就绪：${VENV_DIR#"$BASE_DIR"/}"
 else
     echo -e "${YELLOW}🌊 Warning: could not create a private virtualenv; using the ${PYTHON_SOURCE} interpreter directly.${RESET}"
 fi
@@ -1115,10 +1217,10 @@ PIP_FLAGS=(--quiet --disable-pip-version-check --timeout 30 --retries 2
            --index-url "$PIP_INDEX_URL")
 
 if [[ -n "$VENV_PY" && -x "$VENV_PY" ]]; then
-    say "🌊 Installing Python dependencies into the private environment..." "🌊 正在向独立环境安装 Python 依赖……"
+    mw_say "🌊 Installing Python dependencies into the private environment..." "🌊 正在向独立环境安装 Python 依赖……"
     # pip 默认会无限等下去，网络不好时看上去就是卡死。给它超时与重试，
     # 并说明这一步可能要一会儿，免得用户以为程序挂了。
-    say "🌊 Installing Python dependencies into the private environment (this can take a minute)..." "🌊 正在向独立环境安装 Python 依赖（可能需要一分钟）……"
+    mw_say "🌊 Installing Python dependencies into the private environment (this can take a minute)..." "🌊 正在向独立环境安装 Python 依赖（可能需要一分钟）……"
     "$VENV_PY" -m pip install "${PIP_FLAGS[@]}" --upgrade pip >/dev/null 2>&1 || true
     if ! "$VENV_PY" -m pip install "${PIP_FLAGS[@]}" "${PIP_DEPS[@]}"; then
         echo -e "${RED_BOLD}🌊 Error: failed to install the Python dependencies.${RESET}"
@@ -1128,7 +1230,7 @@ if [[ -n "$VENV_PY" && -x "$VENV_PY" ]]; then
         exit 1
     fi
 else
-    say "🌊 Installing Python dependencies into $PYTHON_BIN..." "🌊 正在向 $PYTHON_BIN 安装 Python 依赖……"
+    mw_say "🌊 Installing Python dependencies into $PYTHON_BIN..." "🌊 正在向 $PYTHON_BIN 安装 Python 依赖……"
     if ! "$PYTHON_BIN" -m pip install "${PIP_FLAGS[@]}" "${PIP_DEPS[@]}" 2>/dev/null; then
         if ! "$PYTHON_BIN" -m pip install "${PIP_FLAGS[@]}" --user --break-system-packages "${PIP_DEPS[@]}"; then
             echo -e "${RED_BOLD}🌊 Error: failed to install the Python dependencies.${RESET}"
@@ -1172,6 +1274,23 @@ lib_dir="$(cd -- "$(dirname -- "$self")" && pwd)" || exit 1
 root_dir="$(cd -- "$lib_dir/.." && pwd)" || exit 1
 entry="$lib_dir/wave.py"
 
+# `wave shellenv` 由 shell 直接回答，不启动 Python：这一行会被写进 ~/.zprofile，
+# 每次开终端都要跑（走 Python 那条路实测 160ms，这里 2ms）。
+# 输出必须与 lib/shellenv.py **逐字一致** —— scripts/shellenv_test.sh 会比对两份。
+if [ "$#" -eq 1 ] && [ "$1" = "shellenv" ]; then
+    printf 'case ":$PATH:" in\n  *":%s:"*) ;;\n  *) export PATH="%s:%s:%s${PATH:+:$PATH}" ;;\nesac\n' \
+        "$root_dir/lib" "$root_dir/bin" "$root_dir/links" "$root_dir/lib"
+    exit 0
+fi
+
+# 双语错误输出。启动器里没有 install.sh 的 mw_say/mw_say_err，所以自带一个最小实现：
+# 之前 install.sh 生成的启动器直接调用 mw_say_err，一旦真的落到这个分支就是
+# 「mw_say_err: command not found」，真正的错误信息反而看不见。
+mw_say_err() {
+    printf '%s\n' "$1" >&2
+    printf '%s\n' "$2" >&2
+}
+
 #__MACWAVE_PYTHON__
 
 deps_ok() {
@@ -1202,8 +1321,8 @@ if command -v python3 >/dev/null 2>&1; then
     exec python3 "$entry" "$@"
 fi
 
-say_err "🌊 Error: no usable Python 3 interpreter was found." "🌊 错误：找不到可用的 Python 3 解释器。"
-say_err "🌊 Reinstall MacWave with lib/install.sh." "🌊 请用 lib/install.sh 重新安装 MacWave。"
+mw_say_err "🌊 Error: no usable Python 3 interpreter was found." "🌊 错误：找不到可用的 Python 3 解释器。"
+mw_say_err "🌊 Reinstall MacWave with lib/install.sh." "🌊 请用 lib/install.sh 重新安装 MacWave。"
 exit 1
 LAUNCHER
 
@@ -1234,48 +1353,75 @@ if [[ "$NEED_SUDO" == "true" ]]; then
 fi
 
 # ==========================================
-# 添加到 PATH
+# PATH：只给方法，不改用户的 shell 配置
 # ==========================================
+#
+# 以前这里是直接把 PATH 行 append 进 rc 文件。改成「只打印、不动手」，理由：
+#   - 卸载要把它摘掉，只能靠字符串匹配去猜，猜错就是删掉别人的行；
+#   - 安装目录变了、版本升级了，用户文件里留的是旧路径，而安装器没法判断
+#     那一行还是不是自己写的；
+#   - Homebrew / MacPorts 都是「一行 eval 归用户自己管」，升级与卸载都不用碰
+#     别人的文件。
+#
+# 推荐写 ~/.zprofile 而不是 ~/.zshrc：PATH 是**登录**级的东西。.zprofile 每个
+# 登录 shell 跑一次（新开一个终端窗口就是一次），.zshrc 每个交互 shell 都跑
+# 一次 —— 套一层 `zsh -l` 就会再 prepend 一遍，PATH 一路堆叠。而且 .zshrc 在
+# 非交互 shell 里根本不读，所以只写 .zshrc 的 PATH 对 `ssh host cmd`、
+# cron、部分编辑器/IDE 起的子进程是看不见的。
+# bash 的对应文件是 ~/.bash_profile —— 注意**不是** ~/.bashrc：
+# macOS 的 bash 登录 shell 从不读 .bashrc（旧版这里写的就是 .bashrc，等于没写）。
 
 if [[ "$SHELL" == *"zsh"* ]]; then
-    RC_FILE="$HOME/.zshrc"
+    RC_FILE="$HOME/.zprofile"
 elif [[ "$SHELL" == *"bash"* ]]; then
-    RC_FILE="$HOME/.bashrc"
+    RC_FILE="$HOME/.bash_profile"
 else
     RC_FILE="$HOME/.profile"
 fi
 
+# 旧版本写进 rc 的完整 PATH 行；现在只用于两件事：识别用户文件里是否已有旧写法，
+# 以及回滚时把指向已删除目录的那一行摘掉。
 PATH_LINE="export PATH=\"$INSTALL_DIR:$LINKS_DIR:$LIB_DIR:\$PATH\""
 
-# 从 rc 文件里摘掉我们写入的 PATH 行（连同标记行）。
-# 安装回滚时要靠它，否则会留下一个指向已删除目录的 PATH。
+# 建议用户自己加进 rc 的那一行。带 test -r 守卫：安装目录被删掉以后，
+# 每次登录都不会再刷一行 "no such file"。
+SHELLENV_LINE="test -r \"$LIB_DIR/wave\" && eval \"\$(\"$LIB_DIR/wave\" shellenv)\""
+
+# 从 rc 文件里摘掉**旧版本**写进去的 PATH 行（连同标记行）。
+# 现在安装不再写 rc，这个函数只剩两个用途：升级时清理旧写法、回滚时清掉
+# 指向已删除目录的那一行。
+#
+# 标记行必须**整行相等**才算：旧实现用 `grep -F "# MacWave"` 做子串匹配，
+# 会把用户自己的 `# MacWave mirror` 注释行一起删掉 —— 那是读者的配置，不是我们的。
 remove_lw_path_entries() {
     local rc="$1"
     [[ -f "$rc" ]] || return 0
     grep -qF -e "$PATH_LINE" -e "# MacWave" "$rc" 2>/dev/null || return 0
-    grep -v -F -e "$PATH_LINE" -e "# MacWave" "$rc" > "$rc.macwave.tmp" || true
+    grep -v -F -e "$PATH_LINE" "$rc" | grep -v -x -F -e "# MacWave" > "$rc.macwave.tmp" || true
     cat "$rc.macwave.tmp" > "$rc"
     rm -f "$rc.macwave.tmp"
-    say "🌊 Removed MacWave PATH entries from $rc" "🌊 已从 $rc 移除 MacWave 的 PATH 条目"
+    mw_say "🌊 Removed old MacWave PATH entries from $rc" "🌊 已从 $rc 移除旧版 MacWave 的 PATH 条目"
 }
 
-if grep -qF "$PATH_LINE" "$RC_FILE" 2>/dev/null; then
-    say "🌊 MacWave is already in your PATH." "🌊 MacWave 已在 PATH 中。"
-else
-    if grep -qF "$INSTALL_DIR" "$RC_FILE" 2>/dev/null; then
-        # 旧版本（如 2.1.0）的 PATH 行只有 bin/ 与 lib/，升级后需要换成含 links/ 的新行
-        say "🌊 Replacing old MacWave PATH entry in $RC_FILE..." "🌊 正在替换 $RC_FILE 里的旧 PATH 条目……"
-        grep -v -F "export PATH=\"$INSTALL_DIR" "$RC_FILE" > "$RC_FILE.macwave.tmp" || true
-        cat "$RC_FILE.macwave.tmp" > "$RC_FILE"
-        rm -f "$RC_FILE.macwave.tmp"
-    else
-        say "🌊 Adding MacWave to PATH in $RC_FILE..." "🌊 正在把 MacWave 加入 $RC_FILE 的 PATH……"
-        echo "" >> "$RC_FILE"
-        echo "# MacWave" >> "$RC_FILE"
-    fi
+# 当前进程的 PATH 里是否已经有 MacWave。看运行环境而不是解析 rc 文件：
+# rc 里的写法五花八门（手写 export、shellenv、别名），解析必然漏。
+path_has_macwave() {
+    case ":$PATH:" in
+        *":$LIB_DIR:"*|*":$LINKS_DIR:"*) return 0 ;;
+    esac
+    return 1
+}
 
-    echo "$PATH_LINE" >> "$RC_FILE"
-fi
+# 用户自己的 shell 配置里是否还留着 MacWave 的条目（旧写法的 export，或新的 eval）。
+# 找到就提示怎么迁移，但**不动那个文件**。
+EXISTING_RC=""
+for _rc in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.zprofile" "$HOME/.profile"; do
+    [[ -f "$_rc" ]] || continue
+    if grep -qF -e "$LIB_DIR" -e "$INSTALL_DIR" "$_rc" 2>/dev/null; then
+        EXISTING_RC="$_rc"
+        break
+    fi
+done
 
 # ==========================================
 # 许可协议确认
@@ -1283,25 +1429,25 @@ fi
 # 必须放在「安装完成」之前：否则先告诉用户已经装好，随后又因为不同意而全部删除。
 
 echo ""
-say "${YELLOW}Please read the agreement before use (see bottom of https://macwave.org).${RESET}" "${YELLOW}使用前请先阅读用户协议（见 https://macwave.org 页面底部）。${RESET}"
+mw_say "${YELLOW}Please read the agreement before use (see bottom of https://macwave.org).${RESET}" "${YELLOW}使用前请先阅读用户协议（见 https://macwave.org 页面底部）。${RESET}"
 if [[ "$CLI_CI" == "true" ]]; then
-    say "🌊 --ci: the agreement is accepted automatically." "🌊 --ci：自动接受用户协议。"
+    mw_say "🌊 --ci: the agreement is accepted automatically." "🌊 --ci：自动接受用户协议。"
     agreement="y"
 else
-    say "${YELLOW}Have you read and agreed to the agreement? [Y/n]${RESET}" "${YELLOW}你是否已阅读并同意该协议？[Y/n]${RESET}"
+    mw_say "${YELLOW}Have you read and agreed to the agreement? [Y/n]${RESET}" "${YELLOW}你是否已阅读并同意该协议？[Y/n]${RESET}"
     read -r agreement < /dev/tty
 fi
 if [[ -z "$agreement" || "$agreement" =~ ^[Yy]$ ]]; then
-    say "${GREEN}You have agreed to the agreement.${RESET}" "${GREEN}已记录你的同意。${RESET}"
+    mw_say "${GREEN}You have agreed to the agreement.${RESET}" "${GREEN}已记录你的同意。${RESET}"
 else
     # 回滚要连 rc 里的 PATH 一起清掉，否则会留下指向已删除目录的一行。
     # 这里不写死 sudo：用户级安装全程无需提权，回滚也不该突然要密码。
-    say "${RED_BOLD}You do not agree to the agreement. Installation stopped.${RESET}" "${RED_BOLD}你未同意该协议，安装已停止。${RESET}"
-    say "${RED_BOLD}🌊 Cleaning up downloaded files...${RESET}" "${RED_BOLD}🌊 正在清理已下载的文件……${RESET}"
+    mw_say "${RED_BOLD}You do not agree to the agreement. Installation stopped.${RESET}" "${RED_BOLD}你未同意该协议，安装已停止。${RESET}"
+    mw_say "${RED_BOLD}🌊 Cleaning up downloaded files...${RESET}" "${RED_BOLD}🌊 正在清理已下载的文件……${RESET}"
     run_cmd rm -rf "$BASE_DIR"
     run_cmd rm -rf "$CONFIG_DIR"
     remove_lw_path_entries "$RC_FILE"
-    say "${RED_BOLD}🌊 All files have been deleted.${RESET}" "${RED_BOLD}🌊 所有文件已删除。${RESET}"
+    mw_say "${RED_BOLD}🌊 All files have been deleted.${RESET}" "${RED_BOLD}🌊 所有文件已删除。${RESET}"
     exit 1
 fi
 
@@ -1310,27 +1456,49 @@ fi
 # ==========================================
 
 echo ""
-say "🌊 Installation complete!" "🌊 安装完成！"
-say "🌊 MacWave installed to: $DISPLAY_DIR" "🌊 MacWave 已安装到：$DISPLAY_DIR"
-say "🌊 Architecture: $ARCH" "🌊 架构：$ARCH"
+mw_say "🌊 Installation complete!" "🌊 安装完成！"
+mw_say "🌊 MacWave installed to: $DISPLAY_DIR" "🌊 MacWave 已安装到：$DISPLAY_DIR"
+mw_say "🌊 Architecture: $ARCH" "🌊 架构：$ARCH"
 echo ""
 RC_DISPLAY=$(home_to_tilde "$RC_FILE")
-say "🌊 To use 'wave' immediately in this terminal, run:" "🌊 想在当前终端立刻使用 wave，请运行："
-echo -e "${YELLOW}    source $RC_DISPLAY${RESET}"
-say "🌊 Or simply open a new terminal window." "🌊 或者直接打开一个新终端窗口。"
+APPEND_CMD="echo '$SHELLENV_LINE' >> $RC_DISPLAY"
+
+# ==========================================
+# 下一步：PATH 由用户自己加
+# ==========================================
+# 安装器不写 ~/.zprofile。这里只给两条命令 + 现在就能用的办法。
+
+echo ""
+mw_say "🌊 Run the following command to add wave to your PATH:" \
+    "🌊 执行下列命令将 wave 添加到 PATH："
+echo ""
+echo -e "${YELLOW}    $APPEND_CMD${RESET}"
+echo -e "${YELLOW}    $SHELLENV_LINE${RESET}"
+echo ""
+
+# 旧版本（4.2.x 及更早）是直接往 rc 里 append 一整行 export PATH 的。
+# 那一行至今有效，所以不去删；但要让用户知道它还在，以及怎么换掉。
+if [[ -n "$EXISTING_RC" ]]; then
+    EXISTING_DISPLAY=$(home_to_tilde "$EXISTING_RC")
+    echo ""
+    mw_say "🌊 $EXISTING_DISPLAY still contains a MacWave entry written by an older version." \
+        "🌊 $EXISTING_DISPLAY 里还有旧版本写入的 MacWave 条目。"
+    mw_say "🌊 It keeps working. To switch to the form above, replace that line with:" \
+        "🌊 它仍然有效。想改用上面的写法，就把那一行换成："
+    echo -e "${YELLOW}    $SHELLENV_LINE${RESET}"
+fi
 echo ""
 
 # 系统级安装是共享的：管理员用 sudo 管理，其他用户只能运行。
-# 但 PATH 那一行只写进了**当前用户**的 rc 文件 —— 别人不写就找不到 wave，
-# 只能靠绝对路径执行。这里说清楚，否则「其他人可运行」只对了一半。
+# PATH 那行现在由用户自己加 —— 别人不加就找不到 wave，只能靠绝对路径执行。
+# 这里说清楚，否则「其他人可运行」只对了一半。
 if [[ "$NEED_SUDO" == "true" ]]; then
-    LINKS_DISPLAY=$(home_to_tilde "$BASE_DIR/links")
-    say "🌊 Other users on this machine can run the installed packages," \
+    mw_say "🌊 Other users on this machine can run the installed packages," \
         "🌊 这台机器上的其他用户可以直接运行已装的软件包，"
-    say "🌊 but they need this line in their own shell profile:" \
-        "🌊 但要在各自的 shell 配置里加上这一行："
-    echo -e "${YELLOW}    export PATH=\"$LINKS_DISPLAY:\$PATH\"${RESET}"
-    say "🌊 Changing packages (install / uninstall / upgrade) needs sudo:" \
+    mw_say "🌊 but each of them needs this line in their own shell profile:" \
+        "🌊 但每个人要在自己的 shell 配置里加上这一行："
+    echo -e "${YELLOW}    $SHELLENV_LINE${RESET}"
+    mw_say "🌊 Changing packages (install / uninstall / upgrade) needs sudo:" \
         "🌊 改动软件包（安装 / 卸载 / 升级）需要 sudo："
     echo -e "${YELLOW}    sudo wave install <package>${RESET}"
     echo ""
