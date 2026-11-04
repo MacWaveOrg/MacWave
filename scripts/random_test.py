@@ -979,7 +979,7 @@ def phase_install_cycle(wave, rng, plans, checks):
     installed = []
     for plan in plans:
         label = f"install {install_token(plan)}"
-        argv = ["install", install_token(plan)]
+        argv = install_args(install_token(plan))
 
         if plan.mode == "limit-rate":
             argv += ["--limit-rate", wave.limit_rate]
@@ -987,12 +987,6 @@ def phase_install_cycle(wave, rng, plans, checks):
             argv += ["--skip-ssl"]
         elif plan.mode == "resume":
             argv += [random_flag(rng, "-C", "--continue")]
-
-        # 强制放行 min_os 询问：随机抽到的包可能在声明上要求更高的系统
-        # （ipsw 声明 27.2，而 runner 是 26.6.2），非交互读不到答复就会中止，
-        # 于是「随机包装不成」被记成失败。这里测的是安装链路本身，询问与拒绝的
-        # 语义由 scripts/minos_test.sh 专门覆盖。
-        argv.append("-F")
 
         max_time_args = maybe_max_time(rng)
         argv += max_time_args
@@ -1043,9 +1037,22 @@ def phase_install_cycle(wave, rng, plans, checks):
     return installed
 
 
+def install_args(token, *extra):
+    """构造 install 命令行，并强制放行 min_os 询问。
+
+    随机抽到的包可能在声明上要求更高的系统版本（ipsw 声明 27.2、ollama 26.2，
+    而 runner 是 26.x）。非交互下读不到答复会按中止处理，于是「这个包没装上」
+    被记成失败 —— 但这里测的是安装链路本身，不是版本兼容性。询问与拒绝的语义
+    由 scripts/minos_test.sh 专门覆盖（49 条断言）。
+
+    -F 放在包名之后、其它旗标之前：它是这个测试的固有前提，不是被测对象。
+    """
+    return ["install", token, "-F", *extra]
+
+
 def run_plain_install(wave, plan, checks, extra_args=(), silent=False):
     label = " ".join(["install", plan.token, *extra_args])
-    result = wave.run(["install", plan.token, *extra_args])
+    result = wave.run(install_args(plan.token, *extra_args))
     if is_rate_limited(result):
         checks.skip(label, "GitHub API 侧失败（限流/403），跳过断言")
         return False
@@ -1118,7 +1125,7 @@ def run_transfer_interrupt_case(wave, plan, checks):
     label = f"install {plan.token}（重定向中打断）"
     banner(f"Mach-O 重定向中途打断：{plan.name}")
 
-    result = wave.run_in_pty(["install", plan.token], interrupt_when=transfer_watcher(),
+    result = wave.run_in_pty(install_args(plan.token), interrupt_when=transfer_watcher(),
                              timeout=1800)
     if not result.interrupted:
         checks.warn(f"{label}: 没抓到 transfer.sh 的窗口，本轮按普通安装校验")
@@ -1141,7 +1148,7 @@ def run_transfer_interrupt_case(wave, plan, checks):
                     f"bin 目录={half_dir.exists()} list 可见={half_listed}")
 
     # 恢复：再装一次必须完全正确
-    recovery = wave.run(["install", plan.token])
+    recovery = wave.run(install_args(plan.token))
     if is_rate_limited(recovery):
         checks.skip(f"{label} → 重新 install", "GitHub API 侧失败（限流/403）")
         return False
@@ -1192,7 +1199,7 @@ def run_resume_case(wave, rng, plan, checks):
         # 打断轮故意限速：不限速时 12MB 的包不到 1 秒就下完了，根本来不及打断
         # （上一轮 CI 就是这样，计划打断 1 次，实际 0 次）。
         result = wave.run_in_pty(
-            ["install", plan.token, flag, "--limit-rate", RESUME_RATE_LIMIT],
+            install_args(plan.token, flag, "--limit-rate", RESUME_RATE_LIMIT),
             interrupt_when=lambda: (partial.exists()
                                     and partial.stat().st_size >= start_size + RESUME_MIN_BYTES
                                     and time.monotonic() - started >= RESUME_MIN_SECONDS),
@@ -1222,7 +1229,7 @@ def run_resume_case(wave, rng, plan, checks):
         if partial.exists():
             watched["min_size"] = min(watched["min_size"], partial.stat().st_size)
 
-    result = wave.run_in_pty(["install", plan.token, flag], on_tick=watch, timeout=1800)
+    result = wave.run_in_pty(install_args(plan.token, flag), on_tick=watch, timeout=1800)
     text = result.output
     checks.check("-C 续传没有重头开始（.partial 从未回退）",
                  watched["min_size"] >= interrupted_bytes,
@@ -1243,7 +1250,7 @@ def run_skip_ssl_case(wave, plan, checks):
     ok = True
     for answer, expect_skip in (("n", False), ("y", True)):
         label = f"install {plan.token} --skip-ssl (answer={answer})"
-        argv = ["install", plan.token, "--skip-ssl"]
+        argv = install_args(plan.token, "--skip-ssl")
         result = wave.run(argv, stdin=f"{answer}\n")
         expect(checks, result, 0, label, must_contain=("You selected --skip-ssl",))
         if answer == "n":
@@ -1284,7 +1291,7 @@ def run_limit_rate_case(wave, plan, checks):
         watched["last_size"] = size
 
     started = time.monotonic()
-    result = wave.run_in_pty(["install", plan.token, "--limit-rate", wave.limit_rate],
+    result = wave.run_in_pty(install_args(plan.token, "--limit-rate", wave.limit_rate),
                              on_tick=sample, tick=0.2, timeout=1800)
     elapsed = time.monotonic() - started
     total_bytes = plan.artifact_bytes or 0
