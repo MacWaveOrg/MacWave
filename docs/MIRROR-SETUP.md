@@ -154,6 +154,9 @@ location ~* \.(tar\.gz|tgz|zip|tar\.bz2|tar\.xz|conda)$ {
 
 改完在宝塔里重载 nginx。
 
+> 缓存头解决的是「重复下载不再回源」。**限速、防爆破、以及校园网 NAT 下怎么限才
+> 不误伤自己人**，见后面的[「别被打穿」](#别被打穿限速防爆破与校园网)一节。
+
 ## 第六步：SSL
 
 宝塔 → 网站 → 设置 → SSL → Let's Encrypt，申请后打开「强制 HTTPS」。
@@ -484,6 +487,156 @@ ls       /root/mirror-check/ALERT         # 存在 = 当前有故障
 
 另外两条与 bash 3.2 有关，写任何服务器脚本都要注意：变量紧贴中文必须写 `${var}`（否则
 locale 会把中文首字节吃进变量名）；`"${ARR[@]}"` 在空数组上会报 unbound，改用单一变量。
+
+## 别被打穿：限速、防爆破，与校园网
+
+镜像一旦对外，就要面对两件不同的事：**流量成本**与**误伤自己人**。这一节只讲这两件，
+配置都落在宝塔的 nginx 上。
+
+### 先看体量，判断该防什么
+
+拿 Bottle 仓库实测（2026-11）：
+
+| 指标 | 数值 |
+| --- | --- |
+| 资产数 | 217 个 |
+| 总体积 | 2.2 GB |
+| 平均 | 10.4 MB |
+| 最大单文件 | `ollama@0.40.11.arm64.tgz` **172.9 MB** |
+| 超 50 MB 的 | 6 个（全是 ollama），合计 0.9 GB = 全站 **40%** |
+
+所以「被刷」的最坏画像是**有人循环拉 ollama**：一次 172.9 MB。月流量 1 TB 的话，
+5800 次就打满。5 MB 的小包反而不值得防。
+
+### 威胁模型：认证已经挡掉了大半
+
+Bottle 全路径需要 HTTP 基本认证，所以：
+
+| 威胁 | 能否发生 | 对策 |
+| --- | --- | --- |
+| 陌生人匿名刷 | ❌ 401 | 不用管 |
+| 爆破口令 | ✅ 会一直试 | fail2ban |
+| 凭据泄露 / 被共享 | ✅ **主要风险** | 换口令、按人发凭据、看流量曲线 |
+| 一个用户开多线程拉大包 | ✅ | `limit_conn` + `limit_rate` |
+
+### 关键：不要按 IP 限
+
+**校园网是 NAT 出口**：几百个用户共用一个公网 IP。按 IP 限连接等于
+「整个校区同时只能下 6 个文件」，正常用户会被自己的同学挤掉。
+
+已经开了 `auth_basic` 的话，nginx 认证后会填 `$remote_user`。**同一个 NAT 后面，
+每个用户的用户名不同** —— 按它限，就是每人一份独立配额：
+
+| 限制对象 | 校园网 NAT 下 | 挡得住滥用吗 |
+| --- | --- | --- |
+| `limit_rate`（按**连接**） | ✅ 无影响 | 挡住单连接吃满带宽 |
+| `limit_conn $remote_user` | ✅ 各算各的 | 挡住一个人开几十线程 |
+| `limit_conn $binary_remote_addr` | ❌ 全校共用一个配额 | — |
+| `limit_req $remote_user` | ✅ | 挡住脚本循环 |
+
+### 配置
+
+`limit_*_zone` 必须写在 `http { }` 里。宝塔的 http 段在
+`/www/server/nginx/conf/nginx.conf`（面板：软件商店 → Nginx → 配置修改），
+加三行：
+
+```nginx
+limit_conn_zone $remote_user zone=bottle_per_user:10m;
+limit_req_zone  $remote_user zone=bottle_rate:10m rate=60r/m;
+```
+
+然后在**站点**的 `server { }` 里（宝塔：网站 → 设置 → 配置文件）加：
+
+```nginx
+location /MacWave/bottle/ {
+    limit_conn bottle_per_user 4;      # 每个用户名同时 4 个连接
+    limit_req  zone=bottle_rate burst=20 nodelay;
+
+    # 按连接限速，与 IP 无关 —— 校园网下这条最该留
+    limit_rate 20m;
+
+    sendfile on;
+    tcp_nopush on;
+}
+
+# 大包单独再压一档：装一次就很少重装，慢一点没关系
+location ~ /MacWave/bottle/ollama/ {
+    limit_rate 2m;
+}
+```
+
+缓存头在[第五步](#第五步nginx-缓存头)已经写过，不用重复。
+
+**Bottle 不要加 `limit_req` 的紧阈值**：一次带依赖的安装本来就是连续几次请求，
+卡太紧会伤到自己人。上面的 `60r/m` 只用来挡脚本循环。
+
+### fail2ban：阈值必须放宽
+
+默认模板的 `maxretry = 6` 在校园网下是灾难 —— 网关后面只要有一个人爆破，
+**整栋楼都被封**：
+
+```ini
+# /etc/fail2ban/jail.d/nginx-auth.conf
+[nginx-http-auth]
+enabled  = true
+maxretry = 20        # 放宽：NAT 后面人多，撞上同一桶
+findtime = 300
+bantime  = 600       # 封短一点：误封时等 10 分钟就能重试
+```
+
+认证成功不计入失败次数，所以正常用户不受影响。
+
+### 宝塔的两个坑
+
+- 面板里的**「限速」开关**是按 `$binary_remote_addr` 实现的，与上面的
+  `$remote_user` 方案冲突，别同时开。
+- 面板保存配置时会重写站点 `.conf`。要改就在面板的「配置文件」页改，
+  直接编辑 `/www/server/panel/vhost/nginx/<站点>.conf` 有被覆盖的风险。
+
+改完：
+
+```bash
+nginx -t && nginx -s reload
+```
+
+### 分级开放：哪些可以匿名
+
+如果确实想让一部分内容不需要口令，按「体积 × 是否公开」分级：
+
+```nginx
+# 公开代码与小文件：匿名
+location = /MacWave/core/lib/install.sh { auth_basic off; }
+
+# 大二进制：继续要认证
+location /MacWave/bottle/ { … }
+```
+
+注意一旦匿名，`limit_conn $remote_user` 就失效了（没有用户名，全部落进空字符串
+同一个桶），只能退回按 IP —— 而校园网下按 IP 会误伤。这就是为什么**建议只放开
+`install.sh` 这类几十 KB 的文件**，Bottle 保持认证。
+
+`install.sh` 还有一个零成本的去处：放 CDN，源站完全不承载它。
+
+```bash
+# 实测可达（本机到 github 不通时也能取到）
+/bin/bash -c "$(curl -fsSL https://fastly.jsdelivr.net/gh/MacWaveOrg/MacWave@v4.2.3/lib/install.sh)"
+```
+
+用 **tag**（`@v4.2.3`）而不是分支（`@4.2`）：tag 不可变，不会被悄悄换内容；
+jsDelivr 对分支引用有缓存，改了代码会有一段时间读到旧的。
+
+### 最后一道：看流量曲线
+
+口令泄露不会自己暴露，只有流量会：
+
+```bash
+# 按月看各路径实际发出去多少
+grep "/MacWave/bottle/" /www/wwwlogs/<站点>.log \
+  | awk '{sum += $10} END {printf "%.1f GB\n", sum/1024/1024/1024}'
+```
+
+超过预算就报警（宝塔的任务计划里写个 cron 即可）。这比任何限速都更能发现异常 ——
+限速只能让单个人慢下来，发现不了「有 200 个人在用同一个口令」。
 
 ## 常见问题
 
