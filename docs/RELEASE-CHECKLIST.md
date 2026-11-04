@@ -182,12 +182,23 @@ tag 已存在却仍传 `--target` 会报 `Release.target_commitish is invalid`�
 
 #### 安全版本：标题带前缀，正文带证据
 
-**凡属安全修复的版本，标题必须加 `[安全更新 Security update]` 前缀。**
-理由很实际：Release 列表里一眼扫过去，读者需要知道「这一版要不要立刻升」。
-没有前缀时，一次堵住提权路径的修复和一次调超时的改动长得一模一样。
+**凡属安全修复的版本，标题必须加前缀。** 理由很实际：Release 列表里一眼扫过去，
+读者需要知道「这一版要不要立刻升」。没有前缀时，一次堵住提权路径的修复和一次
+调超时的改动长得一模一样。安全修复分两档，别混用：
+
+| 档 | 前缀 | 什么时候用 |
+| --- | --- | --- |
+| 紧急 | `[紧急安全更新 Urgent security update]` | 旧版本会让**这台机器被人接管或数据被拿走**，或者**旧版装出来的结果是坏的**（装完即坏、权限被打乱）。看到这类问题，升级不是「建议」而是必须 |
+| 一般 | `[安全更新 Security update]` | 其余安全修复：限定条件下的弱点、加固性质的收紧、还没被证明能直接接管的情形 |
+
+判不准就往紧急那边靠——前缀写重了只让人早升一版，写轻了会让人放着不提权漏洞不修。
 
 ```bash
-# 安全版本
+# 紧急安全版本
+gh release create v<版本> --repo MacWaveOrg/MacWave \
+  --title "[紧急安全更新 Urgent security update] MacWave <版本>" --notes-file docs/RELEASE-<版本>.md
+
+# 一般安全版本
 gh release create v<版本> --repo MacWaveOrg/MacWave \
   --title "[安全更新 Security update] MacWave <版本>" --notes-file docs/RELEASE-<版本>.md
 
@@ -196,11 +207,16 @@ gh release create v<版本> --repo MacWaveOrg/MacWave \
   --title "MacWave <版本>" --notes-file docs/RELEASE-<版本>.md
 ```
 
-已经发布但漏了前缀时补上：
+已经发布但漏了前缀（或档位定轻了）时补上：
 
 ```bash
-gh release edit v<版本> --repo MacWaveOrg/MacWave --title "[安全更新 Security update] MacWave <版本>"
+TITLE="[紧急安全更新 Urgent security update] MacWave <版本>"
+gh release edit v<版本> --repo MacWaveOrg/MacWave --title "$TITLE"
 ```
+
+已定的档位：4.2.0（产物符号链接可逃出安装根目录，读到私钥、以用户身份任意写）
+与 4.3.0（装到 `/opt`、`/usr/local` 时把整棵树 chown 给安装者）都是**紧急**。
+tag 不可变但标题可变，改档位不需要动 tag。
 
 **正文里要有可复现的证据，而不是只写「修了 X」。** 一份安全版本的说明至少包含：
 
@@ -534,5 +550,5 @@ rsync -a --chown=www:www --chmod=D755,F644 \
 → 镜像：pull 索引 / 拉产物 / 生成清单 / rsync 清单
 ```
 
-安全版本额外两条：**标题加 `[安全更新 Security update]`**、**正文带可复现的对照数据**
-（见第 7 步）。
+安全版本额外两条：**标题按档位加 `[紧急安全更新 Urgent security update]` 或
+`[安全更新 Security update]`**、**正文带可复现的对照数据**（见第 7 步）。

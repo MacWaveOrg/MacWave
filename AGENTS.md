@@ -111,7 +111,9 @@ lib/innocent.dylib -> /Users/someone/.ssh/id_rsa
 
 ### 安全版本怎么对外说
 
-安全修复的版本，**Release 标题必须带 `[安全更新 Security update]` 前缀**，正文要有
+安全修复的版本，**Release 标题必须带安全前缀**：能让机器被接管或数据被拿走的
+（或旧版装出来的结果本身就是坏的）用 `[紧急安全更新 Urgent security update]`，
+其余用 `[安全更新 Security update]`；判不准按紧急写。正文要有
 可复现的证据而不是「修了 X」：具体威胁场景、新旧版本并排的实测数据、拒绝之后没有
 副作用、一个正面对照、以及用户自己能跑的自查命令。
 
