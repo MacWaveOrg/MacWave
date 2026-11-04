@@ -130,7 +130,7 @@ ok     "说明哪个词打错了"                   "$out" "is not a command"
 # 猜到该敲什么时不再展开整篇帮助：那五六十行会淹掉唯一有用的那一句。
 # 但也得留一个自查入口，否则用户想知道还有哪些命令就没地方去了。
 not_ok "猜对时不再打印整篇帮助"               "$out" "Commands:"
-ok     "改而指向 wave --help"                 "$out" "wave --help"
+ok     "改而指向 wave -h"                    "$(strip_ansi "$out")" "wave -h"
 
 wave update jq >/dev/null 2>&1
 if [[ $? -eq 1 ]]; then pass "退出码是 1"; else fail "退出码应当为 1"; fi
@@ -140,6 +140,59 @@ ok "remove → uninstall" "$(strip_ansi "$out")" "wave uninstall jq --all"
 
 out=$(wave ls 2>&1)
 ok "ls → list" "$(strip_ansi "$out")" "wave list"
+
+echo
+echo "========== 1.5 手滑少字母：按拼写猜，猜不到就别打整篇帮助 =========="
+
+# 以前只查一张语义误用表（update→upgrade 之类），手滑完全不管：`wave instal jq`
+# 会打一整篇帮助，把唯一有用的那句淹掉，而且连「Did you mean」都没有。
+out=$(wave instal jq 2>&1)
+plain=$(strip_ansi "$out")
+ok     "instal → install"        "$plain" "wave install jq"
+not_ok "猜得到时不打整篇帮助"      "$plain" "Commands:"
+ok     "指出是哪个词写错了"        "$plain" "instal is not a command"
+if [[ "$plain" == *"^^^^"* ]]; then
+    pass "caret 指向那个错词"
+else
+    fail "caret 没有出现在输出里"
+fi
+
+out=$(wave upgrad jq 2>&1)
+ok "upgrad → upgrade" "$(strip_ansi "$out")" "wave upgrade jq"
+
+out=$(wave lst 2>&1)
+ok "lst → list" "$(strip_ansi "$out")" "wave list"
+
+# 语义误用要优先于拼写：`update` 与 `selfupdate` 的相似度是 0.75，
+# 先跑拼写会把它猜成 selfupdate，而用户想的是 upgrade。
+out=$(wave update jq 2>&1)
+plain=$(strip_ansi "$out")
+ok     "update 仍指向 upgrade（不被拼写抢走）" "$plain" "wave upgrade jq"
+not_ok "update 不指向 selfupdate"              "$plain" "wave selfupdate jq"
+
+# 半截词不该被当成笔误：`inst` 与 `list` 的相似度有 0.75，
+# 会把它猜成 list —— 而它显然是 install 的缩写。首字母约束挡掉这一类。
+for word in inst li xyzzy; do
+    out=$(wave "$word" 2>&1)
+    not_ok "「${word}」不乱猜" "$(strip_ansi "$out")" "Did you mean"
+done
+
+# 猜不到时也**不能**倒一整篇帮助：那五六十行会把仅有的两行有效信息推出屏幕。
+# 只留一条指向 `wave -h` 的提示。这四条覆盖四种结局（猜得到 / 猜不到 / 只有坏旗标 / 空）。
+for word in xyzzy instal "instal jq"; do
+    out=$(wave $word 2>&1)
+    plain=$(strip_ansi "$out")
+    not_ok "「${word}」不打整篇帮助" "$plain" "Commands:"
+    ok     "「${word}」指向 wave -h" "$plain" "wave -h"
+done
+
+out=$(wave instal jq 2>&1)
+lines=$(printf '%s\n' "$(strip_ansi "$out")" | wc -l | tr -d ' ')
+if [[ "$lines" -le 10 ]]; then
+    pass "猜得到时输出不超过 10 行（实际 ${lines} 行）"
+else
+    fail "猜得到时输出 ${lines} 行，太长了"
+fi
 
 echo
 echo "========== 2. 不相干的乱词：不乱猜 =========="

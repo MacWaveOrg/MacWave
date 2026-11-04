@@ -397,9 +397,9 @@ def print_error_help(suggestion=None, unknown_flags=None, argv=None):
     回显命令行这件事与「猜不猜得到」无关：猜得到时它能让人看清错的是哪个词，
     猜不到时它是唯一能定位的信息。
 
-    猜到该敲什么时**不再输出整篇帮助**：那五六十行会把唯一有用的那一句
-    （「你要敲的是 upgrade」）淹掉，而用户此刻需要的正是那一句。真正不知道该
-    敲什么时才展开完整清单，并留一行告诉他以后怎么自查。
+    **任何情况下都不输出整篇帮助。** 那五六十行会在终端里滚过一整屏，把真正
+    有用的那两行（错在哪个词、该敲什么）推到看不见的地方 —— 而真想知道全部
+    命令的人，自己会去敲 `wave -h`。所以这里只留一条指向它的提示。
     """
     print(f"{BOLD}{RED}🌊 Error: Unknown command or argument.{RESET}")
 
@@ -424,15 +424,18 @@ def print_error_help(suggestion=None, unknown_flags=None, argv=None):
         print(f"   {YELLOW}{wrong}{RESET} is not a command. "
               f"The one you want is {GREEN}{right}{RESET}.")
         print()
-        print(f"   For the full list: {GREEN}wave --help{RESET}")
+        print(f"   For the full list: {GREEN}wave -h{RESET}")
         return
 
+    # 猜不到也要说清去哪里看 —— 但不再把整篇帮助倒进终端。
+    # _print_command_line 已经补了一个空行，没回显命令行时才需要自己补。
+    if bad_index is None:
+        print()
     if unknown_flags:
         print("   `wave --help` lists the global flags; "
               "`wave <command> --help` lists the rest.")
-
-    print()
-    print_custom_help()
+    else:
+        print(f"   For the full list: {GREEN}wave -h{RESET}")
 
 
 def main():

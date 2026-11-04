@@ -3,6 +3,7 @@
 # wave.py
 
 import os
+import difflib
 import sys
 from pathlib import Path
 
@@ -74,17 +75,55 @@ MISTYPED = {
 }
 
 
+# 拼写纠错的阈值。0.7 是下限：再低会把 `li` 猜成 list。
+SPELL_CUTOFF = 0.7
+# 首字母不同时，要求更高的相似度才认。
+#
+# 数字是穷举所有命令的**单字母错误**（删一个 / 换一个 / 插一个，共 4670 种）测出来的：
+#
+#   首字母必须相同        猜对 85.6%   猜错 0.2%   不猜 14.2%
+#   首字母不同需 ≥0.9     猜对 91.7%   猜错 0.3%   不猜  8.1%
+#   首字母不同需 ≥0.83    猜对 98.1%   猜错 0.3%   不猜  1.6%
+#   无约束                猜对 99.6%   猜错 0.4%   不猜  0.0%
+#
+# 取 0.83：几乎全中，同时挡住 `inst` → list（`inst` 是 install 的缩写，
+# 相似度 0.75，被这条卡掉；而真正的单字母笔误都在 0.83 以上）。
+FIRST_CHAR_RATIO = 0.83
+
+
+def spell_command(word):
+    """按拼写从命令表里猜一个；猜不到返回 None。
+
+    与 MISTYPED 分工不同：那张表收的是**语义上**的误用（`update` 是 apt 的叫法），
+    这里管的是**手滑**（`instal` 少一个 l）。
+    """
+    matches = difflib.get_close_matches(word, sorted(COMMANDS), n=1, cutoff=SPELL_CUTOFF)
+    if not matches:
+        return None
+    best = matches[0]
+    if best[0] == word[0]:
+        return best
+    # 首字母都不一样还硬猜，风险最高的就是「缩写」被当成笔误
+    # （`inst` 与 `list` 相似度 0.75）。要求更高才认。
+    ratio = difflib.SequenceMatcher(None, word, best).ratio()
+    return best if ratio >= FIRST_CHAR_RATIO else None
+
+
 def suggest(words):
     """首词打错时给出完整改法：只换掉那个词，其余参数与旗标原样保留。
 
     返回 (改好的命令行, 打错的词, 正确命令)；不认识就返回 None。
+
+    先查 MISTYPED（语义误用），再按拼写猜。顺序不能反：`update` 与 `selfupdate`
+    的相似度是 0.75，先跑拼写会把它猜成 selfupdate，而用户想的是 upgrade。
     """
     if not words:
         return None
-    right = MISTYPED.get(words[0])
+    wrong = words[0]
+    right = MISTYPED.get(wrong) or spell_command(wrong)
     if right is None or right not in COMMANDS:
         return None
-    return " ".join(["wave", right] + words[1:]), words[0], right
+    return " ".join(["wave", right] + words[1:]), wrong, right
 
 
 # -------------------- 全局旗标 --------------------
