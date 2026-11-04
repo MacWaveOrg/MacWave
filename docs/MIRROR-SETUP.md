@@ -192,6 +192,37 @@ MACWAVE_PYTHON_DOMAIN=https://mirror.repohub.top/MacWave/python \
 /bin/bash -c "$(curl -fsSL https://mirror.repohub.top/MacWave/core/lib/install.sh)"
 ```
 
+**注意 `install.sh` 那一行本身也要能取到。** 如果镜像开了 HTTP 基本认证（401），
+上面这条命令会停在 `curl` 那一步 —— 而 `MACWAVE_*_DOMAIN` 只管 MacWave 自己发的
+请求，管不到外层的 `curl`。三条出路，按推荐顺序：
+
+1. **给这一条路径开匿名只读**（推荐）。`install.sh` 是 MIT 的公开代码，挡它没有
+   意义；二进制与索引继续要认证即可：
+
+   ```nginx
+   location = /MacWave/core/lib/install.sh {
+       auth_basic off;
+       alias /www/wwwroot/mirror.repohub.top/MacWave/core/lib/install.sh;
+   }
+   ```
+
+   分支目录同理，若客户端按 `<CORE>/<分支>/lib/install.sh` 取：
+   `location ~ ^/MacWave/core/[^/]+/lib/install\.sh$ { auth_basic off; }`
+
+2. **把凭据写进 URL**（只适合自己人，且要当成口令保管）：
+
+   ```bash
+   /bin/bash -c "$(curl -fsSL https://USER:TOKEN@mirror.repohub.top/MacWave/core/lib/install.sh)"
+   ```
+
+3. **先把脚本存到本机再跑**（校园网 / 内网最省事，也便于逐字核对）：
+
+   ```bash
+   curl -fsSL -o /tmp/mw-install.sh https://mirror.repohub.top/MacWave/core/lib/install.sh
+   less /tmp/mw-install.sh          # 看一眼再执行
+   MACWAVE_CORE_DOMAIN=… /bin/bash /tmp/mw-install.sh
+   ```
+
 这里出现了另外两个变量，含义与前面不同：
 
 | 变量 | 取什么 | 镜像要承载 |
