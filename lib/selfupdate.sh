@@ -864,7 +864,19 @@ config_cmd tee "$VERSION_FILE" > /dev/null << EOF
 EOF
 
 if [[ "$CONFIG_NEED_SUDO" == "true" ]]; then
-    sudo chown -R "$CURRENT_USER": "$CONFIG_DIR"
+    # 与 install.sh 同一套规则：不归个人，归 root:<管理员组>，组可写。
+    # 配置目录只有读的需求，但保持与 install.sh 一致，免得两次安装留下不同属主。
+    _admin_group=""
+    for _candidate in admin sudo wheel; do
+        if dscl . -read "/Groups/$_candidate" >/dev/null 2>&1 \
+           || grep -qE "^${_candidate}:" /etc/group 2>/dev/null; then
+            _admin_group="$_candidate"
+            break
+        fi
+    done
+    [[ -n "$_admin_group" ]] || _admin_group="$(id -gn "$CURRENT_USER")"
+    sudo chown -R "root:$_admin_group" "$CONFIG_DIR" 2>/dev/null \
+        || sudo chown -R "$CURRENT_USER": "$CONFIG_DIR"
 fi
 
 config_cmd chmod 755 "$CONFIG_DIR"

@@ -122,6 +122,13 @@ jobs:
         run: |
           bash scripts/shell_lint.sh
 
+      # 安装目录白名单：/usr/local、/opt、$HOME 等绝不能被当作 BASE_DIR。
+      # 装到系统目录时脚本会 chown -R，拒绝协议时还会 rm -rf —— 指错目录的后果
+      # 是接管或删掉别的软件。纯函数测试，离线。
+      - name: Check installation directory guard
+        run: |
+          bash scripts/dir_guard_test.sh
+
       # 传输层契约：每个请求点都带策略（AST 检查，不是 grep）。
       - name: Check transport-layer contracts
         run: |

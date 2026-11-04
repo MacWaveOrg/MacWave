@@ -238,6 +238,55 @@ validate_custom_dir() {
         return 1
     fi
 
+    # 下面两条是这个函数最要紧的部分。
+    #
+    # 装到系统目录时安装脚本会 `sudo chown -R $CURRENT_USER: $BASE_DIR`（让之后
+    # `wave install` 不必每次提权），而拒绝协议时还会 `rm -rf "$BASE_DIR"`。
+    # 如果 BASE_DIR 是 /usr/local 这种「别的软件的家」，这两件事分别是
+    # **把整个 Homebrew 变成当前用户的** 和 **删掉它**。
+    #
+    # 这不是假想：`--dir-option=3=/usr/local` 以前能一路通过校验。
+
+    # 1) 这些目录本身绝不能被当作安装根目录。它们的子目录可以（/opt/macwave、
+    #    /usr/local/macwave），正因为如此才要按「完全相等」判，不能用前缀。
+    local _forbidden
+    for _forbidden in /bin /sbin /usr /usr/bin /usr/sbin /usr/lib /usr/libexec \
+                     /usr/local /usr/share /opt /etc /var /tmp /private \
+                     /System /Library /Applications /Users /Volumes /Network; do
+        if [[ "$expanded" == "$_forbidden" ]]; then
+            say_err "${RED_BOLD}🌊 Error: '$expanded' is a system directory, not an install directory.${RESET}" \
+                    "${RED_BOLD}🌊 错误：'$expanded' 是系统目录，不能当作安装目录。${RESET}"
+            say_err "🌊 Pick a directory of its own, for example ${_forbidden}/macwave" \
+                    "🌊 请用一个专属目录，例如 ${_forbidden}/macwave"
+            return 1
+        fi
+    done
+
+    # 2) 家目录本身同理。装进去会把 MacWave 的文件撒得到处都是，回滚时还会
+    #    rm -rf 整个家目录。
+    if [[ "$expanded" == "$HOME" ]]; then
+        say_err "${RED_BOLD}🌊 Error: Cannot install directly into your home directory.${RESET}" \
+                "${RED_BOLD}🌊 错误：不能直接装到家目录里。${RESET}"
+        say_err "🌊 Use a subdirectory such as ~/macwave" "🌊 请用一个子目录，例如 ~/macwave"
+        return 1
+    fi
+
+    # 3) 已存在且非空、又不是 MacWave 安装的目录：拒绝。
+    #    这一条覆盖上面清单之外的所有情况 —— 任何「别的软件已经在用」的目录都
+    #    落到这里。判据是 lib/wave.py：只有 MacWave 自己的安装树有它，所以重装
+    #    与升级仍然放行，占用别人的目录则被挡住。
+    if [[ -d "$expanded" && ! -f "$expanded/lib/wave.py" ]]; then
+        if [[ -n "$(ls -A "$expanded" 2>/dev/null)" ]]; then
+            say_err "${RED_BOLD}🌊 Error: '$expanded' already exists and is not empty.${RESET}" \
+                    "${RED_BOLD}🌊 错误：'$expanded' 已存在且非空。${RESET}"
+            say_err "🌊 Installing here would take ownership of files MacWave did not create;" \
+                    "🌊 装在这里会把 MacWave 没创建过的文件一并接管；"
+            say_err "🌊 pick a new or empty directory instead." \
+                    "🌊 请改用一个新的或空的目录。"
+            return 1
+        fi
+    fi
+
     echo "$expanded"
     return 0
 }
@@ -523,6 +572,59 @@ DISPLAY_DIR=$(home_to_tilde "$BASE_DIR")
 
 CURRENT_USER=$(whoami)
 
+# ==========================================
+# 系统级安装的所有权
+# ==========================================
+#
+# 为什么不是 chown -R 给当前用户：那会把 /opt/macwave 变成「第一个安装者私有」的，
+# 同一台机器上别的管理员 `wave install` 会 Permission denied —— 而 /opt 这类目录的
+# 本意恰恰是共享安装。
+#
+# 为什么不是 chmod -R 777：任何本地用户都能替换 /opt/macwave/links/jq，而它可能
+# 被别的用户、脚本甚至 root 执行 —— 那是教科书式的本地提权路径。
+#
+# 采用的模型：root:<管理员组> 755。管理员本来就知道密码、本来就能 sudo，
+# 所以不需要「组可写 + setgid + ACL 继承」那一套 —— 那是为了让非 root 写共享目录，
+# 代价是把系统 PATH 里的二进制变成组可写，收益不抵风险。
+#
+#   所有人    可读、可执行（能用已装的包）
+#   root     可写（wave install / 升级需要 sudo）
+#
+# 代价是系统级安装下 `wave install` 要 sudo。这一条在 pkg/pkginstaller.py 里
+# 有对应的检测与提示，不要只改这里。
+admin_group() {
+    # 只在「当前用户确实是这个组的成员」时才用它。
+    #
+    # 走到这里说明安装已经成功 sudo 过（写 /opt、/usr/local 都要密码），所以当前
+    # 用户是管理员这一点无需怀疑；把组设成管理员组，等于把「谁能改这个安装树」
+    # 定义为「所有管理员」，而不是「当初装它的那个人」。
+    #
+    # 但仍要验证成员资格：有些环境（root 直接跑、容器里的非标准用户）不在这几个
+    # 组里，那时退回当前用户的主组，免得 chown 到一个自己都不属于的组。
+    local candidate
+    for candidate in admin sudo wheel; do
+        if ! id -Gn "$CURRENT_USER" 2>/dev/null | tr ' ' '\n' | grep -qx "$candidate"; then
+            continue
+        fi
+        if dscl . -read "/Groups/$candidate" >/dev/null 2>&1 \
+           || grep -qE "^${candidate}:" /etc/group 2>/dev/null; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+    id -gn "$CURRENT_USER"
+}
+
+hand_over_system_install() {
+    # 系统级安装（$BASE_DIR 不在家目录下）才需要动手；用户级本来就是自己的。
+    local dir="$1" group
+    [[ -n "$dir" && -d "$dir" ]] || return 0
+    group="$(admin_group)"
+    sudo chown -R "root:$group" "$dir" || return 1
+    sudo chmod -R u+rwX,go+rX,go-w "$dir" || return 1
+    return 0
+}
+
 if [[ "$BASE_DIR" == "$HOME"* ]]; then
     NEED_SUDO=false
 else
@@ -699,11 +801,11 @@ EOF
 # ==========================================
 
 if [[ "$NEED_SUDO" == "true" ]]; then
-    sudo chown -R "$CURRENT_USER": "$BASE_DIR"
+    hand_over_system_install "$BASE_DIR"
 fi
 
 if [[ "$NEED_SUDO" == "true" ]]; then
-    sudo chown -R "$CURRENT_USER": "$CONFIG_DIR"
+    hand_over_system_install "$CONFIG_DIR"
 fi
 run_cmd chmod 755 "$CONFIG_DIR"
 run_cmd chmod 644 "$CONFIG_FILE"
@@ -795,7 +897,7 @@ fi
 
 # 先确保安装树归当前用户所有：venv 与依赖都要以用户身份写入。
 if [[ "$NEED_SUDO" == "true" ]]; then
-    sudo chown -R "$CURRENT_USER": "$BASE_DIR"
+    hand_over_system_install "$BASE_DIR"
 fi
 
 # ==========================================
@@ -1128,7 +1230,7 @@ write_launcher "$BASE_DIR" "$PYTHON_BIN"
 # ==========================================
 
 if [[ "$NEED_SUDO" == "true" ]]; then
-    sudo chown -R "$CURRENT_USER": "$BASE_DIR"
+    hand_over_system_install "$BASE_DIR"
 fi
 
 # ==========================================
@@ -1217,3 +1319,19 @@ say "🌊 To use 'wave' immediately in this terminal, run:" "🌊 想在当前�
 echo -e "${YELLOW}    source $RC_DISPLAY${RESET}"
 say "🌊 Or simply open a new terminal window." "🌊 或者直接打开一个新终端窗口。"
 echo ""
+
+# 系统级安装是共享的：管理员用 sudo 管理，其他用户只能运行。
+# 但 PATH 那一行只写进了**当前用户**的 rc 文件 —— 别人不写就找不到 wave，
+# 只能靠绝对路径执行。这里说清楚，否则「其他人可运行」只对了一半。
+if [[ "$NEED_SUDO" == "true" ]]; then
+    LINKS_DISPLAY=$(home_to_tilde "$BASE_DIR/links")
+    say "🌊 Other users on this machine can run the installed packages," \
+        "🌊 这台机器上的其他用户可以直接运行已装的软件包，"
+    say "🌊 but they need this line in their own shell profile:" \
+        "🌊 但要在各自的 shell 配置里加上这一行："
+    echo -e "${YELLOW}    export PATH=\"$LINKS_DISPLAY:\$PATH\"${RESET}"
+    say "🌊 Changing packages (install / uninstall / upgrade) needs sudo:" \
+        "🌊 改动软件包（安装 / 卸载 / 升级）需要 sudo："
+    echo -e "${YELLOW}    sudo wave install <package>${RESET}"
+    echo ""
+fi

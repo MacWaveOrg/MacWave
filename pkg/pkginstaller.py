@@ -831,6 +831,12 @@ INSTALL_STEPS = [
 ]
 
 
+def _invoked_as():
+    """用户敲的那个名字：`wave`，而不是 `wave.py`。报错里的命令要能直接照抄。"""
+    name = Path(sys.argv[0]).name
+    return "wave" if name.startswith("wave") else name
+
+
 def handle_install(input_string):
     # 参数解析
     steplog.reset()
@@ -839,6 +845,18 @@ def handle_install(input_string):
     # 先解析旗标、打开追踪，再报第一步 —— 否则 -v 自己的这一步会被漏掉
     config = handle_download_args(input_string)
     steplog.set_verbose(config["verbose"])
+
+    # 系统级安装（装到 /opt、/usr/local）时安装树归 root，普通用户写不了。
+    # 不在这里先说清楚的话，报错会发生在下载那一步，还被归因成「网络或代理问题」——
+    # 实测过：`Permission denied: .../downloads/tmp/xxx.partial`，提示全跑偏。
+    if not os.access(BASE_DIR, os.W_OK):
+        steplog.fail(
+            f"no write permission on {BASE_DIR}",
+            response=f"running as uid {os.getuid()}; this tree is owned by root",
+            hint=["this is a system-level install; only administrators can change it:",
+                  f"  sudo {_invoked_as()} install <package>",
+                  "everyone else can still run the installed packages",
+                  "or reinstall into ~/.local/macwave to manage packages without sudo"])
 
     steplog.begin("parse command line")
     steplog.detail(f"args {input_string.strip() or '(empty)'}")
