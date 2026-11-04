@@ -325,6 +325,17 @@ gh release view "$TAG" -R MacWaveOrg/MacWave --json assets --jq '.assets | lengt
 - **`gh release upload` 必须带 `--clobber`。** 否则重跑报 422。
 - **macOS 上打归档要加 `--no-xattrs`。** 不加时 bsdtar 会把扩展属性写进 pax 头，Linux 解包多出 `._*`。
   打完务必解包 `diff -r` 一遍，确认与原树逐文件一致。
+- **比哈希时要照顾符号链接。** 仓库里 `CLAUDE.md` 是指向 `AGENTS.md` 的链接（mode `120000`），
+  归档会正确保留成链接。此时 `git hash-object <解包出来的链接>` 会**跟随链接**读到
+  `AGENTS.md` 的内容，和 blob 里存的链接目标字符串（`AGENTS.md`）当然对不上 ——
+  看着像资产坏了，其实是判据用错了。按 mode 分开判：
+
+  ```bash
+  # mode 120000 的比链接目标，其余比 blob 哈希
+  want=$(git cat-file -p "$TAG:$p"); got=$(readlink "$解包目录/$p")
+  ```
+
+  用 `diff -r` 复核时它默认跟随链接比内容，同样验不出链接指向错没错，别只靠它。
 - **归档要从 tag 建，不要从工作副本建。** 3.2.1 的 tar 就比 tag 少两个文件
   （`sync-payloads.yml`、`RELEASE-3.2.2.md`），是 tag 之后又改过导致的不一致。
 
