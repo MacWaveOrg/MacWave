@@ -122,7 +122,7 @@ want() {
     fi
 
     if [ "${MACWAVE_SILENT:-}" != "1" ]; then
-        say "🌊 Downloading $repo_path..." "🌊 正在下载 $repo_path……"
+        say "🌊 Downloading $repo_path..." "🌊 正在下载 ${repo_path}……"
     fi
     if ! fetch "$url" "$destination"; then
         say_err "🌊 Error: cannot download $repo_path" "🌊 错误：无法下载 $repo_path"
@@ -158,7 +158,7 @@ install_delta() {
 
 main() {
     if [ "${MACWAVE_CURRENT_VERSION:-}" = "$VERSION" ]; then
-        say "🌊 Already at $VERSION; nothing to download." "🌊 已经是 $VERSION，无需下载。"
+        say "🌊 Already at $VERSION; nothing to download." "🌊 已经是 ${VERSION}，无需下载。"
         return 0
     fi
 

@@ -116,6 +116,12 @@ jobs:
         run: |
           bash scripts/structure_test.sh
 
+      # 变量后面紧跟多字节字符会在非 UTF-8 locale 下变成 unbound variable。
+      # 本机 locale 是 UTF-8 时完全看不出，只有 CI 会红 —— 已经踩过两次。
+      - name: Lint shell scripts
+        run: |
+          bash scripts/shell_lint.sh
+
       # 传输层契约：每个请求点都带策略（AST 检查，不是 grep）。
       - name: Check transport-layer contracts
         run: |

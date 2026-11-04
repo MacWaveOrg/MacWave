@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # configpath_test.sh
-# 配置目录解析回归（离线，不碰网络、不碰真实的 /opt 与 $HOME）：
+# 配置目录解析回归（离线，不碰网络、不碰真实的 /opt 与 ${HOME}）：
 #   系统级 /opt/macwave_config 优先 → 只有用户级时才回落 ~/.config/macwave_config
 #   系统级配置损坏或缺 base_dir 时也要能回落到用户级
 # 做法是把 configpaths 的两个目录常量替换成临时目录，直接测实现本身。

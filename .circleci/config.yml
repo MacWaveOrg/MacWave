@@ -117,6 +117,7 @@ jobs:
           # 三条都是纯离线、秒级。
           command: |
             bash scripts/structure_test.sh
+            bash scripts/shell_lint.sh
             bash scripts/net_policy_test.sh
             bash scripts/linksafety_test.sh
             bash scripts/minos_test.sh

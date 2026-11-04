@@ -65,7 +65,7 @@ expect_names() {  # expect_names 描述 应出现的名字...（在输出里出�
     if [[ ${#missing[@]} -eq 0 ]]; then
         pass "$label"
     else
-        fail "$label（输出里没有：${missing[*]}）"
+        fail "${label}（输出里没有：${missing[*]}）"
     fi
 }
 

@@ -333,10 +333,10 @@ MacWave 安装程序
       --ci, --CI          完全不交互：目录菜单与用户协议都自动应答。不带
                           --dir-option 时使用默认项（第 1 项）。
                           需要提权时要求 sudo 免密。
-      --dir-option=N      不提问，直接选菜单第 N 项（1-$CUSTOM_OPTION）。
+      --dir-option=N      不提问，直接选菜单第 N 项（1-${CUSTOM_OPTION}）。
       --dir-option=DIR    用 DIR 作为安装目录（等价于
                           --dir-option=$CUSTOM_OPTION=DIR）。
-      --dir-option=N=DIR  选第 N 项，并在自定义项（$CUSTOM_OPTION）时用 DIR
+      --dir-option=N=DIR  选第 N 项，并在自定义项（${CUSTOM_OPTION}）时用 DIR
                           作为安装目录。
         --install-python-from-source
                             自带 CPython 改从上游 URL 下载（记录在
@@ -441,7 +441,7 @@ resolve_custom_dir() {
     local custom_dir validated
     if [[ -n "$CLI_CUSTOM_DIR" ]]; then
         custom_dir="$CLI_CUSTOM_DIR"
-        say "🌊 Installation directory: $custom_dir (from --dir-option)" "🌊 安装目录：$custom_dir（来自 --dir-option）"
+        say "🌊 Installation directory: $custom_dir (from --dir-option)" "🌊 安装目录：${custom_dir}（来自 --dir-option）"
     else
         say "${YELLOW}Please enter the installation directory:${RESET}" "${YELLOW}请输入安装目录：${RESET}"
         read -r custom_dir < /dev/tty
@@ -453,7 +453,7 @@ resolve_custom_dir() {
 # ==========================================
 # 显示欢迎信息
 # ==========================================
-say "🌊 Welcome to MacWave $MACWAVE_VERSION!" "🌊 欢迎使用 MacWave $MACWAVE_VERSION！"
+say "🌊 Welcome to MacWave $MACWAVE_VERSION!" "🌊 欢迎使用 MacWave ${MACWAVE_VERSION}！"
 
 if [[ "$CORE_URL" != "https://raw.githubusercontent.com/MacWaveOrg/MacWave" ]]; then
     say "🌊 Install from mirror: $(mw_redact "$CORE_URL")" "🌊 从镜像安装：$(mw_redact "$CORE_URL")"
@@ -469,7 +469,7 @@ say "🌊 Detected architecture: $ARCH" "🌊 检测到架构：$ARCH"
 
 if [[ -n "$CLI_DIR_OPTION" ]]; then
     choice="$CLI_DIR_OPTION"
-    say "🌊 Directory option: $choice (from --dir-option)" "🌊 目录选项：$choice（来自 --dir-option）"
+    say "🌊 Directory option: $choice (from --dir-option)" "🌊 目录选项：${choice}（来自 --dir-option）"
 elif [[ "$CLI_CI" == "true" ]]; then
     choice="1"
     say "🌊 --ci: using the default directory option 1." "🌊 --ci：使用默认目录选项 1。"
@@ -929,7 +929,7 @@ ensure_portable_python() {
     fi
 
     # ── 第三步：下载并校验 ──
-    say_err "🌊 Downloading the bundled Python $version (about 26 MB)..." "🌊 正在下载自带 Python $version（约 26 MB）……"
+    say_err "🌊 Downloading the bundled Python $version (about 26 MB)..." "🌊 正在下载自带 Python ${version}（约 26 MB）……"
     archive="$base_dir/downloads/tmp/portable-python-$version.tar.gz"
     mkdir -p "$base_dir/downloads/tmp" 2>/dev/null || true
     if ! curl -fsSL --max-time 900 -o "$archive" "$archive_url" 2>/dev/null; then

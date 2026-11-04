@@ -204,6 +204,34 @@ MACWAVE_TEST=/tmp/mw-probe python3 lib/wave.py mirror
 只有在「确实要改动这台机器」时，才在真实环境里跑 `wave install` / `wave uninstall` /
 `wave selfupdate`。
 
+### 验证带中文的 shell 输出时，先切到 UTF-8 locale
+
+本机的 `LC_CTYPE` 是 `C`，而 GitHub runner 与绝大多数用户的 macOS 是 UTF-8。
+这两者对**变量名断词**的行为不同：
+
+```bash
+# LC_ALL=en_US.UTF-8 + /bin/bash 3.2 下报 `v?: unbound variable`
+set -u; v=OK; echo "值 $v…… 尾"
+```
+
+3.2 在 UTF-8 locale 下会把紧跟变量的多字节字符读进变量名，`set -u` 于是报
+「变量不存在」。本机 `LC_CTYPE=C` 时完全相同的一行却正常 —— 所以这类错误
+**永远只能在 CI 或用户机器上炸**，而且已经炸过两次（`install.sh` 的中文文案、
+`update_commands.template.sh` 的下载提示）。
+
+规矩有两条：
+
+1. 变量后面紧跟中文标点时**一律加花括号**：`${VAR}……`、`${VAR}（`。不加也能跑，
+   但只在 C locale 下能跑。
+2. 验证中文输出要显式切 locale，否则等于没验：
+
+```bash
+LC_ALL=en_US.UTF-8 LC_CTYPE=en_US.UTF-8 /bin/bash lib/install.sh --help --zh
+```
+
+`scripts/shell_lint.sh` 会扫描全部 `.sh` 里「变量紧跟多字节字符」的写法，两条
+流水线都跑 —— 但**它只查文本，不查行为**，所以上面第 2 条仍然要做。
+
 ### 为什么不隔离会很隐蔽
 
 `config_dir_candidates()` 是**系统级优先**：`/opt/macwave_config` 存在就用它。
