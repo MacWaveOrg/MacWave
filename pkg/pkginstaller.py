@@ -332,10 +332,18 @@ def parse_flags(input_string, command="install", shown=None):
                 extra=f"you ran: {(shown or input_string).strip()}",
                 hint=["Did you mean:"] + [f"  {item}" for item in commands]
                      + [f"`wave {commands[0].split()[1]} --help` lists the rest"])
+        # 拼错时给一个候选再报错。--connect-time 与 --connect-timeout 只差三个
+        # 字母，只说 "illegal option" 等于让用户自己回去翻 --help；
+        # 候选只从**当前命令的白名单**里取，所以不会推荐一条这里不接受的长参数。
+        suggestion = difflib.get_close_matches(flag, sorted(ALLOWED_FLAGS), n=1, cutoff=0.6)
+        hint = []
+        if suggestion:
+            hint.append(f"Did you mean {suggestion[0]}?")
+        hint.append(f"`wave {command} --help` lists the flags this command accepts")
         steplog.fail(
             f"illegal option {flag} for `wave {command}`",
             extra=f"you ran: {(shown or input_string).strip()}",
-            hint=f"`wave {command} --help` lists the flags this command accepts")
+            hint=hint)
 
     return flags
 

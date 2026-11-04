@@ -168,6 +168,25 @@ out=$(wave search tre 2>&1)
 ok "search 按片段匹配" "$out" "tree"
 
 echo
+echo "========== 3. 旗标拼错：给候选，但只在真有候选时 =========="
+
+# --connect-time 是 --connect-timeout 少了三个字母。只说 "illegal option"
+# 等于让用户回去翻 --help。
+out=$(wave install jq --connect-time=1min 2>&1)
+ok     "给出最接近的旗标"   "$out" "Did you mean --connect-timeout?"
+ok     "仍然点名哪个旗标"   "$out" "illegal option --connect-time"
+ok     "仍然回显整条命令"   "$out" "you ran: wave install jq --connect-time=1min"
+ok     "保留 --help 自查"   "$out" "wave install --help"
+
+out=$(wave install jq --limt-rate=10M 2>&1)
+ok     "限速旗标拼错也给建议" "$out" "Did you mean --limit-rate?"
+
+# 没有任何接近的候选时不要瞎猜 —— 编一个坏建议比不给建议更伤人。
+out=$(wave install jq --unkown-flag 2>&1)
+not_ok "无候选时不编造建议"   "$out" "Did you mean"
+ok     "仍然给出 --help"      "$out" "wave install --help"
+
+echo
 echo "=========================================="
 echo -e "🌊 Passed: $PASSED"
 echo -e "🌊 Failed: $FAILED"
