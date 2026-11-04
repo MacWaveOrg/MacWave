@@ -347,6 +347,11 @@ mw_assert_no_escaping_links() {
     local tree="$1"
     local cleanup="${2:-}"
     if [[ ! -d "$tree" ]]; then
+        # 裸二进制（无扩展名）不解压，产物就是一个普通文件，不可能含符号链接 ——
+        # 所以这里没有可查的东西。但仍然要**说一句**：安装过程里最糟的是「悄悄
+        # 跳过了什么」，用户看不见这一行会以为根本没查（4.2.0 装 yq 就是这样）。
+        echo "🌊 Running security checks..."
+        echo "🌊 Single-file payload: nothing was unpacked, so there are no links to check."
         return 0
     fi
 

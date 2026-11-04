@@ -188,6 +188,34 @@ else
     pass "解压临时目录已清理"
 fi
 
+echo "--- 裸二进制：没有链接可查，但仍然要说一句 ---"
+# 4.2.0 装 yq 时这一段整个是静默的：没有扩展名的产物不解压，$extract_dir 不存在，
+# 检查函数在 ! -d 那里直接 return，连「正在安全检查」都不打。用户看到「Extracting
+# package...」之后直接跳到「Successfully installed」，会以为根本没查。
+printf 'not-a-real-binary' > "$BASE/downloads/tmp/plainbin-1.0"
+PSHA=$(shasum -a 256 "$BASE/downloads/tmp/plainbin-1.0" | awk '{print $1}')
+
+OUT=$(cd "$BASE" && bash -c "
+    source ./surfboard/depsmanager.sh
+    mw_install_artifact \"plainbin
+1.0
+$PSHA
+$BASE/bin/plainbin@1.0
+$BASE
+plainbin
+
+plainbin-1.0\" '' 'binary'
+" 2>&1)
+RC=$?
+
+if [[ "$RC" -eq 0 ]]; then
+    pass "裸二进制安装成功"
+else
+    fail "裸二进制安装失败（rc=${RC}）：$(printf '%.200s' "$OUT")"
+fi
+expect_names "裸二进制也提示正在安全检查" "Running security checks"
+expect_names "并说明没有可查的链接" "Single-file payload"
+
 echo "--- 合法产物必须照常安装（防误杀） ---"
 mkdir -p "$WORK/craft2/lib"
 ln -s ./ok.dylib "$WORK/craft2/lib/fine"
