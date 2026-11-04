@@ -39,6 +39,25 @@
 横幅与语言无关，`--zh` 和默认英文都打；欢迎语那一行继续走 `say()`，所以两种语言
 各说各的。
 
+## ⚠️ 关键：`wave selfupdate` 看不到这个横幅
+
+`lib/install.sh` 在 `scripts/build_update_commands.py` 的 `EXCLUDED` 里 ——
+它不参与自更新（每次安装都是从远端现取执行，装进安装树没有意义）。所以：
+
+| 位置 | 有横幅吗 |
+| --- | --- |
+| 仓库 `lib/install.sh` | ✅ |
+| 线上 `raw.githubusercontent` / 镜像 `core/4.2/` | ✅ |
+| 安装树 `~/.local/macwave/lib/install.sh` | ❌ **永远是首次安装时那份** |
+| `wave selfupdate` 下载的文件 | ❌ 不含 `install.sh` |
+
+也就是说：**想看横幅，必须重新运行一次安装命令**；`wave selfupdate` 到 4.2.4
+只会更新其它文件，横幅不会出现。
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/install.sh)" -- --zh
+```
+
 ## 要不要升级
 
 **不升也完全可以。** 4.2.3 已经修完了那个致命问题（UTF-8 locale 下
