@@ -160,7 +160,7 @@ lib/innocent.dylib -> /Users/someone/.ssh/id_rsa
 | --- | --- |
 | 安装前判断 | [`pkg/pkginstaller.py`](./pkg/pkginstaller.py) 的 `confirm_min_os`，位于版本记录读完之后、下载之前（`step 6/11`） |
 | info 展示 | [`pkg/pkginfohelper.py`](./pkg/pkginfohelper.py) 的 `fetch_version_min_os` |
-| 数据回填 | `infosource` 仓库的 `scripts/backfill_min_os.py`，从产物里的 `LC_BUILD_VERSION` 自动提取，取整包最大值 |
+| 数据回填 | `infosource` 仓库两个脚本：`backfill_min_os.py` 取本机已装的树（快，只覆盖装过的）；`backfill_min_os_from_bottle.py` 按包下载 release 资产（能覆盖全库两架构）。都取整包最大值 |
 | 回归 | [`scripts/minos_test.sh`](./scripts/minos_test.sh)，双 CI 都跑 |
 
 4.3 转正要做什么，见 [`docs/RELEASE-CHECKLIST.md`](./docs/RELEASE-CHECKLIST.md)。

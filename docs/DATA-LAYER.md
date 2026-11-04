@@ -106,11 +106,12 @@ min_os: "12.1"
 | 项 | 说明 |
 | --- | --- |
 | 语义 | 这个包要求的 macOS 下限 |
-| 来源 | 产物里所有 Mach-O 的 `LC_BUILD_VERSION` 取**最大值**（`tmux@3.6` 本体 12.0，带的 `libevent` dylib 是 12.1，所以整包是 12.1） |
+| 来源 | 产物里所有 Mach-O 的**最大值**，两种 LC 命令都认：`LC_BUILD_VERSION` 的 `minos` 与老工具链的 `LC_VERSION_MIN_MACOSX` 的 `version`（`tmux@3.6` 本体 12.0，带的 `libevent` dylib 是 12.1，所以整包是 12.1） |
+| 覆盖 | 全库真实软件包 100%：arm64 96/112、amd64 89/106。缺的只有 `test_*`（负向与格式样本，Bottle 无真实产物）与 `fileicon`（bash 脚本，不是 Mach-O） |
 | 必填？ | **否**。缺失时客户端静默放行 —— 字段还没普及，误报的代价比漏报大 |
 | 位置 | 只在版本记录里，不在 `@common`：同一包的不同版本可以要求不同系统版本 |
 | 用途 | 警告 + 询问，**不是硬拦截**。它是构建时的声明，不等于真实 API 需求（`jq@1.8.2` 声明 14.0 却在 12.7.6 上实测能跑）；`-F` 可强制安装 |
-| 回填 | `scripts/backfill_min_os.py`，幂等，支持 `--dry-run` |
+| 回填 | `backfill_min_os.py`（本机安装树）与 `backfill_min_os_from_bottle.py`（下载全部产物），都幂等、都支持 `--dry-run` |
 
 行为矩阵与转正清单见 [`AGENTS.md`](../AGENTS.md) 的「包级元数据」与
 [`RELEASE-CHECKLIST.md`](./RELEASE-CHECKLIST.md) 第 1 步。

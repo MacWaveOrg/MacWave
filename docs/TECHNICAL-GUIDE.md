@@ -284,8 +284,17 @@ jq@1.8.2.amd64
 #### `min_os`（4.2 起，实验性）
 
 版本记录还可以带一个**可选**的 `min_os: "12.1"`，表示这个包要求的 macOS 下限。
-它由 `scripts/backfill_min_os.py`（在 `infosource` 仓库）从产物里自动提取：
-所有 Mach-O 的 `LC_BUILD_VERSION` 取最大值，不需要人工填。
+它由 `infosource` 仓库的两个脚本从产物里自动提取，不需要人工填：
+`backfill_min_os.py` 读本机已安装的树，`backfill_min_os_from_bottle.py` 按包下载
+release 资产（覆盖全库两架构，含 amd64 —— otool 只读 Mach-O 头，不需要能运行）。
+两者都取整包最大值，并且**两种 LC 命令都认**：新的 `LC_BUILD_VERSION`（`minos`）
+与老工具链的 `LC_VERSION_MIN_MACOSX`（`version`）。产物形态还有三种要分别处理：
+裸二进制、归档（tar/zip/.conda，其中 `.conda` 内层是 zstd 包着的**裸 tar**）、
+以及单文件压缩（`ffmpeg@6.0.arm64.gz` 是 gzip 包着裸二进制，不是 tar.gz）。
+
+有两个值看着离谱但是真的：`ipsw` 声明 `27.2`、`ollama` 声明 `26.2` —— 都是 Go
+程序用极新的 Xcode SDK 链接，linker 把 SDK 版本原样写进了 `minos`。它们在**任何**
+已发布的 macOS 上都会触发询问，这也正是「只询问、不做硬拦截」的最强论据。
 
 它只出现在**版本记录**里，不在元数据记录里 —— 同一个包的不同版本可以要求不同的系统
 版本。四个包的实例：

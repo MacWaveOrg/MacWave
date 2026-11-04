@@ -75,8 +75,8 @@ git switch -c 4.1          # 从 main 切出，保证历史连续
 
 | 项 | 为什么 |
 | --- | --- |
-| 把 `infosource` 全库的 `min_os` 回填完（`arm64` 与 `amd64` 两套） | 只有十几个包有字段时，其余包等于没有保护 |
-| `backfill_min_os.py --dry-run` 要看到 `no-minos=0` | 有产物读不出 `minos`，说明提取漏了某种形态（裸二进制 / `.tar.gz` / `.conda`） |
+| ~~把 `infosource` 全库的 `min_os` 回填完（`arm64` 与 `amd64` 两套）~~ **已完成**（`infosource` `c92d1fc`） | 覆盖到真实软件包 100%；缺的只有 `test_*` 与 `fileicon`，它们本来就没有 Mach-O |
+| `backfill_min_os_from_bottle.py --dry-run` 要看到真实包 `no-minos=0` | 有产物读不出 `minos`，说明提取漏了某种形态（裸二进制 / tar / zip / `.conda` / 单文件 `.gz` / `LC_VERSION_MIN_MACOSX`） |
 | 复核「询问式」是否仍是想要的形态 | 现在是：警告 + `[y/N]`，只有 `y`/`Y` 继续；`-s` 直接拒绝、`-sS` 才说原因；`-F` 强制越过。改成硬拦截前必须确认 `jq` 这类「声明保守」的包不被误杀 —— 它声明 14.0 却在 12.7.6 上实测能跑 |
 | 更新对外文案（官网与 Release） | 官网现在说 `Sonoma 14+`，与索引里的真实下限不一致 |
 | 在 `AGENTS.md`、本文件去掉「实验性」字样 | 否则后来的人会按旧语义改代码 |
