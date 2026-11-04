@@ -22,7 +22,7 @@ that is what we promise. Individual packages may declare their own minimum;
 
 ## 🌊 Latest Version
 
-4.2.4, Release on 2026-11-04
+4.2.5, Release on 2026-11-04
 
 ## 🌊 About MacWave 
 
