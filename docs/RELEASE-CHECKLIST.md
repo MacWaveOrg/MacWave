@@ -169,6 +169,30 @@ branch = "<新分支>"
 - `Pages/index.html`：中英两处版本号
 - GitHub Release：正文用 `docs/RELEASE-<版本>.md`
 
+#### 正文必须双语，英文在前
+
+Release 页面的默认读者是美国那边的用户，中文读者则两边都看得懂。所以每一份
+`docs/RELEASE-<版本>.md` 都写成两段，中间用 `---` 隔开：
+
+```
+# MacWave <版本> Release Notes     ← 英文全文
+...
+---
+# MacWave <版本> 发布说明           ← 中文全文（原文不动，整段接在后面）
+```
+
+- **两段各自完整**，不是摘要 + 全文。英文段要能独立读懂，包括表格、代码块、实测数据。
+- **英文在前**，中文在后。判定标准很简单：把文件从头往下读，第一屏必须是英文。
+- 中文段是原文，**不因为补英文而改写**；要改就两边一起改（同一处结论、同一组数字
+  必须一致，否则英文段单独被引用时就是错的）。
+- 标题前缀同理，英文在前：`[Urgent security update 紧急安全更新]`、
+  `[Critical fix 紧急修复]`，不是中文在前。
+- 只做 `gh release edit --notes-file` 是不够的——**仓库里那份文件也要一起改**，
+  否则下次有人照着文件重新 `--notes-file`，英文段会整个消失。
+
+补历史版本时（模板见 `docs/RELEASE-4.2.3.md` ~ `4.3.0`），顺序是：改文件 → 跑
+`bash scripts/markdown_test.sh` → `gh release edit --notes-file` → 抽查正文第一行是不是英文。
+
 ### 第 7 步：建 Tag 与 Release
 
 ```bash
@@ -188,19 +212,19 @@ tag 已存在却仍传 `--target` 会报 `Release.target_commitish is invalid`�
 
 | 档 | 前缀 | 什么时候用 |
 | --- | --- | --- |
-| 紧急 | `[紧急安全更新 Urgent security update]` | 旧版本会让**这台机器被人接管或数据被拿走**，或者**旧版装出来的结果是坏的**（装完即坏、权限被打乱）。看到这类问题，升级不是「建议」而是必须 |
-| 一般 | `[安全更新 Security update]` | 其余安全修复：限定条件下的弱点、加固性质的收紧、还没被证明能直接接管的情形 |
+| 紧急 | `[Urgent security update 紧急安全更新]` | 旧版本会让**这台机器被人接管或数据被拿走**，或者**旧版装出来的结果是坏的**（装完即坏、权限被打乱）。看到这类问题，升级不是「建议」而是必须 |
+| 一般 | `[Security update 安全更新]` | 其余安全修复：限定条件下的弱点、加固性质的收紧、还没被证明能直接接管的情形 |
 
 判不准就往紧急那边靠——前缀写重了只让人早升一版，写轻了会让人放着不提权漏洞不修。
 
 ```bash
 # 紧急安全版本
 gh release create v<版本> --repo MacWaveOrg/MacWave \
-  --title "[紧急安全更新 Urgent security update] MacWave <版本>" --notes-file docs/RELEASE-<版本>.md
+  --title "[Urgent security update 紧急安全更新] MacWave <版本>" --notes-file docs/RELEASE-<版本>.md
 
 # 一般安全版本
 gh release create v<版本> --repo MacWaveOrg/MacWave \
-  --title "[安全更新 Security update] MacWave <版本>" --notes-file docs/RELEASE-<版本>.md
+  --title "[Security update 安全更新] MacWave <版本>" --notes-file docs/RELEASE-<版本>.md
 
 # 非安全版本
 gh release create v<版本> --repo MacWaveOrg/MacWave \
@@ -210,7 +234,7 @@ gh release create v<版本> --repo MacWaveOrg/MacWave \
 已经发布但漏了前缀（或档位定轻了）时补上：
 
 ```bash
-TITLE="[紧急安全更新 Urgent security update] MacWave <版本>"
+TITLE="[Urgent security update 紧急安全更新] MacWave <版本>"
 gh release edit v<版本> --repo MacWaveOrg/MacWave --title "$TITLE"
 ```
 
@@ -550,5 +574,5 @@ rsync -a --chown=www:www --chmod=D755,F644 \
 → 镜像：pull 索引 / 拉产物 / 生成清单 / rsync 清单
 ```
 
-安全版本额外两条：**标题按档位加 `[紧急安全更新 Urgent security update]` 或
-`[安全更新 Security update]`**、**正文带可复现的对照数据**（见第 7 步）。
+安全版本额外两条：**标题按档位加 `[Urgent security update 紧急安全更新]` 或
+`[Security update 安全更新]`**、**正文带可复现的对照数据**（见第 7 步）。

@@ -111,9 +111,14 @@ lib/innocent.dylib -> /Users/someone/.ssh/id_rsa
 
 ### 安全版本怎么对外说
 
+**发布说明一律双语，英文在前**：同一份 `docs/RELEASE-<版本>.md` 里先英文全文、再
+`---`、再中文全文，两段各自完整（表格、代码块、实测数据都要有），中文段就是原文、
+不因补英文而改写。标题前缀也是英文在前。细则见
+[`docs/RELEASE-CHECKLIST.md`](./docs/RELEASE-CHECKLIST.md) 第 6 步。
+
 安全修复的版本，**Release 标题必须带安全前缀**：能让机器被接管或数据被拿走的
-（或旧版装出来的结果本身就是坏的）用 `[紧急安全更新 Urgent security update]`，
-其余用 `[安全更新 Security update]`；判不准按紧急写。正文要有
+（或旧版装出来的结果本身就是坏的）用 `[Urgent security update 紧急安全更新]`，
+其余用 `[Security update 安全更新]`；判不准按紧急写。正文要有
 可复现的证据而不是「修了 X」：具体威胁场景、新旧版本并排的实测数据、拒绝之后没有
 副作用、一个正面对照、以及用户自己能跑的自查命令。
 

@@ -1,3 +1,153 @@
+# MacWave 4.2.5 Release Notes
+
+- Released: 2026-11-04, build `308A1654`
+- Branch: `4.2`
+- Previous release: [4.2.4](RELEASE-4.2.4.md) (same day, ASCII art only)
+
+## Summary
+
+One change only: **hints when a command name is mistyped**. Package installs, the index and
+network behaviour are byte-for-byte unchanged.
+
+Previously `wave instal jq` (one `l` short) offered nothing and dumped an entire help page; now
+it either guesses the intent and shows the corrected command, or — when it cannot guess —
+leaves exactly one hint pointing at `wave -h`. Under no circumstance does it push fifty-odd
+lines of help into your terminal again.
+
+## 1. A slip of the finger now gets the full corrected command
+
+```
+$ wave instal jq
+🌊 Error: Unknown command or argument.
+   wave instal jq
+        ^^^^^^
+
+🌊 Did you mean: wave install jq
+   instal is not a command. The one you want is install.
+
+   For the full list: wave -h
+```
+
+The suggestion keeps your remaining arguments and flags: `wave instal jq --limit-rate 1M`
+suggests `wave install jq --limit-rate 1M`, which you can copy and run.
+
+### Why it could not guess before
+
+`suggest()` only consulted a **semantic misuse table** — "what other package managers call it":
+
+| You type | Hint |
+| --- | --- |
+| `update` | `upgrade` (apt / yum / dnf all say update) |
+| `remove` / `delete` / `rm` | `uninstall` |
+| `ls` | `list` |
+| `find` | `search` |
+
+A typo (`instal`, one `l` short) was entirely outside that coverage, so there was neither a
+suggestion nor any other way out.
+
+There is now a spelling fallback on top. The order is **semantic table first, spelling second** —
+it cannot be the other way round: `update` and `selfupdate` score 0.75 similarity, so spelling
+first would guess `selfupdate` when the user means `upgrade`.
+
+### The hit rate is measured, not estimated
+
+Every single-letter mistake of every command is enumerated (delete one / substitute one /
+insert one, **4670 cases**):
+
+| Strategy | Right | Wrong | No guess |
+| --- | --- | --- | --- |
+| First letter must match | 85.6% | 0.2% | 14.2% |
+| Different first letter requires ≥0.9 | 91.7% | 0.3% | 8.1% |
+| **Different first letter requires ≥0.83 (adopted)** | **98.1%** | **0.3%** | **1.6%** |
+| No constraint | 99.6% | 0.4% | 0.0% |
+
+The first version required an identical first letter, which covered only 85.6% — `ainfo` (an
+extra letter typed at the front) and its whole family were filtered out. Relaxing to 0.83
+catches almost everything while still rejecting `inst` → `list`: `inst` is an abbreviation of
+`install` with 0.75 similarity, whereas genuine single-letter typos all score above 0.83.
+
+Measured:
+
+| You type | Hint |
+| --- | --- |
+| `upgrad jq` | `Did you mean: wave upgrade jq` |
+| `instal jq` | `Did you mean: wave install jq` |
+| `uninstal jq` | `Did you mean: wave uninstall jq` |
+| `lst` | `Did you mean: wave list` |
+| `latst` | `Did you mean: wave latest` |
+| `inof jq` | `Did you mean: wave info jq` |
+| `lnk jq` | `Did you mean: wave link jq` |
+| `inst` / `li` / `xyzzy` | no guess, only the `wave -h` hint |
+
+The remaining 0.3% of wrong guesses are **genuinely ambiguous**; no algorithm separates them:
+
+| Input | Guessed | You probably meant |
+| --- | --- | --- |
+| `uinstall` | `uninstall` | `install` (one extra `u`) |
+| `lint` | `list` | `link` |
+| `last` / `lest` | `latest` | `list` |
+
+Textually it really is closer to what was guessed, and the mistake is obvious at a glance, so
+the cost is very low.
+
+## 2. The entire help page is no longer dumped
+
+When it could not guess, the old code called `print_custom_help()` — **fifty-odd lines** that
+scrolled a full screen and pushed the two useful lines out of view. Anyone who genuinely wants
+the full command list will type `wave -h` themselves.
+
+All four outcomes are now 4–8 lines:
+
+| Input | Lines |
+| --- | --- |
+| `wave instal jq` | 8 |
+| `wave xyzzy` | 6 |
+| `wave install jq --unkown-flag` | 4 |
+| `wave` (no arguments) | 6 |
+
+```
+$ wave xyzzy
+🌊 Error: Unknown command or argument.
+   wave xyzzy
+        ^^^^^
+
+   For the full list: wave -h
+```
+
+## Tests
+
+`scripts/message_test.sh` grows from 24 to **46 assertions**, newly covering:
+
+- spelling correction works (`instal` / `upgrad` / `lst`)
+- the semantic table takes precedence over spelling (`update` is not stolen by `selfupdate`)
+- half-typed words are not guessed (`inst` / `li` / `xyzzy`)
+- the full help page is never printed, and output stays within 10 lines when a guess is made
+
+## Compatibility
+
+A presentation-layer change only; no behavioural change:
+
+- commands, flags and exit codes are unchanged (a typo still exits 1)
+- silent mode (`-s`) still prints the single line `wave: unknown command: X`
+- if a script parses help text, note that `wave --help` guidance is now worded `wave -h`
+  (equivalent; `-h` is the short form)
+
+## How to upgrade
+
+```bash
+wave selfupdate
+```
+
+## Data shipped with this release
+
+| Repository | Content |
+| --- | --- |
+| `Selfupdate` | `macwavedata/4.2.5/update_commands.sh` |
+| `configdata` | `latest_version` → 4.2.5 |
+| `Pages` | version → 4.2.5 |
+
+---
+
 # MacWave 4.2.5 发布说明
 
 - 发布：2026-11-04，构建号 `308A1654`

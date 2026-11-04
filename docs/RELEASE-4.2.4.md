@@ -1,3 +1,90 @@
+# MacWave 4.2.4 Release Notes
+
+- Released: 2026-11-04, build `308A1614`
+- Branch: `4.2`
+- Previous release: [4.2.3](RELEASE-4.2.3.md) (same day, critical fix)
+
+## Summary
+
+**Exactly one decorative element of `install.sh` changed**: the WAVE ASCII art is back.
+Runtime code, index data and package installation logic are byte-for-byte unchanged.
+
+## What happened
+
+| Time | Commit | Action |
+| --- | --- | --- |
+| 14:13 | `6077937` | adds `SKY_BLUE` and the `██╗ ██╗` WAVE banner |
+| 14:18 | `78e6e8c` | adds `set -u`; the banner disappears |
+| 14:19 | `89ec087` | adds `set -o pipefail` |
+
+The parent of `78e6e8c` is the commit **before** `6077937` (`cdc0c0e`) — it was re-edited
+from an older version instead of being stacked on top of the banner, so the banner was
+overwritten, not deliberately removed.
+
+A `git rebase --onto` in between then dropped `6077937` from the branch, so in the history it
+looked as if the banner had never existed. It was in the object database the whole time, and is
+restored verbatim in this release.
+
+## What it looks like now
+
+```
+██╗    ██╗ █████╗ ██╗   ██╗███████╗
+██║    ██║██╔══██╗██║   ██║██╔════╝
+██║ █╗ ██║███████║██║   ██║█████╗
+██║███╗██║██╔══██║╚██╗ ██╔╝██╔══╝
+╚███╔███╔╝██║  ██║ ╚████╔╝ ███████╗
+ ╚══╝╚══╝ ╚═╝  ╚═╝  ╚═══╝  ╚══════╝
+
+🌊 欢迎使用 MacWave 4.2.4！
+```
+
+The banner is language-independent and prints under both `--zh` and the default English; the
+welcome line still goes through `say()`, so each language speaks for itself.
+
+## ⚠️ Important: `wave selfupdate` will not show you this banner
+
+`lib/install.sh` is in the `EXCLUDED` list of `scripts/build_update_commands.py` — it does not
+take part in self-update (every install fetches and executes it fresh, so installing it into
+the install tree would be pointless). Therefore:
+
+| Location | Has the banner? |
+| --- | --- |
+| Repository `lib/install.sh` | ✅ |
+| `raw.githubusercontent` / mirror `core/4.2/` | ✅ |
+| Install tree `~/.local/macwave/lib/install.sh` | ❌ **always the copy from the first install** |
+| Files fetched by `wave selfupdate` | ❌ `install.sh` is not among them |
+
+In other words: **to see the banner you must run the install command again**; `wave selfupdate`
+to 4.2.4 updates the other files, and the banner will not appear.
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/install.sh)" -- --zh
+```
+
+## Should you upgrade
+
+**Not upgrading is perfectly fine.** 4.2.3 already fixed the fatal problem (`unbound variable`
+under a UTF-8 locale) and is functionally identical to 4.2.4; the only difference is one wave
+missing at install time.
+
+Only machines that want to see the banner need to upgrade.
+
+## How to upgrade
+
+```bash
+wave selfupdate
+```
+
+## Data shipped with this release
+
+| Repository | Content |
+| --- | --- |
+| `Selfupdate` | `macwavedata/4.2.4/update_commands.sh` |
+| `configdata` | `latest_version` → 4.2.4 |
+| `Pages` | version → 4.2.4 |
+
+---
+
 # MacWave 4.2.4 发布说明
 
 - 发布：2026-11-04，构建号 `308A1614`

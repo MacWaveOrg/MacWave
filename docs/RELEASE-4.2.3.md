@@ -1,3 +1,139 @@
+# MacWave 4.2.3 Release Notes
+
+- Released: 2026-11-04, build `308A1547`
+- Branch: `4.2`
+- **Security / critical fix**: installing and upgrading 4.2.1 and 4.2.2 fail outright on most Macs
+
+## Bottom line first
+
+**Upgrade from 4.2.1 / 4.2.2 to 4.2.3.** On machines where `LC_CTYPE` is UTF-8 (the macOS
+default), both of those versions abort with an error in two places:
+
+| Path | 4.2.1 / 4.2.2 | 4.2.3 |
+| --- | --- | --- |
+| Official install command `… \| /bin/bash -c "…/install.sh"` | ❌ `MACWAVE_VERSION?: unbound variable` | ✅ |
+| `wave selfupdate` (upgrading to those two) | ❌ `repo_path?: unbound variable` | ✅ |
+
+## Root cause
+
+The `--zh` commit added Chinese copy to the installer and the update script, and a few places
+were written with "a variable immediately followed by Chinese punctuation":
+
+```bash
+say "… Welcome to MacWave $MACWAVE_VERSION!" "… 欢迎使用 MacWave $MACWAVE_VERSION！"
+#                                                  ↑ here: variable followed by a full-width '!'
+say "… Downloading $repo_path..." "… 正在下载 $repo_path……"
+#                                               ↑ here: followed by an ellipsis
+```
+
+Under a UTF-8 locale, `/bin/bash` 3.2 (the one macOS ships) reads the first byte of the
+multi-byte character that follows the variable into the variable name, so `set -u` reports
+"variable not set":
+
+```
+install.sh: line 456: MACWAVE_VERSION?: unbound variable
+update_commands.sh: line 125: repo_path?: unbound variable
+```
+
+The three locale behaviours differ, which is why it never surfaced during development:
+
+| locale | `/bin/bash` 3.2 | bash 5.x |
+| --- | --- | --- |
+| `C` / `POSIX` | ✅ fine | ✅ fine |
+| `en_US.UTF-8` | ❌ unbound variable | ✅ fine |
+| unset (follows the system) | depends on the system default | ✅ fine |
+
+The development machine's `LC_CTYPE` is `C`, so everything was green locally; macOS users and
+CI are UTF-8, so it blew up every time. **The same trap had already bitten once during 4.2
+development** (`$BACKFILL（` in `minos_test`) — that time only one occurrence was fixed and
+nothing else was audited.
+
+## The fix
+
+1. **Braces everywhere.** 10 occurrences found: 6 in `lib/install.sh`, 2 in
+   `scripts/update_commands.template.sh`, 1 in `scripts/linksafety_test.sh` (pre-existing),
+   1 in `scripts/configpath_test.sh` (a comment). All fixed as `${VAR}……`.
+2. **New `scripts/shell_lint.sh`, run on both pipelines:**
+   - scans every `.sh` for "`$VAR` immediately followed by a multi-byte character" and fails on
+     a hit
+   - runs `bash -n` over every `.sh`
+3. **New section in `AGENTS.md`:** verifying shell output that contains Chinese requires an
+   explicit `LC_ALL=en_US.UTF-8`, otherwise the local `C` locale means this class of error
+   never appears.
+
+The guard was verified: reinstating the bug makes the lint report it at the exact line.
+
+## Other changes that came along
+
+### Point at the offending word with `^`
+
+When a command name or flag is mistyped, the command line is echoed back verbatim, only the
+offending span is highlighted in red, and the next line points at it with `^`:
+
+```
+🌊 Error: illegal option --connect-time for `wave install`
+🌊           you ran: wave install yq -v -C --limit-rate=10M --max-time=5min --connect-time=1min
+🌊                                                                           ^^^^^^^^^^^^^^
+🌊 Next      Did you mean --connect-timeout?
+```
+
+When no correct spelling can be guessed (the command name is wildly off) it still points —
+previously that block sat inside `if suggestion`, so with no guess the user got nothing and had
+to stare at the command line themselves:
+
+```
+🌊 Error: Unknown command or argument.
+   wave frobnicate xyz
+        ^^^^^^^^^^
+```
+
+### Candidates for mistyped flags
+
+```
+🌊 Next      Did you mean --connect-timeout?
+```
+
+`difflib` matches only within **the current command's own allowlist** and never guesses across
+commands; when nothing is close it makes nothing up.
+
+## Tests
+
+| Script | Assertions |
+| --- | --- |
+| `scripts/shell_lint.sh` (new) | 2 |
+| `scripts/message_test.sh` | 24 → 28 |
+
+`message_test` assertions now go through `strip_ansi()`, so they no longer depend on terminal
+escape sequences — which word gets highlighted is a presentation detail and should not make the
+assertions brittle.
+
+## How to upgrade
+
+```bash
+wave selfupdate
+```
+
+On a machine already running 4.2.1 / 4.2.2 **where `wave` still works**: `wave` itself is fine;
+what is broken is the installer and the self-update script, so `wave selfupdate` will download
+the 4.2.3 scripts (the fixed ones) and succeed.
+
+If `wave selfupdate` fails too, just run the install command once more.
+
+## Mirror
+
+The mirror site needs `selfupdate`, `configdata` and `core` re-synced, otherwise mirror users
+keep reading the old version pointer.
+
+## Data shipped with this release
+
+| Repository | Content |
+| --- | --- |
+| `Selfupdate` | `macwavedata/4.2.3/update_commands.sh` (generated from the fixed template, 29 files) |
+| `configdata` | `latest_version` → 4.2.3 |
+| `Pages` | version → 4.2.3 |
+
+---
+
 # MacWave 4.2.3 发布说明
 
 - 发布：2026-11-04，构建号 `308A1547`

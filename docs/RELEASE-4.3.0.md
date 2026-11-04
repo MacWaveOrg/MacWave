@@ -1,3 +1,151 @@
+# MacWave 4.3.0 Release Notes
+
+- Released: 2026-11-04, build `308A1849`
+- Branch: `4.3` (new; cut from `d084c9d`, the last commit on `4.2`. The 4.2.5 tag stays at `926a48a`)
+- Previous release: [4.2.5](RELEASE-4.2.5.md)
+
+## Please upgrade: 4.2.0 and earlier ship a defect that lets the whole machine be taken over
+
+This is not "you may want to upgrade", it is **you need to upgrade**. The three items below
+are ordered by severity.
+
+### ① Installing into `/usr/local` chowns all of Homebrew
+
+When `install.sh` receives `--dir-option=3=/usr/local`, the old validation lets it through
+(it only rejected `..`, control characters, non-ASCII, relative paths and `/`). The installer
+then runs:
+
+```bash
+sudo chown -R "$CURRENT_USER": "$BASE_DIR"     # BASE_DIR = /usr/local
+```
+
+So **the whole of `/usr/local` ends up owned by the current user** — every Homebrew directory
+and `brew`'s own executable live in there. And the rollback path, taken when the user declines
+the license, is `rm -rf "$BASE_DIR"`, which **deletes `/usr/local` outright**.
+
+Measured: every one of these paths passed the old validation — `/usr/local`, `/opt`, `/etc`,
+`/usr`, `/bin`, `$HOME`.
+
+**As of 4.3.0**: the system directories themselves are always rejected (compared for exact
+equality, so subdirectories such as `/opt/macwave` are unaffected); a directory that already
+exists, is not empty, and was not created by MacWave is rejected as well.
+
+### ② System-wide installs put user-owned binaries on the system PATH
+
+Another consequence of that same `chown -R`: `/opt/macwave` belongs to "whoever installed it
+first", so `/opt/macwave/links/jq` is **writable by that user**. Any process running as that
+user can replace it, and it may then be executed by other users, by scripts, or by root — a
+textbook local privilege-escalation path.
+
+**As of 4.3.0**: the install tree is owned by `root:<admin group>` with mode 755.
+
+| Who | Permission |
+| --- | --- |
+| Everyone | read + execute → **can run installed packages** |
+| Administrators | `sudo wave install` → **can install and remove** |
+
+The cost is that a system-wide `wave install` now needs `sudo`. That is stated **before
+anything happens** (rather than failing halfway through a download with `Permission denied`
+and having it blamed on "network or proxy issues").
+
+### ③ The update scripts crash on most Macs (4.2.1 / 4.2.2)
+
+If you installed 4.2.1 or 4.2.2, both `wave selfupdate` and the official install command fail
+with `unbound variable`. The cause: Chinese copy written as `$MACWAVE_VERSION！` and
+`$repo_path……` — a variable immediately followed by a Chinese punctuation mark. Under a UTF-8
+locale, `/bin/bash` 3.2 reads the first byte of that character into the variable name, so
+`set -u` reports "variable not set".
+
+4.2.3 fixed it, this release inherits the fix, and `scripts/shell_lint.sh` now scans for this
+class of mistake on both pipelines.
+
+## New in this release: `min_os` graduates to a first-class feature
+
+`min_os` moves from its experimental 4.2 state to a supported feature. A version record in the
+index can declare the minimum macOS a package requires; installing warns and asks.
+
+The data is backfilled across the whole index: **100% of real packages** (arm64 96/112,
+amd64 89/106; the gaps are only the `test_*` negative fixtures and `fileicon`, a bash script).
+
+Behaviour matrix:
+
+| Situation | Behaviour |
+| --- | --- |
+| The record has no `min_os` | pass silently |
+| This Mac ≥ the declared value | pass silently |
+| This Mac < the declared value, default | yellow warning + `Continue installing anyway? [y/N]` |
+| Answer `y` / `Y` | continue installing |
+| Any other answer (including a bare Enter, or non-interactive) | abort, **nothing is downloaded** |
+| `-s` (including `-sS`) | no question, abort; plain `-s` prints nothing at all |
+| `-F` / `--force` | no question, install — even `-s` cannot suppress it |
+
+**Why ask instead of hard-block**: `minos` is a build-time declaration, not evidence of the
+APIs actually used.
+
+| Package | Declared | Reality |
+| --- | --- | --- |
+| `jq@1.8.2` | 14.0 | runs fine on macOS 12.7.6, measured |
+| `pandoc@3.13` | 15.0 | may genuinely use newer APIs |
+| `ipsw@3.1.7xx` | **27.2** | Go linked against Xcode 27 beta, which embeds the SDK version in `minos` verbatim |
+| `ollama@0.3x` | **26.2** | same as above |
+
+With a hard block, `ipsw` could not be installed on **any** released macOS — yet it runs fine.
+
+## New in this release: hints when a command name is mistyped
+
+```
+$ wave instal jq
+🌊 Error: Unknown command or argument.
+   wave instal jq
+        ^^^^^^
+
+🌊 Did you mean: wave install jq
+   instal is not a command. The one you want is install.
+
+   For the full list: wave -h
+```
+
+Single-letter mistakes (delete / substitute / insert one character, all 4670 enumerated) are
+**caught 98.1%** of the time, with 0.3% guessed wrong. When it cannot guess, it leaves a single
+`wave -h` line instead of dumping fifty-odd lines of help.
+
+## How to upgrade
+
+```bash
+wave selfupdate
+```
+
+**If you are on 4.2.1 / 4.2.2** (selfupdate is broken in those two), use the install command
+instead:
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/install.sh)"
+```
+
+**If you installed into `/opt/macwave` or `/usr/local/macwave`**: after upgrading, the install
+tree is owned by `root:<admin group>`, so installing packages afterwards needs
+`sudo wave install <package>`. This change is deliberate; see item ② above.
+
+## Branch changes
+
+| Item | Change |
+| --- | --- |
+| New branch | `4.3` (cut after 4.2.5, carries the entire 4.2.x history) |
+| `4.2` | stops at `d084c9d` (the fork point); no further commits |
+| `configdata` | `branch` → `4.3`, `version` → 4.3.0 |
+| CI | `4.3` added to the branch allowlists of `format-test` and CircleCI |
+| `dependabot.yml` | `target-branch` → `4.3` |
+
+## Data shipped with this release
+
+| Repository | Content |
+| --- | --- |
+| `Selfupdate` | `macwavedata/4.3.0/update_commands.sh` |
+| `configdata` | `latest_version` → 4.3.0 / branch 4.3 |
+| `Pages` | version → 4.3.0 |
+
+---
+
 # MacWave 4.3.0 发布说明
 
 - 发布：2026-11-04，构建号 `308A1849`
@@ -122,7 +270,7 @@ wave selfupdate
 | 项 | 变化 |
 | --- | --- |
 | 新分支 | `4.3`（从 4.2.5 之后切出，含全部 4.2.x 历史） |
-| `4.2` | 冻结在 4.2.5，不再接收提交 |
+| `4.2` | 停在 `d084c9d`（4.3 的切出点），不再接收提交 |
 | `configdata` | `branch` → `4.3`，`version` → 4.3.0 |
 | CI | `format-test` 与 CircleCI 的分支白名单都加了 `4.3` |
 | `dependabot.yml` | `target-branch` → `4.3` |
