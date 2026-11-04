@@ -266,6 +266,22 @@ def confirm_skip_ssl(flags):
     return allowed
 
 
+def _mark_flag(text, flag):
+    """把 text 里第一次出现的 flag 标红，其余原样返回。
+
+    用于「you ran:」那一行 —— 整行本来是黄的，只把出错的那个旗标挑出来。
+    内层红之后要**恢复成黄色**而不是 RESET：RESET 会把行尾的统一收尾一起抵掉，
+    后面剩下的字就变成终端默认色了。
+
+    匹配按词边界（前面是行首或空白，后面是 =、空白或行尾），这样 `--ver` 不会
+    命中 `--verbose`，也不会误标到某个参数值里恰好相同的字符串。
+    """
+    if not flag or not text:
+        return text
+    pattern = r"(?<!\S)" + re.escape(flag) + r"(?==|\s|$)"
+    return re.sub(pattern, f"{RED_BOLD}{flag}\033[33m", text, count=1)
+
+
 def parse_flags(input_string, command="install", shown=None):
     """校验旗标白名单。
 
@@ -319,7 +335,7 @@ def parse_flags(input_string, command="install", shown=None):
             steplog.fail(
                 f"illegal option {flag} for `wave {command}`: "
                 f"it only applies to `wave upgrade`",
-                extra=f"you ran: {(shown or input_string).strip()}",
+                extra=f"you ran: {_mark_flag((shown or input_string).strip(), flag)}",
                 hint=[f"`{flag}` removes the older versions *after* upgrading to the latest one,",
                       "so it needs a command that installs and prunes in one go.",
                       "Did you mean:",
@@ -329,7 +345,7 @@ def parse_flags(input_string, command="install", shown=None):
             steplog.fail(
                 f"illegal option {flag} for `wave {command}`: "
                 f"it belongs to {', '.join(f'`{item}`' for item in commands)}",
-                extra=f"you ran: {(shown or input_string).strip()}",
+                extra=f"you ran: {_mark_flag((shown or input_string).strip(), flag)}",
                 hint=["Did you mean:"] + [f"  {item}" for item in commands]
                      + [f"`wave {commands[0].split()[1]} --help` lists the rest"])
         # 拼错时给一个候选再报错。--connect-time 与 --connect-timeout 只差三个
@@ -342,7 +358,7 @@ def parse_flags(input_string, command="install", shown=None):
         hint.append(f"`wave {command} --help` lists the flags this command accepts")
         steplog.fail(
             f"illegal option {flag} for `wave {command}`",
-            extra=f"you ran: {(shown or input_string).strip()}",
+            extra=f"you ran: {_mark_flag((shown or input_string).strip(), flag)}",
             hint=hint)
 
     return flags

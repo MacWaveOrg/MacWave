@@ -173,10 +173,19 @@ echo "========== 3. 旗标拼错：给候选，但只在真有候选时 ========
 # --connect-time 是 --connect-timeout 少了三个字母。只说 "illegal option"
 # 等于让用户回去翻 --help。
 out=$(wave install jq --connect-time=1min 2>&1)
-ok     "给出最接近的旗标"   "$out" "Did you mean --connect-timeout?"
-ok     "仍然点名哪个旗标"   "$out" "illegal option --connect-time"
-ok     "仍然回显整条命令"   "$out" "you ran: wave install jq --connect-time=1min"
-ok     "保留 --help 自查"   "$out" "wave install --help"
+# 出错的那个旗标被标红，所以「you ran:」那一行里夹着转义序列。
+# 比对纯文本前先剥掉颜色码，否则断言会因为看不见的字节而失败。
+plain=$(printf '%s\n' "$out" | sed $'s/\033\\[[0-9;]*m//g')
+ok     "给出最接近的旗标"   "$plain" "Did you mean --connect-timeout?"
+ok     "仍然点名哪个旗标"   "$plain" "illegal option --connect-time"
+ok     "仍然回显整条命令"   "$plain" "you ran: wave install jq --connect-time=1min"
+ok     "保留 --help 自查"   "$plain" "wave install --help"
+# 高亮只落在出错的旗标上：整行唯一的红色片段应当就是它
+if [[ "$out" == *$'\033[1;31m--connect-time'* ]]; then
+    pass "出错的旗标被单独标红"
+else
+    fail "出错的旗标没有被标红"
+fi
 
 out=$(wave install jq --limt-rate=10M 2>&1)
 ok     "限速旗标拼错也给建议" "$out" "Did you mean --limit-rate?"
