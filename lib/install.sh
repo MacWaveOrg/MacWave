@@ -44,6 +44,7 @@ RED_BOLD='\033[1;31m'
 GREEN='\033[32m'
 YELLOW='\033[33m'
 RESET='\033[0m'
+SKY_BLUE='\033[38;5;74m'
 
 # ==========================================
 # 语言
@@ -453,6 +454,15 @@ resolve_custom_dir() {
 # ==========================================
 # 显示欢迎信息
 # ==========================================
+# WAVE 艺术字。与语言无关，两种语言都打 —— 它只是装饰，不值得为它写两份。
+echo ""
+echo -e "${SKY_BLUE}██╗    ██╗ █████╗ ██╗   ██╗███████╗${RESET}"
+echo -e "${SKY_BLUE}██║    ██║██╔══██╗██║   ██║██╔════╝${RESET}"
+echo -e "${SKY_BLUE}██║ █╗ ██║███████║██║   ██║█████╗  ${RESET}"
+echo -e "${SKY_BLUE}██║███╗██║██╔══██║╚██╗ ██╔╝██╔══╝  ${RESET}"
+echo -e "${SKY_BLUE}╚███╔███╔╝██║  ██║ ╚████╔╝ ███████╗${RESET}"
+echo -e "${SKY_BLUE} ╚══╝╚══╝ ╚═╝  ╚═╝  ╚═══╝  ╚══════╝${RESET}"
+echo ""
 say "🌊 Welcome to MacWave $MACWAVE_VERSION!" "🌊 欢迎使用 MacWave ${MACWAVE_VERSION}！"
 
 if [[ "$CORE_URL" != "https://raw.githubusercontent.com/MacWaveOrg/MacWave" ]]; then
