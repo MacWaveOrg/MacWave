@@ -344,18 +344,69 @@ def print_version():
     print(f"🌊 MacWave {version}")
 
 
-def print_error_help(suggestion=None, unknown_flags=None):
-    """未知命令或参数时：先报错，能猜到本该打什么就给出改法。
+def _caret_line(prefix, words, bad_index):
+    """prefix 是原文行在词前面的固定前缀，bad_index 是要指的词下标。"""
+    before = " ".join(words[:bad_index])
+    offset = len(prefix) + (len(before) + 1 if before else 0)
+    return f"{RED}" + " " * offset + "^" * len(words[bad_index]) + f"{RESET}"
+
+
+def _hit_index(words, suggestion, unknown_flags):
+    """挑出这一行里最该被指住的那个词。
+
+    优先级：建议里的错词 → 不属于任何命令的旗标 → 第一个非旗标词（命令本身）。
+
+    **没有建议时同样要指。** 命令名拼得太离谱、猜不出该敲什么的时候，以前整段
+    输出里没有任何定位信息，用户只能自己盯着命令行找；现在至少能指出是哪个词
+    出的问题，哪怕还猜不到正确的写法。
+    """
+    if suggestion:
+        wrong = suggestion[1]
+        for index, word in enumerate(words):
+            if word == wrong:
+                return index
+    if unknown_flags:
+        import flags as flags_module
+        wanted = set(unknown_flags)
+        for index, word in enumerate(words):
+            if word.startswith("-") and set(flags_module.split(word)) & wanted:
+                return index
+    for index, word in enumerate(words):
+        if not word.startswith("-"):
+            return index
+    return None
+
+
+def _print_command_line(words, bad_index, prefix="   wave "):
+    """命令行原样回显，只把出错的那个词标红，下一行用 ^ 指住它。"""
+    shown = " ".join(
+        f"{RED}{word}{RESET}" if index == bad_index else word
+        for index, word in enumerate(words))
+    print(prefix + shown)
+    print(_caret_line(prefix, words, bad_index))
+    print()
+
+
+def print_error_help(suggestion=None, unknown_flags=None, argv=None):
+    """未知命令或参数时：先回显命令行并指出错在哪个词，能猜到就给出改法。
 
     suggestion 由 wave.py 传入（打错的词表与命令清单都只在那里一份，这里不重复维护）。
     unknown_flags 是「不属于任何命令」的旗标：命令名错了时它们轮不到校验，
     不单独报出来就会被一起吞掉，而下面那句建议会把它原样抄进去。
+
+    回显命令行这件事与「猜不猜得到」无关：猜得到时它能让人看清错的是哪个词，
+    猜不到时它是唯一能定位的信息。
 
     猜到该敲什么时**不再输出整篇帮助**：那五六十行会把唯一有用的那一句
     （「你要敲的是 upgrade」）淹掉，而用户此刻需要的正是那一句。真正不知道该
     敲什么时才展开完整清单，并留一行告诉他以后怎么自查。
     """
     print(f"{BOLD}{RED}🌊 Error: Unknown command or argument.{RESET}")
+
+    words = list(argv[1:]) if argv else []
+    bad_index = _hit_index(words, suggestion, unknown_flags) if words else None
+    if bad_index is not None:
+        _print_command_line(words, bad_index)
 
     if unknown_flags:
         listed = ", ".join(unknown_flags)
@@ -364,8 +415,12 @@ def print_error_help(suggestion=None, unknown_flags=None):
 
     if suggestion:
         fixed, wrong, right = suggestion
-        print()
-        print(f"{BOLD}🌊 Did you mean:{RESET} {GREEN}{fixed}{RESET}")
+        # 逐词上色而不是字符串 replace：right 落在末尾时（`wave updat` → 修正成
+        # `wave upgrade`）带空格的写法匹配不上，改法就整句都不绿了。
+        fixed_shown = " ".join(
+            f"{GREEN}{word}{RESET}" if word == right else word
+            for word in fixed.split())
+        print(f"{BOLD}🌊 Did you mean:{RESET} {fixed_shown}")
         print(f"   {YELLOW}{wrong}{RESET} is not a command. "
               f"The one you want is {GREEN}{right}{RESET}.")
         print()

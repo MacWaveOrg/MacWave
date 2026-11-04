@@ -49,6 +49,11 @@ not_ok() {
     fi
 }
 
+# strip_ansi <文本> —— 去掉颜色码。
+# 断言应当比对**用户看到的字**，而不是终端转义序列：文案里高亮的是哪个词属于
+# 呈现细节，随时可能调整，不该让断言跟着碎。
+strip_ansi() { printf '%s\n' "$1" | sed $'s/\033\\[[0-9;]*m//g'; }
+
 # -------------------- 沙箱 --------------------
 #
 # wave.py 会从配置里读 base_dir，再从那里加载 lib/ pkg/ surfboard/。
@@ -120,7 +125,7 @@ fi
 echo "========== 1. 命令打错：update → upgrade =========="
 
 out=$(wave update jq -Xv --max-time=120s 2>&1)
-ok     "给出完整的改法（参数与旗标原样保留）" "$out" "wave upgrade jq -Xv --max-time=120s"
+ok     "给出完整的改法（参数与旗标原样保留）" "$(strip_ansi "$out")" "wave upgrade jq -Xv --max-time=120s"
 ok     "说明哪个词打错了"                   "$out" "is not a command"
 # 猜到该敲什么时不再展开整篇帮助：那五六十行会淹掉唯一有用的那一句。
 # 但也得留一个自查入口，否则用户想知道还有哪些命令就没地方去了。
@@ -131,17 +136,33 @@ wave update jq >/dev/null 2>&1
 if [[ $? -eq 1 ]]; then pass "退出码是 1"; else fail "退出码应当为 1"; fi
 
 out=$(wave remove jq --all 2>&1)
-ok "remove → uninstall" "$out" "wave uninstall jq --all"
+ok "remove → uninstall" "$(strip_ansi "$out")" "wave uninstall jq --all"
 
 out=$(wave ls 2>&1)
-ok "ls → list" "$out" "wave list"
+ok "ls → list" "$(strip_ansi "$out")" "wave list"
 
 echo
 echo "========== 2. 不相干的乱词：不乱猜 =========="
 
 out=$(wave frobnicate xyz 2>&1)
-not_ok "不给出 Did you mean" "$out" "Did you mean"
-ok     "仍然报未知命令"      "$out" "Unknown command or argument"
+plain=$(strip_ansi "$out")
+not_ok "不给出 Did you mean" "$plain" "Did you mean"
+ok     "仍然报未知命令"      "$plain" "Unknown command or argument"
+
+# 猜不到该敲什么时，**仍然要指出是哪个词有问题** —— 否则整段输出里没有任何
+# 定位信息，用户只能自己盯着命令行找。caret 长度必须与那个词等长。
+ok     "无建议时也回显命令行" "$plain" "wave frobnicate xyz"
+if [[ "$plain" == *"^^^^^^^^^^"* ]]; then
+    pass "无建议时也用 ^ 指住出错的词"
+else
+    fail "无建议时没有用 ^ 指住出错的词"
+fi
+# caret 必须落在 frobnicate 底下，而不是行首
+if printf '%s\n' "$plain" | grep -qE '^ +\^{10}$'; then
+    pass "caret 单独成行且带缩进"
+else
+    fail "caret 行的形状不对（应只有缩进与 ^）"
+fi
 
 echo
 echo "========== 3. 包名打错：treee → tree =========="
@@ -174,8 +195,7 @@ echo "========== 3. 旗标拼错：给候选，但只在真有候选时 ========
 # 等于让用户回去翻 --help。
 out=$(wave install jq --connect-time=1min 2>&1)
 # 出错的那个旗标被标红，所以「you ran:」那一行里夹着转义序列。
-# 比对纯文本前先剥掉颜色码，否则断言会因为看不见的字节而失败。
-plain=$(printf '%s\n' "$out" | sed $'s/\033\\[[0-9;]*m//g')
+plain=$(strip_ansi "$out")
 ok     "给出最接近的旗标"   "$plain" "Did you mean --connect-timeout?"
 ok     "仍然点名哪个旗标"   "$plain" "illegal option --connect-time"
 ok     "仍然回显整条命令"   "$plain" "you ran: wave install jq --connect-time=1min"

@@ -292,7 +292,7 @@ def main():
         hint = (" ".join(kept), wrong, right)
 
     from help import print_error_help
-    print_error_help(hint, unknown_flags=bad_flags)
+    print_error_help(hint, unknown_flags=bad_flags, argv=sys.argv)
     sys.exit(1)
 
 
