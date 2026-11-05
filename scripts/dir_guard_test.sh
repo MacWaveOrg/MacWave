@@ -49,7 +49,7 @@ extract() {
     sed -n "/^$1() {/,/^}/p" "$INSTALL_SH"
 }
 
-BODY="$(extract say_err)
+BODY="$(extract mw_say_err)
 $(extract validate_custom_dir)"
 
 # 这里只确认「抽到了」。黑名单在不在由第 6 组逐项断言 —— 混在一起报错会让人
@@ -59,7 +59,7 @@ if [[ "$BODY" != *"validate_custom_dir"* ]]; then
     exit 1
 fi
 
-# 校验函数只依赖 say_err 与 $HOME
+# 校验函数只依赖 mw_say_err 与 $HOME
 probe() {
     bash -c 'source /dev/stdin <<< "$1"; validate_custom_dir "$2"' _ "$BODY" "$1" >/dev/null 2>&1
 }
@@ -200,9 +200,9 @@ else
     fail "没有说明其他用户仍可运行"
 fi
 
-# 「其他人可运行」还差一步：PATH 只写进了安装者的 rc 文件，
-# 别人不自己加就找不到 wave。安装结束时必须把这一行印出来。
-if grep -q 'they need this line in their own shell profile' "$INSTALL_SH"; then
+# 「其他人可运行」还差一步：PATH 归每个用户自己加（4.3 起安装器不再写 rc），
+# 别人不加就找不到 wave。安装结束时必须把这一行印出来。
+if grep -q 'each of them needs to run' "$INSTALL_SH"; then
     pass "安装结束时提示其他用户怎么加 PATH"
 else
     fail "没有提示其他用户如何把 links 加进 PATH"

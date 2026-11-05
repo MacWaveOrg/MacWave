@@ -49,6 +49,7 @@ COMMANDS = {
     "linkquery":  "linker",
     "mirror":     "mirrorinfo",
     "latest":     "latest",
+    "shellenv":   "shellenv",
 }
 
 ARGUMENTS = {
@@ -295,6 +296,10 @@ def main():
             from latest import handle_latest
             handle_latest(full_input)
 
+        elif module_name == "shellenv":
+            from shellenv import handle_shellenv
+            sys.exit(handle_shellenv())
+
         elif module_name == "linker":
             from linker import handle_link_command, handle_linkquery_command, handle_unlink_command
             if FirstWord == "link":
@@ -341,5 +346,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         # 各子模块只在 __main__ 里捕获 KeyboardInterrupt，而 wave 是 import 它们再调用，
         # 那条路径捕获不到，于是 Ctrl+C 会甩出 Python 栈回溯。这里兜一层。
-        print("\n🌊 Operation cancelled by user.")
+        print()
+        print("🌊 Operation cancelled by user.")
         sys.exit(130)

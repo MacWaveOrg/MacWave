@@ -56,6 +56,8 @@ MacWave 是一个**面向 macOS 的包管理器**，用于分发 macOS 软件开
 ```
 
 `--zh` 让安装程序用中文输出。`--ci --dir-option=1` 全程无交互安装。
+`--dry-run` 完整走一遍安装流程、打印每一步会做什么，但不下载、不索取密码、
+不写入任何内容。
 其余选项见 `install.sh --help`。
 
 （如果你使用的是 bash 而非 zsh，请运行 ```source ~/.bashrc```）

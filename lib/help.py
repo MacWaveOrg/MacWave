@@ -108,6 +108,7 @@ def print_custom_help():
         (_command("linkquery"), "Show which version an unversioned link points to"),
         (_command("mirror"), "Show which addresses packages are fetched from"),
         (_command("latest"), "Show which packages have a newer version available"),
+        (_command("shellenv"), "Print the shell code that puts MacWave on your PATH"),
     ])
 
     _print_section("Flags", [
@@ -205,6 +206,16 @@ COMMAND_HELP = {
         ],
         "examples": ["wave upgrade jq", "wave upgrade jq -X", "wave upgrade --all",
                      "wave upgrade jq --remove-old-versions --max-time=2min"],
+    },
+    "shellenv": {
+        "usage": "wave shellenv",
+        "desc": "Print the shell code that prepends MacWave's directories to PATH. "
+                "You eval it once from your shell profile; it does nothing on its own.",
+        "flags": [],
+        "examples": [
+            "eval \"$(~/.local/macwave/lib/wave shellenv)\"",
+            "echo 'eval \"$(~/.local/macwave/lib/wave shellenv)\"' >> ~/.zprofile",
+        ],
     },
     "mirror": {
         "usage": "wave mirror [flags]",

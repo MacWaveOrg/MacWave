@@ -792,6 +792,23 @@ lib_dir="$(cd -- "$(dirname -- "$self")" && pwd)" || exit 1
 root_dir="$(cd -- "$lib_dir/.." && pwd)" || exit 1
 entry="$lib_dir/wave.py"
 
+# `wave shellenv` 由 shell 直接回答，不启动 Python：这一行会被写进 ~/.zprofile，
+# 每次开终端都要跑（走 Python 那条路实测 160ms，这里 2ms）。
+# 输出必须与 lib/shellenv.py **逐字一致** —— scripts/shellenv_test.sh 会比对两份。
+if [ "$#" -eq 1 ] && [ "$1" = "shellenv" ]; then
+    printf 'case ":$PATH:" in\n  *":%s:"*) ;;\n  *) export PATH="%s:%s:%s${PATH:+:$PATH}" ;;\nesac\n' \
+        "$root_dir/lib" "$root_dir/bin" "$root_dir/links" "$root_dir/lib"
+    exit 0
+fi
+
+# 双语错误输出。启动器里没有 install.sh 的 mw_say/mw_say_err，所以自带一个最小实现：
+# 之前 install.sh 生成的启动器直接调用 mw_say_err，一旦真的落到这个分支就是
+# 「mw_say_err: command not found」，真正的错误信息反而看不见。
+mw_say_err() {
+    printf '%s\n' "$1" >&2
+    printf '%s\n' "$2" >&2
+}
+
 #__MACWAVE_PYTHON__
 
 deps_ok() {
@@ -822,8 +839,8 @@ if command -v python3 >/dev/null 2>&1; then
     exec python3 "$entry" "$@"
 fi
 
-echo "🌊 Error: no usable Python 3 interpreter was found." >&2
-echo "🌊 Reinstall MacWave with lib/install.sh." >&2
+mw_say_err "🌊 Error: no usable Python 3 interpreter was found." "🌊 错误：找不到可用的 Python 3 解释器。"
+mw_say_err "🌊 Reinstall MacWave with lib/install.sh." "🌊 请用 lib/install.sh 重新安装 MacWave。"
 exit 1
 LAUNCHER
 

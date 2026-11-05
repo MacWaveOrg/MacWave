@@ -57,7 +57,7 @@ hr()   { printf '%s\n' "--------------------------------------------------------
 ok()   { printf '  ✅ %-44s %s\n' "$1" "${2:-}"; }
 no()   { FAIL=$((FAIL+1)); printf '  ❌ %-44s %s\n' "$1" "${2:-}"; }
 note() { printf '  ·  %s\n' "$*"; }
-say()  { printf '%s\n' "$*"; }
+mw_say()  { printf '%s\n' "$*"; }
 
 # -------------------- 小工具 --------------------
 
@@ -90,10 +90,10 @@ sha256_of() {
 
 # -------------------- 防重入 --------------------
 
-mkdir -p "$SRC" || { say "❌ 建不了工作区 $SRC"; exit 1; }
+mkdir -p "$SRC" || { mw_say "❌ 建不了工作区 $SRC"; exit 1; }
 LOCK="$SRC/.lock"
 if ! mkdir "$LOCK" 2>/dev/null; then
-    say "另一轮同步正在进行（${LOCK}），本次跳过"
+    mw_say "另一轮同步正在进行（${LOCK}），本次跳过"
     exit 0
 fi
 trap 'rmdir "$LOCK" 2>/dev/null' EXIT
@@ -164,13 +164,13 @@ tree() {
 
 # -------------------- 主流程 --------------------
 
-say "镜像同步 · MacWave"
-say "  站点根目录 $ROOT"
-say "  工作区     $SRC"
-(( DRY_RUN )) && say "  模式       演练（不写文件）"
+mw_say "镜像同步 · MacWave"
+mw_say "  站点根目录 $ROOT"
+mw_say "  工作区     $SRC"
+(( DRY_RUN )) && mw_say "  模式       演练（不写文件）"
 hr
 
-say "第 1/6 步 · 取同步工具与当前发布线"
+mw_say "第 1/6 步 · 取同步工具与当前发布线"
 
 if (( DRY_RUN )); then
     note "演练模式：跳过工具克隆"
@@ -179,7 +179,7 @@ else
         ok "同步工具" "$SRC/tools"
     else
         no "同步工具" "取不到 MacWave 仓库，后面都做不了"
-        hr; say "❌ 中止：拿不到工具就没有可信的命名规则"; exit 1
+        hr; mw_say "❌ 中止：拿不到工具就没有可信的命名规则"; exit 1
     fi
 fi
 
@@ -198,7 +198,7 @@ fi
 
 if [[ -z "$CUR" ]]; then
     no "当前发布线" "读不到 configdata 的 versiondata/latest_version 里的 branch"
-    hr; say "❌ 中止：不知道要同步哪个 core 分支"; exit 1
+    hr; mw_say "❌ 中止：不知道要同步哪个 core 分支"; exit 1
 fi
 # 当前发布线若是 KEEP_BRANCHES 里的一员（刚发版时的常态），别同步两遍
 BRANCHES="$CUR"
@@ -209,7 +209,7 @@ done
 note "当前发布线 ${CUR}，额外保留 ${KEEP_BRANCHES:-（无）}"
 
 hr
-say "第 2/6 步 · 同步三棵主干"
+mw_say "第 2/6 步 · 同步三棵主干"
 tree infosource infosource main "$DEST/infosource"
 tree selfupdate Selfupdate main "$DEST/selfupdate"
 # pythondata/<版本>/*.tar.gz 是自带解释器的产物，仓库里没有（二进制不进 git），
@@ -217,7 +217,7 @@ tree selfupdate Selfupdate main "$DEST/selfupdate"
 tree python     Python     main "$DEST/python" '*.tar.gz'
 
 hr
-say "第 3/6 步 · 同步 core 分支（客户端拼的是 <CORE>/<分支>/…）"
+mw_say "第 3/6 步 · 同步 core 分支（客户端拼的是 <CORE>/<分支>/…）"
 CORE_OK=1
 for b in $BRANCHES; do
     tree "core-$b" MacWave "$b" "$DEST/core/$b" || CORE_OK=0
@@ -244,7 +244,7 @@ elif (( ! DRY_RUN )) && (( ! CORE_OK )); then
 fi
 
 hr
-say "第 4/6 步 · 补齐自带解释器的压缩包"
+mw_say "第 4/6 步 · 补齐自带解释器的压缩包"
 
 # python_url.toml 记的是**上游**地址，而客户端默认从镜像的
 #   <PYTHON>/pythondata/<版本>/<文件名>
@@ -318,7 +318,7 @@ else
 fi
 
 hr
-say "第 5/6 步 · 补齐产物（bottle / deps）"
+mw_say "第 5/6 步 · 补齐产物（bottle / deps）"
 if (( DRY_RUN )); then
     note "演练模式：跳过（真跑时从 $ORG/Bottle、$ORG/Deps 的 Release 取，逐字节校验 sha256）"
 elif (( NO_PAYLOADS )); then
@@ -353,7 +353,7 @@ else
             --skip "$skip" \
             --jobs "$JOBS" 2>&1)
     rc=$?
-    say "$out" | tail -6
+    mw_say "$out" | tail -6
     if (( rc == 0 )); then
         ok "产物" "$(find "$DEST/bottle" "$DEST/deps" -type f 2>/dev/null | wc -l | tr -d ' ') 个文件"
     else
@@ -362,7 +362,7 @@ else
 fi
 
 hr
-say "第 6/6 步 · 重建 versions 清单"
+mw_say "第 6/6 步 · 重建 versions 清单"
 if (( DRY_RUN )); then
     note "演练模式：跳过"
 else
@@ -370,7 +370,7 @@ else
             --infosource "$DEST/infosource" \
             --mirror "$DEST" 2>&1)
     rc=$?
-    say "$out" | tail -4
+    mw_say "$out" | tail -4
     if (( rc == 0 )); then
         ok "清单" "$(find "$DEST/infosource" -name versions -type f | wc -l | tr -d ' ') 个"
     else
@@ -391,8 +391,8 @@ fi
 
 hr
 if (( FAIL > 0 )); then
-    say "❌ $FAIL 项失败"
+    mw_say "❌ $FAIL 项失败"
     exit 1
 fi
-say "✅ 同步完成"
+mw_say "✅ 同步完成"
 exit 0

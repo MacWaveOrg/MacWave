@@ -57,7 +57,9 @@ Installer options go after `--`, which ends bash's own options:
 ```
 
 `--zh` prints the installer in Chinese. `--ci --dir-option=1` installs with no
-prompt. `install.sh --help` lists the rest.
+prompt. `--dry-run` walks through the whole install and prints every step without
+downloading, asking for a password, or writing anything. `install.sh --help`
+lists the rest.
 
 (If you are using bash instead of zsh, run ```source ~/.bashrc```)
 

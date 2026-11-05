@@ -20,11 +20,15 @@ The `--zh` commit added Chinese copy to the installer and the update script, and
 were written with "a variable immediately followed by Chinese punctuation":
 
 ```bash
-say "… Welcome to MacWave $MACWAVE_VERSION!" "… 欢迎使用 MacWave $MACWAVE_VERSION！"
+mw_say "… Welcome to MacWave $MACWAVE_VERSION!" "… 欢迎使用 MacWave $MACWAVE_VERSION！"
 #                                                  ↑ here: variable followed by a full-width '!'
-say "… Downloading $repo_path..." "… 正在下载 $repo_path……"
+mw_say "… Downloading $repo_path..." "… 正在下载 $repo_path……"
 #                                               ↑ here: followed by an ellipsis
 ```
+
+> The function is named `mw_say` in later versions: it used to be `say`, which is also
+> macOS's text-to-speech command — pasting one of these lines into a terminal made the Mac
+> read it out loud.
 
 Under a UTF-8 locale, `/bin/bash` 3.2 (the one macOS ships) reads the first byte of the
 multi-byte character that follows the variable into the variable name, so `set -u` reports
@@ -156,11 +160,14 @@ keep reading the old version pointer.
 中文标点」：
 
 ```bash
-say "… Welcome to MacWave $MACWAVE_VERSION!" "… 欢迎使用 MacWave $MACWAVE_VERSION！"
+mw_say "… Welcome to MacWave $MACWAVE_VERSION!" "… 欢迎使用 MacWave $MACWAVE_VERSION！"
 #                                                  这里 ↑ 变量后紧跟全角叹号
-say "… Downloading $repo_path..." "… 正在下载 $repo_path……"
+mw_say "… Downloading $repo_path..." "… 正在下载 $repo_path……"
 #                                               这里 ↑ 后面紧跟省略号
 ```
+
+> 后来的版本里这个函数叫 `mw_say`：原来叫 `say`，而 `say` 正是 macOS 的朗读命令 ——
+> 把上面任意一行粘进终端，整台机器就会把参数念出来。
 
 `/bin/bash` 3.2（macOS 自带）在 UTF-8 locale 下会把紧跟变量的那个多字节字符的
 首字节读进变量名，于是 `set -u` 报「变量不存在」：

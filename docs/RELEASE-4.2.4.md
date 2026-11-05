@@ -39,7 +39,7 @@ restored verbatim in this release.
 ```
 
 The banner is language-independent and prints under both `--zh` and the default English; the
-welcome line still goes through `say()`, so each language speaks for itself.
+welcome line still goes through `mw_say()`, so each language speaks for itself.
 
 ## ⚠️ Important: `wave selfupdate` will not show you this banner
 
@@ -123,7 +123,7 @@ wave selfupdate
 🌊 欢迎使用 MacWave 4.2.4！
 ```
 
-横幅与语言无关，`--zh` 和默认英文都打；欢迎语那一行继续走 `say()`，所以两种语言
+横幅与语言无关，`--zh` 和默认英文都打；欢迎语那一行继续走 `mw_say()`，所以两种语言
 各说各的。
 
 ## ⚠️ 关键：`wave selfupdate` 看不到这个横幅

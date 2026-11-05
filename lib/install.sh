@@ -29,7 +29,9 @@ if [[ -n "${MACWAVE_TEST:-}" ]]; then
     esac
     export MACWAVE_TEST_ROOT="$SYS_ROOT"
     mkdir -p "$HOME"
-    mw_say "🌊 Test root: $SYS_ROOT" "🌊 测试根目录：$SYS_ROOT"
+    # mw_say 到这里还没定义（它与 MW_LANG 都在下面），所以直接 echo：
+    # 以前这里调用 mw_say，隔离运行时第一行永远是 "mw_say: command not found"。
+    echo "🌊 Test root: $SYS_ROOT"
 fi
 
 set -eE
@@ -176,6 +178,43 @@ mw_say_err() {
     fi
 }
 
+# ==========================================
+# 试运行（--dry-run）
+# ==========================================
+#
+# 走完整条流程、把每一步会做什么打出来，但不下载、不提权、不建目录、不写文件。
+# 用来看安装时终端会输出什么 —— 菜单、校验、PATH 提示都在，唯独没有副作用。
+#
+# 定义必须放在版本读取之前：默认源取不到版本号时，试运行要靠它继续往下走，
+# 否则在断网的机器上永远只能看到第一行报错。
+CLI_DRY_RUN=false
+
+mw_dry_run() {
+    [[ "${CLI_DRY_RUN:-false}" == "true" ]]
+}
+
+mw_plan() {
+    # mw_plan <English> <中文>：试运行时把「本来会发生什么」打出来。
+    # 不在试运行时一个字都不输出，调用点因此不必套 if。
+    mw_dry_run || return 0
+    if [[ "$MW_LANG" == "zh" ]]; then
+        printf '%b\n' "$2"
+    else
+        printf '%b\n' "$1"
+    fi
+}
+
+# 先扫一遍参数里的两个流程开关，不消费参数（真正的解析在下面）：
+#   --zh      —— 否则 `--help --zh` 会因为 --help 先被处理而输出英文；
+#   --dry-run —— 版本号在解析参数**之前**就要读，试运行必须在那之前生效，
+#                否则断网的机器上第一步就退出了，看不到后面任何输出。
+for _mw_arg in "$@"; do
+    case "$_mw_arg" in
+        --zh|--ZH) MW_LANG="zh" ;;
+        --dry-run|--DRY-RUN) CLI_DRY_RUN=true ;;
+    esac
+done
+
 
 # ==========================================
 # 域名（4.0：每个对外地址都能用环境变量换掉）
@@ -263,7 +302,9 @@ PYTHON_DOMAIN_URL="$(mw_domain MACWAVE_PYTHON_DOMAIN "${MACWAVE_PYTHON_DOMAIN:-h
 # 这里用 sed 而不是引 TOML 解析器，因为此刻客户端还没有可用的 Python 环境。
 
 LATEST_DATA_URL="$SELFUPDATE_URL/macwavedata/latest.toml"
-LATEST_VERSION_DATA="$(curl -fsSL --max-time 30 "$LATEST_DATA_URL" 2>/dev/null)"
+# `|| true` 不能省：赋值语句的退出码就是 curl 的退出码，在 `set -e` 下取不到
+# 版本会直接静默退出（实测 exit 7，下面那段「读不到版本」的提示一个字都打不出来）。
+LATEST_VERSION_DATA="$(curl -fsSL --max-time 30 "$LATEST_DATA_URL" 2>/dev/null || true)"
 
 read_toml_string() {
     # read_toml_string <文本> <键> —— 取平铺的字符串值，去掉引号与行尾注释
@@ -276,10 +317,21 @@ MACWAVE_VERSION="$(read_toml_string "$LATEST_VERSION_DATA" version)"
 LATEST_BRANCH="$(read_toml_string "$LATEST_VERSION_DATA" branch)"
 
 if [[ -z "$MACWAVE_VERSION" || -z "$LATEST_BRANCH" ]]; then
-    echo -e "${RED_BOLD}🌊 Error: Cannot read the latest version from the self-update data.${RESET}" >&2
-    echo -e "${RED_BOLD}🌊   $(mw_redact "$LATEST_DATA_URL")${RESET}" >&2
-    echo -e "${RED_BOLD}🌊 Check your network or proxy, then run the installer again.${RESET}" >&2
-    exit 1
+    if mw_dry_run; then
+        # 试运行可能只是想看输出，不该因为断网就断在第一行：用占位值把流程
+        # 走完，后面每一处都只打印、不落地。真实安装仍然在这里退出。
+        MACWAVE_VERSION="${MACWAVE_VERSION:-unknown}"
+        LATEST_BRANCH="${LATEST_BRANCH:-unknown}"
+        mw_say "${YELLOW}🌊 Dry run: could not read the latest version; using '$MACWAVE_VERSION'." \
+            "${YELLOW}🌊 试运行：读不到最新版本号，用占位值 '$MACWAVE_VERSION'。"
+        mw_say "${YELLOW}🌊   $(mw_redact "$LATEST_DATA_URL")" \
+            "${YELLOW}🌊   $(mw_redact "$LATEST_DATA_URL")"
+    else
+        echo -e "${RED_BOLD}🌊 Error: Cannot read the latest version from the self-update data.${RESET}" >&2
+        echo -e "${RED_BOLD}🌊   $(mw_redact "$LATEST_DATA_URL")${RESET}" >&2
+        echo -e "${RED_BOLD}🌊 Check your network or proxy, then run the installer again.${RESET}" >&2
+        exit 1
+    fi
 fi
 
 BRANCH="$LATEST_BRANCH"
@@ -454,6 +506,11 @@ Options:
                           agreement are answered automatically. Without
                           --dir-option the default (option 1) is used.
                           Requires passwordless sudo when privilege is needed.
+      --dry-run           Print what the installer would do and change
+                          nothing: no download, no sudo, no directory
+                          created, no file written. When the latest version
+                          cannot be fetched it continues with a placeholder,
+                          so the output can be reviewed offline.
       --dir-option=N      Pick menu entry N without prompting (1-$CUSTOM_OPTION).
       --dir-option=DIR    Use DIR as the installation directory (shorthand for
                           --dir-option=$CUSTOM_OPTION=DIR).
@@ -494,6 +551,9 @@ MacWave 安装程序
       --ci, --CI          完全不交互：目录菜单与用户协议都自动应答。不带
                           --dir-option 时使用默认项（第 1 项）。
                           需要提权时要求 sudo 免密。
+      --dry-run           只打印安装器会做什么，不做任何改动：不下载、不提权、
+                          不建目录、不写文件。取不到最新版本号时用占位值继续，
+                          因此在断网的机器上也能看完整个输出。
       --dir-option=N      不提问，直接选菜单第 N 项（1-${CUSTOM_OPTION}）。
       --dir-option=DIR    用 DIR 作为安装目录（等价于
                           --dir-option=$CUSTOM_OPTION=DIR）。
@@ -522,18 +582,16 @@ $(print_dir_menu | sed 's/^/  /')
 USAGE_EOF
 }
 
-# 先扫一遍 --zh：否则 `--help --zh` 会因为 --help 先被处理而输出英文。
-# 这里只看语言，不消费参数 —— 真正的解析仍在下面。
-for _mw_arg in "$@"; do
-    case "$_mw_arg" in
-        --zh|--ZH) MW_LANG="zh" ;;
-    esac
-done
+# 语言与 --dry-run 的预扫已在文件上方完成（版本号要在解析之前就用到），
+# 这里只做真正的参数解析。
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --ci|--CI)
             CLI_CI=true
+            ;;
+        --dry-run|--DRY-RUN)
+            CLI_DRY_RUN=true
             ;;
         --dir-option=*)
             _value="${1#--dir-option=}"
@@ -642,6 +700,12 @@ echo -e "${SKY_BLUE} ╚══╝╚══╝ ╚═╝  ╚═╝  ╚═══
 echo ""
 mw_say "🌊 Welcome to MacWave $MACWAVE_VERSION!" "🌊 欢迎使用 MacWave ${MACWAVE_VERSION}！"
 
+if mw_dry_run; then
+    echo ""
+    mw_say "${YELLOW}🌊 Dry run: the whole install is walked through, nothing is changed.${RESET}" \
+        "${YELLOW}🌊 试运行：完整走一遍安装流程，但不做任何改动。${RESET}"
+fi
+
 if [[ "$CORE_URL" != "https://raw.githubusercontent.com/MacWaveOrg/MacWave" ]]; then
     mw_say "🌊 Install from mirror: $(mw_redact "$CORE_URL")" "🌊 从镜像安装：$(mw_redact "$CORE_URL")"
 fi
@@ -746,7 +810,14 @@ admin_group() {
 hand_over_system_install() {
     # 系统级安装（$BASE_DIR 不在家目录下）才需要动手；用户级本来就是自己的。
     local dir="$1" group
-    [[ -n "$dir" && -d "$dir" ]] || return 0
+    [[ -n "$dir" ]] || return 0
+    if mw_dry_run; then
+        # 目录此刻还不存在（试运行不建），所以判断要放在 -d 检查之前。
+        mw_plan "🌊 Dry run: would hand $dir over to root:$(admin_group) with mode 755." \
+            "🌊 试运行：将把 ${dir} 交给 root:$(admin_group)，权限 755。"
+        return 0
+    fi
+    [[ -d "$dir" ]] || return 0
     group="$(admin_group)"
     sudo chown -R "root:$group" "$dir" || return 1
     sudo chmod -R u+rwX,go+rX,go-w "$dir" || return 1
@@ -760,6 +831,15 @@ else
 fi
 
 run_cmd() {
+    # 试运行只把命令打出来：建目录、写配置、删旧文件都经由这里。
+    if mw_dry_run; then
+        if [[ "$NEED_SUDO" == "true" ]]; then
+            echo -e "${YELLOW}    sudo $*${RESET}"
+        else
+            echo -e "${YELLOW}    $*${RESET}"
+        fi
+        return 0
+    fi
     if [[ "$NEED_SUDO" == "true" ]]; then
         sudo "$@"
     else
@@ -768,7 +848,10 @@ run_cmd() {
 }
 
 if [[ "$NEED_SUDO" == "true" ]]; then
-    if [[ "$CLI_CI" == "true" ]]; then
+    if mw_dry_run; then
+        mw_plan "${YELLOW}🌊 Dry run: installing to $BASE_DIR needs administrator access; no password is asked now.${RESET}" \
+            "${YELLOW}🌊 试运行：装到 ${BASE_DIR} 需要管理员权限，现在不会索取密码。${RESET}"
+    elif [[ "$CLI_CI" == "true" ]]; then
         # --ci 不能停下来等密码：要么已经是 root，要么已有免密 sudo
         if ! sudo -n true 2> /dev/null; then
             echo -e "${RED_BOLD}🌊 Error: this install needs privilege, but --ci cannot ask for a password.${RESET}" >&2
@@ -796,37 +879,54 @@ fi
 # 不会留下一个配置已写好、文件却一个都没下的半成品安装。
 
 UPDATE_COMMANDS_URL="$SELFUPDATE_URL/macwavedata/$MACWAVE_VERSION/update_commands.sh"
-UPDATE_COMMANDS_TMP="$(mktemp)"
+UPDATE_COMMANDS_TMP=""
 
 cleanup_update_commands() {
-    rm -f "$UPDATE_COMMANDS_TMP"
+    if [[ -n "$UPDATE_COMMANDS_TMP" ]]; then
+        rm -f "$UPDATE_COMMANDS_TMP"
+    fi
 }
 trap cleanup_update_commands EXIT
 
-mw_say "🌊 Fetching the update commands..." "🌊 正在获取更新命令……"
+fetch_update_commands() {
+    # 取回并校验这一版的更新命令。失败时此时还没动过任何东西，直接退出是安全的。
+    local attempt ok=false
 
-UPDATE_COMMANDS_OK=false
-for attempt in 1 2 3; do
-    if curl -fsSL --max-time 60 -o "$UPDATE_COMMANDS_TMP" "$UPDATE_COMMANDS_URL"; then
-        UPDATE_COMMANDS_OK=true
-        break
+    UPDATE_COMMANDS_TMP="$(mktemp)"
+    mw_say "🌊 Fetching the update commands..." "🌊 正在获取更新命令……"
+
+    for attempt in 1 2 3; do
+        if curl -fsSL --max-time 60 -o "$UPDATE_COMMANDS_TMP" "$UPDATE_COMMANDS_URL"; then
+            ok=true
+            break
+        fi
+        if [[ "$attempt" -lt 3 ]]; then
+            mw_say "${YELLOW}🌊 Retrying the update commands ($((attempt + 1))/3)...${RESET}" "${YELLOW}🌊 正在重试获取更新命令（$((attempt + 1))/3）……${RESET}"
+        fi
+    done
+
+    if [[ "$ok" != "true" ]]; then
+        echo -e "${RED_BOLD}🌊 Error: Cannot fetch the update commands.${RESET}"
+        echo -e "${RED_BOLD}🌊   $(mw_redact "$UPDATE_COMMANDS_URL")${RESET}"
+        echo -e "${RED_BOLD}🌊 Nothing was installed. Check your network or proxy, then run the installer again.${RESET}"
+        exit 1
     fi
-    if [[ "$attempt" -lt 3 ]]; then
-        mw_say "${YELLOW}🌊 Retrying the update commands ($((attempt + 1))/3)...${RESET}" "${YELLOW}🌊 正在重试获取更新命令（$((attempt + 1))/3）……${RESET}"
+
+    if ! bash -n "$UPDATE_COMMANDS_TMP" 2>/dev/null; then
+        echo -e "${RED_BOLD}🌊 Error: the update commands for $MACWAVE_VERSION are not valid shell.${RESET}"
+        echo -e "${RED_BOLD}🌊 Nothing was installed. Please report this to the administrator.${RESET}"
+        exit 1
     fi
-done
+}
 
-if [[ "$UPDATE_COMMANDS_OK" != "true" ]]; then
-    echo -e "${RED_BOLD}🌊 Error: Cannot fetch the update commands.${RESET}"
-    echo -e "${RED_BOLD}🌊   $(mw_redact "$UPDATE_COMMANDS_URL")${RESET}"
-    echo -e "${RED_BOLD}🌊 Nothing was installed. Check your network or proxy, then run the installer again.${RESET}"
-    exit 1
-fi
-
-if ! bash -n "$UPDATE_COMMANDS_TMP" 2>/dev/null; then
-    echo -e "${RED_BOLD}🌊 Error: the update commands for $MACWAVE_VERSION are not valid shell.${RESET}"
-    echo -e "${RED_BOLD}🌊 Nothing was installed. Please report this to the administrator.${RESET}"
-    exit 1
+if mw_dry_run; then
+    mw_plan "🌊 Dry run: would fetch the update commands for $MACWAVE_VERSION and run them." \
+        "🌊 试运行：将获取 $MACWAVE_VERSION 的更新命令并执行："
+    echo -e "${YELLOW}    $(mw_redact "$UPDATE_COMMANDS_URL")${RESET}"
+    mw_plan "🌊   They download the program files into $BASE_DIR and apply directory migrations." \
+        "🌊   它会把程序文件下载到 ${BASE_DIR}，并执行目录结构迁移。"
+else
+    fetch_update_commands
 fi
 
 # ==========================================
@@ -939,8 +1039,13 @@ run_cmd chmod 755 "$CONFIG_DIR"
 run_cmd chmod 644 "$CONFIG_FILE"
 run_cmd chmod 644 "$VERSION_FILE"
 
-mw_say "🌊 Configuration saved to $CONFIG_FILE" "🌊 配置已保存到 $CONFIG_FILE"
-mw_say "🌊 Version saved to $VERSION_FILE" "🌊 版本信息已保存到 $VERSION_FILE"
+if mw_dry_run; then
+    mw_plan "🌊 Dry run: would write $CONFIG_FILE (base_dir) and $VERSION_FILE (version $MACWAVE_VERSION)." \
+        "🌊 试运行：将写入 ${CONFIG_FILE}（base_dir）与 ${VERSION_FILE}（版本 ${MACWAVE_VERSION}）。"
+else
+    mw_say "🌊 Configuration saved to $CONFIG_FILE" "🌊 配置已保存到 $CONFIG_FILE"
+    mw_say "🌊 Version saved to $VERSION_FILE" "🌊 版本信息已保存到 $VERSION_FILE"
+fi
 
 # ==========================================
 # 删除1.x旧版 repo.json，软件包索引现已网络实时拉取，不再依赖需要记得刷新（否则安装不到新版）、冗余（用户还得下载且没什么用）的本地索引
@@ -958,7 +1063,11 @@ fi
 
 LEGACY_BINS=$(find "$INSTALL_DIR" -maxdepth 1 -type f 2>/dev/null || true)
 if [[ -n "$LEGACY_BINS" ]]; then
-    echo -e "${YELLOW}🌊 Removing files installed by an older version in $DISPLAY_DIR/bin:${RESET}"
+    if mw_dry_run; then
+        echo -e "${YELLOW}🌊 Dry run: files from an older version would be removed from $DISPLAY_DIR/bin:${RESET}"
+    else
+        echo -e "${YELLOW}🌊 Removing files installed by an older version in $DISPLAY_DIR/bin:${RESET}"
+    fi
     while IFS= read -r legacy_file; do
         echo -e "${YELLOW}    $(basename "$legacy_file")${RESET}"
     done <<< "$LEGACY_BINS"
@@ -1001,7 +1110,10 @@ MACWAVE_NEED_SUDO="$([ "$NEED_SUDO" = "true" ] && echo 1 || echo "")"
 MACWAVE_SILENT="$([ "$CLI_CI" = "true" ] && echo 1 || echo "")"
 export MACWAVE_NEED_SUDO MACWAVE_SILENT
 
-if ! bash "$UPDATE_COMMANDS_TMP"; then
+if mw_dry_run; then
+    mw_plan "🌊 Dry run: the update commands would run now and download the program files." \
+        "🌊 试运行：更新命令本该在此执行并下载程序文件，实际未执行。"
+elif ! bash "$UPDATE_COMMANDS_TMP"; then
     echo -e "${RED_BOLD}🌊 Error: the update commands for $MACWAVE_VERSION failed.${RESET}"
     echo -e "${RED_BOLD}🌊 Nothing was recorded as installed. Fix the cause above, then run the installer again.${RESET}"
     exit 1
@@ -1207,33 +1319,48 @@ VENV_PY=""
 PYTHON_BIN=""
 PYTHON_SOURCE=""
 
-mw_try ensure_portable_python "$BASE_DIR" "$(portable_python_arch)"
-BUNDLED_PY="$MW_OPTIONAL_RESULT"
-if [[ -n "$BUNDLED_PY" ]]; then
-    PYTHON_BIN="$BUNDLED_PY"
+if mw_dry_run; then
+    # 试运行不联网：直接给出「本该由哪一份解释器来跑」，让输出与真实安装同形。
+    PYTHON_BIN="<bundled python>"
     PYTHON_SOURCE="bundled"
-    mw_say "🌊 Using the bundled Python: ${BUNDLED_PY#"$BASE_DIR"/}" "🌊 使用自带的 Python：${BUNDLED_PY#"$BASE_DIR"/}"
+    mw_plan "🌊 Dry run: would check the bundled Python and download it when missing (about 26 MB)." \
+        "🌊 试运行：将检查自带 Python，缺失时下载（约 26 MB）。"
+    mw_plan "🌊   Destination: $BASE_DIR/python/<version>/bin/python3" \
+        "🌊   目标位置：${BASE_DIR}/python/<版本>/bin/python3"
 else
-    PYTHON_BIN="$(command -v python3 || true)"
-    PYTHON_SOURCE="system"
-    if [[ -z "$PYTHON_BIN" ]]; then
-        echo -e "${RED_BOLD}🌊 Error: no Python 3 interpreter is available.${RESET}"
-        echo -e "${RED_BOLD}🌊 The bundled Python could not be downloaded and python3 is not in PATH.${RESET}"
-        exit 1
+    mw_try ensure_portable_python "$BASE_DIR" "$(portable_python_arch)"
+    BUNDLED_PY="$MW_OPTIONAL_RESULT"
+    if [[ -n "$BUNDLED_PY" ]]; then
+        PYTHON_BIN="$BUNDLED_PY"
+        PYTHON_SOURCE="bundled"
+        mw_say "🌊 Using the bundled Python: ${BUNDLED_PY#"$BASE_DIR"/}" "🌊 使用自带的 Python：${BUNDLED_PY#"$BASE_DIR"/}"
+    else
+        PYTHON_BIN="$(command -v python3 || true)"
+        PYTHON_SOURCE="system"
+        if [[ -z "$PYTHON_BIN" ]]; then
+            echo -e "${RED_BOLD}🌊 Error: no Python 3 interpreter is available.${RESET}"
+            echo -e "${RED_BOLD}🌊 The bundled Python could not be downloaded and python3 is not in PATH.${RESET}"
+            exit 1
+        fi
+        echo -e "${YELLOW}🌊 Warning: could not prepare the bundled Python; using $PYTHON_BIN instead.${RESET}"
+        echo -e "${YELLOW}🌊 Re-run the installer when the network is available to make this installation self-contained.${RESET}"
     fi
-    echo -e "${YELLOW}🌊 Warning: could not prepare the bundled Python; using $PYTHON_BIN instead.${RESET}"
-    echo -e "${YELLOW}🌊 Re-run the installer when the network is available to make this installation self-contained.${RESET}"
 fi
 
-mw_say "🌊 Creating the private Python environment..." "🌊 正在创建独立的 Python 环境……"
-mkdir -p "$VENV_DIR" 2>/dev/null || true
-
-if "$PYTHON_BIN" -m venv "$VENV_DIR" >/dev/null 2>&1; then
-    VENV_PY="$VENV_DIR/bin/python3"
-    [[ -x "$VENV_PY" ]] || VENV_PY="$VENV_DIR/bin/python"
-    mw_say "🌊 Private Python environment ready: ${VENV_DIR#"$BASE_DIR"/}" "🌊 独立 Python 环境已就绪：${VENV_DIR#"$BASE_DIR"/}"
+if mw_dry_run; then
+    mw_plan "🌊 Dry run: would create the private Python environment at $VENV_DIR." \
+        "🌊 试运行：将在 ${VENV_DIR} 创建独立的 Python 环境。"
 else
-    echo -e "${YELLOW}🌊 Warning: could not create a private virtualenv; using the ${PYTHON_SOURCE} interpreter directly.${RESET}"
+    mw_say "🌊 Creating the private Python environment..." "🌊 正在创建独立的 Python 环境……"
+    mkdir -p "$VENV_DIR" 2>/dev/null || true
+
+    if "$PYTHON_BIN" -m venv "$VENV_DIR" >/dev/null 2>&1; then
+        VENV_PY="$VENV_DIR/bin/python3"
+        [[ -x "$VENV_PY" ]] || VENV_PY="$VENV_DIR/bin/python"
+        mw_say "🌊 Private Python environment ready: ${VENV_DIR#"$BASE_DIR"/}" "🌊 独立 Python 环境已就绪：${VENV_DIR#"$BASE_DIR"/}"
+    else
+        echo -e "${YELLOW}🌊 Warning: could not create a private virtualenv; using the ${PYTHON_SOURCE} interpreter directly.${RESET}"
+    fi
 fi
 
 # pip 的公共参数。--index-url 指向 MACWAVE_PIP_INDEX（默认官方 PyPI）；
@@ -1242,7 +1369,10 @@ PIP_DEPS=(requests packaging urllib3 rich)
 PIP_FLAGS=(--quiet --disable-pip-version-check --timeout 30 --retries 2
            --index-url "$PIP_INDEX_URL")
 
-if [[ -n "$VENV_PY" && -x "$VENV_PY" ]]; then
+if mw_dry_run; then
+    mw_plan "🌊 Dry run: would install ${PIP_DEPS[*]} into the private environment (index: $PIP_INDEX_URL)." \
+        "🌊 试运行：将把 ${PIP_DEPS[*]} 装进独立环境（索引：${PIP_INDEX_URL}）。"
+elif [[ -n "$VENV_PY" && -x "$VENV_PY" ]]; then
     mw_say "🌊 Installing Python dependencies into the private environment..." "🌊 正在向独立环境安装 Python 依赖……"
     # pip 默认会无限等下去，网络不好时看上去就是卡死。给它超时与重试，
     # 并说明这一步可能要一会儿，免得用户以为程序挂了。
@@ -1273,6 +1403,13 @@ write_launcher() {
     local recorded="$2"
     local target="$base_dir/lib/wave"
     local tmp
+
+    if mw_dry_run; then
+        mw_plan "🌊 Dry run: would write the launcher $target." \
+            "🌊 试运行：将写入启动器 ${target}。"
+        return 0
+    fi
+
     tmp="$(mktemp -t macwave-launcher)"
 
     cat > "$tmp" <<'LAUNCHER'
@@ -1397,21 +1534,52 @@ fi
 # bash 的对应文件是 ~/.bash_profile —— 注意**不是** ~/.bashrc：
 # macOS 的 bash 登录 shell 从不读 .bashrc（旧版这里写的就是 .bashrc，等于没写）。
 
-if [[ "$SHELL" == *"zsh"* ]]; then
-    RC_FILE="$HOME/.zprofile"
-elif [[ "$SHELL" == *"bash"* ]]; then
-    RC_FILE="$HOME/.bash_profile"
-else
-    RC_FILE="$HOME/.profile"
-fi
+# 按**登录** shell 选择它真正会读的那个文件（macOS 终端默认起登录 shell）：
+#
+#   zsh             → ~/.zprofile
+#   bash            → ~/.bash_profile
+#   sh/dash/ksh     → ~/.profile
+#   csh/tcsh        → ~/.login
+#
+# 这四条都在本机逐壳实测过（`<shell> -l -c true` 看它读了哪个文件）。
+# csh 系绝不能落到 ~/.profile —— 它根本不读那个文件，写了等于没写。
+SHELL_FAMILY=posix
+case "${SHELL:-}" in
+    *zsh*)  RC_FILE="$HOME/.zprofile" ;;
+    *bash*) RC_FILE="$HOME/.bash_profile" ;;
+    *csh*)
+        # macOS 的 /bin/csh 其实是 tcsh，登录时读 ~/.tcshrc 再读 ~/.login
+        RC_FILE="$HOME/.login"
+        SHELL_FAMILY="csh"
+        ;;
+    *)      RC_FILE="$HOME/.profile" ;;
+esac
 
 # 旧版本写进 rc 的完整 PATH 行；现在只用于两件事：识别用户文件里是否已有旧写法，
 # 以及回滚时把指向已删除目录的那一行摘掉。
 PATH_LINE="export PATH=\"$INSTALL_DIR:$LINKS_DIR:$LIB_DIR:\$PATH\""
 
-# 建议用户自己加进 rc 的那一行。带 test -r 守卫：安装目录被删掉以后，
-# 每次登录都不会再刷一行 "no such file"。
-SHELLENV_LINE="test -r \"$LIB_DIR/wave\" && eval \"\$(\"$LIB_DIR/wave\" shellenv)\""
+# 建议用户自己加进 rc 的那一行 —— 与 Homebrew 同形：
+#
+#   eval "$(/opt/homebrew/bin/brew shellenv)"
+#
+# 路径里没有空格时**不加内层引号**，与 Homebrew 逐字同形；含空格（自定义目录
+# 允许空格）时才加，否则那一行会被拆成两条命令。
+#
+# 去掉 4.3 之前的 `test -r ... &&` 守卫：代价是安装目录被删掉后每次登录报一次
+# "no such file or directory"，Homebrew 一直如此，换来的是用户只需照抄一行。
+#
+# csh/tcsh 走另一条分支：它们没有 `$(...)`，也没有 POSIX 的 case…esac，
+# `wave shellenv` 的输出它们吃不下（实测报 "Too many )'s"），所以给等价的
+# csh 写法。守卫改成 `!~` 模式匹配，作用相同 —— 已在 csh 与 tcsh 上实测连跑
+# 三次不堆叠。
+if [[ "$SHELL_FAMILY" == "csh" ]]; then
+    SHELLENV_LINE="if ( \"\$PATH\" !~ *\"$LIB_DIR\"* ) setenv PATH \"$INSTALL_DIR:$LINKS_DIR:$LIB_DIR:\$PATH\""
+elif [[ "$LIB_DIR" == *" "* ]]; then
+    SHELLENV_LINE="eval \"\$(\"$LIB_DIR/wave\" shellenv)\""
+else
+    SHELLENV_LINE="eval \"\$($LIB_DIR/wave shellenv)\""
+fi
 
 # 从 rc 文件里摘掉**旧版本**写进去的 PATH 行（连同标记行）。
 # 现在安装不再写 rc，这个函数只剩两个用途：升级时清理旧写法、回滚时清掉
@@ -1438,12 +1606,17 @@ path_has_macwave() {
     return 1
 }
 
-# 用户自己的 shell 配置里是否还留着 MacWave 的条目（旧写法的 export，或新的 eval）。
-# 找到就提示怎么迁移，但**不动那个文件**。
+# 用户自己的 shell 配置里是否还留着**旧版本**写进去的条目。
+#
+# 只认两行：整行等于 `# MacWave` 标记行，或整行等于旧写法的那条 export。
+# 不能拿 `$LIB_DIR` 做子串匹配 —— 新的 `eval "$(... shellenv)"` 里也有这个路径，
+# 那会把「已经迁移好的用户」误判成「还需要迁移」。
+#
+# 找到只用于**生成一条迁移命令**，安装器自己不动那个文件。
 EXISTING_RC=""
 for _rc in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.zprofile" "$HOME/.profile"; do
     [[ -f "$_rc" ]] || continue
-    if grep -qF -e "$LIB_DIR" -e "$INSTALL_DIR" "$_rc" 2>/dev/null; then
+    if grep -qxF -e "# MacWave" -e "$PATH_LINE" "$_rc" 2>/dev/null; then
         EXISTING_RC="$_rc"
         break
     fi
@@ -1456,7 +1629,13 @@ done
 
 echo ""
 mw_say "${YELLOW}Please read the agreement before use (see bottom of https://macwave.org).${RESET}" "${YELLOW}使用前请先阅读用户协议（见 https://macwave.org 页面底部）。${RESET}"
-if [[ "$CLI_CI" == "true" ]]; then
+if mw_dry_run; then
+    # 试运行不碰终端：否则 `install.sh --dry-run` 会停在协议提问上，
+    # 只想看输出的人反而被卡住。真实安装仍然要求回答。
+    agreement="y"
+    mw_plan "🌊 Dry run: the agreement is not asked and nothing is recorded." \
+        "🌊 试运行：不询问用户协议，也不记录任何同意。"
+elif [[ "$CLI_CI" == "true" ]]; then
     mw_say "🌊 --ci: the agreement is accepted automatically." "🌊 --ci：自动接受用户协议。"
     agreement="y"
 else
@@ -1464,7 +1643,9 @@ else
     read -r agreement < /dev/tty
 fi
 if [[ -z "$agreement" || "$agreement" =~ ^[Yy]$ ]]; then
-    mw_say "${GREEN}You have agreed to the agreement.${RESET}" "${GREEN}已记录你的同意。${RESET}"
+    if ! mw_dry_run; then
+        mw_say "${GREEN}You have agreed to the agreement.${RESET}" "${GREEN}已记录你的同意。${RESET}"
+    fi
 else
     # 回滚要连 rc 里的 PATH 一起清掉，否则会留下指向已删除目录的一行。
     # 这里不写死 sudo：用户级安装全程无需提权，回滚也不该突然要密码。
@@ -1482,37 +1663,56 @@ fi
 # ==========================================
 
 echo ""
-mw_say "🌊 Installation complete!" "🌊 安装完成！"
-mw_say "🌊 MacWave installed to: $DISPLAY_DIR" "🌊 MacWave 已安装到：$DISPLAY_DIR"
+if mw_dry_run; then
+    mw_say "${GREEN}🌊 Dry run finished. Nothing was installed or changed.${RESET}" \
+        "${GREEN}🌊 试运行结束。没有安装或修改任何内容。${RESET}"
+    mw_say "🌊 MacWave would be installed to: $DISPLAY_DIR" "🌊 MacWave 将被安装到：$DISPLAY_DIR"
+else
+    mw_say "🌊 Installation complete!" "🌊 安装完成！"
+    mw_say "🌊 MacWave installed to: $DISPLAY_DIR" "🌊 MacWave 已安装到：$DISPLAY_DIR"
+fi
 mw_say "🌊 Architecture: $ARCH" "🌊 架构：$ARCH"
 echo ""
 RC_DISPLAY=$(home_to_tilde "$RC_FILE")
 APPEND_CMD="echo '$SHELLENV_LINE' >> $RC_DISPLAY"
 
+# 有旧条目时，把「删旧」和「追加新行」拼成**一条**命令：用户复制一次就够。
+#
+# 删旧的判据与 remove_lw_path_entries 一致 —— 整行相等（-x -F），不是子串匹配；
+# 旧实现用 `grep -F "# MacWave"` 做子串，会把用户自己写的 `# MacWave mirror`
+# 注释一并删掉。
+#
+# 先写临时文件再 `cat >` 回写，而不是 `mv` 或 `sed -i`：~/.zshrc 常是指向
+# dotfiles 仓库的符号链接，rename 会把它变成普通文件，链接就断了。
+MIGRATE_CMD=""
+if [[ -n "$EXISTING_RC" ]]; then
+    EXISTING_DISPLAY=$(home_to_tilde "$EXISTING_RC")
+    MIGRATE_CMD="grep -vxF -e '# MacWave' -e '$PATH_LINE' $EXISTING_DISPLAY > $EXISTING_DISPLAY.macwave && cat $EXISTING_DISPLAY.macwave > $EXISTING_DISPLAY && rm -f $EXISTING_DISPLAY.macwave && $APPEND_CMD"
+fi
+
 # ==========================================
 # 下一步：PATH 由用户自己加
 # ==========================================
-# 安装器不写 ~/.zprofile。这里只给两条命令 + 现在就能用的办法。
+# 安装器不写 rc 文件。这里只给一条命令，别的不说。
 
 echo ""
-mw_say "🌊 Run the following command to add wave to your PATH:" \
-    "🌊 执行下列命令将 wave 添加到 PATH："
+mw_say "🌊 Run this once to add wave to your PATH:" \
+    "🌊 执行下面这一行，把 wave 加进 PATH："
 echo ""
-echo -e "${YELLOW}    $APPEND_CMD${RESET}"
-echo -e "${YELLOW}    $SHELLENV_LINE${RESET}"
-echo ""
-
-# 旧版本（4.2.x 及更早）是直接往 rc 里 append 一整行 export PATH 的。
-# 那一行至今有效，所以不去删；但要让用户知道它还在，以及怎么换掉。
-if [[ -n "$EXISTING_RC" ]]; then
-    EXISTING_DISPLAY=$(home_to_tilde "$EXISTING_RC")
-    echo ""
-    mw_say "🌊 $EXISTING_DISPLAY still contains a MacWave entry written by an older version." \
-        "🌊 $EXISTING_DISPLAY 里还有旧版本写入的 MacWave 条目。"
-    mw_say "🌊 It keeps working. To switch to the form above, replace that line with:" \
-        "🌊 它仍然有效。想改用上面的写法，就把那一行换成："
-    echo -e "${YELLOW}    $SHELLENV_LINE${RESET}"
+if [[ -n "$MIGRATE_CMD" ]]; then
+    # 一行做完两件事：删掉旧版写进去的两行，再追加新的 eval 行。
+    echo -e "${YELLOW}    $MIGRATE_CMD${RESET}"
+else
+    echo -e "${YELLOW}    $APPEND_CMD${RESET}"
 fi
+echo ""
+
+mw_say "🌊 If prompted 'Command not found', run the following command or open a new terminal window." \
+    "🌊 如果提示“找不到命令”，执行下列命令或打开新的终端窗口。"
+echo ""
+# 必须 source **刚追加进去的那个文件**（${RC_FILE}），不是「碰巧存在的」那个：
+# zsh 的行加在 ~/.zprofile，此时 source ~/.zshrc 并不会把它加载进来。
+echo -e "${YELLOW}    source $RC_DISPLAY${RESET}"
 echo ""
 
 # 系统级安装是共享的：管理员用 sudo 管理，其他用户只能运行。
@@ -1520,12 +1720,17 @@ echo ""
 # 这里说清楚，否则「其他人可运行」只对了一半。
 if [[ "$NEED_SUDO" == "true" ]]; then
     mw_say "🌊 Other users on this machine can run the installed packages," \
-        "🌊 这台机器上的其他用户可以直接运行已装的软件包，"
-    mw_say "🌊 but each of them needs this line in their own shell profile:" \
-        "🌊 但每个人要在自己的 shell 配置里加上这一行："
+        "🌊 本机的其他用户可运行已装的软件包，"
+    mw_say "🌊 but each of them needs to run this once:" \
+        "🌊 但每个用户需要执行："
     echo -e "${YELLOW}    $SHELLENV_LINE${RESET}"
     mw_say "🌊 Changing packages (install / uninstall / upgrade) needs sudo:" \
         "🌊 改动软件包（安装 / 卸载 / 升级）需要 sudo："
     echo -e "${YELLOW}    sudo wave install <package>${RESET}"
     echo ""
+fi
+
+if mw_dry_run; then
+    mw_say "🌊 Drop --dry-run and run the installer again to install for real." \
+        "🌊 去掉 --dry-run 再运行一次，才会真正安装。"
 fi

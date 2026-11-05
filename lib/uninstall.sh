@@ -161,14 +161,23 @@ for CONFIG_DIR in "$SYSTEM_CONFIG_DIR" "$USER_CONFIG_DIR"; do
     fi
 done
 
-# 清理 PATH 配置（含自定义安装目录：删掉“# MacWave”注释行与紧跟在它后面的 PATH 行）
-for RC_FILE in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.profile"; do
+# 清理 PATH 配置。要处理四种写法：
+#   1. 4.2.x 及更早：`# MacWave` 注释行 + 紧随其后的 export PATH
+#   2. 更早的版本：只有一行 export PATH，没有注释行
+#   3. 4.3 起推荐给 POSIX shell 的：`eval "$(.../lib/wave shellenv)"`
+#   4. 4.3 起推荐给 csh / tcsh 的：`if ( "$PATH" !~ *".../lib"* ) setenv PATH ...`
+# 只删指向**本机 MacWave 安装目录**的行；别人的配置一句都不动。
+for RC_FILE in "$HOME/.zshrc" "$HOME/.zprofile" \
+               "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.bash_login" \
+               "$HOME/.profile" \
+               "$HOME/.tcshrc" "$HOME/.cshrc" "$HOME/.login"; do
     if [ -f "$RC_FILE" ]; then
-        python3 - "$RC_FILE" << 'PYEOF'
+        python3 - "$RC_FILE" "${BASE_DIRS[@]}" << 'PYEOF'
 import sys
 from pathlib import Path
 
 rc_file = Path(sys.argv[1])
+install_dirs = [d for d in sys.argv[2:] if d]
 kept = []
 skip_next = False
 for line in rc_file.read_text().splitlines():
@@ -179,11 +188,18 @@ for line in rc_file.read_text().splitlines():
         skip_next = False
         continue
     skip_next = False
+    # shellenv 写法：一行里同时出现 lib/wave 与 shellenv 才算我们给的
+    if "lib/wave" in line and "shellenv" in line:
+        continue
+    # csh / tcsh 写法：带 !~ 守卫的 setenv，且指向本机安装目录
+    if "setenv PATH" in line and "!~" in line and any(d in line for d in install_dirs):
+        continue
     kept.append(line)
 rc_file.write_text("\n".join(kept) + ("\n" if kept else ""))
 PYEOF
         # 兜底：注释行缺失时，仍按旧版写法删掉 macwave 的 PATH 行
-        sed -i '' '/export PATH=".*macwave\//d' "$RC_FILE" 2>/dev/null || true
+        sed -i '' -e '/export PATH=".*macwave\//d' \
+                  -e '/setenv PATH .*macwave\//d' "$RC_FILE" 2>/dev/null || true
         echo "🌊 Removed MacWave PATH entries from $RC_FILE"
     fi
 done
