@@ -141,7 +141,9 @@ else
     pass "install.sh 没有写用户的 rc 文件"
 fi
 
-if grep -q 'lib/wave\\" shellenv' "$LAUNCHER_SRC" || grep -q 'wave\\" shellenv' "$LAUNCHER_SRC"; then
+# 结尾那一行由 SHELLENV_DISPLAY 拼出（家目录写成 ~），所以认变量名与 shellenv
+# 调用两处，不再依赖某一种引号写法。
+if grep -q 'SHELLENV_DISPLAY=' "$LAUNCHER_SRC" && grep -q 'wave shellenv)' "$LAUNCHER_SRC"; then
     pass "安装结束时打印 eval 那一行"
 else
     fail "安装结束没有提示 eval 那一行"

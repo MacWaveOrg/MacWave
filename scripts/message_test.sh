@@ -218,6 +218,22 @@ else
 fi
 
 echo
+echo "========== 2.5 只有旗标写错：也要用 ^^^ 指出来 =========="
+
+# `wave --h` 这行里唯一的词就是写错的旗标。以前只在 words[1:] 里查坏旗标，
+# 于是首词怎么写错都查不到任何东西 —— 既没有回显命令行，也没有 ^^^，
+# 用户只看到一句「For the full list: wave -h」，看不出错在哪个词。
+out=$(wave --h 2>&1)
+plain=$(strip_ansi "$out")
+ok     "点名写错的旗标"   "$plain" "Unknown flag: --h"
+ok     "回显整条命令行"   "$plain" "wave --h"
+if printf '%s\n' "$plain" | grep -qE '^ +\^{3}$'; then
+    pass "用 ^^^ 指住那个旗标"
+else
+    fail "没有用 ^^^ 指住那个旗标"
+fi
+
+echo
 echo "========== 3. 包名打错：treee → tree =========="
 
 out=$(wave upgrade treee 2>&1)
