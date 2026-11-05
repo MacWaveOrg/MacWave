@@ -1755,7 +1755,7 @@ fi
 echo ""
 
 mw_say "🌊 If prompted 'Command not found', run the following command or open a new terminal window." \
-    "🌊 如果提示“找不到命令”，执行下列命令或打开新的终端窗口。"
+    "🌊 如果提示「找不到命令」，执行下列命令或打开新的终端窗口。"
 echo ""
 # 必须 source **刚追加进去的那个文件**（${RC_FILE}），不是「碰巧存在的」那个：
 # zsh 的行加在 ~/.zprofile，此时 source ~/.zshrc 并不会把它加载进来。
