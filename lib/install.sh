@@ -350,6 +350,41 @@ home_to_tilde() {
     fi
 }
 
+# 同上，但结果会**原样交给用户复制执行**，所以要照顾 shell 的展开规则：
+#   - `~` 只在引号外展开，`"~/a b/x"` 展开不了；含空格的片段写成 `~/"a b"/x`，
+#     bash、zsh 与 csh 都实测可用。
+#   - 路径不在家目录下且含空格时，整段加引号。
+home_to_tilde_arg() {
+    local path="$1"
+    local prefix="" rest="$path"
+    if [[ "$path" == "$HOME" || "$path" == "$HOME"/* ]]; then
+        prefix="~"
+        rest="${path#"$HOME"}"
+        rest="${rest#/}"
+        [[ -z "$rest" ]] && { printf '~'; return; }
+    fi
+    if [[ "$rest" == *" "* || "$rest" == *'"'* ]]; then
+        rest="${rest//\"/\\\"}"
+        printf '%s"%s"' "${prefix:+$prefix/}" "$rest"
+    else
+        printf '%s%s' "${prefix:+$prefix/}" "$rest"
+    fi
+}
+
+# 必须让 shell 自己展开的场合（grep 的匹配模式、csh 的双引号里）改用 $HOME/…：
+# 它在双引号内也会展开，而 ~ 不会。
+home_to_homevar() {
+    local path="$1"
+    if [[ "$path" == "$HOME" || "$path" == "$HOME"/* ]]; then
+        local rest="${path#"$HOME"}"
+        rest="${rest#/}"
+        [[ -z "$rest" ]] && { printf '$HOME'; return; }
+        printf '$HOME/%s' "$rest"
+    else
+        printf '%s' "$path"
+    fi
+}
+
 # ==========================================
 # 辅助函数：校验自定义目录，防止路径穿越
 # ==========================================
@@ -1566,6 +1601,9 @@ PATH_LINE="export PATH=\"$INSTALL_DIR:$LINKS_DIR:$LIB_DIR:\$PATH\""
 # 路径里没有空格时**不加内层引号**，与 Homebrew 逐字同形；含空格（自定义目录
 # 允许空格）时才加，否则那一行会被拆成两条命令。
 #
+# 家目录写成 ~（安装到 $HOME/.local/macwave 时）。`$( )` 里是新的引号上下文，
+# 所以 `eval "$(~/…/wave shellenv)"` 里的 ~ 会正常展开；写成 `"~/…"` 则不会。
+#
 # 去掉 4.3 之前的 `test -r ... &&` 守卫：代价是安装目录被删掉后每次登录报一次
 # "no such file or directory"，Homebrew 一直如此，换来的是用户只需照抄一行。
 #
@@ -1573,12 +1611,17 @@ PATH_LINE="export PATH=\"$INSTALL_DIR:$LINKS_DIR:$LIB_DIR:\$PATH\""
 # `wave shellenv` 的输出它们吃不下（实测报 "Too many )'s"），所以给等价的
 # csh 写法。守卫改成 `!~` 模式匹配，作用相同 —— 已在 csh 与 tcsh 上实测连跑
 # 三次不堆叠。
+#
+# 这里的字符串会被用户原样复制，所以 ~ 后面含空格的片段要写成 ~/"a b"。
+INSTALL_DIR_DISPLAY=$(home_to_tilde_arg "$INSTALL_DIR")
+LINKS_DIR_DISPLAY=$(home_to_tilde_arg "$LINKS_DIR")
+LIB_DIR_DISPLAY=$(home_to_tilde_arg "$LIB_DIR")
 if [[ "$SHELL_FAMILY" == "csh" ]]; then
-    SHELLENV_LINE="if ( \"\$PATH\" !~ *\"$LIB_DIR\"* ) setenv PATH \"$INSTALL_DIR:$LINKS_DIR:$LIB_DIR:\$PATH\""
-elif [[ "$LIB_DIR" == *" "* ]]; then
-    SHELLENV_LINE="eval \"\$(\"$LIB_DIR/wave\" shellenv)\""
+    # csh 的双引号里 ~ 不展开，而守卫模式又必须对展开后的 $PATH 生效，只能写 $HOME
+    # （它在双引号内会展开）：输出里没有绝对家目录，只是用 $HOME 代替了 ~。
+    SHELLENV_DISPLAY="if ( \"\$PATH\" !~ *\"$(home_to_homevar "$LIB_DIR")\"* ) setenv PATH \"$(home_to_homevar "$INSTALL_DIR"):$(home_to_homevar "$LINKS_DIR"):$(home_to_homevar "$LIB_DIR"):\$PATH\""
 else
-    SHELLENV_LINE="eval \"\$($LIB_DIR/wave shellenv)\""
+    SHELLENV_DISPLAY="eval \"\$($LIB_DIR_DISPLAY/wave shellenv)\""
 fi
 
 # 从 rc 文件里摘掉**旧版本**写进去的 PATH 行（连同标记行）。
@@ -1673,8 +1716,8 @@ else
 fi
 mw_say "🌊 Architecture: $ARCH" "🌊 架构：$ARCH"
 echo ""
-RC_DISPLAY=$(home_to_tilde "$RC_FILE")
-APPEND_CMD="echo '$SHELLENV_LINE' >> $RC_DISPLAY"
+RC_DISPLAY=$(home_to_tilde_arg "$RC_FILE")
+APPEND_CMD="echo '$SHELLENV_DISPLAY' >> $RC_DISPLAY"
 
 # 有旧条目时，把「删旧」和「追加新行」拼成**一条**命令：用户复制一次就够。
 #
@@ -1686,8 +1729,12 @@ APPEND_CMD="echo '$SHELLENV_LINE' >> $RC_DISPLAY"
 # dotfiles 仓库的符号链接，rename 会把它变成普通文件，链接就断了。
 MIGRATE_CMD=""
 if [[ -n "$EXISTING_RC" ]]; then
-    EXISTING_DISPLAY=$(home_to_tilde "$EXISTING_RC")
-    MIGRATE_CMD="grep -vxF -e '# MacWave' -e '$PATH_LINE' $EXISTING_DISPLAY > $EXISTING_DISPLAY.macwave && cat $EXISTING_DISPLAY.macwave > $EXISTING_DISPLAY && rm -f $EXISTING_DISPLAY.macwave && $APPEND_CMD"
+    EXISTING_DISPLAY=$(home_to_tilde_arg "$EXISTING_RC")
+    # 这一条里的旧 PATH 行是 **grep 的匹配模式**，必须与 rc 文件里那行逐字相等，
+    # 所以不能写 ~（引号内不展开），改用双引号包起来让 $HOME 自己展开。
+    PATH_LINE_DISPLAY=$(printf 'export PATH=\\"%s:%s:%s:\\$PATH\\"' \
+        "$(home_to_homevar "$INSTALL_DIR")" "$(home_to_homevar "$LINKS_DIR")" "$(home_to_homevar "$LIB_DIR")")
+    MIGRATE_CMD="grep -vxF -e '# MacWave' -e \"$PATH_LINE_DISPLAY\" $EXISTING_DISPLAY > $EXISTING_DISPLAY.macwave && cat $EXISTING_DISPLAY.macwave > $EXISTING_DISPLAY && rm -f $EXISTING_DISPLAY.macwave && $APPEND_CMD"
 fi
 
 # ==========================================
@@ -1723,7 +1770,7 @@ if [[ "$NEED_SUDO" == "true" ]]; then
         "🌊 本机的其他用户可运行已装的软件包，"
     mw_say "🌊 but each of them needs to run this once:" \
         "🌊 但每个用户需要执行："
-    echo -e "${YELLOW}    $SHELLENV_LINE${RESET}"
+    echo -e "${YELLOW}    $SHELLENV_DISPLAY${RESET}"
     mw_say "🌊 Changing packages (install / uninstall / upgrade) needs sudo:" \
         "🌊 改动软件包（安装 / 卸载 / 升级）需要 sudo："
     echo -e "${YELLOW}    sudo wave install <package>${RESET}"
