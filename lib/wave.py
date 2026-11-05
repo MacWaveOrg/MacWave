@@ -320,8 +320,12 @@ def main():
     # 只会说「update 不是命令」，把那条拼错的旗标一起吞了。而「建议」还会把
     # 它原样抄进去，用户照着改仍然错。所以这里单独查一遍：
     # 不在任何命令白名单里的旗标，一并报出来。
+    #
+    # 首词也要查：`wave --h` 这行里唯一的词就是写错的旗标，跳过 words[0] 就一条
+    # 旗标都查不到，于是既没有回显命令行、也没有 ^^^ 指住它 —— 只剩下
+    # 「For the full list: wave -h」这句，用户看不出错在哪。
     import flags as flags_module
-    bad_flags = flags_module.unknown_flags(words[1:])
+    bad_flags = flags_module.unknown_flags(words)
 
     if silent:
         quiet.unknown("command", FirstWord)
