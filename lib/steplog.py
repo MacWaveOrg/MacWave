@@ -23,6 +23,7 @@ import sys
 
 RED_BOLD = '\033[1;31m'
 YELLOW = '\033[33m'
+BOLD = '\033[1m'
 RESET = '\033[0m'
 
 # Trace lines are deliberately blue rather than dim. Grey (\033[2m) is unreadable
@@ -108,8 +109,21 @@ def _emit(label, value):
     print(f"{RED_BOLD}{head:<12}{value}{RESET}")
 
 
-def fail(reason, request=None, response=None, hint=None, extra=None):
+def hint_line(line, first=False):
+    """「Next」提示行（用法错误用）。
+
+    与 help.py「未知命令」那块的配色对齐：标签加粗、正文保持终端默认色，
+    只有「该敲什么」用绿色标出来（颜色码由调用方拼进 line）。黄色留给其余
+    失败里「接下来做什么」的建议。
+    """
+    prefix = "🌊 Next      " if first else "🌊           "
+    print(f"{BOLD}{prefix}{RESET}{line}")
+
+
+def fail(reason, request=None, response=None, hint=None, extra=None, usage=False):
     # Single exit point for failures: step, request, response, reason, next action.
+    # usage=True 表示「命令行本身用错」（未知旗标、旗标用错命令）：配色跟
+    # help.py 的「未知命令」保持一致，而不是整行上黄。
     print(f"{RED_BOLD}🌊 Error: {reason}{RESET}")
 
     if request:
@@ -127,6 +141,9 @@ def fail(reason, request=None, response=None, hint=None, extra=None):
     if hint:
         lines = hint if isinstance(hint, (list, tuple)) else str(hint).splitlines()
         for i, line in enumerate(lines):
+            if usage:
+                hint_line(line, first=(i == 0))
+                continue
             prefix = "🌊 Next      " if i == 0 else "🌊           "
             print(f"{YELLOW}{prefix}{line}{RESET}")
 

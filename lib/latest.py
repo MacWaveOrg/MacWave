@@ -254,15 +254,16 @@ def summarize(rows):
 # -------------------- 参数 --------------------
 
 ACCEPTED_HELP = [
-    "wave latest <name>     show the current and the newest version of one package",
-    "wave latest --all      the same for every installed package",
+    f"{GREEN}wave latest <name>{RESET}     show the current and the newest version of one package",
+    f"{GREEN}wave latest --all{RESET}      the same for every installed package",
     "optional: --max-time=<时长>   -v/--verbose",
 ]
 
 
 def reject_flag(flag):
     steplog.fail(f"illegal option {flag} for `wave latest`",
-                 hint=ACCEPTED_HELP)
+                 hint=ACCEPTED_HELP,
+                 usage=True)
 
 
 def split_arguments(input_string):

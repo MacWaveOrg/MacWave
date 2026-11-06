@@ -20,6 +20,7 @@ RESET = '\033[0m'
 
 from configpaths import load_base_dir, require_safe_token
 import domains
+import steplog
 import tls
 
 
@@ -284,7 +285,8 @@ def render_info(output_format, pkg_name, remote, record_text,
         # 而实际原因是「压根没有这条记录」—— 两者要分清楚。
         if record_text is None:
             print(f"{RED_BOLD}🌊 Error: {pkg_name} has no @common record in the index.{RESET}")
-            print(f"{YELLOW}🌊 Next      wave info {pkg_name} --json prints what is available{RESET}")
+            steplog.hint_line(f"{GREEN}wave info {pkg_name} --json{RESET} prints what is available",
+                              first=True)
             sys.exit(1)
         return record_text
 
@@ -390,15 +392,15 @@ def parse_info_arguments(words):
                 skip_next = True       # --max-time 1min 的空格写法
         else:
             print(f"{RED_BOLD}🌊 Error: unknown option {word}{RESET}")
-            print(f"{YELLOW}🌊 Next      wave info accepts --json, --yaml, "
-                  f"--toml or --raw{RESET}")
+            steplog.hint_line("wave info accepts --json, --yaml, --toml or --raw",
+                              first=True)
             sys.exit(1)
 
     if len(chosen) > 1:
         given = ", ".join(f"--{name}" for name in chosen)
         print(f"{RED_BOLD}🌊 Error: choose one output format, got: {given}{RESET}")
-        print(f"{YELLOW}🌊 Next      --json, --yaml, --toml and --raw are "
-              f"mutually exclusive{RESET}")
+        steplog.hint_line("--json, --yaml, --toml and --raw are mutually exclusive",
+                          first=True)
         sys.exit(1)
 
     return operands, (chosen[0] if chosen else None)
@@ -460,7 +462,8 @@ def handle_info_command(input_string):
         pkg_name = operands[0].partition("@")[0] if operands else ""
         if not pkg_name:
             print(f"{RED_BOLD}🌊 Error: Missing package name.{RESET}")
-            print(f"{YELLOW}🌊 Next      wave info <name> [--json|--yaml|--toml|--raw]{RESET}")
+            steplog.hint_line(f"{GREEN}wave info <name> [--json|--yaml|--toml|--raw]{RESET}",
+                              first=True)
             sys.exit(1)
         handle_info(pkg_name, output_format, budget)
     else:

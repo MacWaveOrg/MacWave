@@ -270,14 +270,22 @@ ok     "仍然点名哪个旗标"   "$plain" "illegal option --connect-time"
 ok     "仍然回显整条命令"   "$plain" "you ran: wave install jq --connect-time=1min"
 ok     "保留 --help 自查"   "$plain" "wave install --help"
 # 高亮只落在出错的旗标上：整行唯一的红色片段应当就是它
-if [[ "$out" == *$'\033[1;31m--connect-time'* ]]; then
+# 颜色按「未知命令」那块的配色来：旗标与 ^ 用普通红（31），不用加粗红。
+if [[ "$out" == *$'\033[31m--connect-time'* ]]; then
     pass "出错的旗标被单独标红"
 else
     fail "出错的旗标没有被标红"
 fi
 
+# Next 那几行不该再是黄字 —— 与「Did you mean:」保持一致：黑色正文，该敲的就是绿的。
+if [[ "$out" != *$'\033[33m'* ]]; then
+    pass "用法错误不再用黄色提示"
+else
+    fail "用法错误仍然是黄字"
+fi
+
 out=$(wave install jq --limt-rate=10M 2>&1)
-ok     "限速旗标拼错也给建议" "$out" "Did you mean --limit-rate?"
+ok     "限速旗标拼错也给建议" "$(strip_ansi "$out")" "Did you mean --limit-rate?"
 
 # 没有任何接近的候选时不要瞎猜 —— 编一个坏建议比不给建议更伤人。
 out=$(wave install jq --unkown-flag 2>&1)

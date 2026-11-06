@@ -16,6 +16,7 @@ from pathlib import Path
 
 # -------------------- 颜色定义 --------------------
 
+RED = '\033[31m'
 RED_BOLD = '\033[1;31m'
 GREEN = '\033[32m'
 YELLOW = '\033[33m'
@@ -291,9 +292,9 @@ def _flag_pointer(text, flag):
     # steplog._emit 会把整行包进 RED_BOLD。命令行若跟着一起红，「只让出错的那段
     # 显眼」就无从谈起 —— 所以先 RESET 回默认色，再单独把旗标标红，其余照旧。
     tail = text[offset + len(flag):]
-    shown = f"{text[:offset]}{RED_BOLD}{flag}{RESET}{tail}"
+    shown = f"{text[:offset]}{RED}{flag}{RESET}{tail}"
     carets = " " * (len(label) + offset) + "^" * len(flag)
-    return f"{RESET}{label}{shown}\n{RED_BOLD}{carets}"
+    return f"{RESET}{label}{shown}\n{RED}{carets}"
 
 
 def parse_flags(input_string, command="install", shown=None):
@@ -353,27 +354,30 @@ def parse_flags(input_string, command="install", shown=None):
                 hint=[f"`{flag}` removes the older versions *after* upgrading to the latest one,",
                       "so it needs a command that installs and prunes in one go.",
                       "Did you mean:",
-                      f"  wave upgrade {package} {flag}"])
+                      f"  {GREEN}wave upgrade {package} {flag}{RESET}"],
+                usage=True)
         if flag in OTHER_COMMAND_FLAGS:
             commands = OTHER_COMMAND_FLAGS[flag]
             steplog.fail(
                 f"illegal option {flag} for `wave {command}`: "
                 f"it belongs to {', '.join(f'`{item}`' for item in commands)}",
                 extra=_flag_pointer((shown or input_string).strip(), flag),
-                hint=["Did you mean:"] + [f"  {item}" for item in commands]
-                     + [f"`wave {commands[0].split()[1]} --help` lists the rest"])
+                hint=["Did you mean:"] + [f"  {GREEN}{item}{RESET}" for item in commands]
+                     + [f"{GREEN}`wave {commands[0].split()[1]} --help`{RESET} lists the rest"],
+                usage=True)
         # 拼错时给一个候选再报错。--connect-time 与 --connect-timeout 只差三个
         # 字母，只说 "illegal option" 等于让用户自己回去翻 --help；
         # 候选只从**当前命令的白名单**里取，所以不会推荐一条这里不接受的长参数。
         suggestion = difflib.get_close_matches(flag, sorted(ALLOWED_FLAGS), n=1, cutoff=0.6)
         hint = []
         if suggestion:
-            hint.append(f"Did you mean {suggestion[0]}?")
-        hint.append(f"`wave {command} --help` lists the flags this command accepts")
+            hint.append(f"Did you mean {GREEN}{suggestion[0]}{RESET}?")
+        hint.append(f"{GREEN}`wave {command} --help`{RESET} lists the flags this command accepts")
         steplog.fail(
             f"illegal option {flag} for `wave {command}`",
             extra=_flag_pointer((shown or input_string).strip(), flag),
-            hint=hint)
+            hint=hint,
+            usage=True)
 
     return flags
 

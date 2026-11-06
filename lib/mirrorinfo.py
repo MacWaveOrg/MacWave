@@ -18,6 +18,7 @@ import os
 import sys
 
 import domains
+import steplog
 
 
 # -------------------- 颜色定义 --------------------
@@ -199,20 +200,20 @@ def parse_args(words):
     for word in words:
         if word.startswith("-") and word not in FLAGS:
             print(f"{RED_BOLD}🌊 Error: unknown option {word}{RESET}")
-            print(f"{YELLOW}🌊 Next      wave mirror --help lists the flags it accepts{RESET}")
+            steplog.hint_line(f"{GREEN}wave mirror --help{RESET} lists the flags it accepts", first=True)
             sys.exit(1)
 
     chosen = [name for name in FORMATS if f"--{name}" in words]
     if len(chosen) > 1:
         given = ", ".join(f"--{name}" for name in chosen)
         print(f"{RED_BOLD}🌊 Error: choose one output format, got: {given}{RESET}")
-        print(f"{YELLOW}🌊 Next      --json, --yaml, --toml and --raw are mutually exclusive{RESET}")
+        steplog.hint_line("--json, --yaml, --toml and --raw are mutually exclusive", first=True)
         sys.exit(1)
 
     only_set = "--only-set" in words
     if only_set and chosen and chosen[0] != "raw":
         print(f"{RED_BOLD}🌊 Error: --only-set only applies to --raw{RESET}")
-        print(f"{YELLOW}🌊 Next      wave mirror --raw --only-set{RESET}")
+        steplog.hint_line(f"{GREEN}wave mirror --raw --only-set{RESET}", first=True)
         sys.exit(1)
 
     return {
