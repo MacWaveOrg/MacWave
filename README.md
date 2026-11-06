@@ -369,6 +369,7 @@ bat              by David Peter
 batt             by charlie0129
 btop             by Aristocratos
 choma            by opa334
+cloc             by Al Danial
 delta            by dandavison
 dust             by bootandy
 eza              by Christina Sørensen and the eza community
