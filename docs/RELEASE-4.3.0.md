@@ -4,10 +4,20 @@
 - Branch: `4.3` (new; cut from `d084c9d`, the last commit on `4.2`. The 4.2.5 tag stays at `926a48a`)
 - Previous release: [4.2.5](RELEASE-4.2.5.md)
 
-## Please upgrade: 4.2.0 and earlier ship a defect that lets the whole machine be taken over
+## Please upgrade: every release up to 4.2.5 ships a defect that lets the whole machine be taken over
 
-This is not "you may want to upgrade", it is **you need to upgrade**. The three items below
-are ordered by severity.
+This is not "you may want to upgrade", it is **you need to upgrade**. Every version from at
+least 4.0.0 through 4.2.5 contains the `chown -R` described in item ①; 4.3.0 is the first
+release that does not.
+
+The three items below are ordered by severity, and only ② is a vulnerability in the CVE
+sense — ① is the precondition that makes ② reachable.
+
+| Item | CVSS 3.1 | CVSS 4.0 |
+| --- | --- | --- |
+| ① system directories accepted as an install root | 7.2 — `CVSS:3.1/AV:L/AC:H/PR:L/UI:R/S:C/C:N/I:H/A:H` | 5.9 — `CVSS:4.0/AV:L/AC:L/AT:P/PR:L/UI:A/VC:N/VI:H/VA:H/SC:N/SI:H/SA:H` |
+| ② user-owned tree on the system `PATH` | **7.5** — `CVSS:3.1/AV:L/AC:H/PR:L/UI:R/S:C/C:H/I:H/A:H` | 6.9 — `CVSS:4.0/AV:L/AC:L/AT:P/PR:L/UI:P/VC:H/VI:H/VA:N/SC:H/SI:H/SA:N` |
+| ③ update scripts crash on 4.2.1 / 4.2.2 | not a vulnerability (availability defect, no attacker) | — |
 
 ### ① Installing into `/usr/local` chowns all of Homebrew
 
@@ -37,7 +47,7 @@ first", so `/opt/macwave/links/jq` is **writable by that user**. Any process run
 user can replace it, and it may then be executed by other users, by scripts, or by root — a
 textbook local privilege-escalation path.
 
-**As of 4.3.0**: the install tree is owned by `root:<admin group>` with mode 755.
+**As of 4.3.0**: a fresh install hands the tree to `root:<admin group>` with mode 755.
 
 | Who | Permission |
 | --- | --- |
@@ -122,9 +132,12 @@ instead:
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/install.sh)"
 ```
 
-**If you installed into `/opt/macwave` or `/usr/local/macwave`**: after upgrading, the install
-tree is owned by `root:<admin group>`, so installing packages afterwards needs
-`sudo wave install <package>`. This change is deliberate; see item ② above.
+**If you installed into `/opt/macwave` or `/usr/local/macwave`**: `wave selfupdate` replaces
+the files but does **not** change who owns the install tree — it keeps the owner it already
+had (the account that installed it). Only a fresh run of `install.sh` hands the tree over to
+`root:<admin group>` with mode 755. Until that happens, item ② is still reachable on that
+machine, and `wave install` still works without `sudo`. Reinstall once if you want the
+handover now; a later release will make `selfupdate` do it.
 
 ## Branch changes
 
@@ -152,9 +165,19 @@ tree is owned by `root:<admin group>`, so installing packages afterwards needs
 - 分支：`4.3`（新建，从 `4.2` 的最后一个提交 `d084c9d` 切出；4.2.5 的 tag 仍在 `926a48a`）
 - 上一版：[4.2.5](RELEASE-4.2.5.md)
 
-## 请务必升级：4.2.0 及更早存在一个能让整台机器被接管的缺陷
+## 请务必升级：4.2.5 及更早的每个版本都存在一个能让整台机器被接管的缺陷
 
-这不是「建议升级」，是**需要升级**。下面三条按严重程度排列。
+这不是「建议升级」，是**需要升级**。至少从 4.0.0 到 4.2.5，每个版本都带着 ① 里那条
+`chown -R`；4.3.0 是第一个没有它的版本。
+
+下面三条按严重程度排列。其中只有 ② 是 CVE 意义上的漏洞 —— ① 是让 ② 得以成立的前置
+条件。
+
+| 项 | CVSS 3.1 | CVSS 4.0 |
+| --- | --- | --- |
+| ① 系统目录可以被当成安装根目录 | 7.2 —— `CVSS:3.1/AV:L/AC:H/PR:L/UI:R/S:C/C:N/I:H/A:H` | 5.9 —— `CVSS:4.0/AV:L/AC:L/AT:P/PR:L/UI:A/VC:N/VI:H/VA:H/SC:N/SI:H/SA:H` |
+| ② 系统 `PATH` 上的二进制归安装者所有 | **7.5** —— `CVSS:3.1/AV:L/AC:H/PR:L/UI:R/S:C/C:H/I:H/A:H` | 6.9 —— `CVSS:4.0/AV:L/AC:L/AT:P/PR:L/UI:P/VC:H/VI:H/VA:N/SC:H/SI:H/SA:N` |
+| ③ 升级脚本在 4.2.1 / 4.2.2 上崩 | 不是漏洞（可用性缺陷，无攻击者） | — |
 
 ### ① 装到 `/usr/local` 时，会 chown 整个 Homebrew
 
@@ -181,7 +204,7 @@ sudo chown -R "$CURRENT_USER": "$BASE_DIR"     # BASE_DIR = /usr/local
 `/opt/macwave/links/jq` 是**用户可写**的。任何以该用户身份运行的进程都能替换它，
 而它可能被别的用户、脚本甚至 root 执行 —— 这是教科书式的本地提权路径。
 
-**4.3.0 起**：安装树归 `root:<管理员组>`、权限 755。
+**4.3.0 起**：全新安装会把树交给 `root:<管理员组>`、权限 755（自助升级不改属主，见「升级方式」）。
 
 | 角色 | 权限 |
 | --- | --- |
@@ -261,9 +284,11 @@ wave selfupdate
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/install.sh)"
 ```
 
-**如果你当初装在 `/opt/macwave` 或 `/usr/local/macwave`**：升级后安装树会归
-`root:<管理员组>` 所有，之后装包需要 `sudo wave install <包>`。这是刻意的变化，
-理由见上面第 ② 条。
+**如果你当初装在 `/opt/macwave` 或 `/usr/local/macwave`**：`wave selfupdate` 只换文件，
+**不改安装树的属主** —— 它保持原来的属主（当初装它的那个账号）。只有重新跑一次
+`install.sh` 才会把树交给 `root:<管理员组>`、权限 755。在重装之前，那台机器上的 ②
+仍然可被利用，`wave install` 也仍然不需要 `sudo`。想立刻拿到新的所有权模型就重装一次；
+后续版本会让 `selfupdate` 自己完成这一步。
 
 ## 分支变化
 

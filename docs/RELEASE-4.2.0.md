@@ -1,3 +1,368 @@
+# MacWave 4.2.0 Release Notes
+
+**CVSS 3.1: 8.0 (High)** — `CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:C/C:H/I:H/A:N`
+
+**CVSS 4.0: 8.8 (High)** — `CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:H/VA:N/SC:H/SI:H/SA:N`
+
+Security advisory: a CVE has been requested; the ID is pending.
+
+Why these metrics: `PR:N` because the attacker needs no privileges on the victim's Mac;
+`AC:H` (`AT:P` in 4.0) because a malicious payload must first reach the index and the escape
+then needs something to read or write through it; `S:C` because the impact lands outside
+MacWave's own install tree.
+
+> What 4.2.0 changes, and how to upgrade.
+> This is a **security release**: it adds the first line of defence against symlinks that
+> ship inside a payload — if a link resolves outside the install root, the install is
+> refused. The command line, the data formats and the install layout are unchanged.
+>
+> Release branch: `4.2`
+
+---
+
+## Summary
+
+MacWave downloads executable software and then runs it. There was a gap: unpacking only
+filtered `../` in member **names**, and said nothing about a symlink's **target**. A payload
+could legitimately contain
+
+```
+lib/innocent.dylib -> /Users/someone/.ssh/id_rsa
+```
+
+The name stays obediently inside the target directory; where it points is anywhere at all.
+This release closes that hole.
+
+**If you are still on 4.1.x or older, please upgrade as soon as you can.** This is not a
+routine improvement — in the experiment below, a 776-byte package on the older versions can
+read your private keys and write files anywhere as you. 4.2.0 is the first version that
+blocks it. The data is in section 1.
+
+| What you will see | What it means |
+| --- | --- |
+| ✅ One extra line at install time: `🌊 Running security checks...` | A step between unpacking and writing to disk; nothing else is printed on the normal path |
+| ✅ A malicious payload is refused, naming which link points where | The error shape is shown in section 2 |
+| ✅ Normal packages are completely unaffected | All 2413 links in the tree installed on this machine pass, see section 4 |
+
+---
+
+## 1. The experiment: what a 776-byte package can do on older versions
+
+This is not a hypothetical risk. The package below is 776 bytes — three symlinks plus a
+short script:
+
+```
+./lib/evil_read   -> /usr/local/test/test_read      read: any readable file
+./lib/evil_write  -> /usr/local/test/test_write     write: any writable path
+./lib/evil_exec   -> /usr/local/test/test_excute    exec: any executable file
+./lib/hook.sh     reads -> executes -> writes through the three links above
+```
+
+The targets live under `/usr/local/test/` — which is **not** on this release's exemption
+list (SIP does not protect it, and it may hold user data), so it also proves the rule is not
+a blanket "allow everything starting with this prefix".
+
+### Four ways to install, side by side
+
+> In this table **✅ = blocked (safe for you)** and **❌ = escape succeeded (dangerous for
+> you)** — the two viewpoints are easy to read backwards, so the colours here are always
+> from your point of view.
+
+| Install path | Reads `test_read` | Executes `test_excute` | Writes `test_write` | Verdict |
+| --- | --- | --- | --- | --- |
+| Plain `tar xzf` (no package manager) | ❌ read `BAD! YOU READ IT!` | ❌ printed `Execution successful!` | ❌ written `write_on_purpose` | 💀 fully exposed |
+| **MacWave 4.1.5** | ❌ same | ❌ same | ❌ same | 💀 fully exposed |
+| **MacWave 4.2.0** · dependency form `tree` | ✅ install refused | ✅ install refused | ✅ install refused | 🛡️ blocked |
+| **MacWave 4.2.0** · package form `binary` | ✅ install refused | ✅ install refused | ✅ install refused | 🛡️ blocked |
+
+**Actual output on the older versions (a plain unpack behaves exactly like 4.1.5):**
+
+```
+--- READ  through evil_read ---
+    Try to READ the file!
+
+    BAD! YOU READ IT!          ← read escaped the tree
+--- EXEC  through evil_exec ---
+    Execution successful!
+    BAD!                       ← ran an executable outside the tree
+--- WRITE through evil_write ---
+    wrote write_on_purpose     ← wrote a file outside the tree
+```
+
+Those three `BAD!` lines are the answer: **on older versions a 776-byte payload can read,
+execute and write anywhere outside the install tree.** Point the read at `~/.ssh/id_rsa`,
+at browser cookies, or at a key exported from Keychain and the effect is the same — only the
+target file name differs.
+
+**On 4.2.0 the same package stops here:**
+
+```
+🌊 Extraction successful!
+🌊 Running security checks...
+🌊 Error: 3 symbolic link(s) in evil@1.0 point outside /…/extract_24397
+   …/lib/evil_write -> /usr/local/test/test_write
+   …/lib/evil_exec  -> /usr/local/test/test_excute
+   …/lib/evil_read  -> /usr/local/test/test_read
+🌊 Only these locations are exempt: /bin, /sbin, /usr/bin, /usr/sbin, /usr/lib, /usr/libexec, /System, /Library/Apple
+🌊 Refusing this payload. Report it to the index maintainer.
+🌊 Error: evil@1.0 was not installed.
+```
+
+All three links are **named one by one**; none is left out.
+
+### Nothing is left behind after the refusal
+
+| Check | Expected | Measured |
+| --- | --- | --- |
+| Install directory `deps/evil/evil@1.0` | must not exist | ✅ not created |
+| Temporary extraction directory `downloads/tmp/extract_*` | must be removed | ✅ emptied, only the original tarball remains |
+| Target `test_write` | must not be written | ✅ byte-for-byte identical to before the test |
+| Target `test_read` | must not be modified | ✅ unchanged |
+| Target `test_excute` | must not be modified | ✅ unchanged |
+
+The first two rows are the important ones: on the refusal path the temporary extraction
+directory is removed before exiting. Otherwise the malicious files would sit in
+`downloads/tmp` waiting to be touched again, or carried off in a later archive.
+
+### The same 4.2.0 code installs a legitimate package normally
+
+To make sure "blocking" did not turn into "killing the innocent", a legitimate package with
+the following links was installed through **the same install path**:
+
+| Link in the package | Points at | Kind | Result |
+| --- | --- | --- | --- |
+| `ok_rel` | `./tool` | relative, inside the tree | ✅ allowed and written |
+| `ok_system` | `/usr/bin/php` | exempt: `/usr/bin` | ✅ allowed and written |
+| `ok_fw` | `/System/Library/Frameworks/AppKit.framework/AppKit` | exempt: `/System` | ✅ allowed and written |
+
+None of the three was misjudged. In other words, this defence tells "inside the install
+root" apart from "outside", not "looks like a system path" from "does not".
+
+---
+
+## 2. Symlinks inside a payload must not leave the install root
+
+The new rule: **a symlink shipped inside a payload must resolve to a path inside the install
+root; anything outside is refused.**
+
+The threat has two halves, and neither works on its own:
+
+| What an attacker can do with an escaping link | Consequence |
+| --- | --- |
+| Point the link at a private file (`~/.ssh/id_rsa`, `~/Library/Messages/…`) and ship a program that reads it | Reads content the user never authorised |
+| Point the link at a path MacWave will later **write** — dylib relocation rewriting, `.part` → `mv` on install, `rm -rf` on uninstall | Writes and deletes outside the install tree, as the user |
+
+### Why the extraction tool cannot do this for us
+
+Measured on Python 3.15.2, none of the three extraction paths can be relied on:
+
+| Path | Escaping link | Result |
+| --- | --- | --- |
+| `.zip` / `.tar.*` through `unzip` / `tar` | extracted | the tool ignores link targets |
+| `.conda` through `tarfile.extractall(filter='tar')` | extracted | same |
+| same, `filter='data'` | refused (`AbsoluteLinkError`) | but it also refuses legitimate links that conda packages need |
+
+The last row is the crux: the option that refuses cannot be used, and the one that can be
+used does not refuse. The check therefore has to be our own, performed **after** extraction.
+
+### Where it runs
+
+```
+payload → extract to temp dir → check links → write to disk → relocation → create links
+                                 ↑
+                 lib/configpaths.py       assert_links_inside()
+                 surfboard/depsmanager.sh mw_assert_no_escaping_links()
+```
+
+Both install forms, `tree` (dependencies) and `binary` (packages), go through this gate.
+
+On refusal the temporary extraction directory is removed before exiting — on the normal path
+the caller does that after the install, but this path is an `exit` and never reaches it; not
+removing it would leave the malicious files sitting in `downloads/tmp`.
+
+The shape of the error:
+
+```
+🌊 Running security checks...
+🌊 Error: 1 symbolic link(s) in bad@1.0 point outside /…/downloads/tmp/extract_12059
+   …/lib/evil -> /private/etc/passwd
+🌊 A link that leaves the install root can read private files, or make a later write (relocation, rename, uninstall) land outside the tree.
+🌊 Only these locations are exempt: /bin, /sbin, /usr/bin, /usr/sbin, /usr/lib, /usr/libexec, /System, /Library/Apple
+🌊 Refusing this payload. Report it to the index maintainer.
+🌊 Error: bad@1.0 was not installed.
+```
+
+### The one exception: system library locations
+
+A link landing in one of the locations below (including subdirectories) does not count as
+escaping:
+
+```
+/bin   /sbin   /usr/bin   /usr/sbin   /usr/lib   /usr/libexec
+/System   /Library/Apple
+```
+
+Both reasons below have to hold at once, which is why only these few paths are opened up:
+
+1. **SIP protects them.** System Integrity Protection refuses writes to these paths even for
+   root, so the "write through the link" half of the threat does not exist — and upstream
+   artifacts already contain legitimate references to `/usr/bin`.
+2. **They hold no private files.** Only the operating system's own binaries and libraries,
+   so the "read through the link" half does not exist either.
+
+Nothing else is exempt: `/Users`, `/Applications`, the non-`Apple/` parts of `/Library`,
+`/private`, `/opt`, `/etc`, `/var` — all of them hold user data, and most are not protected
+by SIP.
+
+The comparison is done **path segment by path segment**, not as a string prefix: `/usrlocal`
+is not treated as `/usr`.
+
+### Boundaries
+
+- **Dangling links** are judged the same way. `resolve()` does not require the target to
+  exist; lexically leaving the root is enough — a dangling link to `/opt/nothing-here`
+  becomes a real escape the moment that path appears.
+- **Links pointing at directories** are checked too, not only links to files.
+- **The links we create ourselves are unaffected**: `links/<name>` is produced by
+  `pkg/linker.py` in a fixed shape (a relative path always pointing at `bin/`), which cannot
+  escape by construction.
+
+---
+
+## 3. Tests
+
+New `scripts/linksafety_test.sh`, 25 assertions, fully offline:
+
+| Coverage | Content |
+| --- | --- |
+| Verdicts | relative inside / absolute inside / dangling but inside → allowed; absolute outside / relative climbing out / pointing at a directory / dangling and pointing outside → refused |
+| Exemptions | `/usr/bin`, `/usr/lib`, `/System/…`, `/Library/Apple/…` allowed; `$WORK/fake_usr` is not `/usr` |
+| Error text | names the escaping link, states the consequence, lists the exemptions, gives the next step |
+| Real funnel | a payload with an escaping link dropped into `downloads/tmp` and run through the whole `mw_install_artifact`: refused, **no install directory created**, temporary extraction directory cleaned up |
+| False-positive guard | a legitimate payload with a `/usr/lib` link must install successfully |
+| Bypass guard | both call sites, `tree` and `binary`, must exist |
+
+Both pipelines (GitHub Actions `Format Test` and CircleCI `quick-feedback`) run it.
+
+---
+
+## 4. Why we are not worried about false positives
+
+Before shipping, the tree installed on this machine was scanned (`deps/`, `bin/` and
+`links/`, without following directory links):
+
+| Category | Count | Verdict |
+| --- | --- | --- |
+| Inside the install root | **2413** | ✅ allowed |
+| On an exempt system location | 0 | ✅ allowed |
+| Escaping (would be refused) | **0** | — |
+| Dangling and pointing outside | 0 | — |
+
+All 2413 links pass — and they were all unpacked from the same batch of Deps payloads, so
+"what a legitimate payload's links look like" is backed by measurement rather than by a rule
+designed from intuition.
+
+---
+
+## Compatibility
+
+- **No command-line change**: no flag was added, removed or altered.
+- **No data-format change**: neither the index nor the configuration changes.
+- **No install-layout change**: still the four directories `lib/`, `net/`, `pkg/`,
+  `surfboard/`.
+- The only behaviour change is the new refusal logic, and it applies only to escaping links.
+
+---
+
+## Upgrading
+
+```bash
+wave selfupdate
+```
+
+An in-place 4.x upgrade: no sudo, no data-format change, no migration step.
+
+**You can verify it yourself afterwards** (0.2 seconds, nothing needs to be installed):
+
+```bash
+mkdir -p /tmp/t/lib && ln -s /etc/hosts /tmp/t/lib/evil && touch /tmp/t/lib/ok && ln -s ./ok /tmp/t/lib/fine
+python3 ~/.local/macwave/lib/configpaths.py --check-links /tmp/t
+```
+
+| Version | Actual output | Exit code | Verdict |
+| --- | --- | --- | --- |
+| **4.2.0 and later** | `Error: 1 symbolic link(s) in /tmp/t point outside /private/tmp/t`, naming `lib/evil -> /private/etc/hosts` | 1 | ✅ it caught it |
+| **4.1.x** | `This module is not meant to be run directly.` | 1 | ❌ no such check |
+
+Those two lines on 4.1.x do not mean "the check passed", they mean **that version does not
+know this entry point at all** — the check does not exist there. To tell which version you
+are on, look for whether the output names the escaping link.
+
+Delete `/tmp/t/lib/evil` and run it again: 4.2.0 returns 0 silently, which is what
+"allowing legitimate links" looks like day to day.
+
+For a system-prefix install, use `/opt/macwave/lib/configpaths.py` instead.
+
+---
+
+## Known limitations
+
+- The check runs **after** extraction, so an escaping link exists briefly inside
+  `downloads/tmp/extract_*` (and is then deleted). What is actually dangerous is "writing
+  through it" and "reading through it", and both can only happen once the payload is on disk.
+- Only links inside a payload are checked. **Escaping links already present in an installed
+  tree from an earlier version are not cleaned up by this release** — the measurement above
+  found none on this machine, but trees installed before the upgrade were never checked.
+- We do not judge whether a link target is "safe", only whether it is "inside the install
+  root, or on an exempt system location". A link to `/etc` is refused and a link to
+  `/usr/bin` is allowed, regardless of what the target itself is.
+
+---
+
+## Two index-side fixes (not in this repository, shipped in the same batch)
+
+- `dust@1.2.7` was missing its `file` field, so clients refused it before downloading
+  (`No file field for dust@1.2.7`). The artifact has been re-published to `Bottle` for both
+  architectures, and the `file` field is filled in from the upstream name.
+- `ipsw@3.1.741` has been **removed** from the index: upstream renamed the tool itself to
+  `ipswd` in that version, and the package no longer contains an executable named `ipsw`.
+  `bin_name` lives in `_ipsw@common` and applies to every version, so changing only 3.1.741
+  would break 3.1.728–3.1.739 as well. Without that record, `wave install ipsw` resolves to
+  3.1.739, which installs a working tool. Restoring 3.1.741 needs a separate `ipswd`
+  package, not an extra record.
+
+---
+
+## Data shipped with this release
+
+No data-format change.
+
+```
+macwavedata/latest.toml                  which version is the latest
+macwavedata/4.2.0/update_commands.sh     how exactly this version installs
+```
+
+`update_commands.sh` is frozen per version and is not touched after release.
+
+```
+version       4.2.0
+release_date  2026-11-03
+build_number  307A1409
+branch        4.2
+```
+
+---
+
+**CVSS 3.1：8.0（High 高危）** —— `CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:C/C:H/I:H/A:N`
+
+**CVSS 4.0：8.8（High 高危）** —— `CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:H/VA:N/SC:H/SI:H/SA:N`
+
+安全公告：已申请 CVE 编号，待分配。
+
+评分依据：`PR:N` —— 攻击者在受害者机器上不需要任何权限；`AC:H`（4.0 里是 `AT:P`）——
+恶意产物得先进索引，且越界之后还要有可读或可写的落点；`S:C` —— 影响落在 MacWave
+自己的安装树之外。
+
 # MacWave 4.2.0 发布说明
 
 > 本文说明 4.2.0 的变更范围与升级方式。
