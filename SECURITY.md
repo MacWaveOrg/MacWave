@@ -125,7 +125,9 @@ crossing a major version requires reinstalling from
 
 | Version | Supported |
 | --- | --- |
-| 4.1.x | ✅ |
+| 4.3.x | ✅ |
+| 4.2.x | ❌ |
+| 4.1.x | ❌ |
 | 4.0.x | ❌ |
 | 3.x and older | ❌ |
 
