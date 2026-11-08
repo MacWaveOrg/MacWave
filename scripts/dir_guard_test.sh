@@ -228,6 +228,168 @@ else
 fi
 
 echo
+echo "========== 9. selfupdate 也要把系统级安装树交给 root =========="
+
+# 4.3.0 只让 install.sh 做了这一步。升级是最常见的路径：`wave selfupdate`
+# 若不迁移属主，升级上来的机器仍然「用户可写系统 PATH 上的二进制」，② 没修好。
+SELFUPDATE_SH="$REPO_DIR/lib/selfupdate.sh"
+
+if [[ -f "$SELFUPDATE_SH" ]]; then
+    pass "selfupdate.sh 存在"
+else
+    fail "找不到 $SELFUPDATE_SH"
+fi
+
+if grep -q 'hand_over_system_install "\$BASE_DIR"' "$SELFUPDATE_SH"; then
+    pass "selfupdate 调用了属主迁移"
+else
+    fail "selfupdate 没有把安装树交给 root（升级路径上的 ② 仍然成立）"
+fi
+
+if grep -q 'chown -R "root:' "$SELFUPDATE_SH" && \
+   grep -q 'chmod -R u+rwX,go+rX,go-w' "$SELFUPDATE_SH"; then
+    pass "selfupdate 与 install.sh 用同一套所有权模型"
+else
+    fail "selfupdate 的属主/权限规则与 install.sh 不一致"
+fi
+
+# 顺序：迁移必须在所有写树的动作之后。反了的话，迁移之后的写入要用 sudo，
+# 本次升级会自己卡死；更糟的是先 chown 再写，写出来的文件又回到用户所有。
+LAUNCHER_LINE=$(grep -n 'write_launcher "\$BASE_DIR"' "$SELFUPDATE_SH" | head -1 | cut -d: -f1)
+HANDOVER_LINE=$(grep -n 'hand_over_system_install "\$BASE_DIR"' "$SELFUPDATE_SH" | head -1 | cut -d: -f1)
+if [[ -n "$LAUNCHER_LINE" && -n "$HANDOVER_LINE" && "$HANDOVER_LINE" -gt "$LAUNCHER_LINE" ]]; then
+    pass "属主迁移在写 launcher 之后（${LAUNCHER_LINE} < ${HANDOVER_LINE}）"
+else
+    fail "属主迁移的位置不对（launcher=${LAUNCHER_LINE:-?}, handover=${HANDOVER_LINE:-?}）"
+fi
+
+# 行为：把两个函数抽出来，用假的 sudo 观察它到底下发了什么命令。
+SELF_BODY="$(sed -n '/^admin_group() {/,/^}/p' "$SELFUPDATE_SH")
+$(sed -n '/^hand_over_system_install() {/,/^}/p' "$SELFUPDATE_SH")"
+
+if [[ "$SELF_BODY" != *hand_over_system_install* || "$SELF_BODY" != *admin_group* ]]; then
+    fail "没能从 selfupdate.sh 抽出 admin_group / hand_over_system_install"
+else
+    pass "抽出了 admin_group 与 hand_over_system_install"
+fi
+
+mkdir -p "$WORK/bin"
+SUDO_LOG="$WORK/sudo.log"
+cat > "$WORK/bin/sudo" <<'SHIM'
+#!/bin/bash
+# 记录调用；chown/chmod 只记录不执行（测试里没有 root，执行必然失败），
+# rm 之类照常执行 —— 测试目录都在 $WORK 里，删掉是预期的。
+printf '%s\n' "$*" >> "$SUDO_LOG"
+case "$1" in
+    chown|chmod) exit 0 ;;
+esac
+exec "$@"
+SHIM
+chmod 755 "$WORK/bin/sudo"
+
+probe_handover() {   # probe_handover <need_sudo> <dir>
+    : > "$SUDO_LOG"
+    PATH="$WORK/bin:$PATH" SUDO_LOG="$SUDO_LOG" \
+        bash -c 'source /dev/stdin <<< "$1"; NEED_SUDO="$2"; CURRENT_USER="$(whoami)"; hand_over_system_install "$3"' \
+        _ "$SELF_BODY" "$1" "$2" >/dev/null 2>&1
+    cat "$SUDO_LOG"
+}
+
+TARGET="$WORK/sys-level-macwave"
+mkdir -p "$TARGET/lib"
+
+CALLS=$(probe_handover true "$TARGET")
+if [[ "$CALLS" == *"chown -R root:"*"$TARGET"* ]]; then
+    pass "系统级：把树交给 root"
+else
+    fail "系统级没有下发 chown root（实际：${CALLS:-无}）"
+fi
+if [[ "$CALLS" == *"chmod -R u+rwX,go+rX,go-w"*"$TARGET"* ]]; then
+    pass "系统级：权限收敛成 755 语义"
+else
+    fail "系统级没有下发 755 的 chmod（实际：${CALLS:-无}）"
+fi
+
+CALLS=$(probe_handover false "$TARGET")
+if [[ -z "$CALLS" ]]; then
+    pass "用户级安装不动属主"
+else
+    fail "用户级安装也动了属主（实际：${CALLS}）"
+fi
+
+echo
+echo "========== 10. uninstall 只删真正的 MacWave 树 =========="
+
+# base_dir 来自 config.json，而用户级配置对任何以该用户身份运行的进程都可写。
+# 不校验就拿去 `sudo rm -rf`，一条被改过的 base_dir 就能删掉 /usr/local。
+UNINSTALL_SH="$REPO_DIR/lib/uninstall.sh"
+
+if grep -q 'skip_reason' "$UNINSTALL_SH" && grep -q 'lib/wave.py' "$UNINSTALL_SH"; then
+    pass "uninstall 有「是不是 MacWave 树」的判据"
+else
+    fail "uninstall 仍然直接 rm -rf 配置里的 base_dir"
+fi
+
+# 必须跑副本，而且每次都要重新拷：卸载脚本收尾时会删掉自己（$0，判据是内容里
+# 有 "MacWave Uninstaller"）。直接跑仓库里那份，等于把 lib/uninstall.sh 从工作区
+# 删掉 —— 已经踩过一次；同一个副本跑第二次会找不到文件。
+run_uninstall() {   # run_uninstall <测试根>
+    local copy="$WORK/uninstall-copy.sh"
+    cp "$UNINSTALL_SH" "$copy"
+    PATH="$WORK/bin:$PATH" SUDO_LOG="$SUDO_LOG" MACWAVE_TEST="$1" \
+        bash "$copy" --force 2>&1
+}
+
+# 真实跑一遍：两个目录，一个像 MacWave、一个不像。
+UBOX="$WORK/uninstall"
+mkdir -p "$UBOX/opt/macwave_config"
+DECOY="$UBOX/usr/local"
+mkdir -p "$DECOY" && echo keep > "$DECOY/precious.txt"
+REAL="$UBOX/opt/macwave"
+mkdir -p "$REAL/lib" && echo x > "$REAL/lib/wave.py"
+
+printf '{"base_dir": "%s"}\n' "$DECOY" > "$UBOX/opt/macwave_config/config.json"
+OUT=$(run_uninstall "$UBOX")
+if [[ -f "$DECOY/precious.txt" ]]; then
+    pass "非 MacWave 目录没被删"
+else
+    fail "非 MacWave 目录被删掉了"
+fi
+if [[ "$OUT" == *"Skipping"* && "$OUT" == *"not a MacWave install"* ]]; then
+    pass "跳过时点名了原因"
+else
+    fail "跳过了却没点名原因（实际：${OUT:0:200}）"
+fi
+
+mkdir -p "$UBOX/opt/macwave_config"
+printf '{"base_dir": "%s"}\n' "$REAL" > "$UBOX/opt/macwave_config/config.json"
+run_uninstall "$UBOX" >/dev/null 2>&1
+if [[ ! -d "$REAL" ]]; then
+    pass "真正的 MacWave 树照常卸载"
+else
+    fail "真正的 MacWave 树没被删掉（正常卸载被挡住了）"
+fi
+
+# 家目录本身永远不能删，哪怕它里面碰巧有 lib/wave.py。
+# 注意沙箱里的家目录是 "$测试根$HOME"（uninstall.sh 会把 HOME 搬到测试根下），
+# 不是 $UBOX/home —— 写错了就会「测了一个普通目录」，断言看起来很绿。
+HOME_TREE="$UBOX$HOME"
+mkdir -p "$HOME_TREE/lib" && echo x > "$HOME_TREE/lib/wave.py"
+mkdir -p "$UBOX/opt/macwave_config"
+printf '{"base_dir": "%s"}\n' "$HOME_TREE" > "$UBOX/opt/macwave_config/config.json"
+HOME_OUT=$(run_uninstall "$UBOX" 2>&1)
+if [[ -d "$HOME_TREE/lib" ]]; then
+    pass "家目录本身不会被当成安装树删掉"
+else
+    fail "家目录被当安装树删掉了"
+fi
+if [[ "$HOME_OUT" == *"your home directory"* ]]; then
+    pass "家目录被拒时说的是「家目录」，不是笼统的「不是 MacWave 树」"
+else
+    fail "家目录被拒的理由不对（实际：${HOME_OUT:0:200}）"
+fi
+
+echo
 echo "=========================================="
 echo -e "🌊 Passed: $PASSED"
 echo -e "🌊 Failed: $FAILED"

@@ -312,6 +312,51 @@ direct() {
 }
 
 # ==========================================
+# 系统级安装：把安装树交给 root:<管理员组>
+# ==========================================
+#
+# 规则与 install.sh 的 hand_over_system_install 完全一致：root:<管理员组>、
+# 755（所有人可读可执行、只有 root 可写）。
+#
+# 为什么 selfupdate 也要做：4.3.0 只让 install.sh 做了这一步，升级上来的
+# 系统级安装仍然归安装者所有 —— links/<名> 于是对该用户可写，而它会被别的
+# 用户、脚本甚至 root 执行，本地提权路径照旧成立。升级是最常见的路径，
+# 漏在这里等于没修。
+#
+# 为什么不是 chown 给当前用户：那会把共享安装变成「第一个装它的人私有」，
+# 同一台机器上别的管理员 `wave install` 会 Permission denied。
+#
+# 为什么不是 chmod 777：见上 —— 系统 PATH 里的二进制不能被任何本地用户替换。
+admin_group() {
+    # 只在当前用户确实属于这些组时才用它；否则退回主组，免得 chown 到一个
+    # 自己都不在的组（root 直接跑、容器里的非标准用户都会遇到）。
+    local candidate
+    for candidate in admin sudo wheel; do
+        if ! id -Gn "$CURRENT_USER" 2>/dev/null | tr ' ' '\n' | grep -qx "$candidate"; then
+            continue
+        fi
+        if dscl . -read "/Groups/$candidate" >/dev/null 2>&1 \
+           || grep -qE "^${candidate}:" /etc/group 2>/dev/null; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+    id -gn "$CURRENT_USER"
+}
+
+hand_over_system_install() {
+    local dir="$1" group
+    # 用户级安装（在家目录下）本来就是自己的，不需要也不该改动。
+    [[ "$NEED_SUDO" == "true" ]] || return 0
+    [[ -n "$dir" ]] || return 0
+    [[ -d "$dir" ]] || return 0
+    group="$(admin_group)"
+    sudo chown -R "root:$group" "$dir" || return 1
+    sudo chmod -R u+rwX,go+rX,go-w "$dir" || return 1
+    return 0
+}
+
+# ==========================================
 # 带超时与重试的下载
 # ==========================================
 #
@@ -865,6 +910,23 @@ if [[ -n "$PYTHON_BIN" ]]; then
 fi
 
 # ==========================================
+# 系统级安装：属主交给 root:<管理员组>、权限 755
+# ==========================================
+# 放在所有写树的动作之后：此前的下载、落盘、写 launcher、清缓存都还在用当前
+# 用户的身份（系统级安装时这些写操作走 run_cmd 的 sudo），从这一步起树变成
+# 只读，之后再想写就得 sudo —— 顺序反了会把本次升级自己卡死。
+if [[ "$NEED_SUDO" == "true" ]]; then
+    if hand_over_system_install "$BASE_DIR"; then
+        echo "🌊 Ownership: $BASE_DIR -> root:$(admin_group), mode 755"
+        echo "🌊 Installing or removing packages now needs sudo (sudo wave install <package>)."
+    else
+        echo -e "${YELLOW}🌊 Warning: could not hand $BASE_DIR over to root:$(admin_group).${RESET}"
+        echo "🌊 The tree is still writable by ${CURRENT_USER}; links/ can be replaced by that account."
+        echo "🌊 Re-run this command, or reinstall with lib/install.sh."
+    fi
+fi
+
+# ==========================================
 # 写入新的版本号
 # ==========================================
 
@@ -881,17 +943,9 @@ config_cmd tee "$VERSION_FILE" > /dev/null << EOF
 EOF
 
 if [[ "$CONFIG_NEED_SUDO" == "true" ]]; then
-    # 与 install.sh 同一套规则：不归个人，归 root:<管理员组>，组可写。
+    # 与 install.sh 同一套规则：不归个人，归 root:<管理员组>。
     # 配置目录只有读的需求，但保持与 install.sh 一致，免得两次安装留下不同属主。
-    _admin_group=""
-    for _candidate in admin sudo wheel; do
-        if dscl . -read "/Groups/$_candidate" >/dev/null 2>&1 \
-           || grep -qE "^${_candidate}:" /etc/group 2>/dev/null; then
-            _admin_group="$_candidate"
-            break
-        fi
-    done
-    [[ -n "$_admin_group" ]] || _admin_group="$(id -gn "$CURRENT_USER")"
+    _admin_group="$(admin_group)"
     sudo chown -R "root:$_admin_group" "$CONFIG_DIR" 2>/dev/null \
         || sudo chown -R "$CURRENT_USER": "$CONFIG_DIR"
 fi

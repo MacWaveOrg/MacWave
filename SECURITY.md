@@ -103,6 +103,24 @@ Also in scope:
 - leaking the mirror password through an error message, a log, or a `-v` trace
 - a payload whose symbolic link resolves outside `base_dir`, other than into the
   exempt system locations listed above
+- a system-wide install whose tree is writable by the account that installed it —
+  `install.sh` **and** `selfupdate` must both leave it at `root:<admin group>` 755, and
+  `uninstall.sh` must never `rm -rf` a directory that is not a MacWave install
+
+### Ownership of a system-wide tree
+
+A system-wide install puts executables on the system `PATH`, so the tree must not be
+writable by a normal user: whoever can replace `links/<name>` can usually get it executed
+by another account, or by root. The rule is `root:<admin group>` with mode 755 —
+everyone reads and executes, only root writes — and it holds on both entry points:
+
+| Entry point | Where |
+| --- | --- |
+| Fresh install | `install.sh` (`hand_over_system_install`) |
+| `wave selfupdate` | `selfupdate.sh` (`hand_over_system_install`, after all writes) |
+| `wave uninstall` | `uninstall.sh` (`skip_reason`: refuses system directories, `$HOME`, and anything without `lib/wave.py`) |
+
+Regression: `scripts/dir_guard_test.sh`.
 
 ## Not security issues
 
