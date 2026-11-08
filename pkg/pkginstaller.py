@@ -841,6 +841,17 @@ def _invoked_as():
     return "wave" if name.startswith("wave") else name
 
 
+def _launcher_path():
+    """启动器的绝对路径。
+
+    `sudo wave install` 经常跑不通：sudo 默认 env_reset，PATH 被换成它自己的
+    默认值，而 wave 在 <base_dir>/links 里 —— 那是用户自己加进 PATH 的目录。
+    报错里给全路径，用户复制就能跑，不必先猜「为什么 command not found」。
+    """
+    launcher = BASE_DIR / "lib" / "wave"
+    return str(launcher) if launcher.exists() else _invoked_as()
+
+
 def handle_install(input_string):
     # 参数解析
     steplog.reset()
@@ -850,15 +861,20 @@ def handle_install(input_string):
     config = handle_download_args(input_string)
     steplog.set_verbose(config["verbose"])
 
-    # 系统级安装（装到 /opt、/usr/local）时安装树归 root，普通用户写不了。
+    # 系统级安装（装到 /opt、/usr/local）时安装树归 root:<管理员组>、775：
+    # 管理员组成员直接写得进去，**不需要 sudo**。剩下的写不进去的人只有两类 ——
+    # 不在管理员组里的普通用户，以及别的机器上搬过来的、组不对的旧安装。
+    #
     # 不在这里先说清楚的话，报错会发生在下载那一步，还被归因成「网络或代理问题」——
     # 实测过：`Permission denied: .../downloads/tmp/xxx.partial`，提示全跑偏。
     if not os.access(BASE_DIR, os.W_OK):
         steplog.fail(
             f"no write permission on {BASE_DIR}",
-            response=f"running as uid {os.getuid()}; this tree is owned by root",
-            hint=["this is a system-level install; only administrators can change it:",
-                  f"  sudo {_invoked_as()} install <package>",
+            response=f"running as uid {os.getuid()}; this tree is owned by root and writable "
+                     f"only by its group",
+            hint=["packages can be installed by an administrator; give the full path "
+                  "(sudo has its own PATH):",
+                  f"  sudo {_launcher_path()} install <package>",
                   "everyone else can still run the installed packages",
                   "or reinstall into ~/.local/macwave to manage packages without sudo"])
 

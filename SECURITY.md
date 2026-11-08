@@ -103,16 +103,30 @@ Also in scope:
 - leaking the mirror password through an error message, a log, or a `-v` trace
 - a payload whose symbolic link resolves outside `base_dir`, other than into the
   exempt system locations listed above
-- a system-wide install whose tree is writable by the account that installed it —
-  `install.sh` **and** `selfupdate` must both leave it at `root:<admin group>` 755, and
-  `uninstall.sh` must never `rm -rf` a directory that is not a MacWave install
+- a system-wide install whose tree is writable by a normal user —
+  `install.sh` **and** `selfupdate` must both leave it at `root:<admin group>` 775
+  (directory setgid), and `uninstall.sh` must never `rm -rf` a directory that is not a
+  MacWave install
 
 ### Ownership of a system-wide tree
 
 A system-wide install puts executables on the system `PATH`, so the tree must not be
 writable by a normal user: whoever can replace `links/<name>` can usually get it executed
-by another account, or by root. The rule is `root:<admin group>` with mode 755 —
-everyone reads and executes, only root writes — and it holds on both entry points:
+by another account, or by root. The rule is `root:<admin group>` with mode **775** and
+setgid on directories:
+
+| Who | Permission |
+| --- | --- |
+| Everyone | read + execute → can run the installed packages |
+| Administrators (`admin` group) | write → install / upgrade / remove without `sudo` |
+| Everyone else | no write |
+
+Writing is limited to the same group that can already `sudo`, so the group bit does not
+grant anyone new power; it removes the need to re-authenticate for every package. The
+`o-w` bit is what keeps other local accounts out — dropping it would be the
+local-privilege-escalation defect this rule exists to prevent.
+
+It holds on all entry points:
 
 | Entry point | Where |
 | --- | --- |

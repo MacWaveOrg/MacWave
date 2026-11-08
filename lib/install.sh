@@ -810,15 +810,20 @@ CURRENT_USER=$(whoami)
 # 为什么不是 chmod -R 777：任何本地用户都能替换 /opt/macwave/links/jq，而它可能
 # 被别的用户、脚本甚至 root 执行 —— 那是教科书式的本地提权路径。
 #
-# 采用的模型：root:<管理员组> 755。管理员本来就知道密码、本来就能 sudo，
-# 所以不需要「组可写 + setgid + ACL 继承」那一套 —— 那是为了让非 root 写共享目录，
-# 代价是把系统 PATH 里的二进制变成组可写，收益不抵风险。
+# 采用的模型：root:<管理员组> 775，目录带 setgid。把写权限收窄到「管理员」这一层，
+# 与「谁能 sudo」是同一个人群 —— 组可写并不会让权限变大（管理员本来就能 sudo 成
+# root），却换掉了一整类日常摩擦：
 #
-#   所有人    可读、可执行（能用已装的包）
-#   root     可写（wave install / 升级需要 sudo）
+#   所有人              可读、可执行（能运行已装的包）
+#   管理员组（admin）   可写（wave install / 升级**不需要 sudo**）
+#   其他人              只读
 #
-# 代价是系统级安装下 `wave install` 要 sudo。这一条在 pkg/pkginstaller.py 里
-# 有对应的检测与提示，不要只改这里。
+# 4.3.0 / 4.3.1 用的是 755（只有 root 可写），代价是每次装包都要 `sudo wave
+# install`。那条路要求用户亲手提权，而且 `sudo` 有自己的 PATH、HOME 也变成
+# /var/root；对一个「系统级共享安装」来说，摩擦与收益不成比例。
+#
+# setgid 必须加在目录上：否则组员（管理员）新建的文件会落回他自己的主组，
+# 下一个管理员就写不进去了 —— 与 LinuxWave 的共享安装同一条理由。
 admin_group() {
     # 只在「当前用户确实是这个组的成员」时才用它。
     #
@@ -842,20 +847,51 @@ admin_group() {
     id -gn "$CURRENT_USER"
 }
 
+lend_tree_to_user() {
+    # 安装期间把树**暂时**交给调用者。**这不是最终属主**：装完由
+    # hand_over_system_install 收回去，变成 root:<管理员组> 775（目录带 setgid）。
+    #
+    # 为什么需要它：自带 Python 与私有 venv 都是以**普通用户**身份写的
+    # （ensure_portable_python 里的 mkdir/curl/tar、以及 `python -m venv`），
+    # 树若已经是 root 所有，这些步骤会全部失败 —— 而且失败得很安静：自带
+    # Python 只打一句「可能是网络」，venv 只打一句警告，最后依赖被 pip --user
+    # 装进安装者自己的 site-packages，别的用户就用不了这套安装。
+    #
+    # 4.3.0 之前这两处是 `chown -R "$CURRENT_USER"`，语义正确；改成本函数之前
+    # 请确认「还有没有以用户身份写树的步骤」，否则会重演上面那次退化。
+    local dir="$1"
+    [[ "$NEED_SUDO" == "true" ]] || return 0
+    [[ -n "$dir" ]] || return 0
+    if mw_dry_run; then
+        mw_plan "🌊 Dry run: would lend $dir to $CURRENT_USER while the bundled Python and the venv are written." \
+            "🌊 试运行：写自带 Python 与 venv 期间，将把 ${dir} 暂时交给 ${CURRENT_USER}。"
+        return 0
+    fi
+    [[ -d "$dir" ]] || return 0
+    sudo chown -R "$CURRENT_USER": "$dir" || return 1
+    return 0
+}
+
 hand_over_system_install() {
     # 系统级安装（$BASE_DIR 不在家目录下）才需要动手；用户级本来就是自己的。
+    #
+    # mode：u+rwX,g+rwX,o+rX,o-w = 目录 2775（含 setgid）、普通文件 664、
+    # 原有的可执行文件 775。o-w 不能省 —— 少了它就回到「任何本地用户都能替换
+    # links/ 里的二进制」。
     local dir="$1" group
     [[ -n "$dir" ]] || return 0
     if mw_dry_run; then
         # 目录此刻还不存在（试运行不建），所以判断要放在 -d 检查之前。
-        mw_plan "🌊 Dry run: would hand $dir over to root:$(admin_group) with mode 755." \
-            "🌊 试运行：将把 ${dir} 交给 root:$(admin_group)，权限 755。"
+        mw_plan "🌊 Dry run: would hand $dir over to root:$(admin_group) with mode 775 (directory setgid)." \
+            "🌊 试运行：将把 ${dir} 交给 root:$(admin_group)，权限 775（目录带 setgid）。"
         return 0
     fi
     [[ -d "$dir" ]] || return 0
     group="$(admin_group)"
     sudo chown -R "root:$group" "$dir" || return 1
-    sudo chmod -R u+rwX,go+rX,go-w "$dir" || return 1
+    sudo chmod -R u+rwX,g+rwX,o+rX,o-w "$dir" || return 1
+    # 只给目录加 setgid：文件上的 setgid 是另一种含义（强制锁），不该乱设。
+    sudo find "$dir" -type d -exec chmod g+s {} + || return 1
     return 0
 }
 
@@ -1060,11 +1096,13 @@ run_cmd tee "$VERSION_FILE" > /dev/null << EOF
 EOF
 
 # ==========================================
-# 把所有权交还给当前真实用户
+# 安装期间：树暂时交给当前用户
 # ==========================================
+# 后面还有以用户身份写树的步骤（自带 Python、私有 venv），见 lend_tree_to_user。
+# 最终属主由文件末尾的 hand_over_system_install 决定。
 
 if [[ "$NEED_SUDO" == "true" ]]; then
-    hand_over_system_install "$BASE_DIR"
+    lend_tree_to_user "$BASE_DIR"
 fi
 
 if [[ "$NEED_SUDO" == "true" ]]; then
@@ -1170,9 +1208,9 @@ fi
 #
 # 这样系统 Python 怎么升都不会影响已安装的 MacWave。
 
-# 先确保安装树归当前用户所有：venv 与依赖都要以用户身份写入。
+# 再交一次：上面那段更新脚本是带 sudo 跑的，可能又留下 root 属主的文件。
 if [[ "$NEED_SUDO" == "true" ]]; then
-    hand_over_system_install "$BASE_DIR"
+    lend_tree_to_user "$BASE_DIR"
 fi
 
 # ==========================================
@@ -1762,7 +1800,7 @@ echo ""
 echo -e "${YELLOW}    source $RC_DISPLAY${RESET}"
 echo ""
 
-# 系统级安装是共享的：管理员用 sudo 管理，其他用户只能运行。
+# 系统级安装是共享的：管理员（admin 组）直接管理，其他用户只能运行。
 # PATH 那行现在由用户自己加 —— 别人不加就找不到 wave，只能靠绝对路径执行。
 # 这里说清楚，否则「其他人可运行」只对了一半。
 if [[ "$NEED_SUDO" == "true" ]]; then
@@ -1771,9 +1809,14 @@ if [[ "$NEED_SUDO" == "true" ]]; then
     mw_say "🌊 but each of them needs to run this once:" \
         "🌊 但每个用户需要执行："
     echo -e "${YELLOW}    $SHELLENV_DISPLAY${RESET}"
-    mw_say "🌊 Changing packages (install / uninstall / upgrade) needs sudo:" \
-        "🌊 改动软件包（安装 / 卸载 / 升级）需要 sudo："
-    echo -e "${YELLOW}    sudo wave install <package>${RESET}"
+    mw_say "🌊 Administrators can install and remove packages without sudo:" \
+        "🌊 管理员装包、卸包都不需要 sudo："
+    echo -e "${YELLOW}    wave install <package>${RESET}"
+    mw_say "🌊 A user who is not in the '$(admin_group)' group can still run the packages," \
+        "🌊 不在 '$(admin_group)' 组里的用户仍然能运行已装的包，"
+    mw_say "🌊 but changing them needs the full path (sudo has its own PATH):" \
+        "🌊 但改动它们要用全路径（sudo 用的是它自己的 PATH）："
+    echo -e "${YELLOW}    sudo $BASE_DIR/lib/wave install <package>${RESET}"
     echo ""
 fi
 

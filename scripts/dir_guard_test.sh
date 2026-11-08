@@ -152,14 +152,14 @@ done
 echo
 echo "========== 7. 系统级安装：管理员可写，其他人只读 =========="
 
-# 目标模型：管理员能装能删，其他用户只能运行。
+# 目标模型：管理员能装能删（不需要 sudo），其他用户只能运行。
 #
-# 所以安装树归 root:<管理员组>、755 —— 组可写与 ACL 继承都不需要：管理员本来就
-# 知道密码、本来就能 sudo。反过来，把系统 PATH 里的二进制做成组可写是白白多一层
-# 风险，收益不抵。
+# 所以安装树归 root:<管理员组>、775，目录带 setgid：管理员组可写，o-w 保证
+# 其他本地用户改不了 links/ 里的二进制。组可写并不会让权限变大 —— 管理员本来
+# 就能 sudo 成 root；换来的是装包不必每次提权（与 LinuxWave 的共享安装一致）。
 #
-# 代价是系统级安装下 `wave install` 要 sudo，因此运行时必须**先检查可写性**并把
-# 原因说清楚 —— 否则报错会落在下载那一步、被归因成网络问题。
+# 非管理员仍然写不进去，因此运行时必须**先检查可写性**并把原因说清楚 ——
+# 否则报错会落在下载那一步、被归因成网络问题。
 
 if grep -q 'chown -R "root:' "$INSTALL_SH"; then
     pass "安装树归 root:<管理员组>"
@@ -167,10 +167,19 @@ else
     fail "安装树没有归 root"
 fi
 
-if grep -qE 'chmod -R u\+rwX,go\+rX,go-w' "$INSTALL_SH"; then
-    pass "755 语义：所有人可读可执行，组不可写"
+# 775：管理员组可写（装包不需要 sudo），其他人只读。o-w 不能省 —— 少了它
+# 就回到「任何本地用户都能替换 links/ 里的二进制」。
+if grep -qE 'chmod -R u\+rwX,g\+rwX,o\+rX,o-w' "$INSTALL_SH"; then
+    pass "775 语义：管理员组可写，其他人只读"
 else
-    fail "权限没有收敛成 755 语义"
+    fail "权限没有收敛成 775 语义"
+fi
+
+# setgid 加在目录上：否则组员新建的文件落回他的主组，下一个管理员就写不进去。
+if grep -q "find \"\$dir\" -type d -exec chmod g+s" "$INSTALL_SH"; then
+    pass "目录带 setgid（组内新建文件沿用组）"
+else
+    fail "目录没有 setgid，组员的写入会落回他自己的主组"
 fi
 
 if grep -qE 'chown -R "\$CURRENT_USER": "\$BASE_DIR"' "$INSTALL_SH"; then
@@ -187,10 +196,10 @@ else
     fail "运行时不检查可写性，只读树会在下载步骤报错并被归因成网络问题"
 fi
 
-if grep -q 'sudo {_invoked_as()}' "$PY_INSTALLER"; then
-    pass "提示里给出可照抄的 sudo 命令"
+if grep -q 'sudo {_launcher_path()}' "$PY_INSTALLER"; then
+    pass "提示里给出可照抄的 sudo 命令（全路径）"
 else
-    fail "提示里没有 sudo 命令"
+    fail "提示里没有可照抄的 sudo 命令"
 fi
 
 # 提示必须说清「其他用户仍可运行」，否则读者会以为整台机器都用不了
@@ -208,14 +217,81 @@ else
     fail "没有提示其他用户如何把 links 加进 PATH"
 fi
 
-if grep -q 'Changing packages (install / uninstall / upgrade) needs sudo' "$INSTALL_SH"; then
-    pass "说明改动软件包需要 sudo"
+# 4.3.2 起管理员组可写：装包不再需要 sudo，安装结束要这么说，否则用户会继续
+# 习惯性地提权（而 sudo 的 PATH 里并没有 wave）。
+if grep -q 'Administrators can install and remove packages without sudo' "$INSTALL_SH"; then
+    pass "说明管理员装包不需要 sudo"
 else
-    fail "没有说明改动软件包需要 sudo"
+    fail "没有说明管理员装包不需要 sudo"
+fi
+if grep -q 'Changing packages (install / uninstall / upgrade) needs sudo' "$INSTALL_SH"; then
+    fail "仍在说「改动软件包需要 sudo」，与实际模型不符"
+else
+    pass "不再宣称改动软件包需要 sudo"
 fi
 
 echo
-echo "========== 8. 抽函数的方式本身要可靠 =========="
+echo "========== 8. 安装期间：树必须先借给用户 =========="
+
+# 自带 Python 与私有 venv 都以普通用户身份写树（mkdir / curl / tar / `python -m venv`
+# 都不带 sudo）。4.3.0 把三处「交还给用户」全换成了「交给 root:admin」，于是系统级
+# 安装里这两步全部失败：自带 Python 被跳过、venv 建不出来，依赖被 pip --user 装进
+# 安装者的 site-packages，别的用户就用不了这套安装。
+if grep -q 'lend_tree_to_user()' "$INSTALL_SH"; then
+    pass "有「临时借给用户」的实现"
+else
+    fail "没有 lend_tree_to_user：安装期间的写树步骤会失败"
+fi
+
+LEND_COUNT=$(grep -c 'lend_tree_to_user "\$BASE_DIR"' "$INSTALL_SH")
+if [[ "$LEND_COUNT" -eq 2 ]]; then
+    pass "两处都以用户身份写树之前借给了用户"
+else
+    fail "借给用户的调用点是 ${LEND_COUNT} 处（应为 2）"
+fi
+
+# 顺序：借出必须在 venv 之前，reclaim（root 化）必须在 venv 之后。
+LEND_LINE=$(grep -n 'lend_tree_to_user "\$BASE_DIR"' "$INSTALL_SH" | tail -1 | cut -d: -f1)
+VENV_LINE=$(grep -n '"\$PYTHON_BIN" -m venv' "$INSTALL_SH" | head -1 | cut -d: -f1)
+RECLAIM_LINE=$(grep -n 'hand_over_system_install "\$BASE_DIR"' "$INSTALL_SH" | tail -1 | cut -d: -f1)
+if [[ -n "$LEND_LINE" && -n "$VENV_LINE" && "$LEND_LINE" -lt "$VENV_LINE" ]]; then
+    pass "借出在 venv 之前（${LEND_LINE} < ${VENV_LINE}）"
+else
+    fail "借出不在 venv 之前（lend=${LEND_LINE:-?}, venv=${VENV_LINE:-?}）"
+fi
+if [[ -n "$RECLAIM_LINE" && -n "$VENV_LINE" && "$RECLAIM_LINE" -gt "$VENV_LINE" ]]; then
+    pass "收回在 venv 之后（${VENV_LINE} < ${RECLAIM_LINE}）"
+else
+    fail "收回不在 venv 之后（venv=${VENV_LINE:-?}, reclaim=${RECLAIM_LINE:-?}）"
+fi
+
+# 只允许文件末尾那一处把树交给 root：中间再出现一次就会重演上面的退化。
+HANDOVER_COUNT=$(grep -c 'hand_over_system_install "\$BASE_DIR"' "$INSTALL_SH")
+if [[ "$HANDOVER_COUNT" -eq 1 ]]; then
+    pass "只在装完之后交给 root 一次"
+else
+    fail "交给 root 的调用点是 ${HANDOVER_COUNT} 处（应为 1，多了会让安装期间的写树步骤失败）"
+fi
+
+echo
+echo "========== 9. sudo 提示给全路径 =========="
+
+# sudo 默认 env_reset，PATH 被换成它自己的默认值，而 wave 在 <base_dir>/links 里。
+# 提示里只写 `sudo wave install` 时，用户复制执行会得到 command not found。
+PY_INSTALLER="$REPO_DIR/pkg/pkginstaller.py"
+if grep -q 'sudo {_launcher_path()} install' "$PY_INSTALLER"; then
+    pass "运行时报错给的是启动器全路径"
+else
+    fail "运行时报错仍然是短名 sudo wave，用户复制会 command not found"
+fi
+if grep -q 'sudo \$BASE_DIR/lib/wave install' "$INSTALL_SH"; then
+    pass "安装结束提示给的是全路径"
+else
+    fail "安装结束提示仍然是短名 sudo wave"
+fi
+
+echo
+echo "========== 10. 抽函数的方式本身要可靠 =========="
 
 # 上面所有断言都建立在「extract 抽对了」之上。如果 install.sh 里
 # validate_custom_dir 被改成有顶格的 `}`（例如嵌套 heredoc），抽取会截断，
@@ -247,7 +323,7 @@ else
 fi
 
 if grep -q 'chown -R "root:' "$SELFUPDATE_SH" && \
-   grep -q 'chmod -R u+rwX,go+rX,go-w' "$SELFUPDATE_SH"; then
+   grep -q 'chmod -R u+rwX,g+rwX,o+rX,o-w' "$SELFUPDATE_SH"; then
     pass "selfupdate 与 install.sh 用同一套所有权模型"
 else
     fail "selfupdate 的属主/权限规则与 install.sh 不一致"
@@ -304,10 +380,15 @@ if [[ "$CALLS" == *"chown -R root:"*"$TARGET"* ]]; then
 else
     fail "系统级没有下发 chown root（实际：${CALLS:-无}）"
 fi
-if [[ "$CALLS" == *"chmod -R u+rwX,go+rX,go-w"*"$TARGET"* ]]; then
-    pass "系统级：权限收敛成 755 语义"
+if [[ "$CALLS" == *"chmod -R u+rwX,g+rwX,o+rX,o-w"*"$TARGET"* ]]; then
+    pass "系统级：权限收敛成 775 语义（组可写、其他人只读）"
 else
-    fail "系统级没有下发 755 的 chmod（实际：${CALLS:-无}）"
+    fail "系统级没有下发 775 的 chmod（实际：${CALLS:-无}）"
+fi
+if [[ "$CALLS" == *"-type d -exec chmod g+s"* ]]; then
+    pass "系统级：目录带 setgid"
+else
+    fail "系统级没有给目录加 setgid（组员的写入会落回他自己的主组）"
 fi
 
 CALLS=$(probe_handover false "$TARGET")

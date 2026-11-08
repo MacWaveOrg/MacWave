@@ -316,7 +316,8 @@ direct() {
 # ==========================================
 #
 # 规则与 install.sh 的 hand_over_system_install 完全一致：root:<管理员组>、
-# 755（所有人可读可执行、只有 root 可写）。
+# 775（目录带 setgid）。管理员组可写 —— 装包因此不需要 sudo，与「谁能 sudo」
+# 是同一个人群，权限并没有变大；其他用户仍然只读。
 #
 # 为什么 selfupdate 也要做：4.3.0 只让 install.sh 做了这一步，升级上来的
 # 系统级安装仍然归安装者所有 —— links/<名> 于是对该用户可写，而它会被别的
@@ -352,7 +353,9 @@ hand_over_system_install() {
     [[ -d "$dir" ]] || return 0
     group="$(admin_group)"
     sudo chown -R "root:$group" "$dir" || return 1
-    sudo chmod -R u+rwX,go+rX,go-w "$dir" || return 1
+    sudo chmod -R u+rwX,g+rwX,o+rX,o-w "$dir" || return 1
+    # 只给目录加 setgid：文件上的 setgid 是强制锁，不是同一个意思。
+    sudo find "$dir" -type d -exec chmod g+s {} + || return 1
     return 0
 }
 
@@ -910,15 +913,15 @@ if [[ -n "$PYTHON_BIN" ]]; then
 fi
 
 # ==========================================
-# 系统级安装：属主交给 root:<管理员组>、权限 755
+# 系统级安装：属主交给 root:<管理员组>、权限 775（目录带 setgid）
 # ==========================================
 # 放在所有写树的动作之后：此前的下载、落盘、写 launcher、清缓存都还在用当前
 # 用户的身份（系统级安装时这些写操作走 run_cmd 的 sudo），从这一步起树变成
 # 只读，之后再想写就得 sudo —— 顺序反了会把本次升级自己卡死。
 if [[ "$NEED_SUDO" == "true" ]]; then
     if hand_over_system_install "$BASE_DIR"; then
-        echo "🌊 Ownership: $BASE_DIR -> root:$(admin_group), mode 755"
-        echo "🌊 Installing or removing packages now needs sudo (sudo wave install <package>)."
+        echo "🌊 Ownership: $BASE_DIR -> root:$(admin_group), mode 775 (directory setgid)"
+        echo "🌊 Administrators can still install and remove packages without sudo."
     else
         echo -e "${YELLOW}🌊 Warning: could not hand $BASE_DIR over to root:$(admin_group).${RESET}"
         echo "🌊 The tree is still writable by ${CURRENT_USER}; links/ can be replaced by that account."
