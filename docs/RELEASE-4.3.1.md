@@ -122,6 +122,19 @@ per row, so the colouring follows your interest, not "did the command work".
 
 `wave selfupdate` on 4.3.0 also still works — that is how you get here.
 
+## Also in this release
+
+These landed on the `4.3` branch after the `v4.3.0` tag and ship for the first time here.
+None of them is a security fix; they are listed so the upgrade is not a surprise.
+
+| Change | What it means |
+| --- | --- |
+| `install.sh --dry-run` | Prints every step the installer would take — no download, no sudo, no directory, no file written. Works offline: a placeholder version is used when the index cannot be reached |
+| `PATH` line is `eval "$(… shellenv)"` | The same shape Homebrew uses. Works for `bash`, `zsh`, `sh`, `dash`, `ksh` and `csh`/`tcsh`; old lines written by 4.2 and earlier are replaced in one command |
+| Clearer installer output | Progress lines say what is happening and what comes next; a failure names the step and the command to retry |
+| Usage errors share one colour scheme | Unknown flag / wrong command now use the same colours as `wave instal`'s "Did you mean:" block — plain body text, only the thing to type in green |
+| `cloc` listed as supported | Same list as the site and `infosource` |
+
 ## Upgrading
 
 ```bash
@@ -158,8 +171,9 @@ never changed ownership.
 | `configdata` | `latest_version` → 4.3.1 / branch 4.3 |
 | `Pages` | version → 4.3.1 |
 
-`update_commands.sh` is frozen per version: the delta versus `v4.3.0` is exactly three files —
-`lib/selfupdate.sh`, `lib/uninstall.sh` and the test that guards both.
+`update_commands.sh` is frozen per version: the delta versus `v4.3.0` is nine files —
+`lib/selfupdate.sh`, `lib/uninstall.sh`, the installer and the error-message modules that
+landed on the branch after the 4.3.0 tag (see below).
 
 ---
 
@@ -281,6 +295,19 @@ chmod -R u+rwX,go+rX,go-w /…/sys-level-macwave
 
 4.3.0 上执行 `wave selfupdate` 仍然可用 —— 你就是这么到这里的。
 
+## 本版还包含
+
+这些是在 `v4.3.0` 的 tag 之后落到 `4.3` 分支上的改动，本版第一次发出去。都不是安全修复，
+列在这里只是让升级不意外。
+
+| 改动 | 含义 |
+| --- | --- |
+| `install.sh --dry-run` | 把安装器会做的每一步打出来 —— 不下载、不提权、不建目录、不写文件；取不到索引时用占位版本号继续，断网也能看完 |
+| `PATH` 那一行改成 `eval "$(… shellenv)"` | 与 Homebrew 同形。`bash`、`zsh`、`sh`、`dash`、`ksh`、`csh`/`tcsh` 都覆盖；4.2 及更早写进 rc 的旧条目在一条命令里替换掉 |
+| 安装器输出更清楚 | 每一步说清在做什么、下一步是什么；失败时点名是哪一步、该敲什么重试 |
+| 用法错误统一配色 | 未知旗标 / 命令用错，与 `wave instal` 的「Did you mean:」用同一套配色 —— 正文默认色，只有该敲的部分是绿的 |
+| 支持列表加入 `cloc` | 与官网、`infosource` 保持一致 |
+
 ## 升级方式
 
 ```bash
@@ -315,5 +342,5 @@ wave selfupdate
 | `configdata` | `latest_version` → 4.3.1 / branch 4.3 |
 | `Pages` | 版本号 → 4.3.1 |
 
-`update_commands.sh` 按版本冻结：相对 `v4.3.0` 的差异正好是三个文件 ——
-`lib/selfupdate.sh`、`lib/uninstall.sh`，以及守住两者的那个测试。
+`update_commands.sh` 按版本冻结：相对 `v4.3.0` 的差异是九个文件 —— `lib/selfupdate.sh`、
+`lib/uninstall.sh`，以及在 4.3.0 的 tag 之后落到分支上的安装器与报错模块（见下）。
