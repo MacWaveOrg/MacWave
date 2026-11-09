@@ -19,6 +19,7 @@ RESET = '\033[0m'
 
 from configpaths import load_base_dir, require_safe_token
 import domains
+import flags
 import tls
 from suggest import closest_name
 import steplog
@@ -278,7 +279,9 @@ def split_arguments(input_string):
             continue
 
         if word.startswith("--"):
-            flag, has_value, value = word.partition("=")
+            flag = flags.flag_name(word)
+            has_value = "=" in word
+            value = word.split("=", 1)[1] if has_value else ""
             if flag == "--max-time":
                 if not has_value:
                     value = words[position] if position < len(words) else ""
@@ -293,7 +296,7 @@ def split_arguments(input_string):
             continue
 
         # -av 这类合并短选项
-        for letter in word[1:]:
+        for letter in flags.short_cluster(word):
             if letter == "a":
                 everything = True
             elif letter == "v":

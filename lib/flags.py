@@ -1,11 +1,23 @@
 #!/usr/bin/env python3
 
 # flags.py
-# MacWave 认得的全部旗标 —— **只用于诊断，不用于校验**。
+# argv 的拆解规则，以及 MacWave 认得的全部旗标。
 #
-# 校验仍然在各命令自己的白名单里（pkginstaller.ALLOWED_FLAGS 等），那份才是权威。
-# 这里是给「命令名写错」那种场合用的：那时一条命令的白名单都还没被选中，
-# 唯一能回答「--unkown-flag 到底是不是 MacWave 的旗标」的就是全体并集。
+# 两件事，性质不同，别混：
+#
+#   1. **拆解**（本文件下半部分）：`--name=value` 怎么归一化、`-abc` 怎么拆开、
+#      短旗标簇里怎么拿掉某个字母、单独的 `-` 是不是终止符。这些是**纯函数**，
+#      不打印、不退出、不读配置 —— 谁都可以调，规则只有一份。
+#      在它之前，同一套规则至少写过四遍：pkginstaller.parse_flags 词法循环、
+#      silent.strip、upgrader.split_input、latest.split_arguments，
+#      以及 pkginfohelper 里那句 `word.partition("=")[0]`。四份实现的差异只有
+#      「谁的词法更全」，于是 `-sX` 在一处能拆、另一处要另写一遍才认。
+#
+#   2. **清单**（本文件上半部分）：MacWave 认得的旗标全集 ——
+#      **只用于诊断，不用于校验**。校验仍然在各命令自己的白名单里
+#      （pkginstaller.ALLOWED_FLAGS 等），那份才是权威。这里是给「命令名写错」
+#      那种场合用的：那时一条命令的白名单都还没被选中，唯一能回答
+#      「--unkown-flag 到底是不是 MacWave 的旗标」的就是全体并集。
 #
 #   用户：wave update jq --unkown-flag
 #   期望：既说 update 不是命令，也说 --unkown-flag 不是旗标
@@ -69,18 +81,77 @@ EARLY = {"-h", "--help", "-V", "--version"}
 ALL = GLOBAL | EARLY | set().union(*COMMAND_FLAGS.values())
 
 
+def flag_name(word):
+    """旗标的名字：`--max-time=1min` → `--max-time`，其余原样返回。
+
+    长旗标的值可以紧跟在 `=` 后面（也常常是空格写法，由调用方自己看下一个词），
+    短旗标没有 `=` 写法。包名不以 `-` 开头，拿去问也只会原样回来。
+    """
+    return word.split("=", 1)[0]
+
+
 def split(token):
-    """把一个 argv 片段拆成旗标名列表，规则与 pkginstaller.parse_flags 一致。
+    """把一个 argv 片段拆成旗标名列表。
 
         --name=value  → ["--name"]
         -abc          → ["-a", "-b", "-c"]
         其它          → []
     """
     if token.startswith("--"):
-        return [token.split("=", 1)[0]]
+        return [flag_name(token)]
     if token.startswith("-") and len(token) > 1:
         return [f"-{ch}" for ch in token[1:]]
     return []
+
+
+def tokens(words):
+    """把一段 argv 拆成旗标名列表；遇到单独的 `-` 就停。
+
+    与 split() 的分工：split() 只看一个词，这里看整段。规则与
+    pkginstaller.parse_flags 逐条对应 —— 单独一个 `-` 表示「后面的都不是旗标」
+    （`wave install jq - --proxy x` 里那个 `--proxy` 是包名的一部分）。
+    """
+    found = []
+    for word in words:
+        if word == "-":
+            break
+        found.extend(split(word))
+    return found
+
+
+def short_cluster(word):
+    """短旗标簇的字母部分：`-sX` → `"sX"`；`--skip-ssl` 与 `jq` 都返回 None。
+
+    「单横线开头、长度大于 1」是唯一的判据。`--skip-ssl` 里也有 s 与 S，
+    但它不是簇 —— 长旗标整体匹配，绝不按字母拆。
+    """
+    if word.startswith("-") and not word.startswith("--") and len(word) > 1:
+        return word[1:]
+    return None
+
+
+def remove_short(word, letters):
+    """从短旗标簇里拿掉若干字母，返回剩下的写法。
+
+    三种结果，调用方要分清：
+
+        None   没动过（不是簇，或簇里一个都没提到）—— 原样保留
+        ""     簇被拿空了（`-s` 拿掉 s）—— 整个词消失
+        "-Xv"  还剩别的字母 —— 用这个替换原词
+
+    为什么要单独一个函数：`-sX`、`-Xv`、`-CsX` 这类合并写法的处理散在
+    silent.py 与 upgrader.py 两处，各自的循环都只认得自己那几个字母，
+    于是「`-sX` 里 X 属于谁」两边要各判一遍。
+    """
+    cluster = short_cluster(word)
+    if cluster is None:
+        return None
+    kept = cluster
+    for letter in letters:
+        kept = kept.replace(letter, "")
+    if kept == cluster:
+        return None
+    return "" if not kept else "-" + kept
 
 
 def owner_commands(flag):

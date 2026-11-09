@@ -1,8 +1,12 @@
 #!/bin/bash
 
 # flags_test.sh
-# lib/flags.py 是「诊断用的旗标全集」，不是校验用的白名单。校验仍在各命令自己的
-# 白名单里，所以两份清单必然并存 —— 这个测试的唯一职责是**不让它们走散**。
+# lib/flags.py 有两半，各测各的：
+#
+#   拆解（第 8 节）：flag_name / tokens / short_cluster / remove_short ——
+#       silent、upgrader、latest、parse_flags 四处都依赖它们的返回形状。
+#   清单：诊断用的旗标全集，不是校验用的白名单。校验仍在各命令自己的白名单里，
+#       所以两份清单必然并存 —— 那几节负责**不让它们走散**。
 #
 # 为什么值得单独一个测试：flags.py 只在「命令名写错」这一条路径上被用到，
 # 平时跑不到。它漏一个新旗标的后果不是崩溃，而是那句本该给出的提示消失，
@@ -123,6 +127,36 @@ if flags.unknown_flags(["-sX"]) != []:
 if flags.unknown_flags(["-qz"]) != ["-q", "-z"]:
     add("unknown_flags 没拆开合并写法 -qz")
 
+# 8) 拆解原语。这一节是给「以后想优化一下」的人看的：这些函数的返回形状被
+#    silent.strip / upgrader.split_input / latest.split_arguments / parse_flags
+#    四处依赖，改成别的形状不会让任何端到端用例变红，只会让某条命令悄悄认不出旗标。
+if flags.flag_name("--max-time=1min") != "--max-time":
+    add("flag_name 没把 --max-time=1min 归一化")
+if flags.flag_name("jq") != "jq":
+    add("flag_name 动了包名")
+
+if flags.tokens(["jq", "-sX", "--max-time=1min"]) != ["-s", "-X", "--max-time"]:
+    add("tokens 没拆对混合写法")
+if flags.tokens(["jq", "-", "--proxy", "x"]) != []:
+    add("tokens 没在单独的 - 处停下（后面那个 --proxy 属于包名的一部分）")
+
+if flags.short_cluster("-sX") != "sX":
+    add("short_cluster(-sX) 不对")
+if flags.short_cluster("--skip-ssl") is not None:
+    add("short_cluster 把长旗标当成了簇")
+if flags.short_cluster("jq") is not None:
+    add("short_cluster 把包名当成了簇")
+
+# 三种返回值各代表什么，见 flags.remove_short 的说明
+if flags.remove_short("-s", "sS") != "":
+    add("remove_short 拿空整个簇时应返回空串")
+if flags.remove_short("-sX", "sS") != "-X":
+    add("remove_short 没留住剩下的字母")
+if flags.remove_short("-v", "sS") is not None:
+    add("remove_short 没动过时应返回 None")
+if flags.remove_short("--silent", "sS") is not None:
+    add("remove_short 不该动长旗标")
+
 if problems:
     for p in problems:
         print(f"FAIL {p}")
@@ -136,7 +170,7 @@ PY
 rc=$?
 
 if [[ "$rc" -eq 0 ]]; then
-    pass "flags.py 与各命令白名单一致"
+    pass "flags.py 的清单与拆解规则都符合约定"
 else
     fail "flags.py 与白名单走散了，见上面每一项"
 fi

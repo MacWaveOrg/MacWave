@@ -20,6 +20,7 @@ RESET = '\033[0m'
 
 from configpaths import load_base_dir, require_safe_token
 import domains
+import flags
 import steplog
 import tls
 
@@ -382,8 +383,8 @@ def parse_info_arguments(words):
         if not word.startswith("-"):
             operands.append(word)
             continue
-        name = word.partition("=")[0]
-        if name[2:] in INFO_FORMATS and name.startswith("--"):
+        name = flags.flag_name(word)
+        if name.startswith("--") and name[2:] in INFO_FORMATS:
             chosen.append(name[2:])
         elif name in timeouts.FLAG_FIELDS:
             # 三档超时是全局旗标，由 _budget() 处理；这里只是跳过，

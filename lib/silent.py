@@ -17,6 +17,7 @@
 import os
 import sys
 
+import flags
 import quiet
 
 
@@ -50,19 +51,15 @@ def strip(words):
         if word == "--show-error":
             show_error = True
             continue
-        if word.startswith("-") and not word.startswith("--") and len(word) > 1:
-            letters = word[1:]
+        cluster = flags.short_cluster(word)
+        if cluster is not None:
             # 大写 S 与小写 s 各管一件事，顺序无关：-sS 与 -Ss 等价
-            for letter in ("s", "S"):
-                if letter in letters:
-                    if letter == "s":
-                        silent = True
-                    else:
-                        show_error = True
-                    letters = letters.replace(letter, "")
-            if letters != word[1:]:
-                if letters:
-                    kept.append("-" + letters)
+            silent = silent or "s" in cluster
+            show_error = show_error or "S" in cluster
+            remaining = flags.remove_short(word, "sS")
+            if remaining is not None:
+                if remaining:
+                    kept.append(remaining)
                 continue
         kept.append(word)
     return kept, silent, show_error

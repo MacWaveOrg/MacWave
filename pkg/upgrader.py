@@ -14,6 +14,7 @@
 import sys
 
 from configpaths import require_safe_token
+import flags
 import quiet
 
 
@@ -62,19 +63,15 @@ def split_input(input_string):
             upgrade_all = True
             continue
         # 单个 - 开头（且不是 --）：可能是 -X，也可能是 -Xv 这种簇
-        if word.startswith("-") and not word.startswith("--") and len(word) > 1:
-            letters = word[1:]
-            for short, mark in ((REMOVE_OLD_SHORT, "old"), (ALL_SHORT, "all")):
-                if short in letters:
-                    letters = letters.replace(short, "")
-                    if mark == "old":
-                        remove_old = True
-                    else:
-                        upgrade_all = True
-            if letters != word[1:]:
-                if not letters:
-                    continue
-                word = "-" + letters
+        cluster = flags.short_cluster(word)
+        if cluster is not None:
+            remove_old = remove_old or REMOVE_OLD_SHORT in cluster
+            upgrade_all = upgrade_all or ALL_SHORT in cluster
+            remaining = flags.remove_short(word, REMOVE_OLD_SHORT + ALL_SHORT)
+            if remaining is not None:
+                if remaining:
+                    kept.append(remaining)
+                continue
         kept.append(word)
     return kept, remove_old, upgrade_all
 

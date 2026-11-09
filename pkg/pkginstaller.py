@@ -33,7 +33,7 @@ from configpaths import (
 )
 import domains
 import tls
-from flags import describe as describe_flag
+import flags as flags_module
 import timeouts
 import quiet
 import steplog
@@ -307,39 +307,20 @@ def parse_flags(input_string, command="install", shown=None):
              它内部会构造一条 `wave install placeholder …` 的探针去复用白名单，
              那条探针只该用于解析，不该出现在给用户看的文案里。
     """
-    # 截取所有 "-开头"（且 - 前是空格）至下一个空格的内容。
-    # 规则：
-    # 1. 单独的 "-" 表示参数结束，后续不统计。
-    # 2. "--" 开头保持不变；`--name=value` 归一化成 `--name`，值交给 flag_value 取。
-    # 3. "-" 开头（但不是 "--"）将其每个字母拆开，如 -abc = -a -b -c。
-    # 4. 参数必须在白名单内，否则报错。
-
-    flags = []
-    stop_parsing = False
-
-    for token in input_string.split(" "):
-        if stop_parsing:
-            break
-
-        if token == "-":
-            stop_parsing = True
-            continue
-
-        if token.startswith("--"):
-            flags.append(token.split("=", 1)[0])
-        elif token.startswith("-") and len(token) > 1:
-            for ch in token[1:]:
-                flags.append(f"-{ch}")
+    # 词法交给 flags.tokens：单独的 "-" 表示参数结束、`--name=value` 归一化成
+    # `--name`（值交给 flag_value 取）、`-abc` 拆成 -a -b -c。这三条规则的唯一
+    # 实现在 lib/flags.py，别在这里再写一遍。
+    found = flags_module.tokens(input_string.split(" "))
 
     # 白名单校验。报错必须点名是哪个参数、以及它是不是属于另一条命令 ——
     # 只印「Input contains illegal fields」时，用户无从判断是自己拼错还是用错命令。
-    for flag in flags:
+    for flag in found:
         if flag in ALLOWED_FLAGS:
             continue
         # 静默模式：整段解释对脚本没用，给一行可匹配的即可。
         # 但要分清两种「不接受」：拼错了，还是这条命令不认它。
         if quiet.is_silent():
-            description = describe_flag(flag)
+            description = flags_module.describe(flag)
             if description:
                 quiet.misplaced(flag, description)
             else:
@@ -380,7 +361,7 @@ def parse_flags(input_string, command="install", shown=None):
             hint=hint,
             usage=True)
 
-    return flags
+    return found
 
 
 from timeouts import flag_value  # noqa: E402,F401  —— 单一实现，见 lib/timeouts.py

@@ -6,13 +6,14 @@
 
 ## What is in it
 
-Two things, and only one of them is new work:
+Three things, and only one of them is new work:
 
 1. **The fixes first shipped in 4.3.2**, unchanged — see [RELEASE-4.3.2](RELEASE-4.3.2.md)
    for the evidence. That is why the title carries a security prefix: on 4.3.0 / 4.3.1 this
    release is the shortest way out. **No new vulnerability is involved in 4.4.0 itself.**
 2. **The internals were split up.** Nothing users type changed; the code that decides how
-   it behaves is no longer all in one file.
+   it behaves is no longer all in one file — neither the entry point (§1, §2) nor the
+   argument handling (§3).
 
 ### 1. `wave.py` only reads a command and hands it over
 
@@ -63,7 +64,35 @@ from one deliberate difference: a query identical to a name in the list is no lo
 suggested back. That case cannot occur on this path — if the name exists, there is no 404 to
 explain.
 
-### 3. What did not change
+### 3. One tokenizer instead of four
+
+Deciding what is a flag and what is a package name was implemented four times — once in
+each command's own argument loop:
+
+| Place | What it had to handle |
+| --- | --- |
+| `pkginstaller.parse_flags` | `--name=value`, `-abc`, and a bare `-` that ends the flag list |
+| `silent.strip` | pulling `s` / `S` out of a cluster (`-sX`, `-CsX`) |
+| `upgrader.split_input` | pulling `X` / `a` out of a cluster (`-Xv`) |
+| `latest.split_arguments` | long form with `=`, and letter-by-letter clusters |
+| `pkginfohelper` | `word.partition("=")[0]` |
+
+Each one only knew the letters it cared about, so a rule learned in one place had to be
+relearned in the next: `-sX` had to work in `silent` *and* be recognised as a valid cluster
+by `install`, and those were two separate pieces of code that could disagree.
+
+`lib/flags.py` now owns the rules (`flag_name` / `split` / `tokens` / `short_cluster` /
+`remove_short`). They are pure functions — no printing, no `sys.exit`, no config — which is
+what lets `pkg/` and `lib/` both use them. The flag catalogue that was already in that file
+stays exactly as it was: **diagnostics only**, never validation.
+
+Nothing about behaviour was rewritten, so the change was checked by equivalence rather than
+by re-reading: the old and new implementations were run side by side over **26,930**
+argument combinations (`-sX`, `-CsX`, `-Xa`, `--max-time=1min`, a bare `-`, unknown flags,
+mixed with package names) and every pair of outputs was identical. The four single cases
+that differ at all are the ones where the *old* code differed from itself.
+
+### 4. What did not change
 
 Checked by hand after the split, not inferred from a green build:
 
@@ -95,13 +124,16 @@ interrupted update cannot leave a tree whose `wave.py` imports a file that is no
 | --- | --- |
 | `bash scripts/message_test.sh` | 61 |
 | `bash scripts/suggest_test.sh` | 3 (now imports `lib/suggest.py` directly) |
+| `bash scripts/flags_test.sh` | 12, §8 pins the tokenizer's return shapes |
 | `bash scripts/dir_guard_test.sh` | 72 |
 | `flags` / `latest` / `info_format` / `configpath` / `structure` / `net_policy` / `markdown` / `shell_lint` | all green |
 
 `wave.py` is the one file every command goes through, so beyond the suites above the entry
 point was smoke-tested by hand for each dispatch branch: unknown command, misspelt command,
 `--help` per command, `-s` / `-S` placement before and after the command, and a read-only
-command given `-s`.
+command given `-s`. The same for the four parsers in §3: a bad long flag, `-X` used on
+`install`, `-av` on `latest`, `--json` with `--raw` on `info`, and `mirror` keeping its own
+mutually exclusive formats.
 
 ---
 
@@ -113,13 +145,13 @@ command given `-s`.
 
 ## 这一版有什么
 
-两件事，只有一件是新做的：
+三件事，只有一件是新做的：
 
 1. **4.3.2 首发的那些修复**，原样带过来 —— 证据见
    [RELEASE-4.3.2](RELEASE-4.3.2.md)。标题带安全前缀就是这个原因：对还在 4.3.0 / 4.3.1
    上的人来说，这一版是最短的出路。**4.4.0 本身不涉及新的漏洞。**
 2. **内部结构拆开了。** 用户敲的东西一个都没变，但「决定行为的那部分代码」不再全挤在
-   一个文件里。
+   一个文件里 —— 入口（第 1、2 节）与参数处理（第 3 节）都是。
 
 ### 1. `wave.py` 只负责「读一个命令、交出去」
 
@@ -165,7 +197,33 @@ install 那条路径按构造是不变的（函数是搬过去的，不是重写
 查询与清单里某个名字完全相同时，不再把这个名字建议回来 —— 这条路径上不可能出现这种
 情况（名字存在就不会 404 到这里）。
 
-### 3. 什么没变
+### 3. 参数拆解只剩一份实现
+
+「哪个是旗标、哪个是包名」这件事以前实现了四遍，每个命令在自己的参数循环里各写一遍：
+
+| 位置 | 它得处理什么 |
+| --- | --- |
+| `pkginstaller.parse_flags` | `--name=value`、`-abc`、以及终止旗标列表的单独 `-` |
+| `silent.strip` | 从簇里抠出 `s` / `S`（`-sX`、`-CsX`） |
+| `upgrader.split_input` | 从簇里抠出 `X` / `a`（`-Xv`） |
+| `latest.split_arguments` | 带 `=` 的长写法、逐字母拆的短簇 |
+| `pkginfohelper` | 一句 `word.partition("=")[0]` |
+
+每份实现只认得自己关心的那几个字母，于是「在 A 处学到的规则得在 B 处再学一遍」：
+`-sX` 既要能在 `silent` 里被剥掉、又要能被 `install` 认成合法簇，而这是两段可以互不
+一致的代码。
+
+现在这套规则归 `lib/flags.py`（`flag_name` / `split` / `tokens` / `short_cluster` /
+`remove_short`）。它们是纯函数 —— 不打印、不 `sys.exit`、不读配置 —— 所以 `pkg/` 与
+`lib/` 都能直接用。这个文件里原本就有的那张旗标清单**一个字没动**：它只用于诊断，
+从不参与校验。
+
+行为没有被重写，所以验证方式是「对照」而不是「重读一遍」：把新旧实现并排跑
+**26,930** 组参数组合（`-sX`、`-CsX`、`-Xa`、`--max-time=1min`、单独的 `-`、未知旗标、
+与包名混着来），逐组比对输出，全部一致。唯一有差异的四组，是**旧代码自己跟自己**
+对不上的那几处。
+
+### 4. 什么没变
 
 下面这些是拆完之后手敲出来的，不是「CI 绿了所以大概没变」：
 
@@ -196,9 +254,11 @@ wave selfupdate
 | --- | --- |
 | `bash scripts/message_test.sh` | 61 |
 | `bash scripts/suggest_test.sh` | 3（改成直接导入 `lib/suggest.py`） |
+| `bash scripts/flags_test.sh` | 12，第 8 节钉住拆解函数的返回形状 |
 | `bash scripts/dir_guard_test.sh` | 72 |
 | `flags` / `latest` / `info_format` / `configpath` / `structure` / `net_policy` / `markdown` / `shell_lint` | 全绿 |
 
 `wave.py` 是所有命令都要过的那个文件，所以除上面的脚本外，每条分发分支都手工冒烟过：
 未知命令、拼错命令、各命令的 `--help`、`-s`/`-S` 放在命令前后两种位置、以及给只读命令
-加 `-s`。
+加 `-s`。第 3 节那四个解析器同理：长旗标写错、`install` 用 `-X`、`latest` 的 `-av`、
+`info` 同时给 `--json` 与 `--raw`、以及 `mirror` 自己那几组互斥格式。
