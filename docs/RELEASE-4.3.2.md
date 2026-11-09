@@ -67,6 +67,19 @@ Its message now gives the launcher's full path, since `sudo wave install` typica
 🌊             sudo /opt/macwave/lib/wave install <package>
 ```
 
+### 3. A wrong package name no longer looks like a broken mirror
+
+`wave install <name>` printed `HTTP 404` and then three hints about the mirror — so a typo
+sent people off to check GitHub, their proxy, and the mirror administrator. The name list is
+now consulted (one extra request, only on 404) and the four causes are told apart:
+
+| What is actually wrong | What the command says |
+| --- | --- |
+| The name is not in the index | `no package named 'abc' in the index` + `checked against all N package name(s), so this is not a network or mirror problem` + a few real names |
+| The name is close to one that exists | `did you mean \`tree\`?  try: wave info tree` |
+| The name is right, the mirror lacks `<name>/versions` | `the index has no version list for <name>` + `re-run scripts/build_versions_index.py on the mirror` |
+| The name list itself cannot be read | `cannot reach the package list` + `check MACWAVE_API_DOMAIN …` |
+
 ## Evidence
 
 The regression, from the tags:
@@ -184,6 +197,19 @@ venv over existing root-owned dir: rc=1
 🌊 Next      packages can be installed by an administrator; give the full path (sudo has its own PATH):
 🌊             sudo /opt/macwave/lib/wave install <package>
 ```
+
+### 3. 包名打错时，不再看起来像镜像挂了
+
+`wave install <名>` 以前一律打出 `HTTP 404`，再给三条「查镜像」的提示 —— 于是拼错一个
+字母的人会跑去查 GitHub、查代理、找镜像管理员。现在 404 时会先读一次名字清单（只多一个
+请求），把四种原因分开说：
+
+| 真正的问题 | 现在怎么说 |
+| --- | --- |
+| 名字不在索引里 | `no package named 'abc' in the index` + `against all N package name(s) … not a network or mirror problem` + 几个真实名字 |
+| 名字与某个存在的很接近 | `did you mean \`tree\`?  try: wave info tree` |
+| 名字对，但镜像缺 `<名>/versions` | `the index has no version list for <名>` + `re-run scripts/build_versions_index.py on the mirror` |
+| 名字清单本身读不到 | `cannot reach the package list` + `check MACWAVE_API_DOMAIN …` |
 
 ## 证据
 

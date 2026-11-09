@@ -86,8 +86,10 @@ MIRROR="$WORK/mirror"
 # 这段映射必须与 pkg/pkginstaller.detect_arch() 保持一致。
 ARCH=$(python3 -c 'import platform; m = platform.machine().lower(); print("arm64" if m in ("arm64", "aarch64") else "amd64")')
 
-mkdir -p "$MIRROR/pkg/pkginfo_$ARCH/tree" "$MIRROR/pkg/pkginfo_$ARCH/jq"
-printf 'bat\njq\ntree\nwget\n' > "$MIRROR/pkg/pkginfo_$ARCH/versions"
+mkdir -p "$MIRROR/pkg/pkginfo_$ARCH/tree" "$MIRROR/pkg/pkginfo_$ARCH/jq" \
+         "$MIRROR/pkg/pkginfo_$ARCH/nolist"
+# nolist：名字在清单里、但没有它的 <包名>/versions —— 用来区分「拼错」与「镜像缺数据」
+printf 'bat\njq\nnolist\ntree\nwget\n' > "$MIRROR/pkg/pkginfo_$ARCH/versions"
 printf 'tree@2.2.1\ntree@2.1.0\n' > "$MIRROR/pkg/pkginfo_$ARCH/tree/versions"
 printf 'jq@1.8.2\n' > "$MIRROR/pkg/pkginfo_$ARCH/jq/versions"
 
@@ -243,6 +245,35 @@ ok "不带架构后缀地列出真实版本" "$(wave info tree 2>&1)" "Available
 
 out=$(wave upgrade zzzznonsense 2>&1)
 not_ok "猜不出来时保持沉默" "$out" 'did you mean'
+
+echo
+echo "========== 3.5 装包时包名不存在：别让人去查镜像 =========="
+
+# 输出里有「HTTP 404」时，人的第一反应是「GitHub / 镜像挂了」。
+# 但名字清单读得到、只是没有这个名字时，那是拼写问题 —— 报错必须先说清这一点，
+# 否则用户会去查网络、换镜像、找管理员，全都白费。
+out=$(wave install abc 2>&1)
+plain=$(strip_ansi "$out")
+ok     "点名「索引里没有这个包」"       "$plain" "no package named 'abc' in the index"
+ok     "明确排除网络/镜像问题"          "$plain" "not a network or mirror problem"
+ok     "给几个真实存在的名字作参考"      "$plain" "some names in the index"
+not_ok "不再提 MACWAVE_API_DOMAIN"      "$plain" "MACWAVE_API_DOMAIN"
+not_ok "不再提 versions lists"          "$plain" "no versions lists yet"
+
+out=$(wave install treee 2>&1)
+plain=$(strip_ansi "$out")
+# 断言里的反引号用单引号包：双引号里它会变成命令替换，把 `tree` 真跑一遍，
+# 输出变成目录树，测试于是莫名其妙地红 —— 实测踩过。
+ok     "拼错时给近似名"                 "$plain" 'did you mean `tree`?'
+ok     "并给出能直接跑的命令"            "$plain" "try: wave info tree"
+ok     "同样排除网络/镜像问题"           "$plain" "not a network or mirror problem"
+
+# 名字确实在清单里、只是镜像没提供它的版本清单：这时候才该指向镜像。
+out=$(wave install nolist 2>&1)
+plain=$(strip_ansi "$out")
+ok     "名字对但缺清单时说的是数据问题"   "$plain" "the index has no version list for nolist"
+ok     "并指明名字本身没错"              "$plain" "the package name is right"
+ok     "给出管理员的修复动作"            "$plain" "build_versions_index.py"
 
 echo
 echo "========== 4. 正常用法不受影响 =========="

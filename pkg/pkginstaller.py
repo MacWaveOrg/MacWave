@@ -728,6 +728,12 @@ def closest_name(package_name, names):
 
     与网络无关，所以可以单独测 —— 这条路径只在 404 时才会走到，
     平时怎么用都不会碰，坏了也没人发现。
+
+    两个判据取并集，缺一不可：
+      ratio >= 0.6      长名字打错一两个字母（treee -> tree）
+      edit distance <= 1 短名字打错一个字母（xk -> sk 的 ratio 只有 0.50）
+    只用 ratio 时 `xk` 拿不到任何建议；只用距离时 `htpz -> htop`（距离 2）会漏。
+    距离判据同时挡住 ratio 恰好也是 0.50 的误报：`curl -> ncdu` 距离 4，不成立。
     """
     candidates = []
     for name in names:
@@ -742,31 +748,99 @@ def closest_name(package_name, names):
     return candidates[0][2]
 
 
-def suggest_package_name(package_name, arch, timeout=DEFAULT_TIMEOUT):
-    # 404 时翻一次镜像的名字清单，找最接近的包名。
-    #
-    # 打错包名是最常见的失败（treee / tree、rg / rgs），而原来的报错只会说
-    # 「读不到版本清单」—— 用户得自己意识到是拼写错了。这里只在 404 时多发一个请求，
-    # 拿不到清单就安静放弃，绝不影响正常路径。
-    #
-    # 两个判据取并集，缺一不可：
-    #   ratio >= 0.6      长名字打错一两个字母（treee -> tree）
-    #   edit distance <= 1 短名字打错一个字母（xk -> sk 的 ratio 只有 0.50）
-    # 只用 ratio 时 `xk` 拿不到任何建议；只用距离时 `htpz -> htop`（距离 2）会漏。
-    # 距离判据同时挡住 ratio 恰好也是 0.50 的误报：`curl -> ncdu` 距离 4，不成立。
+def fetch_package_names(arch, timeout=DEFAULT_TIMEOUT):
+    """索引里的全部包名。列不出来（网络 / 镜像没有清单）时返回 None。
+
+    返回值区分的是**两类完全不同的问题**，报错要据此分开说：
+      None   → 名字清单都拿不到，是网络或镜像配置的事，别再猜包名
+      []     → 清单是空的，镜像还没生成 versions
+      [...]  → 有清单，于是能判断「这个名字在不在里面」
+    """
+    names_url = domains.index_list_url(arch)
     try:
-        names_url = domains.index_list_url(arch)
         response = requests.get(names_url, timeout=_as_request_timeout(timeout),
                                 headers=github_api_headers(names_url), **tls.request_kwargs())
-        if response.status_code != 200:
-            return None
-        names = domains.listing_names(response.text)
-        if not names:
-            return None
-
-        return closest_name(package_name, names)
-    except Exception:
+    except Exception as error:
+        steplog.detail(f"package list failed: {error}")
         return None
+    if response.status_code != 200:
+        steplog.detail(f"package list HTTP {response.status_code}")
+        return None
+    return [name for name in domains.listing_names(response.text, dirs_only=True) if name]
+
+
+def name_examples(package_name, names, limit=5):
+    """给几个真存在、又和打错的名字有点关系的包名，帮用户找回来。
+
+    优先同首字母的（`htpz` → 一堆 `h*`），没有就给清单开头几个。
+    返回的第二个值表示这批示例是哪一种，提示语要据此换措辞 —— 否则会出现
+    「names starting with a: jq, tree, wget」这种自相矛盾的话。
+    """
+    prefix = package_name[:1].casefold()
+    same_letter = sorted(name for name in names if name[:1].casefold() == prefix)
+    if same_letter:
+        return same_letter[:limit], f"names starting with '{prefix}'"
+    return sorted(names)[:limit], "some names in the index"
+
+
+def _explain_missing_version_list(package_name, arch, api_url, timeout):
+    """`<包名>/versions` 404 时分清三件事，报错只报其中一件。
+
+    三种原因的话术完全不同，混成一句「读不到版本清单」会让用户去查 GitHub 和镜像 ——
+    而绝大多数情况只是包名打错了：
+
+      名字清单拿不到      → 网络 / MACWAVE_API_DOMAIN / 镜像没生成清单
+      名字不在清单里      → 包名错（最常见）；给出近似名与几个同类示例
+      名字在、清单却 404  → 镜像缺这一份，数据问题
+
+    这一步只多发一个请求，且只在 404 时发生。
+    """
+    names = fetch_package_names(arch, timeout)
+
+    if names is None:
+        steplog.fail(
+            f"cannot reach the package list, so {package_name} cannot be checked",
+            request=api_url,
+            hint=["check MACWAVE_API_DOMAIN points at <mirror>/MacWave/infosource",
+                  "if every package fails this way, the mirror has no versions lists "
+                  "yet (see docs/MIRROR-SETUP.md)",
+                  "check the network and any --proxy setting, then retry"])
+
+    if not names:
+        steplog.fail(
+            f"the package list is empty, so {package_name} cannot be checked",
+            request=api_url,
+            hint=["the mirror has not generated its versions lists yet "
+                  "(see docs/MIRROR-SETUP.md)",
+                  "ask the administrator to re-run scripts/build_versions_index.py"])
+
+    folded = {name.casefold() for name in names}
+    if package_name.casefold() not in folded:
+        close = closest_name(package_name, names)
+        examples, label = name_examples(package_name, names)
+        hint = []
+        if close:
+            # 建议先 `wave info`：它只读、不装任何东西，用户想核对版本也方便。
+            # 直接给 `wave upgrade` 是错的 —— 这里同时服务 install 与 upgrade 两条路。
+            hint.append(f"did you mean `{close}`?  try: wave info {close}")
+        # 这一句是整段提示的目的：把「名字错」与「网络 / 镜像挂了」分开。
+        # 用户看到「HTTP 404」时的第一反应是去查 GitHub 和镜像，而那通常不是原因。
+        hint.append(f"the name was checked against all {len(names)} package name(s) "
+                    f"in the index, so this is not a network or mirror problem")
+        if examples:
+            hint.append(f"{label}: " + ", ".join(examples))
+        hint.append("list every match for part of a name: wave search <part of a name>")
+        steplog.fail(f"no package named '{package_name}' in the index", hint=hint)
+
+    # 名字确实存在，只是镜像没提供它的版本清单
+    steplog.fail(
+        f"the index has no version list for {package_name}",
+        request=api_url,
+        response="HTTP 404",
+        hint=["the package name is right; the mirror is missing this file",
+              "ask the administrator to re-run scripts/build_versions_index.py on the mirror",
+              "if every package is like this, the mirror has no versions lists yet "
+              "(see docs/MIRROR-SETUP.md)"])
 
 
 def fetch_max_version(package_name, arch, timeout=DEFAULT_TIMEOUT):
@@ -778,26 +852,13 @@ def fetch_max_version(package_name, arch, timeout=DEFAULT_TIMEOUT):
                                 headers=github_api_headers(api_url),
                                 **tls.request_kwargs())
         if response.status_code != 200:
-            hint = []
             if response.status_code == 404:
-                # 拼错包名远比镜像配错常见，所以先猜名字，猜到了就放在第一条
-                close = suggest_package_name(package_name, arch, timeout)
-                if close:
-                    hint.append(f"did you mean `{close}`?  try: wave info {close}")
-                # 这里曾经写死 `wave search <词>` —— 用户照着敲会得到
-                # "No packages found matching '<词>'"。给一条真能跑、且一定有结果的例子。
-                hint.append("search by part of a name, e.g. wave search z "
-                            "(lists every name containing z)")
-                hint.append("check MACWAVE_API_DOMAIN points at <mirror>/MacWave/infosource")
-                hint.append("if every package is missing, the mirror has no versions lists "
-                            "yet (see docs/MIRROR-SETUP.md)")
-            else:
-                hint.append("check the network and any --proxy setting, then retry")
+                _explain_missing_version_list(package_name, arch, api_url, timeout)
             steplog.fail(
                 f"cannot read the version list for {package_name}",
                 request=api_url,
                 response=f"HTTP {response.status_code}",
-                hint=hint)
+                hint="check the network and any --proxy setting, then retry")
 
         file_list = domains.listing_names(response.text)
         versions = []
