@@ -2,8 +2,6 @@
 
 # wave.py
 
-import os
-import difflib
 import sys
 from pathlib import Path
 
@@ -29,8 +27,12 @@ sys.path.insert(0, str(PKG_DIR))
 sys.path.insert(0, str(NET_DIR))
 sys.path.insert(0, str(LIB_DIR))
 
-# 放在顶层：「未知命令」那条分支也要用它，而那条分支在分发之前
+# 放在顶层：「未知命令」那条分支也要用它们，而那条分支在分发之前。
+#   silent  —— 静默旗标的解析与应用（见 lib/silent.py）
+#   suggest —— 命令名打错时的纠错建议（见 lib/suggest.py）
 import quiet
+import silent
+import suggest as suggest_module
 
 
 # -------------------- 字典定义 --------------------
@@ -59,124 +61,6 @@ ARGUMENTS = {
     "--version": "help",
 }
 
-# 常见误输入 → 正确的命令。
-#
-# 只收真的会有人这么打的几条，不做通用拼写纠正：/usr/bin 里那些包管理器的叫法
-# （apt update、yum update、dnf update）会让人顺手打 `wave update`，而这里只有 upgrade。
-# 猜错比不猜更让人困惑，所以宁可少提示。
-MISTYPED = {
-    "update":  "upgrade",
-    "updates": "upgrade",
-    "remove":  "uninstall",
-    "delete":  "uninstall",
-    "rm":      "uninstall",
-    "ls":      "list",
-    "find":    "search",
-    "show":    "info",
-}
-
-
-# 拼写纠错的阈值。0.7 是下限：再低会把 `li` 猜成 list。
-SPELL_CUTOFF = 0.7
-# 首字母不同时，要求更高的相似度才认。
-#
-# 数字是穷举所有命令的**单字母错误**（删一个 / 换一个 / 插一个，共 4670 种）测出来的：
-#
-#   首字母必须相同        猜对 85.6%   猜错 0.2%   不猜 14.2%
-#   首字母不同需 ≥0.9     猜对 91.7%   猜错 0.3%   不猜  8.1%
-#   首字母不同需 ≥0.83    猜对 98.1%   猜错 0.3%   不猜  1.6%
-#   无约束                猜对 99.6%   猜错 0.4%   不猜  0.0%
-#
-# 取 0.83：几乎全中，同时挡住 `inst` → list（`inst` 是 install 的缩写，
-# 相似度 0.75，被这条卡掉；而真正的单字母笔误都在 0.83 以上）。
-FIRST_CHAR_RATIO = 0.83
-
-
-def spell_command(word):
-    """按拼写从命令表里猜一个；猜不到返回 None。
-
-    与 MISTYPED 分工不同：那张表收的是**语义上**的误用（`update` 是 apt 的叫法），
-    这里管的是**手滑**（`instal` 少一个 l）。
-    """
-    matches = difflib.get_close_matches(word, sorted(COMMANDS), n=1, cutoff=SPELL_CUTOFF)
-    if not matches:
-        return None
-    best = matches[0]
-    if best[0] == word[0]:
-        return best
-    # 首字母都不一样还硬猜，风险最高的就是「缩写」被当成笔误
-    # （`inst` 与 `list` 相似度 0.75）。要求更高才认。
-    ratio = difflib.SequenceMatcher(None, word, best).ratio()
-    return best if ratio >= FIRST_CHAR_RATIO else None
-
-
-def suggest(words):
-    """首词打错时给出完整改法：只换掉那个词，其余参数与旗标原样保留。
-
-    返回 (改好的命令行, 打错的词, 正确命令)；不认识就返回 None。
-
-    先查 MISTYPED（语义误用），再按拼写猜。顺序不能反：`update` 与 `selfupdate`
-    的相似度是 0.75，先跑拼写会把它猜成 selfupdate，而用户想的是 upgrade。
-    """
-    if not words:
-        return None
-    wrong = words[0]
-    right = MISTYPED.get(wrong) or spell_command(wrong)
-    if right is None or right not in COMMANDS:
-        return None
-    return " ".join(["wave", right] + words[1:]), wrong, right
-
-
-# -------------------- 全局旗标 --------------------
-
-# `-s` 只对「有过程可安静」的命令有意义。list / latest / search / info / mirror
-# 存在的目的就是打印，给它们 -s 只会得到一片空白 —— 那不是静默，是把命令废掉。
-# 所以这些命令上出现 -s 直接报错，比让它默默什么都不输出好。
-SILENT_COMMANDS = {"install", "upgrade", "uninstall", "link", "unlink", "selfupdate"}
-
-
-def strip_silent(words):
-    """把 `-s` / `--silent` / `-S` / `--show-error` 从 argv 里拿掉。
-
-    返回 (剩下的 words, 是否静默, 是否保留错误)。写法与 upgrader 处理 -X 一致：
-
-        wave install jq -s          单个
-        wave install jq --silent    长写法
-        wave upgrade jq -sX         合并（s 与 X 都在这一簇里）
-        wave upgrade jq -CsX        合并里夹着别的短旗标
-        wave install jq -sS         静默但保留错误（curl 的 -sS）
-
-    只处理单横线短旗标簇，`--skip-ssl` 这类长旗标不受影响（`s`/`S` 不在
-    `--` 开头的那一类里找）。包名不以 `-` 开头，所以不会被误伤。
-    """
-    silent = False
-    show_error = False
-    kept = []
-    for word in words:
-        if word == "--silent":
-            silent = True
-            continue
-        if word == "--show-error":
-            show_error = True
-            continue
-        if word.startswith("-") and not word.startswith("--") and len(word) > 1:
-            letters = word[1:]
-            # 大写 S 与小写 s 各管一件事，顺序无关：-sS 与 -Ss 等价
-            for letter in ("s", "S"):
-                if letter in letters:
-                    if letter == "s":
-                        silent = True
-                    else:
-                        show_error = True
-                    letters = letters.replace(letter, "")
-            if letters != word[1:]:
-                if letters:
-                    kept.append("-" + letters)
-                continue
-        kept.append(word)
-    return kept, silent, show_error
-
-
 # -------------------- 主调度逻辑 --------------------
 
 def main():
@@ -193,7 +77,7 @@ def main():
     #
     # 取首词也从剥离后的副本里取：`wave -s update jq` 里的 -s 是全局旗标，
     # 不该被当成命令名报「unknown command: -s」。
-    lead, silent, show_error = strip_silent(words)
+    lead, is_silent, _show_error = silent.strip(words)
     FirstWord = lead[0] if lead else words[0]
 
     # 2. 参数优先
@@ -223,35 +107,9 @@ def main():
         if FirstWord not in ("install", "upgrade"):
             tls.grant()
 
-        # `-s / --silent`：这条命令只留错误输出。位置放在分发之前，因为
-        # handler 的旗标白名单里没有它（各命令按自己的白名单校验，加进去要改
-        # 十几处），而且它天然是全局选项。所以这里**把它从 argv 里拿掉**，
-        # 而不是让下游去认它 —— 留着的话 `wave install jq -s` 会报
-        # 「illegal option -s」。
-        #
-        # 支持合并写法：`-sX`、`-Xs`、`-CsX` 里的 s 都算。upgrader 的
-        # split_input 本来就用同样的办法处理 -X，这里保持一致。
-        #
-        # 静默优先于啰嗦：同时给了 -v，-v 会被 steplog.set_verbose 挡掉。
-        words, silent, show_error = strip_silent(words)
-        if silent:
-            if FirstWord not in SILENT_COMMANDS:
-                # 拒绝得早一点，并且用和「旗标写错」同一种形状，脚本好处理。
-                # 不能说 unknown —— -s 真实存在，只是不适用于只读命令。
-                applicable = ", ".join(f"wave {name}" for name in sorted(SILENT_COMMANDS))
-                quiet.misplaced("-s", f"-s only applies to {applicable}")
-                sys.exit(1)
-            # 单给 -s 时连错误一起吞（curl 语义）；-sS 才留错误。
-            quiet.set_silent(True, show_error=show_error)
-            if show_error:
-                # -sS：输出给脚本读，一律不带 🌊（见 quiet.machine_readable）
-                quiet.machine_readable()
-            else:
-                quiet.silence_everything()
-            # 子脚本（pkginstaller.sh、depsmanager.sh…）也要知道：它们的输出
-            # 虽然由 Python 重印，但 update_commands 那类直接写终端的脚本
-            # 只能靠环境变量。
-            os.environ["MACWAVE_SILENT"] = "1"
+        # `-s / --silent`（含 `-sS`）：剥掉旗标并落到 quiet。细节与理由在
+        # lib/silent.py —— 主程序只负责「剥完继续分发」。
+        words = silent.apply(words, FirstWord)
 
         # `wave <command> -h|--help`：打印该命令自己的用法后退出。
         # 必须在这里拦下：各 handler 的旗标白名单里没有 --help，
@@ -327,13 +185,13 @@ def main():
     import flags as flags_module
     bad_flags = flags_module.unknown_flags(words)
 
-    if silent:
+    if is_silent:
         quiet.unknown("command", FirstWord)
         sys.exit(1)
 
     # 建议里不能留着坏旗标 —— 否则「Did you mean: wave upgrade jq --unkown-flag」
     # 抄给用户一条还是错的命令，他照着改会再撞一次同样的错。
-    hint = suggest(words)
+    hint = suggest_module.command(words, COMMANDS)
     if hint and bad_flags:
         fixed, wrong, right = hint
         kept = [w for w in fixed.split() if not set(flags_module.split(w)) & set(bad_flags)]

@@ -1,7 +1,11 @@
 #!/bin/bash
 
 # suggest_test.sh
-# `pkg/pkginstaller.closest_name` —— 包名打错时的建议。
+# `lib/suggest.py` —— 两类「你是不是想敲……」的建议：
+#   命令名（MISTYPED 语义表 + 拼写纠错）与包名（编辑距离 + 相似度）。
+#
+# 这两段平时都碰不到：命令名写对、包名写对时一次都不会跑。退化成「什么建议都不给」
+# 时，表现只是少一行提示，没人会当成 bug 报上来，所以单独钉住。
 #
 # 为什么单独一个测试：这段代码只在「索引里没有这个名字」时才会跑到，
 # 平时 install 正常工作一次都碰不到。它悄悄退化成「什么建议都不给」时，
@@ -36,18 +40,12 @@ from pathlib import Path
 repo = Path(sys.argv[1])
 sys.path[:0] = os.environ["MACWAVE_COMPONENT_PATHS"].split(os.pathsep)
 
-# 只导入纯函数所在的模块。
+# suggest.py 只有纯函数，没有副作用，可以直接按文件导入。
 import importlib.util
 
-# pkginstaller 顶层有 `BASE_DIR = load_base_dir()`，而 load_base_dir() 在找不到
-# 配置时会直接 sys.exit(1)。这里只测纯函数，先把那个来源换成常量 ——
-# 否则这段测试只在「装过 MacWave 的机器」上能过，干净容器里必红。
-import configpaths
-configpaths.load_base_dir = lambda: Path("/nonexistent-base-dir")
-
-spec = importlib.util.spec_from_file_location("pkginstaller", repo / "pkg" / "pkginstaller.py")
+spec = importlib.util.spec_from_file_location("suggest", repo / "lib" / "suggest.py")
 module = importlib.util.module_from_spec(spec)
-sys.modules["pkginstaller"] = module
+sys.modules["suggest"] = module
 spec.loader.exec_module(module)
 
 # 与索引里真实存在的名字一致（去掉 test_* 那批负向夹具）
@@ -93,7 +91,7 @@ import itertools
 
 
 def lev(a, b):
-    return module._edit_distance(a, b)
+    return module.edit_distance(a, b)
 
 
 if lev("", "") != 0 or lev("", "abc") != 3 or lev("abc", "") != 3:

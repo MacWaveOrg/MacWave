@@ -155,6 +155,9 @@ lib/innocent.dylib -> /Users/someone/.ssh/id_rsa
 - **`-s` 的静默不是靠「每个 print 都判断一下」**。`quiet.silence_everything()`
   在 fd 层把 1、2 指向 `/dev/null`，子进程（curl、进度条）也一起闭嘴；带 `-S` 时
   不换 fd，改由 `machine_readable()` 剥掉行首 🌊。
+- **两个模块分工，别混**：`lib/silent.py` 管参数（哪些命令能静默、怎么剥旗标），
+  只被 `wave.py` 调用；`lib/quiet.py` 管运行期输出，`pkg/` 与 `surfboard/` 都用它。
+  新增一条静默相关规则时，先想清楚它属于「解析」还是「输出」。
 - **`-F`/`--force` 的优先级最高**，判断在 `-s` 之前 —— 否则无人值守安装遇到声明
   偏保守的包（`jq` 那种）就没有出路。
 

@@ -37,6 +37,7 @@ from flags import describe as describe_flag
 import timeouts
 import quiet
 import steplog
+from suggest import closest_name, name_examples
 
 
 def github_api_headers(url):
@@ -710,44 +711,6 @@ def fetch_common_fields(package_name, arch, timeout=DEFAULT_TIMEOUT):
     return parse_common_fields(response.text)
 
 
-def _edit_distance(left, right):
-    """Levenshtein 距离：把 left 改成 right 要几次增/删/换。"""
-    previous = list(range(len(right) + 1))
-    for i, char_left in enumerate(left, 1):
-        current = [i]
-        for j, char_right in enumerate(right, 1):
-            current.append(min(previous[j] + 1,          # 删
-                               current[j - 1] + 1,        # 增
-                               previous[j - 1] + (char_left != char_right)))
-        previous = current
-    return previous[-1]
-
-
-def closest_name(package_name, names):
-    """从名字清单里挑最像的一个；都不像就返回 None。
-
-    与网络无关，所以可以单独测 —— 这条路径只在 404 时才会走到，
-    平时怎么用都不会碰，坏了也没人发现。
-
-    两个判据取并集，缺一不可：
-      ratio >= 0.6      长名字打错一两个字母（treee -> tree）
-      edit distance <= 1 短名字打错一个字母（xk -> sk 的 ratio 只有 0.50）
-    只用 ratio 时 `xk` 拿不到任何建议；只用距离时 `htpz -> htop`（距离 2）会漏。
-    距离判据同时挡住 ratio 恰好也是 0.50 的误报：`curl -> ncdu` 距离 4，不成立。
-    """
-    candidates = []
-    for name in names:
-        ratio = difflib.SequenceMatcher(None, package_name, name).ratio()
-        distance = _edit_distance(package_name, name)
-        if ratio >= 0.6 or distance <= 1:
-            candidates.append((distance, -ratio, name))
-    if not candidates:
-        return None
-    # 先看谁改得最少，再比相似度；同分时按名字排序，保证结果稳定可测
-    candidates.sort()
-    return candidates[0][2]
-
-
 def fetch_package_names(arch, timeout=DEFAULT_TIMEOUT):
     """索引里的全部包名。列不出来（网络 / 镜像没有清单）时返回 None。
 
@@ -767,20 +730,6 @@ def fetch_package_names(arch, timeout=DEFAULT_TIMEOUT):
         steplog.detail(f"package list HTTP {response.status_code}")
         return None
     return [name for name in domains.listing_names(response.text, dirs_only=True) if name]
-
-
-def name_examples(package_name, names, limit=5):
-    """给几个真存在、又和打错的名字有点关系的包名，帮用户找回来。
-
-    优先同首字母的（`htpz` → 一堆 `h*`），没有就给清单开头几个。
-    返回的第二个值表示这批示例是哪一种，提示语要据此换措辞 —— 否则会出现
-    「names starting with a: jq, tree, wget」这种自相矛盾的话。
-    """
-    prefix = package_name[:1].casefold()
-    same_letter = sorted(name for name in names if name[:1].casefold() == prefix)
-    if same_letter:
-        return same_letter[:limit], f"names starting with '{prefix}'"
-    return sorted(names)[:limit], "some names in the index"
 
 
 def _explain_missing_version_list(package_name, arch, api_url, timeout):

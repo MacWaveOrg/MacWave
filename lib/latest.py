@@ -4,7 +4,6 @@
 # `wave latest` —— 看某个（或所有）软件包有没有更新。只报告，不下载任何东西。
 
 import concurrent.futures as futures
-import difflib
 import os
 import sys
 
@@ -21,6 +20,7 @@ RESET = '\033[0m'
 from configpaths import load_base_dir, require_safe_token
 import domains
 import tls
+from suggest import closest_name
 import steplog
 
 try:
@@ -151,14 +151,6 @@ def resolve_package_name(bin_name, names):
         if candidate.casefold() == folded:
             return candidate
     return bin_name
-
-
-def suggest_package_name(package_name, names):
-    # 排除同名：叫 wget 的包在名字清单里时，"did you mean wget" 只会让人更困惑
-    candidates = [name for name in names or []
-                  if name.casefold() != package_name.casefold()]
-    matches = difflib.get_close_matches(package_name, candidates, n=1, cutoff=0.6)
-    return matches[0] if matches else None
 
 
 # -------------------- 组装每一行 --------------------
@@ -399,7 +391,7 @@ def report_failure(row, arch, timeout):
     if index_names is not None:
         folded = {candidate.casefold() for candidate in index_names}
         if name.casefold() not in folded:
-            close = suggest_package_name(name, index_names)
+            close = closest_name(name, index_names)
             hint = []
             if close:
                 hint.append(f"did you mean `{close}`?  try: wave latest {close}")

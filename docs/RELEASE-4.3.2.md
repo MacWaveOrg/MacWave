@@ -80,6 +80,19 @@ now consulted (one extra request, only on 404) and the four causes are told apar
 | The name is right, the mirror lacks `<name>/versions` | `the index has no version list for <name>` + `re-run scripts/build_versions_index.py on the mirror` |
 | The name list itself cannot be read | `cannot reach the package list` + `check MACWAVE_API_DOMAIN …` |
 
+### 4. Internals: two new modules, no behaviour change
+
+`lib/wave.py` had grown into argument parsing + dispatch + two tables of heuristics. The parts
+that are not dispatch moved out, so the entry point only reads a command and hands it over:
+
+| Module | Owns |
+| --- | --- |
+| `lib/silent.py` | `-s` / `-S`: which commands may be silenced, how the flags are stripped (`-sX`, `-CsX`), and applying the result |
+| `lib/suggest.py` | "did you mean": command names (typo table + spelling) and package names (edit distance + similarity) |
+
+`wave.py` went from 355 to 213 lines. The package-name matcher now exists once: `install`
+and `latest` had two different implementations of the same idea.
+
 ## Evidence
 
 The regression, from the tags:
@@ -210,6 +223,19 @@ venv over existing root-owned dir: rc=1
 | 名字与某个存在的很接近 | `did you mean \`tree\`?  try: wave info tree` |
 | 名字对，但镜像缺 `<名>/versions` | `the index has no version list for <名>` + `re-run scripts/build_versions_index.py on the mirror` |
 | 名字清单本身读不到 | `cannot reach the package list` + `check MACWAVE_API_DOMAIN …` |
+
+### 4. 内部重构：两个新模块，行为不变
+
+`lib/wave.py` 已经长成「参数解析 + 分发 + 两张启发式表」。不属于分发的部分搬了出去，
+入口只负责「读一个命令、交出去」：
+
+| 模块 | 管什么 |
+| --- | --- |
+| `lib/silent.py` | `-s` / `-S`：哪些命令能静默、怎么剥掉旗标（`-sX`、`-CsX`）、剥完怎么落地 |
+| `lib/suggest.py` | 「你是不是想敲……」：命令名（误用表 + 拼写）与包名（编辑距离 + 相似度） |
+
+`wave.py` 从 355 行降到 213 行。包名匹配现在只有一份实现 —— `install` 与 `latest`
+此前各写了一套。
 
 ## 证据
 
