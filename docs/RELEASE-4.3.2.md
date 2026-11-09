@@ -4,7 +4,7 @@
 - Branch: `4.3` (same line as 4.3.1; the `v4.3.1` tag stays at `e2532dc`)
 - Previous release: [4.3.1](RELEASE-4.3.1.md)
 
-## Two fixes, both in the system-wide install
+## Three fixes, plus one refactor
 
 ### 1. 4.3.0 / 4.3.1 silently broke the private Python environment
 
@@ -146,6 +146,10 @@ If you are on 4.2.1 / 4.2.2 (selfupdate is broken there), use the install comman
 - the runtime message carries the launcher's full path, and `install.sh` no longer claims
   that changing packages needs `sudo`.
 
+`bash scripts/message_test.sh` (61) and `bash scripts/suggest_test.sh` (3) cover the wording
+and the "did you mean" paths; the refactor in §4 left both green without touching an assertion
+except the one that now imports `lib/suggest.py` directly.
+
 ---
 
 # MacWave 4.3.2 发布说明
@@ -154,7 +158,7 @@ If you are on 4.2.1 / 4.2.2 (selfupdate is broken there), use the install comman
 - 分支：`4.3`（与 4.3.1 同一条线；`v4.3.1` 的 tag 仍在 `e2532dc`）
 - 上一版：[4.3.1](RELEASE-4.3.1.md)
 
-## 两处修复，都在系统级安装上
+## 三处修复，另加一处重构
 
 ### 1. 4.3.0 / 4.3.1 悄悄弄坏了私有 Python 环境
 
@@ -286,3 +290,7 @@ wave selfupdate
 - 顺序：借出在 `python -m venv` 之前、交还在它之后；
 - 用户级安装一条都不动（假 `sudo` 的日志是空的）；
 - 运行时报错带启动器全路径；`install.sh` 不再宣称改动软件包需要 `sudo`。
+
+`bash scripts/message_test.sh`（61 条）与 `bash scripts/suggest_test.sh`（3 条）覆盖文案与
+「你是不是想敲……」这些路径；第 4 节的重构之后两者仍是绿的，除了一条改成直接导入
+`lib/suggest.py` 的断言外没动任何断言。
