@@ -1,6 +1,6 @@
 # MacWave 4.3.2 Release Notes
 
-- Released: 2026-11-08, build `312A1823`
+- Released: 2026-11-09, build `313A1704`
 - Branch: `4.3` (same line as 4.3.1; the `v4.3.1` tag stays at `e2532dc`)
 - Previous release: [4.3.1](RELEASE-4.3.1.md)
 
@@ -137,7 +137,7 @@ If you are on 4.2.1 / 4.2.2 (selfupdate is broken there), use the install comman
 
 # MacWave 4.3.2 发布说明
 
-- 发布：2026-11-08，构建号 `312A1823`
+- 发布：2026-11-09，构建号 `313A1704`
 - 分支：`4.3`（与 4.3.1 同一条线；`v4.3.1` 的 tag 仍在 `e2532dc`）
 - 上一版：[4.3.1](RELEASE-4.3.1.md)
 
