@@ -157,6 +157,35 @@ if flags.remove_short("-v", "sS") is not None:
 if flags.remove_short("--silent", "sS") is not None:
     add("remove_short 不该动长旗标")
 
+# 9) 「哪些命令能静默」只该有一份事实。权威在 silent.SILENT_COMMANDS，
+#    清单里的 silent 组只负责让 describe("-s") 说得出话 —— 两边走散的表现很安静：
+#    加一条只读命令后它照样接受 -s，或者加一条能静默的命令后提示里把它漏掉。
+import silent
+
+owners = set(flags.owner_commands("-s"))
+if owners != set(silent.SILENT_COMMANDS):
+    add(f"-s 的命令清单与 SILENT_COMMANDS 不一致: "
+        f"清单={sorted(owners)} 代码={sorted(silent.SILENT_COMMANDS)}")
+
+expected = "-s only applies to wave install, wave link, wave selfupdate, " \
+           "wave uninstall, wave unlink, wave upgrade"
+if flags.describe("-s") != expected:
+    add(f"describe(-s) 变了: {flags.describe('-s')!r}")
+if flags.describe("-S") != expected.replace("-s only", "-S only", 1):
+    add(f"describe(-S) 没跟着 -s 走: {flags.describe('-S')!r}")
+
+# 进了 GLOBAL 就等于宣称「任何命令都接受」，那正是这条提示要否定的
+for flag in ("-s", "--silent", "-S", "--show-error"):
+    if flag in flags.GLOBAL:
+        add(f"{flag} 又回到 GLOBAL 里了 —— 那等于任何命令都接受它")
+    if flag not in flags.ALL:
+        add(f"{flag} 不在 flags.ALL（会被当成不存在的旗标）")
+
+# 只读命令一条都不能带 -s
+for read_only in ("list", "search", "info", "latest", "mirror", "linkquery"):
+    if read_only in owners:
+        add(f"{read_only} 不该出现在 -s 的命令清单里（它存在的目的就是打印）")
+
 if problems:
     for p in problems:
         print(f"FAIL {p}")

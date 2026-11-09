@@ -24,6 +24,9 @@ import quiet
 # `-s` 只对「有过程可安静」的命令有意义。list / latest / search / info / mirror
 # 存在的目的就是打印，给它们 -s 只会得到一片空白 —— 那不是静默，是把命令废掉。
 # 所以这些命令上出现 -s 直接报错，比让它默默什么都不输出好。
+#
+# **这份名单是权威**，flags.COMMAND_FLAGS 里那份是给它做提示文案用的副本；
+# scripts/flags_test.sh 比对两边。加一条能静默的命令时，两处都要改。
 SILENT_COMMANDS = {"install", "upgrade", "uninstall", "link", "unlink", "selfupdate"}
 
 
@@ -81,8 +84,10 @@ def apply(words, command):
     if command not in SILENT_COMMANDS:
         # 拒绝得早一点，并且用和「旗标写错」同一种形状，脚本好处理。
         # 不能说 unknown —— -s 真实存在，只是不适用于只读命令。
-        applicable = ", ".join(f"wave {name}" for name in sorted(SILENT_COMMANDS))
-        quiet.misplaced("-s", f"-s only applies to {applicable}")
+        # 这句话由 flags.describe 生成，别在这里另拼一份：命令清单存在
+        # flags.COMMAND_FLAGS 里，与下面的 SILENT_COMMANDS 由 flags_test.sh
+        # 钉着不许走散。
+        quiet.misplaced("-s", flags.describe("-s") or "-s is not available here")
         sys.exit(1)
 
     # 单给 -s 时连错误一起吞（curl 语义）；-sS 才留错误。

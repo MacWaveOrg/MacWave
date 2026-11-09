@@ -86,6 +86,13 @@ by `install`, and those were two separate pieces of code that could disagree.
 what lets `pkg/` and `lib/` both use them. The flag catalogue that was already in that file
 stays exactly as it was: **diagnostics only**, never validation.
 
+One fact also stopped being stored twice. "Which commands may be silenced" was written out by
+hand in `silent.apply()` and contradicted by the flag catalogue, which filed `-s` under "every
+command accepts it". It is now a per-command group in the catalogue, so
+`flags.describe("-s")` produces that sentence — byte for byte the same string the code used to
+build by hand, and the silent commands are no longer claimed to be all of them. Adding a
+read-only command no longer leaves a hole nothing tests.
+
 Nothing about behaviour was rewritten, so the change was checked by equivalence rather than
 by re-reading: the old and new implementations were run side by side over **26,930**
 argument combinations (`-sX`, `-CsX`, `-Xa`, `--max-time=1min`, a bare `-`, unknown flags,
@@ -217,6 +224,11 @@ install 那条路径按构造是不变的（函数是搬过去的，不是重写
 `remove_short`）。它们是纯函数 —— 不打印、不 `sys.exit`、不读配置 —— 所以 `pkg/` 与
 `lib/` 都能直接用。这个文件里原本就有的那张旗标清单**一个字没动**：它只用于诊断，
 从不参与校验。
+
+顺带让一个事实不再存两份。「哪些命令能静默」原本在 `silent.apply()` 里手拼成一句话，
+而旗标清单却把 `-s` 记在「任何命令都接受」那一组里 —— 两处互相矛盾。现在它按命令列进
+清单，`flags.describe("-s")` 就能生成那句话：与手拼的字符串逐字节相同，同时不再宣称
+所有命令都认 `-s`。以后加一条只读命令，不会留下一个没人测得到的窟窿。
 
 行为没有被重写，所以验证方式是「对照」而不是「重读一遍」：把新旧实现并排跑
 **26,930** 组参数组合（`-sX`、`-CsX`、`-Xa`、`--max-time=1min`、单独的 `-`、未知旗标、

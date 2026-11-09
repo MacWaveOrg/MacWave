@@ -40,22 +40,31 @@ GLOBAL = {
     "--ver",
     "--install-from-source",
     "--install-python-from-source",
-    "-s", "--silent",
-    "-S", "--show-error",
     # 注意没有 --help / --version：那两条在分发之前就被拦下，
     # 不算「某条命令接受的旗标」，但仍然是合法输入，所以在 ALL 里单独补。
+    # 也没有 -s / -S：它们不是「任何命令都接受」，见下面的 silent 一组。
 }
+
+# 能静默的命令。**必须按命令列，不能放进 GLOBAL** —— GLOBAL 的意思是「谁都用」，
+# 而 `wave list -s` 是要被拒绝的（list 存在的目的就是打印，给它 -s 等于把命令废掉）。
+# 列在这里的唯一用处是让 describe("-s") 答得出「只适用于哪几条命令」，
+# wave.py 在分发前就用这句话报错。名单以 lib/silent.py 的 SILENT_COMMANDS 为准，
+# scripts/flags_test.sh 逐项比对，走散就红。
+silent = {"-s", "--silent", "-S", "--show-error"}
 
 # 单条命令独有的
 # -F/--force：索引声明的最低系统版本高于本机时，跳过询问直接装。upgrade 复用
 # install 那份白名单，所以两组都要列，describe() 才能把用错命令指到正确的地方。
-install = {"-F", "--force"}
-uninstall = {"--unlink"}
+install = {"-F", "--force"} | silent
+uninstall = {"--unlink"} | silent
 upgrade = {"-X", "--remove-old-version", "--remove-old-versions", "--rov",
-           "-a", "--all", "-F", "--force"}
-link = {"-a", "--all"}
-unlink = {"-a", "--all"}
+           "-a", "--all", "-F", "--force"} | silent
+link = {"-a", "--all"} | silent
+unlink = {"-a", "--all"} | silent
 linkquery = {"-a", "--all"}
+# selfupdate 没有专属旗标（时长走 GLOBAL 的 --max-time），但它是能静默的六条之一，
+# 缺了这一项 describe("-s") 会把 selfupdate 漏掉。
+selfupdate = set(silent)
 # 只有 -a/--all 是 latest 独有的；--json/--yaml/--toml/--raw 属于 info。
 # 这两组混在一起时，`wave install jq --json` 会被提示成「--json 也适用于 latest」，
 # 而 latest 其实会直接拒绝 --json。
@@ -70,6 +79,7 @@ COMMAND_FLAGS = {
     "link": link,
     "unlink": unlink,
     "linkquery": linkquery,
+    "selfupdate": selfupdate,
     "latest": latest,
     "info": info,
     "mirror": mirror,

@@ -158,6 +158,10 @@ lib/innocent.dylib -> /Users/someone/.ssh/id_rsa
 - **两个模块分工，别混**：`lib/silent.py` 管参数（哪些命令能静默、怎么剥旗标），
   只被 `wave.py` 调用；`lib/quiet.py` 管运行期输出，`pkg/` 与 `surfboard/` 都用它。
   新增一条静默相关规则时，先想清楚它属于「解析」还是「输出」。
+- **「哪些命令能静默」以 `silent.SILENT_COMMANDS` 为准**。`flags.py` 的
+  `COMMAND_FLAGS` 里也有一份，那只是为了让 `describe("-s")` 说得出「只适用于哪几条」；
+  加一条能静默的命令要改两处，`scripts/flags_test.sh` 会拦。`-s` **不能放回
+  `GLOBAL`** —— `GLOBAL` 的语义是「任何命令都接受」，而 `wave list -s` 是被拒绝的。
 - **`-F`/`--force` 的优先级最高**，判断在 `-s` 之前 —— 否则无人值守安装遇到声明
   偏保守的包（`jq` 那种）就没有出路。
 

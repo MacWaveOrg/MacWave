@@ -81,7 +81,7 @@
 | `selfupdate.sh` | 自更新第二层：按清单逐文件更新 | 自带清单解析器，因为解析器本身不能依赖「还没下载的文件」。所有下载都走 `fetch_to_file`（超时 + 重试 + 先写分片再 mv），超时值由 `mw_seconds` 把 `40s`/`1min20s`/`2h` 折算成秒 |
 | `steplog.py` | 安装流程的步骤追踪（`-v` 时启用） | 失败一律走 `fail()`，一次打出「停在哪一步、请求了哪个 URL、服务器答了什么、下一步该试什么」。没有 `-v` 时只多打这两行诊断，进度输出保持原样 —— 排查不该依赖重跑一次带 `-v` 的安装 |
 | `quiet.py` | 静默的**运行时**闸门：`say` / `ask` / `silence_everything` / `machine_readable` | `-s` 在 fd 层把 1、2 指向 `/dev/null`，子进程一起闭嘴；`-sS` 只剥行首 🌊。**错误不走这里**，静默只压噪音 |
-| `silent.py` | 静默的**参数**层：`SILENT_COMMANDS` / `strip()` / `apply()` | 只被 `wave.py` 调用。管三件事：哪些命令能静默（只读命令上给 `-s` 报错而不是静默）、怎么剥掉 `-s`/`-S`（合并写法 `-sX`、`-CsX` 也认）、剥完怎么落到 `quiet`。**从 `wave.py` 里搬出来的**，主程序只该做「读命令、分发」 |
+| `silent.py` | 静默的**参数**层：`SILENT_COMMANDS` / `strip()` / `apply()` | 只被 `wave.py` 调用。管三件事：哪些命令能静默（只读命令上给 `-s` 报错而不是静默）、怎么剥掉 `-s`/`-S`（合并写法 `-sX`、`-CsX` 也认）、剥完怎么落到 `quiet`。**从 `wave.py` 里搬出来的**，主程序只该做「读命令、分发」。`SILENT_COMMANDS` 是**权威**，`flags.COMMAND_FLAGS` 里那份只用来生成提示文案（`flags.describe("-s")`），两边由 `flags_test.sh` 比对 —— 只读命令给 `-s` 时那句话不是手拼的 |
 | `flags.py` | **argv 拆解的唯一实现**（`flag_name` / `split` / `tokens` / `short_cluster` / `remove_short`），外加「全部旗标」的诊断清单 | 下半部分全是纯函数：不打印、不退出、不读配置，所以 `pkg/` 与 `lib/` 都能直接用。`--name=value` 归一化、`-abc` 拆开、`-sX` 里拿掉 `s`、单独 `-` 终止，这四条规则以前在 `pkginstaller.parse_flags`、`silent.strip`、`upgrader.split_input`、`latest.split_arguments` 各写一遍。清单那一半**只用于诊断**，校验仍归各命令的白名单，`scripts/flags_test.sh` 盯着两边不走散 |
 | `suggest.py` | 两类「你是不是想敲……」：`command()`（命令名）、`closest_name()` / `name_examples()`（包名） | 命令名先查 `MISTYPED` 语义表再按拼写猜，两个阈值（0.7 / 0.83）是穷举 4670 种单字母错误测出来的；包名用编辑距离 + 相似度，install 与 latest **共用这一份**，别再各写一个 |
 
