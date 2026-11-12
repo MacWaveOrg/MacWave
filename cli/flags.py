@@ -86,7 +86,9 @@ COMMAND_FLAGS = {
 }
 
 # 分发之前就处理掉的
-EARLY = {"-h", "--help", "-V", "--version"}
+# --zh 也在这里：它只改帮助文本用哪种语言（`wave -h --zh`），不参与命令分发，
+# 更不该出现在任何命令的旗标白名单里。
+EARLY = {"-h", "--help", "-V", "--version", "--zh"}
 
 ALL = GLOBAL | EARLY | set().union(*COMMAND_FLAGS.values())
 
