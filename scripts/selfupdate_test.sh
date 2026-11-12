@@ -73,7 +73,8 @@ ln -s "$REPO_DIR" "$SU_WORK/core/$SU_BRANCH"
 # 用仓库自己的生成器产出这一版的 update_commands.sh。清单取自工作区实际文件，
 # 而不是 --ref HEAD：本地 HEAD 可能落后于工作区，那样会漏掉新加的文件。
 SU_FILES=()
-for dir in lib pkg surfboard; do
+for dir in $(sed -e 's/#.*//' "$SCRIPT_DIR/components.txt") \
+           $(sed -e 's/#.*//' "$SCRIPT_DIR/assets.txt"); do
     for file in "$REPO_DIR/$dir"/*; do
         [[ -f "$file" ]] || continue
         rel="$dir/$(basename "$file")"

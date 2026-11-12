@@ -566,8 +566,11 @@ mkdir -p "$SANDBOX_DIR/mirror/selfupdate/macwavedata/$SANDBOX_VERSION"
 # 表现为某条命令 ModuleNotFoundError —— 那种故障要翻完整棵树才看得出来。
 #
 # 安装器与卸载器不装自己：它们由 curl 直接执行，不落到安装树里。
+# 目录清单取自 components.txt + assets.txt，不手写 —— 手写就会漏掉后加的
+# cli/、config/、net/、man/、info/，而漏掉的后果是装完之后某条命令 ImportError。
 SANDBOX_FILES=""
-for d in lib pkg surfboard; do
+for d in $(sed -e 's/#.*//' "$SCRIPT_DIR/components.txt") \
+         $(sed -e 's/#.*//' "$SCRIPT_DIR/assets.txt"); do
     for f in "$REPO_DIR/$d"/*; do
         [[ -f "$f" ]] || continue
         base="$(basename "$f")"

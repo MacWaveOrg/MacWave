@@ -138,7 +138,9 @@ echo "========== 3. 真实安装漏斗：拒绝且不留半成品 =========="
 
 BASE="$WORK/base"
 mkdir -p "$BASE"/{bin,links,deps,downloads/tmp}
-for dir in lib net pkg surfboard; do
+# 组件目录按 components.txt 建：depsmanager.sh 要调 config/configpaths.py 做链接
+# 安全检查，漏了 config/ 就会得到「无法检查链接」而不是「检查通过」。
+for dir in $(sed -e 's/#.*//' "$SCRIPT_DIR/components.txt"); do
     mkdir -p "$BASE/$dir"
     cp -R "$REPO_DIR/$dir"/*.py "$REPO_DIR/$dir"/*.sh "$BASE/$dir"/ 2>/dev/null
 done
