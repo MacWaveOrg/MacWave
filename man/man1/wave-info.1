@@ -1,0 +1,31 @@
+.TH WAVE-INFO 1 "" "MacWave" "MacWave Manual"
+
+.SH NAME
+wave-info \- Show author, description, homepage and the installed / available versions.
+.SH SYNOPSIS
+.B wave info <package> [\-\-json|\-\-yaml|\-\-toml|\-\-raw]
+.SH DESCRIPTION
+Show author, description, homepage and the installed / available
+versions.
+.SH OPTIONS
+.TP
+.B \-\-json
+Print the same fields as JSON
+.TP
+.B \-\-yaml
+Print the same fields as YAML
+.TP
+.B \-\-toml
+Print the same fields as TOML
+.TP
+.B \-\-raw
+Print the index record as stored, without the formatting
+
+.SH EXAMPLES
+.nf
+wave info jq
+wave info jq --json
+wave info jq --raw
+.fi
+.SH SEE ALSO
+wave(1)

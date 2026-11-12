@@ -1,0 +1,16 @@
+.TH WAVE-SHELLENV 1 "" "MacWave" "MacWave Manual"
+
+.SH NAME
+wave-shellenv \- Print the shell code that prepends MacWave's directories to PATH. You eval it once from your shell profile; it does nothing on its own.
+.SH SYNOPSIS
+.B wave shellenv
+.SH DESCRIPTION
+Print the shell code that prepends MacWave's directories to PATH. You
+eval it once from your shell profile; it does nothing on its own.
+.SH EXAMPLES
+.nf
+eval "$(~/.local/macwave/lib/wave shellenv)"
+echo 'eval "$(~/.local/macwave/lib/wave shellenv)"' >> ~/.zprofile
+.fi
+.SH SEE ALSO
+wave(1)

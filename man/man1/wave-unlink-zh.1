@@ -1,0 +1,20 @@
+.TH WAVE-UNLINK-ZH 1 "" "MacWave" "MacWave Manual"
+
+.SH 名称
+wave-unlink-zh \- 删掉那个不带版本号的快捷方式。之后再卸载也不会重新创建。
+.SH 用法
+.B wave unlink <package> | wave unlink \-\-all
+.SH 说明
+删掉那个不带版本号的快捷方式。之后再卸载也不会重新创建。
+.SH 选项
+.TP
+.B \-\-all, \-a
+对所有已装包生效
+
+.SH 示例
+.nf
+wave unlink jq
+wave unlink --all
+.fi
+.SH 另见
+wave-zh(1)

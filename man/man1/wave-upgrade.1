@@ -1,0 +1,56 @@
+.TH WAVE-UPGRADE 1 "" "MacWave" "MacWave Manual"
+
+.SH NAME
+wave-upgrade \- Install the latest version of a package, or of every installed package with --all. Versions coexist, so the old ones stay until -X removes them.
+.SH SYNOPSIS
+.B wave upgrade <package> | wave upgrade \-\-all
+.SH DESCRIPTION
+Install the latest version of a package, or of every installed package
+with --all. Versions coexist, so the old ones stay until -X removes
+them.
+.SH OPTIONS
+.TP
+.B \-a, \-\-all
+Upgrade every installed package that has a newer version
+.TP
+.B \-X, \-\-remove\-old\-versions
+Also remove the versions older than the one just installed
+.TP
+.B \-C, \-\-continue
+Resume an interrupted download (like curl -C -)
+.TP
+.B \-\-proxy <string>
+HTTP/HTTPS proxy (e.g. http://127.0.0.1:8080)
+.TP
+.B \-\-skip\-ssl
+Skip SSL certificate verification (insecure)
+.TP
+.B \-\-limit\-rate <string>
+Limit download speed (e.g. 200K, 1M, 5M)
+.TP
+.B \-\-max\-time <string>
+Total time limit for the request (40s, 1min, 1min20s, 2h; bare numbers
+are seconds)
+.TP
+.B \-\-connect\-timeout <string>
+Give up if the handshake takes longer (like curl)
+.TP
+.B \-\-content\-time <string>
+Give up if no data arrives for this long
+.TP
+.B \-F, \-\-force
+Upgrade anyway when the package declares a newer macOS than this machine
+runs
+.TP
+.B \-v, \-\-verbose
+Enable verbose output
+
+.SH EXAMPLES
+.nf
+wave upgrade jq
+wave upgrade jq -X
+wave upgrade --all
+wave upgrade jq --remove-old-versions --max-time=2min
+.fi
+.SH SEE ALSO
+wave(1)

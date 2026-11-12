@@ -1014,6 +1014,9 @@ CLI_DIR="$BASE_DIR/cli"
 # 程序代码目录，与下面的 CONFIG_DIR（**配置文件**目录，/opt/macwave_config）不是
 # 一回事。两个名字只差一个词，变量名必须能一眼分开。
 CONFIG_CODE_DIR="$BASE_DIR/config"
+# 文档资源：装进安装树，但不进 sys.path（见 scripts/assets.txt）
+MAN_DIR="$BASE_DIR/man"
+INFO_DIR="$BASE_DIR/info"
 DEPS_DIR="$BASE_DIR/deps"
 DOWNLOAD_DIR="$BASE_DIR/downloads/tmp"
 
@@ -1076,6 +1079,8 @@ run_cmd mkdir -p "$LIB_DIR"
 run_cmd mkdir -p "$NET_DIR"
 run_cmd mkdir -p "$CLI_DIR"
 run_cmd mkdir -p "$CONFIG_CODE_DIR"
+run_cmd mkdir -p "$MAN_DIR/man1"
+run_cmd mkdir -p "$INFO_DIR"
 run_cmd mkdir -p "$DEPS_DIR"
 run_cmd mkdir -p "$DOWNLOAD_DIR"
 run_cmd mkdir -p "$CONFIG_DIR"
@@ -1522,6 +1527,8 @@ entry="$lib_dir/wave.py"
 if [ "$#" -eq 1 ] && [ "$1" = "shellenv" ]; then
     printf 'case ":$PATH:" in\n  *":%s:"*) ;;\n  *) export PATH="%s:%s:%s${PATH:+:$PATH}" ;;\nesac\n' \
         "$root_dir/lib" "$root_dir/bin" "$root_dir/links" "$root_dir/lib"
+    printf 'case ":${MANPATH:-}:" in\n  *":%s:"*) ;;\n  *) export MANPATH="%s${MANPATH:+:$MANPATH}" ;;\nesac\n' \
+        "$root_dir/man" "$root_dir/man"
     exit 0
 fi
 

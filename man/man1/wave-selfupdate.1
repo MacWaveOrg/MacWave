@@ -1,0 +1,32 @@
+.TH WAVE-SELFUPDATE 1 "" "MacWave" "MacWave Manual"
+
+.SH NAME
+wave-selfupdate \- Update MacWave itself to the version published in the self-update repository.
+.SH SYNOPSIS
+.B wave selfupdate [flags]
+.SH DESCRIPTION
+Update MacWave itself to the version published in the self-update
+repository.
+.SH OPTIONS
+.TP
+.B \-\-max\-time <string>
+Total time limit for the request (40s, 1min, 1min20s, 2h; bare numbers
+are seconds)
+.TP
+.B \-\-connect\-timeout <string>
+Give up if the handshake takes longer (like curl)
+.TP
+.B \-\-content\-time <string>
+Give up if no data arrives for this long
+.TP
+.B \-\-install\-python\-from\-source
+Fetch the bundled Python from its upstream URL instead of MacWave's own
+repository
+
+.SH EXAMPLES
+.nf
+wave selfupdate
+wave selfupdate --max-time=2min
+.fi
+.SH SEE ALSO
+wave(1)

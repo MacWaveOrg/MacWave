@@ -1,0 +1,22 @@
+.TH WAVE-LINK 1 "" "MacWave" "MacWave Manual"
+
+.SH NAME
+wave-link \- Create a versionless shortcut, or re-point it at another installed version. Installs and uninstalls keep it up to date afterwards.
+.SH SYNOPSIS
+.B wave link <package>[@<version>] | wave link \-\-all
+.SH DESCRIPTION
+Create a versionless shortcut, or re-point it at another installed
+version. Installs and uninstalls keep it up to date afterwards.
+.SH OPTIONS
+.TP
+.B \-\-all, \-a
+Apply to every installed package
+
+.SH EXAMPLES
+.nf
+wave link jq
+wave link ffmpeg@6.1
+wave link --all
+.fi
+.SH SEE ALSO
+wave(1)

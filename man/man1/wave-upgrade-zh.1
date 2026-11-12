@@ -1,0 +1,53 @@
+.TH WAVE-UPGRADE-ZH 1 "" "MacWave" "MacWave Manual"
+
+.SH 名称
+wave-upgrade-zh \- 把某个包升到最新版本；带 --all 时升级所有已装包。各版本共存，所以旧版本会一直留着，直到用 -X 清掉。
+.SH 用法
+.B wave upgrade <package> | wave upgrade \-\-all
+.SH 说明
+把某个包升到最新版本；带 --all 时升级所有已装包。各版本共存，所以旧版本
+会一直留着，直到用 -X 清掉。
+.SH 选项
+.TP
+.B \-a, \-\-all
+升级每个有新版本的已装包
+.TP
+.B \-X, \-\-remove\-old\-versions
+顺带删掉比刚装上的版本更旧的版本
+.TP
+.B \-C, \-\-continue
+续传被中断的下载（同 curl -C -）
+.TP
+.B \-\-proxy <string>
+HTTP/HTTPS 代理（例如 http://127.0.0.1:8080）
+.TP
+.B \-\-skip\-ssl
+跳过 SSL 证书校验（不安全）
+.TP
+.B \-\-limit\-rate <string>
+限制下载速度（例如 200K、1M、5M）
+.TP
+.B \-\-max\-time <string>
+单次请求的总时限（40s、1min、1min20s、2h；纯数字按秒算）
+.TP
+.B \-\-connect\-timeout <string>
+握手超过这个时长就放弃（同 curl）
+.TP
+.B \-\-content\-time <string>
+超过这个时长收不到数据就放弃
+.TP
+.B \-F, \-\-force
+包声明的最低 macOS 高于本机时仍然升级
+.TP
+.B \-v, \-\-verbose
+输出详细日志
+
+.SH 示例
+.nf
+wave upgrade jq
+wave upgrade jq -X
+wave upgrade --all
+wave upgrade jq --remove-old-versions --max-time=2min
+.fi
+.SH 另见
+wave-zh(1)

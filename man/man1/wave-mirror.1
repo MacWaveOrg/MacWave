@@ -1,0 +1,43 @@
+.TH WAVE-MIRROR 1 "" "MacWave" "MacWave Manual"
+
+.SH NAME
+wave-mirror \- Show the address each kind of data is fetched from, including the built-in defaults for anything not overridden by an environment variable.
+.SH SYNOPSIS
+.B wave mirror [flags]
+.SH DESCRIPTION
+Show the address each kind of data is fetched from, including the
+built-in defaults for anything not overridden by an environment
+variable.
+.SH OPTIONS
+.TP
+.B \-\-json
+Print the configuration as JSON
+.TP
+.B \-\-yaml
+Print the configuration as YAML
+.TP
+.B \-\-toml
+Print the configuration as TOML
+.TP
+.B \-\-raw
+Print ready-to-paste export lines
+.TP
+.B \-\-only\-set
+With --raw: export only the sources you overrode, leaving the rest to
+follow the built-in defaults
+.TP
+.B \-\-show\-password
+Print passwords in full instead of six asterisks
+.TP
+.B \-\-hide\-user
+Also mask the user name
+
+.SH EXAMPLES
+.nf
+wave mirror
+wave mirror --raw
+wave mirror --json
+wave mirror --show-password
+.fi
+.SH SEE ALSO
+wave(1)

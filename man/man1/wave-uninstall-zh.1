@@ -1,0 +1,21 @@
+.TH WAVE-UNINSTALL-ZH 1 "" "MacWave" "MacWave Manual"
+
+.SH 名称
+wave-uninstall-zh \- 卸载某个包的一个版本。不带版本号的链接会自动退到剩下的最高版本，并在最后一个版本被卸载时一起消失。
+.SH 用法
+.B wave uninstall <package>[@<version>] [flags]
+.SH 说明
+卸载某个包的一个版本。不带版本号的链接会自动退到剩下的最高版本，并在最后
+一个版本被卸载时一起消失。
+.SH 选项
+.TP
+.B \-\-unlink
+不碰那个不带版本号的链接
+
+.SH 示例
+.nf
+wave uninstall jq
+wave uninstall ffmpeg@6.1
+.fi
+.SH 另见
+wave-zh(1)

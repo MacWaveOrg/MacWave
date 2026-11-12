@@ -28,10 +28,16 @@ components() {
     sed -e 's/#.*//' "$COMPONENT_FILE" | sed -e 's/[[:space:]]//g' | grep -v '^$'
 }
 
-# 把全部组件目录拷进 <目标目录>
+# 资源目录（man/、info/）：装进安装树但不进 sys.path。清单在 scripts/assets.txt。
+assets() {
+    sed -e 's/#.*//' "$COMPONENT_REPO/scripts/assets.txt" | sed -e 's/[[:space:]]//g' | grep -v '^$'
+}
+
+# 把全部组件目录拷进 <目标目录>。资源目录一起拷 —— 测试沙箱里要跑
+# `wave manual`，缺了 man/ 与 info/ 它就找不到自己的文件。
 copy_components() {
     local dest="$1" name
-    for name in $(components); do
+    for name in $(components) $(assets); do
         cp -R "$COMPONENT_REPO/$name" "$dest/"
     done
 }

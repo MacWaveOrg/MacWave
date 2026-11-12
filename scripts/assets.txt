@@ -1,0 +1,15 @@
+# MacWave 的**非代码**资源目录 —— 装进安装树，但不参与 import。
+#
+# 与 components.txt 的分工：
+#
+#   components.txt  运行时可执行代码。会进 sys.path，会被拷进测试沙箱，
+#                   模块名必须在各组件之间唯一。
+#   assets.txt      文档等资源。**不进 sys.path**（它们不是模块），但同样要
+#                   装进安装树、同样要从仓库拷进测试沙箱 —— 否则 `wave manual`
+#                   在沙箱里找不到文件。
+#
+# 安装清单 = components.txt + assets.txt（scripts/build_update_commands.py 取并集）。
+# 加一个资源目录只改这个文件；但 lib/install.sh 要记得加一行 mkdir，
+# scripts/structure_test.sh 会拦。
+man
+info

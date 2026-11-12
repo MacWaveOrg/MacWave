@@ -63,6 +63,7 @@ COMMANDS = {
     "mirror":     "mirrorinfo",
     "latest":     "latest",
     "shellenv":   "shellenv",
+    "manual":     "manual",
 }
 
 ARGUMENTS = {
@@ -77,10 +78,13 @@ ARGUMENTS = {
 def main():
     words = sys.argv[1:]
 
+    # `--zh` 只影响帮助文本，不参与分发。放在最前面算一次，下面两个帮助分支共用。
+    lang = "zh" if "--zh" in words else "en"
+
     # 1. 无任何输入
     if not words:
         from help import print_custom_help
-        print_custom_help()
+        print_custom_help(lang)
         sys.exit(0)
 
     # 先算一次静默状态：下面「命令不存在」的分支也要用它，
@@ -95,7 +99,7 @@ def main():
     if FirstWord in ARGUMENTS:
         if FirstWord in ("-h", "--help"):
             from help import print_custom_help
-            print_custom_help()
+            print_custom_help(lang)
         elif FirstWord in ("-V", "--version"):
             from help import print_version
             print_version()
@@ -127,7 +131,7 @@ def main():
         # 否则它会被当作未知旗标忽略（selfupdate 甚至直接开始自更新）。
         if any(word in ("-h", "--help") for word in words[1:]):
             from help import print_command_help
-            print_command_help(FirstWord)
+            print_command_help(FirstWord, lang)
             sys.exit(0)
 
         module_name = COMMANDS[FirstWord]
@@ -168,6 +172,10 @@ def main():
         elif module_name == "shellenv":
             from shellenv import handle_shellenv
             sys.exit(handle_shellenv())
+
+        elif module_name == "manual":
+            from manual import handle_manual
+            sys.exit(handle_manual(full_input))
 
         elif module_name == "linker":
             from linker import handle_link_command, handle_linkquery_command, handle_unlink_command

@@ -1,0 +1,29 @@
+.TH WAVE-SELFUPDATE-ZH 1 "" "MacWave" "MacWave Manual"
+
+.SH 名称
+wave-selfupdate-zh \- 把 MacWave 自身更新到自更新仓库里发布的版本。
+.SH 用法
+.B wave selfupdate [flags]
+.SH 说明
+把 MacWave 自身更新到自更新仓库里发布的版本。
+.SH 选项
+.TP
+.B \-\-max\-time <string>
+单次请求的总时限（40s、1min、1min20s、2h；纯数字按秒算）
+.TP
+.B \-\-connect\-timeout <string>
+握手超过这个时长就放弃（同 curl）
+.TP
+.B \-\-content\-time <string>
+超过这个时长收不到数据就放弃
+.TP
+.B \-\-install\-python\-from\-source
+从上游地址取自带的 Python，而不是 MacWave 自己的仓库
+
+.SH 示例
+.nf
+wave selfupdate
+wave selfupdate --max-time=2min
+.fi
+.SH 另见
+wave-zh(1)

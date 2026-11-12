@@ -1,0 +1,437 @@
+
+File: wave.info, Node: Top, Up: (dir)
+
+
+MacWave installs each package into its own versioned directory under the
+install root, keeps every version side by side, and maintains
+unversioned links so a package can be called with or without a version.
+Packages are fetched from a mirror or from MacWave's own bottle store;
+nothing is compiled on the user's machine unless --install-from-source
+is given.
+
+* Menu:
+
+* install::	Install a package, or one specific version of it.
+* upgrade::	Install the latest version of a package, or of every
+        installed package with --all. Versions coexist, so the old
+        ones stay until -X removes them.
+* uninstall::	Uninstall a package version. The unversioned link falls back
+        to the highest remaining version, and goes away with the
+        last one.
+* list::	List the packages you have installed, with their versions.
+* search::	Search the package index.
+* info::	Show author, description, homepage and the installed /
+        available versions.
+* selfupdate::	Update MacWave itself to the version published in the
+        self-update repository.
+* link::	Create a versionless shortcut, or re-point it at another
+        installed version. Installs and uninstalls keep it up to
+        date afterwards.
+* unlink::	Remove the versionless shortcut. A later uninstall will not
+        re-create it.
+* linkquery::	Show which version the versionless shortcut points at.
+* mirror::	Show the address each kind of data is fetched from,
+        including the built-in defaults for anything not overridden
+        by an environment variable.
+* latest::	Compare what you have with the newest version in the index.
+        Reports only; nothing is downloaded.
+* shellenv::	Print the shell code that prepends MacWave's directories to
+        PATH. You eval it once from your shell profile; it does
+        nothing on its own.
+* version::	Print the installed MacWave version.
+* manual::	Show the full manual — the same text that ships as man pages
+        and info files — or just one command's section.
+
+* GLOBAL FLAGS::
+
+  the complete manual。--zh to read the Chinese edition
+
+
+File: wave.info, Node: GLOBAL FLAGS, Up: Top
+
+
+  -s, --silent
+      Print nothing at all; the exit code is the signal (beats -v;
+      install / upgrade / uninstall / link / unlink / selfupdate)
+
+  -S, --show-error
+      With -s, still print the error when a command fails (without the
+      🌊, so scripts can parse it)
+
+  -C, --continue
+      Resume interrupted downloads (like curl -C -)
+
+  --proxy <string>
+      Specify an HTTP/HTTPS proxy (e.g., http://127.0.0.1:8080)
+
+  --skip-ssl
+      Skip SSL certificate verification (insecure)
+
+  --limit-rate <string>
+      Limit download speed (e.g., 200K, 1M, 5M)
+
+  --max-time <string>
+      Total time limit for one request/operation (e.g., 40s, 1min,
+      1min20s, 2h)
+
+  --connect-timeout <string>
+      Give up if the TCP/TLS handshake takes longer than this (like
+      curl)
+
+  --content-time <string>
+      Give up if the server sends nothing for this long after connecting
+
+  --ver <string>
+      Install a specific version (install only; --ver=1.0 works too)
+
+  --install-from-source
+      Download from the upstream URL instead of MacWave's own store
+
+  -F, --force
+      Install anyway when the package declares a newer macOS than this
+      machine runs (install / upgrade)
+
+  --install-python-from-source
+      Same, for the bundled Python (install / selfupdate)
+
+  MACWAVE_PIP_INDEX
+      Env var. pip index for the Python deps; default pypi.org/simple
+
+
+
+File: wave.info, Node: install, Next: upgrade, Up: Top
+
+
+Install a package, or one specific version of it.
+
+  -C, --continue
+      Resume an interrupted download (like curl -C -)
+
+  --proxy <string>
+      HTTP/HTTPS proxy (e.g. http://127.0.0.1:8080)
+
+  --skip-ssl
+      Skip SSL certificate verification (insecure)
+
+  --limit-rate <string>
+      Limit download speed (e.g. 200K, 1M, 5M)
+
+  --max-time <string>
+      Total time limit for the request (40s, 1min, 1min20s, 2h; bare
+      numbers are seconds)
+
+  --connect-timeout <string>
+      Give up if the handshake takes longer (like curl)
+
+  --content-time <string>
+      Give up if no data arrives for this long
+
+  --unlink
+      Do not create or re-point the unversioned link
+
+  --install-from-source
+      Download from the upstream URL in the index instead of MacWave's
+      own bottle store (dependencies follow the same rule)
+
+  -F, --force
+      Install anyway when the package declares a newer macOS than this
+      machine runs
+
+  -v, --verbose
+      Enable verbose output
+
+Examples:
+
+     wave install jq
+     wave install ffmpeg@6.1
+     wave install jq --limit-rate 1M
+     wave install jq --max-time=1min
+     wave install jq --install-from-source
+
+
+File: wave.info, Node: upgrade, Next: uninstall, Prev: install, Up: Top
+
+
+Install the latest version of a package, or of every installed package
+with --all. Versions coexist, so the old ones stay until -X removes
+them.
+
+  -a, --all
+      Upgrade every installed package that has a newer version
+
+  -X, --remove-old-versions
+      Also remove the versions older than the one just installed
+
+  -C, --continue
+      Resume an interrupted download (like curl -C -)
+
+  --proxy <string>
+      HTTP/HTTPS proxy (e.g. http://127.0.0.1:8080)
+
+  --skip-ssl
+      Skip SSL certificate verification (insecure)
+
+  --limit-rate <string>
+      Limit download speed (e.g. 200K, 1M, 5M)
+
+  --max-time <string>
+      Total time limit for the request (40s, 1min, 1min20s, 2h; bare
+      numbers are seconds)
+
+  --connect-timeout <string>
+      Give up if the handshake takes longer (like curl)
+
+  --content-time <string>
+      Give up if no data arrives for this long
+
+  -F, --force
+      Upgrade anyway when the package declares a newer macOS than this
+      machine runs
+
+  -v, --verbose
+      Enable verbose output
+
+Examples:
+
+     wave upgrade jq
+     wave upgrade jq -X
+     wave upgrade --all
+     wave upgrade jq --remove-old-versions --max-time=2min
+
+
+File: wave.info, Node: uninstall, Next: list, Prev: upgrade, Up: Top
+
+
+Uninstall a package version. The unversioned link falls back to the
+highest remaining version, and goes away with the last one.
+
+  --unlink
+      Leave the unversioned link alone
+
+Examples:
+
+     wave uninstall jq
+     wave uninstall ffmpeg@6.1
+
+
+File: wave.info, Node: list, Next: search, Prev: uninstall, Up: Top
+
+
+List the packages you have installed, with their versions.
+
+Examples:
+
+     wave list
+
+
+File: wave.info, Node: search, Next: info, Prev: list, Up: Top
+
+
+Search the package index.
+
+Examples:
+
+     wave search json
+
+
+File: wave.info, Node: info, Next: selfupdate, Prev: search, Up: Top
+
+
+Show author, description, homepage and the installed / available
+versions.
+
+  --json
+      Print the same fields as JSON
+
+  --yaml
+      Print the same fields as YAML
+
+  --toml
+      Print the same fields as TOML
+
+  --raw
+      Print the index record as stored, without the formatting
+
+Examples:
+
+     wave info jq
+     wave info jq --json
+     wave info jq --raw
+
+
+File: wave.info, Node: selfupdate, Next: link, Prev: info, Up: Top
+
+
+Update MacWave itself to the version published in the self-update
+repository.
+
+  --max-time <string>
+      Total time limit for the request (40s, 1min, 1min20s, 2h; bare
+      numbers are seconds)
+
+  --connect-timeout <string>
+      Give up if the handshake takes longer (like curl)
+
+  --content-time <string>
+      Give up if no data arrives for this long
+
+  --install-python-from-source
+      Fetch the bundled Python from its upstream URL instead of
+      MacWave's own repository
+
+Examples:
+
+     wave selfupdate
+     wave selfupdate --max-time=2min
+
+
+File: wave.info, Node: link, Next: unlink, Prev: selfupdate, Up: Top
+
+
+Create a versionless shortcut, or re-point it at another installed
+version. Installs and uninstalls keep it up to date afterwards.
+
+  --all, -a
+      Apply to every installed package
+
+Examples:
+
+     wave link jq
+     wave link ffmpeg@6.1
+     wave link --all
+
+
+File: wave.info, Node: unlink, Next: linkquery, Prev: link, Up: Top
+
+
+Remove the versionless shortcut. A later uninstall will not re-create
+it.
+
+  --all, -a
+      Apply to every installed package
+
+Examples:
+
+     wave unlink jq
+     wave unlink --all
+
+
+File: wave.info, Node: linkquery, Next: mirror, Prev: unlink, Up: Top
+
+
+Show which version the versionless shortcut points at.
+
+  --all, -a
+      Apply to every installed package
+
+Examples:
+
+     wave linkquery jq
+
+
+File: wave.info, Node: mirror, Next: latest, Prev: linkquery, Up: Top
+
+
+Show the address each kind of data is fetched from, including the
+built-in defaults for anything not overridden by an environment
+variable.
+
+  --json
+      Print the configuration as JSON
+
+  --yaml
+      Print the configuration as YAML
+
+  --toml
+      Print the configuration as TOML
+
+  --raw
+      Print ready-to-paste export lines
+
+  --only-set
+      With --raw: export only the sources you overrode, leaving the rest
+      to follow the built-in defaults
+
+  --show-password
+      Print passwords in full instead of six asterisks
+
+  --hide-user
+      Also mask the user name
+
+Examples:
+
+     wave mirror
+     wave mirror --raw
+     wave mirror --json
+     wave mirror --show-password
+
+
+File: wave.info, Node: latest, Next: shellenv, Prev: mirror, Up: Top
+
+
+Compare what you have with the newest version in the index. Reports
+only; nothing is downloaded.
+
+  -a, --all
+      Check every installed package
+
+  --max-time <string>
+      Total time limit for each request (e.g. 40s, 1min)
+
+  --connect-timeout <string>
+      Give up if the handshake takes longer
+
+  --content-time <string>
+      Give up if no data arrives for this long
+
+  -v, --verbose
+      Print each request as it is made
+
+Examples:
+
+     wave latest jq
+     wave latest --all
+     wave latest -a --max-time=1min
+
+
+File: wave.info, Node: shellenv, Next: version, Prev: latest, Up: Top
+
+
+Print the shell code that prepends MacWave's directories to PATH. You
+eval it once from your shell profile; it does nothing on its own.
+
+Examples:
+
+     eval "$(~/.local/macwave/lib/wave shellenv)"
+     echo 'eval "$(~/.local/macwave/lib/wave shellenv)"' >> ~/.zprofile
+
+
+File: wave.info, Node: version, Next: manual, Prev: shellenv, Up: Top
+
+
+Print the installed MacWave version.
+
+Examples:
+
+     wave version
+
+
+File: wave.info, Node: manual, Prev: version, Up: Top
+
+
+Show the full manual — the same text that ships as man pages and info
+files — or just one command's section.
+
+  --zh
+      Print the Chinese edition
+
+  --color
+      Colour headings and flags (plain text by default, so redirecting
+      to a file stays clean)
+
+Examples:
+
+     wave manual
+     wave manual install
+     wave manual --zh
+     wave manual install --color

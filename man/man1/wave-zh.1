@@ -1,0 +1,161 @@
+.TH WAVE-ZH 1 "" "MacWave" "MacWave Manual"
+
+.SH 名称
+wave \- macOS 开发者用的软件包管理器
+.SH 用法
+.B wave
+\fIcommand\fR [\fIpackage\fR] [\fIflags\fR]
+.SH 说明
+MacWave 把每个软件包装进安装根目录下、带版本号的独立目录，各版本并存，并
+维护一个不带版本号的链接，让同一个包既能带版本号、也能不带版本号调用。软
+件包从镜像或 MacWave 自己的存储取得；除非给了 --install-from-source，否
+则不在用户机器上编译任何东西。
+.SH 命令
+.TP
+.B install
+安装一个软件包，或它的某个指定版本。
+.TP
+.B upgrade
+把某个包升到最新版本；带 --all 时升级所有已装包。各版本共存，所以旧版本
+会一直留着，直到用 -X 清掉。
+.TP
+.B uninstall
+卸载某个包的一个版本。不带版本号的链接会自动退到剩下的最高版本，并在最后
+一个版本被卸载时一起消失。
+.TP
+.B list
+列出已安装的软件包及其版本。
+.TP
+.B search
+在软件包索引里搜索。
+.TP
+.B info
+显示作者、简介、主页，以及已安装版本与索引里的可用版本。
+.TP
+.B selfupdate
+把 MacWave 自身更新到自更新仓库里发布的版本。
+.TP
+.B link
+创建一个不带版本号的快捷方式，或把它改指到另一个已安装版本。之后的安装与
+卸载会自动维护它。
+.TP
+.B unlink
+删掉那个不带版本号的快捷方式。之后再卸载也不会重新创建。
+.TP
+.B linkquery
+显示那个不带版本号的快捷方式指向哪个版本。
+.TP
+.B mirror
+显示每一类数据实际从哪个地址取，包括那些没被环境变量覆盖、仍在使用内置默
+认值的项。
+.TP
+.B latest
+把本机已装的版本与索引里的最新版本比一比。只报告，不下载任何东西。
+.TP
+.B shellenv
+打印一段把 MacWave 的目录加到 PATH 前面的 shell 代码。在 shell 配置里
+eval 一次即可；它自己什么也不改。
+.TP
+.B version
+打印当前安装的 MacWave 版本。
+.TP
+.B manual
+显示完整手册（与 man / info 里的是同一份内容），可按命令名只看一节。
+
+.SH 全局旗标
+.TP
+.B \-s, \-\-silent
+完全不输出，只靠退出码表达结果（压过 -v；适用于 install / upgrade /
+uninstall / link / unlink / selfupdate）
+.TP
+.B \-S, \-\-show\-error
+与 -s 同用时，命令失败仍打印错误（不带 🌊，方便脚本解析）
+.TP
+.B \-C, \-\-continue
+续传被中断的下载（同 curl -C -）
+.TP
+.B \-\-proxy <string>
+指定 HTTP/HTTPS 代理（例如 http://127.0.0.1:8080）
+.TP
+.B \-\-skip\-ssl
+跳过 SSL 证书校验（不安全）
+.TP
+.B \-\-limit\-rate <string>
+限制下载速度（例如 200K、1M、5M）
+.TP
+.B \-\-max\-time <string>
+单次请求/操作的总时限（例如 40s、1min、1min20s、2h）
+.TP
+.B \-\-connect\-timeout <string>
+TCP/TLS 握手超过这个时长就放弃（同 curl）
+.TP
+.B \-\-content\-time <string>
+连上之后服务器超过这个时长没发数据就放弃
+.TP
+.B \-\-ver <string>
+安装指定版本（仅 install；`--ver=1.0` 这种写法也认）
+.TP
+.B \-\-install\-from\-source
+从上游地址下载，而不走 MacWave 自己的存储
+.TP
+.B \-F, \-\-force
+包声明的最低 macOS 高于本机时仍然安装（install / upgrade）
+.TP
+.B \-\-install\-python\-from\-source
+同上，针对自带的 Python（install / selfupdate）
+.TP
+.B MACWAVE_PIP_INDEX
+环境变量。Python 依赖的 pip 源，默认 pypi.org/simple
+
+.SH 示例
+.nf
+wave install jq
+wave upgrade jq
+wave uninstall jq
+wave list
+wave search json
+wave info jq
+wave selfupdate
+wave link jq
+wave unlink jq
+wave linkquery jq
+wave mirror
+wave latest jq
+eval "$(~/.local/macwave/lib/wave shellenv)"
+wave version
+wave manual
+.fi
+.SH 环境变量
+.TP
+.B MACWAVE_API_DOMAIN
+软件包索引的地址前缀（默认用公共镜像）
+.TP
+.B MACWAVE_BOTTLE_DOMAIN
+软件包主体的地址前缀
+.TP
+.B MACWAVE_DEPS_DOMAIN
+依赖产物的地址前缀
+.TP
+.B MACWAVE_MIRROR
+设为 1 时让镜像默认值显式生效
+.TP
+.B MACWAVE_PIP_INDEX
+Python 依赖的 pip 源
+.TP
+.B MACWAVE_TEST
+把这个目录当作文件系统根（供测试用）
+.SH 相关文件
+.TP
+.B ~/.config/macwave_config/config.json
+用户级安装位置
+.TP
+.B /opt/macwave_config/config.json
+系统级安装位置（优先）
+.TP
+.B <base_dir>/man/man1
+这些 man 页
+.TP
+.B <base_dir>/info
+info 手册（wave.info、wave-zh.info）
+.SH 另见
+wave-manual-zh(1)

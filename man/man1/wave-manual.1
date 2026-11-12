@@ -1,0 +1,27 @@
+.TH WAVE-MANUAL 1 "" "MacWave" "MacWave Manual"
+
+.SH NAME
+wave-manual \- Show the full manual — the same text that ships as man pages and info files — or just one command's section.
+.SH SYNOPSIS
+.B wave manual [<command>] [\-\-zh] [\-\-color]
+.SH DESCRIPTION
+Show the full manual — the same text that ships as man pages and info
+files — or just one command's section.
+.SH OPTIONS
+.TP
+.B \-\-zh
+Print the Chinese edition
+.TP
+.B \-\-color
+Colour headings and flags (plain text by default, so redirecting to a
+file stays clean)
+
+.SH EXAMPLES
+.nf
+wave manual
+wave manual install
+wave manual --zh
+wave manual install --color
+.fi
+.SH SEE ALSO
+wave(1)

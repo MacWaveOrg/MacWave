@@ -1,0 +1,22 @@
+.TH WAVE-LINK-ZH 1 "" "MacWave" "MacWave Manual"
+
+.SH 名称
+wave-link-zh \- 创建一个不带版本号的快捷方式，或把它改指到另一个已安装版本。之后的安装与卸载会自动维护它。
+.SH 用法
+.B wave link <package>[@<version>] | wave link \-\-all
+.SH 说明
+创建一个不带版本号的快捷方式，或把它改指到另一个已安装版本。之后的安装与
+卸载会自动维护它。
+.SH 选项
+.TP
+.B \-\-all, \-a
+对所有已装包生效
+
+.SH 示例
+.nf
+wave link jq
+wave link ffmpeg@6.1
+wave link --all
+.fi
+.SH 另见
+wave-zh(1)

@@ -1,0 +1,21 @@
+.TH WAVE-UNLINK 1 "" "MacWave" "MacWave Manual"
+
+.SH NAME
+wave-unlink \- Remove the versionless shortcut. A later uninstall will not re-create it.
+.SH SYNOPSIS
+.B wave unlink <package> | wave unlink \-\-all
+.SH DESCRIPTION
+Remove the versionless shortcut. A later uninstall will not re-create
+it.
+.SH OPTIONS
+.TP
+.B \-\-all, \-a
+Apply to every installed package
+
+.SH EXAMPLES
+.nf
+wave unlink jq
+wave unlink --all
+.fi
+.SH SEE ALSO
+wave(1)

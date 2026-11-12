@@ -38,10 +38,14 @@ import sys
 
 repo = pathlib.Path(sys.argv[1]).resolve()
 components_file = repo / "scripts" / "components.txt"
+assets_file = repo / "scripts" / "assets.txt"
 
-lines = components_file.read_text(encoding="utf-8").splitlines()
-components = [line.split("#", 1)[0].strip() for line in lines]
-components = [name for name in components if name]
+def listing(path):
+    lines = path.read_text(encoding="utf-8").splitlines()
+    return [name for name in (line.split("#", 1)[0].strip() for line in lines) if name]
+
+components = listing(components_file)
+assets = listing(assets_file)
 
 wave_py = repo / "lib" / "wave.py"
 install_sh = repo / "lib" / "install.sh"
@@ -73,12 +77,22 @@ for name in components:
         problems.append(f"lib/wave.py 没有为组件 {name} 建路径（BASE_DIR / \"{name}\"）")
 report("wave", "lib/wave.py 为每个组件建了 sys.path 路径", problems)
 
+# 资源目录反过来：**不许**进 sys.path。进了说明有人把 man/ 当成模块目录了，
+# 后果是 import 会去那里找一个永远不会有的 .py。
+problems = []
+for name in assets:
+    if not (repo / name).is_dir():
+        problems.append(f"{name}：assets.txt 里有，仓库里没有这个目录")
+    if f'BASE_DIR / "{name}"' in wave_text:
+        problems.append(f"{name} 是资源目录，不该出现在 lib/wave.py 的 sys.path 里")
+report("assets-not-importable", "资源目录不进 sys.path", problems)
+
 problems = []
 install_text = install_sh.read_text(encoding="utf-8")
-for name in components:
+for name in components + assets:
     if f"$BASE_DIR/{name}" not in install_text:
-        problems.append(f"lib/install.sh 没有为组件 {name} 准备目录（$BASE_DIR/{name}）")
-report("install", "lib/install.sh 为每个组件准备了目录", problems)
+        problems.append(f"lib/install.sh 没有为 {name} 准备目录（$BASE_DIR/{name}）")
+report("install", "lib/install.sh 为每个组件与资源目录准备了目录", problems)
 
 # selfupdate.sh 也要认识每个组件：它升级前会清掉各目录的 __pycache__，
 # 漏一个就会留着旧字节码，后面排查「改了代码没生效」时非常费时间。

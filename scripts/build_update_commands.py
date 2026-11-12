@@ -41,9 +41,17 @@ REPO_DIR = Path(__file__).resolve().parent.parent
 # 清单由 scripts/components.py 读（与 components.sh 同源）。
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from components import names as component_names  # noqa: E402
+import assets as asset_dirs  # noqa: E402
 
-INSTALLED_DIRS = tuple(component_names())
-if not INSTALLED_DIRS:
+# 装进安装树的两类目录：
+#   components  运行时可执行代码，会进 sys.path
+#   assets      文档等资源，**不进 sys.path**
+# 清单与 sys.path 因此不能共用一份 —— 把它们混在一起，`import` 就会去
+# man/ 里找模块（找不到，但错误信息会指向一个莫名其妙的地方）。
+COMPONENT_DIRS = tuple(component_names())
+ASSET_DIRS = tuple(asset_dirs.names())
+INSTALLED_DIRS = COMPONENT_DIRS + ASSET_DIRS
+if not COMPONENT_DIRS:
     raise SystemExit("🌊 Error: scripts/components.txt lists no component directory.")
 
 # 运行时由客户端生成、不从仓库复制的文件：

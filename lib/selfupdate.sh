@@ -849,6 +849,8 @@ entry="$lib_dir/wave.py"
 if [ "$#" -eq 1 ] && [ "$1" = "shellenv" ]; then
     printf 'case ":$PATH:" in\n  *":%s:"*) ;;\n  *) export PATH="%s:%s:%s${PATH:+:$PATH}" ;;\nesac\n' \
         "$root_dir/lib" "$root_dir/bin" "$root_dir/links" "$root_dir/lib"
+    printf 'case ":${MANPATH:-}:" in\n  *":%s:"*) ;;\n  *) export MANPATH="%s${MANPATH:+:$MANPATH}" ;;\nesac\n' \
+        "$root_dir/man" "$root_dir/man"
     exit 0
 fi
 

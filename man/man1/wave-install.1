@@ -1,0 +1,56 @@
+.TH WAVE-INSTALL 1 "" "MacWave" "MacWave Manual"
+
+.SH NAME
+wave-install \- Install a package, or one specific version of it.
+.SH SYNOPSIS
+.B wave install <package>[@<version>] [flags]
+.SH DESCRIPTION
+Install a package, or one specific version of it.
+.SH OPTIONS
+.TP
+.B \-C, \-\-continue
+Resume an interrupted download (like curl -C -)
+.TP
+.B \-\-proxy <string>
+HTTP/HTTPS proxy (e.g. http://127.0.0.1:8080)
+.TP
+.B \-\-skip\-ssl
+Skip SSL certificate verification (insecure)
+.TP
+.B \-\-limit\-rate <string>
+Limit download speed (e.g. 200K, 1M, 5M)
+.TP
+.B \-\-max\-time <string>
+Total time limit for the request (40s, 1min, 1min20s, 2h; bare numbers
+are seconds)
+.TP
+.B \-\-connect\-timeout <string>
+Give up if the handshake takes longer (like curl)
+.TP
+.B \-\-content\-time <string>
+Give up if no data arrives for this long
+.TP
+.B \-\-unlink
+Do not create or re-point the unversioned link
+.TP
+.B \-\-install\-from\-source
+Download from the upstream URL in the index instead of MacWave's own
+bottle store (dependencies follow the same rule)
+.TP
+.B \-F, \-\-force
+Install anyway when the package declares a newer macOS than this machine
+runs
+.TP
+.B \-v, \-\-verbose
+Enable verbose output
+
+.SH EXAMPLES
+.nf
+wave install jq
+wave install ffmpeg@6.1
+wave install jq --limit-rate 1M
+wave install jq --max-time=1min
+wave install jq --install-from-source
+.fi
+.SH SEE ALSO
+wave(1)

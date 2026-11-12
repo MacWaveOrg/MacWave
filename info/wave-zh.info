@@ -1,0 +1,408 @@
+
+File: wave-zh.info, Node: Top, Up: (dir)
+
+
+MacWave 把每个软件包装进安装根目录下、带版本号的独立目录，各版本并存，并
+维护一个不带版本号的链接，让同一个包既能带版本号、也能不带版本号调用。软
+件包从镜像或 MacWave 自己的存储取得；除非给了 --install-from-source，否
+则不在用户机器上编译任何东西。
+
+* Menu:
+
+* install::	安装一个软件包，或它的某个指定版本。
+* upgrade::	把某个包升到最新版本；带 --all 时升级所有已装包。各版本共存
+        ，所以旧版本会一直留着，直到用 -X 清掉。
+* uninstall::	卸载某个包的一个版本。不带版本号的链接会自动退到剩下的最高版
+        本，并在最后一个版本被卸载时一起消失。
+* list::	列出已安装的软件包及其版本。
+* search::	在软件包索引里搜索。
+* info::	显示作者、简介、主页，以及已安装版本与索引里的可用版本。
+* selfupdate::	把 MacWave 自身更新到自更新仓库里发布的版本。
+* link::	创建一个不带版本号的快捷方式，或把它改指到另一个已安装版本。
+        之后的安装与卸载会自动维护它。
+* unlink::	删掉那个不带版本号的快捷方式。之后再卸载也不会重新创建。
+* linkquery::	显示那个不带版本号的快捷方式指向哪个版本。
+* mirror::	显示每一类数据实际从哪个地址取，包括那些没被环境变量覆盖、仍
+        在使用内置默认值的项。
+* latest::	把本机已装的版本与索引里的最新版本比一比。只报告，不下载任何
+        东西。
+* shellenv::	打印一段把 MacWave 的目录加到 PATH 前面的 shell 代码。在
+        shell 配置里 eval 一次即可；它自己什么也不改。
+* version::	打印当前安装的 MacWave 版本。
+* manual::	显示完整手册（与 man / info 里的是同一份内容），可按命令名只
+        看一节。
+
+* 全局旗标::
+
+  完整手册。加 --zh 看中文版
+
+
+File: wave-zh.info, Node: 全局旗标, Up: Top
+
+
+  -s, --silent
+      完全不输出，只靠退出码表达结果（压过 -v；适用于 install / upgrade
+      / uninstall / link / unlink / selfupdate）
+
+  -S, --show-error
+      与 -s 同用时，命令失败仍打印错误（不带 🌊，方便脚本解析）
+
+  -C, --continue
+      续传被中断的下载（同 curl -C -）
+
+  --proxy <string>
+      指定 HTTP/HTTPS 代理（例如 http://127.0.0.1:8080）
+
+  --skip-ssl
+      跳过 SSL 证书校验（不安全）
+
+  --limit-rate <string>
+      限制下载速度（例如 200K、1M、5M）
+
+  --max-time <string>
+      单次请求/操作的总时限（例如 40s、1min、1min20s、2h）
+
+  --connect-timeout <string>
+      TCP/TLS 握手超过这个时长就放弃（同 curl）
+
+  --content-time <string>
+      连上之后服务器超过这个时长没发数据就放弃
+
+  --ver <string>
+      安装指定版本（仅 install；`--ver=1.0` 这种写法也认）
+
+  --install-from-source
+      从上游地址下载，而不走 MacWave 自己的存储
+
+  -F, --force
+      包声明的最低 macOS 高于本机时仍然安装（install / upgrade）
+
+  --install-python-from-source
+      同上，针对自带的 Python（install / selfupdate）
+
+  MACWAVE_PIP_INDEX
+      环境变量。Python 依赖的 pip 源，默认 pypi.org/simple
+
+
+
+File: wave-zh.info, Node: install, Next: upgrade, Up: Top
+
+
+安装一个软件包，或它的某个指定版本。
+
+  -C, --continue
+      续传被中断的下载（同 curl -C -）
+
+  --proxy <string>
+      HTTP/HTTPS 代理（例如 http://127.0.0.1:8080）
+
+  --skip-ssl
+      跳过 SSL 证书校验（不安全）
+
+  --limit-rate <string>
+      限制下载速度（例如 200K、1M、5M）
+
+  --max-time <string>
+      单次请求的总时限（40s、1min、1min20s、2h；纯数字按秒算）
+
+  --connect-timeout <string>
+      握手超过这个时长就放弃（同 curl）
+
+  --content-time <string>
+      超过这个时长收不到数据就放弃
+
+  --unlink
+      不创建、也不改写那个不带版本号的链接
+
+  --install-from-source
+      按索引里的上游地址下载，而不是 MacWave 自己的存储（依赖走同一条规
+      则）
+
+  -F, --force
+      包声明的最低 macOS 高于本机时仍然安装
+
+  -v, --verbose
+      输出详细日志
+
+Examples:
+
+     wave install jq
+     wave install ffmpeg@6.1
+     wave install jq --limit-rate 1M
+     wave install jq --max-time=1min
+     wave install jq --install-from-source
+
+
+File: wave-zh.info, Node: upgrade, Next: uninstall, Prev: install, Up: Top
+
+
+把某个包升到最新版本；带 --all 时升级所有已装包。各版本共存，所以旧版本
+会一直留着，直到用 -X 清掉。
+
+  -a, --all
+      升级每个有新版本的已装包
+
+  -X, --remove-old-versions
+      顺带删掉比刚装上的版本更旧的版本
+
+  -C, --continue
+      续传被中断的下载（同 curl -C -）
+
+  --proxy <string>
+      HTTP/HTTPS 代理（例如 http://127.0.0.1:8080）
+
+  --skip-ssl
+      跳过 SSL 证书校验（不安全）
+
+  --limit-rate <string>
+      限制下载速度（例如 200K、1M、5M）
+
+  --max-time <string>
+      单次请求的总时限（40s、1min、1min20s、2h；纯数字按秒算）
+
+  --connect-timeout <string>
+      握手超过这个时长就放弃（同 curl）
+
+  --content-time <string>
+      超过这个时长收不到数据就放弃
+
+  -F, --force
+      包声明的最低 macOS 高于本机时仍然升级
+
+  -v, --verbose
+      输出详细日志
+
+Examples:
+
+     wave upgrade jq
+     wave upgrade jq -X
+     wave upgrade --all
+     wave upgrade jq --remove-old-versions --max-time=2min
+
+
+File: wave-zh.info, Node: uninstall, Next: list, Prev: upgrade, Up: Top
+
+
+卸载某个包的一个版本。不带版本号的链接会自动退到剩下的最高版本，并在最后
+一个版本被卸载时一起消失。
+
+  --unlink
+      不碰那个不带版本号的链接
+
+Examples:
+
+     wave uninstall jq
+     wave uninstall ffmpeg@6.1
+
+
+File: wave-zh.info, Node: list, Next: search, Prev: uninstall, Up: Top
+
+
+列出已安装的软件包及其版本。
+
+Examples:
+
+     wave list
+
+
+File: wave-zh.info, Node: search, Next: info, Prev: list, Up: Top
+
+
+在软件包索引里搜索。
+
+Examples:
+
+     wave search json
+
+
+File: wave-zh.info, Node: info, Next: selfupdate, Prev: search, Up: Top
+
+
+显示作者、简介、主页，以及已安装版本与索引里的可用版本。
+
+  --json
+      以 JSON 输出同样这些字段
+
+  --yaml
+      以 YAML 输出同样这些字段
+
+  --toml
+      以 TOML 输出同样这些字段
+
+  --raw
+      按索引里存储的原样输出记录，不做排版
+
+Examples:
+
+     wave info jq
+     wave info jq --json
+     wave info jq --raw
+
+
+File: wave-zh.info, Node: selfupdate, Next: link, Prev: info, Up: Top
+
+
+把 MacWave 自身更新到自更新仓库里发布的版本。
+
+  --max-time <string>
+      单次请求的总时限（40s、1min、1min20s、2h；纯数字按秒算）
+
+  --connect-timeout <string>
+      握手超过这个时长就放弃（同 curl）
+
+  --content-time <string>
+      超过这个时长收不到数据就放弃
+
+  --install-python-from-source
+      从上游地址取自带的 Python，而不是 MacWave 自己的仓库
+
+Examples:
+
+     wave selfupdate
+     wave selfupdate --max-time=2min
+
+
+File: wave-zh.info, Node: link, Next: unlink, Prev: selfupdate, Up: Top
+
+
+创建一个不带版本号的快捷方式，或把它改指到另一个已安装版本。之后的安装与
+卸载会自动维护它。
+
+  --all, -a
+      对所有已装包生效
+
+Examples:
+
+     wave link jq
+     wave link ffmpeg@6.1
+     wave link --all
+
+
+File: wave-zh.info, Node: unlink, Next: linkquery, Prev: link, Up: Top
+
+
+删掉那个不带版本号的快捷方式。之后再卸载也不会重新创建。
+
+  --all, -a
+      对所有已装包生效
+
+Examples:
+
+     wave unlink jq
+     wave unlink --all
+
+
+File: wave-zh.info, Node: linkquery, Next: mirror, Prev: unlink, Up: Top
+
+
+显示那个不带版本号的快捷方式指向哪个版本。
+
+  --all, -a
+      对所有已装包生效
+
+Examples:
+
+     wave linkquery jq
+
+
+File: wave-zh.info, Node: mirror, Next: latest, Prev: linkquery, Up: Top
+
+
+显示每一类数据实际从哪个地址取，包括那些没被环境变量覆盖、仍在使用内置默
+认值的项。
+
+  --json
+      以 JSON 输出配置
+
+  --yaml
+      以 YAML 输出配置
+
+  --toml
+      以 TOML 输出配置
+
+  --raw
+      输出可以直接粘贴的 export 行
+
+  --only-set
+      配合 --raw：只导出你改过的那些源，其余继续走内置默认值
+
+  --show-password
+      打全密码，而不是固定的六个星号
+
+  --hide-user
+      连用户名一起盖掉
+
+Examples:
+
+     wave mirror
+     wave mirror --raw
+     wave mirror --json
+     wave mirror --show-password
+
+
+File: wave-zh.info, Node: latest, Next: shellenv, Prev: mirror, Up: Top
+
+
+把本机已装的版本与索引里的最新版本比一比。只报告，不下载任何东西。
+
+  -a, --all
+      检查每个已装包
+
+  --max-time <string>
+      每次请求的总时限（例如 40s、1min）
+
+  --connect-timeout <string>
+      握手超过这个时长就放弃
+
+  --content-time <string>
+      超过这个时长收不到数据就放弃
+
+  -v, --verbose
+      每发一个请求就打一行
+
+Examples:
+
+     wave latest jq
+     wave latest --all
+     wave latest -a --max-time=1min
+
+
+File: wave-zh.info, Node: shellenv, Next: version, Prev: latest, Up: Top
+
+
+打印一段把 MacWave 的目录加到 PATH 前面的 shell 代码。在 shell 配置里
+eval 一次即可；它自己什么也不改。
+
+Examples:
+
+     eval "$(~/.local/macwave/lib/wave shellenv)"
+     echo 'eval "$(~/.local/macwave/lib/wave shellenv)"' >> ~/.zprofile
+
+
+File: wave-zh.info, Node: version, Next: manual, Prev: shellenv, Up: Top
+
+
+打印当前安装的 MacWave 版本。
+
+Examples:
+
+     wave version
+
+
+File: wave-zh.info, Node: manual, Prev: version, Up: Top
+
+
+显示完整手册（与 man / info 里的是同一份内容），可按命令名只看一节。
+
+  --zh
+      输出中文版
+
+  --color
+      给标题与旗标上色（默认纯文本，方便重定向到文件）
+
+Examples:
+
+     wave manual
+     wave manual install
+     wave manual --zh
+     wave manual install --color

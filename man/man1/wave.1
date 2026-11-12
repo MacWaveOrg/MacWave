@@ -1,0 +1,173 @@
+.TH WAVE 1 "" "MacWave" "MacWave Manual"
+
+.SH NAME
+wave \- a package manager for macOS software developers
+.SH SYNOPSIS
+.B wave
+\fIcommand\fR [\fIpackage\fR] [\fIflags\fR]
+.SH DESCRIPTION
+MacWave installs each package into its own versioned directory under the
+install root, keeps every version side by side, and maintains
+unversioned links so a package can be called with or without a version.
+Packages are fetched from a mirror or from MacWave's own bottle store;
+nothing is compiled on the user's machine unless --install-from-source
+is given.
+.SH COMMANDS
+.TP
+.B install
+Install a package, or one specific version of it.
+.TP
+.B upgrade
+Install the latest version of a package, or of every installed package
+with --all. Versions coexist, so the old ones stay until -X removes
+them.
+.TP
+.B uninstall
+Uninstall a package version. The unversioned link falls back to the
+highest remaining version, and goes away with the last one.
+.TP
+.B list
+List the packages you have installed, with their versions.
+.TP
+.B search
+Search the package index.
+.TP
+.B info
+Show author, description, homepage and the installed / available
+versions.
+.TP
+.B selfupdate
+Update MacWave itself to the version published in the self-update
+repository.
+.TP
+.B link
+Create a versionless shortcut, or re-point it at another installed
+version. Installs and uninstalls keep it up to date afterwards.
+.TP
+.B unlink
+Remove the versionless shortcut. A later uninstall will not re-create
+it.
+.TP
+.B linkquery
+Show which version the versionless shortcut points at.
+.TP
+.B mirror
+Show the address each kind of data is fetched from, including the
+built-in defaults for anything not overridden by an environment
+variable.
+.TP
+.B latest
+Compare what you have with the newest version in the index. Reports
+only; nothing is downloaded.
+.TP
+.B shellenv
+Print the shell code that prepends MacWave's directories to PATH. You
+eval it once from your shell profile; it does nothing on its own.
+.TP
+.B version
+Print the installed MacWave version.
+.TP
+.B manual
+Show the full manual — the same text that ships as man pages and info
+files — or just one command's section.
+
+.SH GLOBAL FLAGS
+.TP
+.B \-s, \-\-silent
+Print nothing at all; the exit code is the signal (beats -v; install /
+upgrade / uninstall / link / unlink / selfupdate)
+.TP
+.B \-S, \-\-show\-error
+With -s, still print the error when a command fails (without the 🌊, so
+scripts can parse it)
+.TP
+.B \-C, \-\-continue
+Resume interrupted downloads (like curl -C -)
+.TP
+.B \-\-proxy <string>
+Specify an HTTP/HTTPS proxy (e.g., http://127.0.0.1:8080)
+.TP
+.B \-\-skip\-ssl
+Skip SSL certificate verification (insecure)
+.TP
+.B \-\-limit\-rate <string>
+Limit download speed (e.g., 200K, 1M, 5M)
+.TP
+.B \-\-max\-time <string>
+Total time limit for one request/operation (e.g., 40s, 1min, 1min20s,
+2h)
+.TP
+.B \-\-connect\-timeout <string>
+Give up if the TCP/TLS handshake takes longer than this (like curl)
+.TP
+.B \-\-content\-time <string>
+Give up if the server sends nothing for this long after connecting
+.TP
+.B \-\-ver <string>
+Install a specific version (install only; --ver=1.0 works too)
+.TP
+.B \-\-install\-from\-source
+Download from the upstream URL instead of MacWave's own store
+.TP
+.B \-F, \-\-force
+Install anyway when the package declares a newer macOS than this machine
+runs (install / upgrade)
+.TP
+.B \-\-install\-python\-from\-source
+Same, for the bundled Python (install / selfupdate)
+.TP
+.B MACWAVE_PIP_INDEX
+Env var. pip index for the Python deps; default pypi.org/simple
+
+.SH EXAMPLES
+.nf
+wave install jq
+wave upgrade jq
+wave uninstall jq
+wave list
+wave search json
+wave info jq
+wave selfupdate
+wave link jq
+wave unlink jq
+wave linkquery jq
+wave mirror
+wave latest jq
+eval "$(~/.local/macwave/lib/wave shellenv)"
+wave version
+wave manual
+.fi
+.SH ENVIRONMENT
+.TP
+.B MACWAVE_API_DOMAIN
+package index prefix (default: the public mirror)
+.TP
+.B MACWAVE_BOTTLE_DOMAIN
+package payload prefix
+.TP
+.B MACWAVE_DEPS_DOMAIN
+dependency payload prefix
+.TP
+.B MACWAVE_MIRROR
+set to 1 to make the mirror defaults explicit
+.TP
+.B MACWAVE_PIP_INDEX
+pip index for the Python dependencies
+.TP
+.B MACWAVE_TEST
+treat this directory as the filesystem root (for tests)
+.SH FILES
+.TP
+.B ~/.config/macwave_config/config.json
+user-level install location
+.TP
+.B /opt/macwave_config/config.json
+system-level install location (takes priority)
+.TP
+.B <base_dir>/man/man1
+these man pages
+.TP
+.B <base_dir>/info
+the info manual (wave.info, wave-zh.info)
+.SH SEE ALSO
+wave-manual(1), info(1), wave(1)\&

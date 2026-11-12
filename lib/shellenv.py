@@ -42,14 +42,23 @@ def render(base_dir: Path) -> str:
 
     joined = ":".join(str(path) for path in dirs)
     lib_dir = dirs[-1]
+    man_dir = base_dir / "man"
 
     # case 守卫让这段代码可以重复 eval：嵌套的 login shell（`zsh -l` 里再 `zsh -l`）
     # 会再次执行 .zprofile，没有守卫时 PATH 会一层层堆叠同样的三个目录。
     # 已经存在时什么都不做 —— 而不是「换一份新的」，因为那份旧的可能仍有效。
+    #
+    # MANPATH 跟着一起发：man 页装在 <base_dir>/man/man1，不在系统的搜索路径里。
+    # 不发这一句，安装完 `man wave` 只会得到 "No manual entry for wave" —— 手册
+    # 装了等于没装。守卫同样按「这个目录已经在 MANPATH 里」来判断。
     return (
         f'case ":$PATH:" in\n'
         f'  *":{lib_dir}:"*) ;;\n'
         f'  *) export PATH="{joined}${{PATH:+:$PATH}}" ;;\n'
+        f'esac\n'
+        f'case ":${{MANPATH:-}}:" in\n'
+        f'  *":{man_dir}:"*) ;;\n'
+        f'  *) export MANPATH="{man_dir}${{MANPATH:+:$MANPATH}}" ;;\n'
         f'esac\n'
     )
 

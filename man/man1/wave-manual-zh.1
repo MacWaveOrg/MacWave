@@ -1,0 +1,25 @@
+.TH WAVE-MANUAL-ZH 1 "" "MacWave" "MacWave Manual"
+
+.SH 名称
+wave-manual-zh \- 显示完整手册（与 man / info 里的是同一份内容），可按命令名只看一节。
+.SH 用法
+.B wave manual [<command>] [\-\-zh] [\-\-color]
+.SH 说明
+显示完整手册（与 man / info 里的是同一份内容），可按命令名只看一节。
+.SH 选项
+.TP
+.B \-\-zh
+输出中文版
+.TP
+.B \-\-color
+给标题与旗标上色（默认纯文本，方便重定向到文件）
+
+.SH 示例
+.nf
+wave manual
+wave manual install
+wave manual --zh
+wave manual install --color
+.fi
+.SH 另见
+wave-zh(1)
