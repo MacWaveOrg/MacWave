@@ -30,7 +30,6 @@ sys.path.insert(0, str(LIB_DIR))
 # 放在顶层：「未知命令」那条分支也要用它们，而那条分支在分发之前。
 #   silent  —— 静默旗标的解析与应用（见 lib/silent.py）
 #   suggest —— 命令名打错时的纠错建议（见 lib/suggest.py）
-import quiet
 import silent
 import suggest as suggest_module
 
@@ -107,8 +106,8 @@ def main():
         if FirstWord not in ("install", "upgrade"):
             tls.grant()
 
-        # `-s / --silent`（含 `-sS`）：剥掉旗标并落到 quiet。细节与理由在
-        # lib/silent.py —— 主程序只负责「剥完继续分发」。
+        # `-s / --silent`（含 `-sS`）：剥掉旗标并落到运行期开关。细节与理由在
+        # lib/silent.py 的 A 段 —— 主程序只负责「剥完继续分发」。
         words = silent.apply(words, FirstWord)
 
         # `wave <command> -h|--help`：打印该命令自己的用法后退出。
@@ -186,7 +185,7 @@ def main():
     bad_flags = flags_module.unknown_flags(words)
 
     if is_silent:
-        quiet.unknown("command", FirstWord)
+        silent.unknown("command", FirstWord)
         sys.exit(1)
 
     # 建议里不能留着坏旗标 —— 否则「Did you mean: wave upgrade jq --unkown-flag」

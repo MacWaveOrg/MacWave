@@ -22,13 +22,13 @@ and carry two heuristics tables. The last one does not belong in an entry point,
 
 | Module | Owns | Called by |
 | --- | --- | --- |
-| `lib/silent.py` | `-s` / `-S`: which commands may be silenced, how the flags are stripped (`-sX`, `-CsX`), and applying the result | `wave.py` only |
+| `lib/silent.py` | `-s` / `-S`: which commands may be silenced, how the flags are stripped (`-sX`, `-CsX`), and applying the result (section A) | `wave.py` only |
 | `lib/suggest.py` | "did you mean": command names (typo table + spelling) and package names (edit distance + similarity) | `wave.py`, `pkg/pkginstaller.py`, `lib/latest.py` |
-| `lib/quiet.py` | unchanged — the runtime output gate (`say` / `ask` / `silence_everything`) | `pkg/`, `surfboard/` |
+| `lib/quiet.py` → merged into `silent.py` | the runtime output gate (`say` / `ask` / `silence_everything`), now section B of the same file | `pkg/`, `surfboard/` |
 
 ```
 lib/wave.py   355 → 213 lines
-lib/silent.py      108 lines   (new)
+lib/silent.py      108 lines   (new, section A)  →  293 lines after the merge below
 lib/suggest.py     151 lines   (new)
 ```
 
@@ -85,6 +85,13 @@ by `install`, and those were two separate pieces of code that could disagree.
 `remove_short`). They are pure functions — no printing, no `sys.exit`, no config — which is
 what lets `pkg/` and `lib/` both use them. The flag catalogue that was already in that file
 stays exactly as it was: **diagnostics only**, never validation.
+
+The same round of work finished the job on the runtime half. `quiet.py` was not a general
+output library — its own header said it was "the only switch for `-s / --silent`", and every
+function in it was gated by the same flag. Two files, one feature, two names. They are now
+one module, `lib/silent.py`, in two clearly marked sections: **A** parses argv and may exit
+(called only by `wave.py`), **B** is the runtime gate that `pkg/` and `surfboard/` call and
+which never exits. The split was historical, not principled.
 
 One fact also stopped being stored twice. "Which commands may be silenced" was written out by
 hand in `silent.apply()` and contradicted by the flag catalogue, which filed `-s` under "every
@@ -167,13 +174,13 @@ mutually exclusive formats.
 
 | 模块 | 管什么 | 谁调用 |
 | --- | --- | --- |
-| `lib/silent.py` | `-s` / `-S`：哪些命令能静默、怎么剥旗标（`-sX`、`-CsX`）、剥完怎么落地 | 只有 `wave.py` |
+| `lib/silent.py` | `-s` / `-S`：哪些命令能静默、怎么剥旗标（`-sX`、`-CsX`）、剥完怎么落地（A 段） | 只有 `wave.py` |
 | `lib/suggest.py` | 「你是不是想敲……」：命令名（误用表 + 拼写）、包名（编辑距离 + 相似度） | `wave.py`、`pkg/pkginstaller.py`、`lib/latest.py` |
-| `lib/quiet.py` | 没动 —— 运行期的输出闸门（`say` / `ask` / `silence_everything`） | `pkg/`、`surfboard/` |
+| `lib/quiet.py` → 已并入 `silent.py` | 运行期的输出闸门（`say` / `ask` / `silence_everything`），现在是同一文件的 B 段 | `pkg/`、`surfboard/` |
 
 ```
 lib/wave.py   355 → 213 行
-lib/silent.py      108 行   （新增）
+lib/silent.py      108 行   （新增，A 段）→ 合并后 293 行
 lib/suggest.py     151 行   （新增）
 ```
 
@@ -224,6 +231,12 @@ install 那条路径按构造是不变的（函数是搬过去的，不是重写
 `remove_short`）。它们是纯函数 —— 不打印、不 `sys.exit`、不读配置 —— 所以 `pkg/` 与
 `lib/` 都能直接用。这个文件里原本就有的那张旗标清单**一个字没动**：它只用于诊断，
 从不参与校验。
+
+同一轮也把运行期那半收进来了。`quiet.py` 从来不是一个通用输出库 —— 它自己的文件头
+写着「`-s / --silent` 的唯一开关」，里面每个函数都由同一个标志把关。两个文件、一个特性、
+两个名字。现在合成 `lib/silent.py`，两段各自标注清楚：**A 段**解析 argv、会退出（只被
+`wave.py` 调用），**B 段**是 `pkg/` 与 `surfboard/` 调用的运行期闸门、永不退出。当初分家
+是历史原因，不是设计。
 
 顺带让一个事实不再存两份。「哪些命令能静默」原本在 `silent.apply()` 里手拼成一句话，
 而旗标清单却把 `-s` 记在「任何命令都接受」那一组里 —— 两处互相矛盾。现在它按命令列进

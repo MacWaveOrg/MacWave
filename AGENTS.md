@@ -152,12 +152,13 @@ lib/innocent.dylib -> /Users/someone/.ssh/id_rsa
 
 两条实现约定：
 
-- **`-s` 的静默不是靠「每个 print 都判断一下」**。`quiet.silence_everything()`
+- **`-s` 的静默不是靠「每个 print 都判断一下」**。`silent.silence_everything()`
   在 fd 层把 1、2 指向 `/dev/null`，子进程（curl、进度条）也一起闭嘴；带 `-S` 时
   不换 fd，改由 `machine_readable()` 剥掉行首 🌊。
-- **两个模块分工，别混**：`lib/silent.py` 管参数（哪些命令能静默、怎么剥旗标），
-  只被 `wave.py` 调用；`lib/quiet.py` 管运行期输出，`pkg/` 与 `surfboard/` 都用它。
-  新增一条静默相关规则时，先想清楚它属于「解析」还是「输出」。
+- **`lib/silent.py` 一个文件两段，别混**：A 段是参数层（哪些命令能静默、怎么剥
+  旗标），只被 `wave.py` 调用、会 `sys.exit` 也会改 fd；B 段是运行期闸门
+  （`say` / `ask` / `show`），`pkg/` 与 `surfboard/` 都用它、**不许退出**。
+  往这个文件里加东西时，先想清楚它属于「解析」还是「输出」，放进对应的段。
 - **「哪些命令能静默」以 `silent.SILENT_COMMANDS` 为准**。`flags.py` 的
   `COMMAND_FLAGS` 里也有一份，那只是为了让 `describe("-s")` 说得出「只适用于哪几条」；
   加一条能静默的命令要改两处，`scripts/flags_test.sh` 会拦。`-s` **不能放回

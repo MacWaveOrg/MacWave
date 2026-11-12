@@ -15,7 +15,7 @@ import sys
 
 from configpaths import require_safe_token
 import flags
-import quiet
+import silent
 
 
 RED_BOLD = '\033[1;31m'
@@ -80,7 +80,7 @@ def ask_yes_no(prompt):
     """问一次 Y/n。返回 True / False；读到 EOF（非交互）时返回 None。"""
     # 静默模式不读 stdin：提示语已被压掉，再 input() 就是卡死。
     # 返回 None 让调用方走「非交互」分支 —— 那条分支本来就保留旧版本。
-    if quiet.is_silent():
+    if silent.is_silent():
         return None
     while True:
         try:
@@ -107,18 +107,18 @@ def remove_old_versions(bin_name, keep_version, assume_yes=False):
     old = [version for version in find_installed_versions(bin_name)
            if version_key(version) < version_key(keep_version)]
     if not old:
-        quiet.say(f"🌊 No old versions of {bin_name} to remove.")
+        silent.say(f"🌊 No old versions of {bin_name} to remove.")
         return
 
     # 批量模式：-X 是对每个包说的，不必再逐个确认
     if assume_yes:
-        quiet.say(f"🌊 Removing {len(old)} old version(s) of {bin_name}...")
+        silent.say(f"🌊 Removing {len(old)} old version(s) of {bin_name}...")
         uninstall_versions(bin_name, old)
         return
 
     # 只有一个旧版本：不必再问选哪个，「移除旧版本」已经表达得很清楚
     if len(old) == 1:
-        quiet.say(f"🌊 Removing the old version {bin_name}@{old[0]}...")
+        silent.say(f"🌊 Removing the old version {bin_name}@{old[0]}...")
         uninstall_versions(bin_name, old)
         return
 
@@ -127,12 +127,12 @@ def remove_old_versions(bin_name, keep_version, assume_yes=False):
     # 静默模式下不给 -X 就不会走到这个函数（调用点有 remove_old 判断），
     # 所以「静默且到了这里」等价于用户显式写了 -X。既然意图已经明确，
     # 就直接全删 —— 不该因为「问不了」而什么都不做，那是把用户的显式要求丢掉。
-    if quiet.is_silent():
-        quiet.say(f"🌊 Removing {len(old)} old versions of {bin_name}...")
+    if silent.is_silent():
+        silent.say(f"🌊 Removing {len(old)} old versions of {bin_name}...")
         uninstall_versions(bin_name, old)
         return
 
-    quiet.say(f"🌊 {len(old)} old versions of {bin_name} are installed: {', '.join(old)}")
+    silent.say(f"🌊 {len(old)} old versions of {bin_name} are installed: {', '.join(old)}")
     answer = ask_yes_no("🌊 Remove all of them? [Y/n] ")
     if answer is None:
         # 非交互（CI、管道）：没有人能替用户回答，保留旧版本比误删安全
@@ -143,7 +143,7 @@ def remove_old_versions(bin_name, keep_version, assume_yes=False):
         uninstall_versions(bin_name, old)
         return
 
-    quiet.say("🌊 Choose which old versions to remove, one or more.")
+    silent.say("🌊 Choose which old versions to remove, one or more.")
     try:
         selected = select_versions(bin_name, old)
     except SystemExit:
@@ -172,7 +172,7 @@ def upgrade_everything(words, remove_old):
     targets = installed_bin_names()
     if not targets:
         # 什么也没装不是错误（退出码 0），静默时连这句都不该出现
-        quiet.say("🌊 No packages installed yet.")
+        silent.say("🌊 No packages installed yet.")
         return
 
     # bin/ 里是 bin_name，索引里是包名，两者不一定相同（choma -> ChOma）。
@@ -202,7 +202,7 @@ def upgrade_everything(words, remove_old):
         (upgraded if after - before else unchanged).append(package_name)
 
     if len(targets) > 1:
-        quiet.say(f"🌊 {len(upgraded)} upgraded, {len(unchanged)} already at the latest, "
+        silent.say(f"🌊 {len(upgraded)} upgraded, {len(unchanged)} already at the latest, "
                   f"{len(failed)} failed.")
     if failed:
         print(f"{RED_BOLD}🌊 Error: could not upgrade {', '.join(failed)}.{RESET}")
@@ -266,7 +266,7 @@ def handle_upgrade(input_string, assume_yes=False):
     budget.start()
 
     arch = detect_arch()
-    quiet.say(f"🌊 Checking the latest version of {package_name}...")
+    silent.say(f"🌊 Checking the latest version of {package_name}...")
     latest = fetch_max_version(package_name, arch, budget)
 
     # 包名与 bin_name 不一定相同（choma -> ChOma），而 bin/ 与 links/ 用的是 bin_name
@@ -289,13 +289,13 @@ def handle_upgrade(input_string, assume_yes=False):
         print(f"{YELLOW}🌊 Leaving it in place; nothing was downloaded.{RESET}")
     elif latest in installed:
         keep = latest
-        quiet.say(f"{GREEN}🌊 {bin_name} is already at the latest version ({latest}).{RESET}")
+        silent.say(f"{GREEN}🌊 {bin_name} is already at the latest version ({latest}).{RESET}")
     else:
         keep = latest
         if installed:
-            quiet.say(f"🌊 Upgrading {bin_name}: {installed[0]} -> {latest}")
+            silent.say(f"🌊 Upgrading {bin_name}: {installed[0]} -> {latest}")
         else:
-            quiet.say(f"🌊 {bin_name} is not installed; installing {latest}.")
+            silent.say(f"🌊 {bin_name} is not installed; installing {latest}.")
         # 整个安装流水线（含依赖、路径重写、建链接）都复用 install，
         # 只把包名换成「包名@最新版本」，其余旗标原样带下去
         install_words = list(words)
@@ -315,7 +315,7 @@ def handle_upgrade(input_string, assume_yes=False):
             from linker import link_package
             linked = link_package(bin_name, keep)
             if linked:
-                quiet.say(f"🌊 Linked {bin_name} -> {bin_name}@{linked}")
+                silent.say(f"🌊 Linked {bin_name} -> {bin_name}@{linked}")
         except Exception as error:
             print(f"{YELLOW}🌊 Warning: could not re-point the unversioned link ({error}).{RESET}")
 
@@ -327,5 +327,5 @@ if __name__ == "__main__":
     try:
         handle_upgrade(" ".join(sys.argv[1:]))
     except KeyboardInterrupt:
-        quiet.say("🌊 Operation cancelled by user.")
+        silent.say("🌊 Operation cancelled by user.")
         sys.exit(130)

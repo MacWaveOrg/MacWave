@@ -35,7 +35,7 @@ import domains
 import tls
 import flags as flags_module
 import timeouts
-import quiet
+import silent
 import steplog
 from suggest import closest_name, name_examples
 
@@ -212,13 +212,13 @@ def confirm_min_os(record_text, pkg_name, pkg_version, force=False):
     # -F/--force 越过询问，但警告照打 —— -s 时连警告一起静默（fd 上其实已经指向
     # /dev/null 了，这里显式判断是让意图写在代码里，不依赖那层副作用）。
     if force:
-        if not quiet.is_silent():
+        if not silent.is_silent():
             print(warning)
         return True
 
     # -s 问不到答复，直接拒绝，不询问。原因由调用点的 steplog.fail 输出：
     # 纯 -s 时 fd 已指向 /dev/null（一个字节都不出去），-sS 时才留着错误。
-    if quiet.is_silent():
+    if silent.is_silent():
         return False
 
     print(warning)
@@ -244,7 +244,7 @@ def confirm_skip_ssl(flags):
         return True
     allowed = False
     if "--skip-ssl" in flags:
-        if quiet.is_silent():
+        if silent.is_silent():
             # 静默模式不提问，也**不**改走「按拒绝处理」那条路：
             # 用户已经把旗标写出来了，那就是他的意思（与 -X 同一条原则）。
             # 若这里默默拒绝，装失败时会抛一个 SSL 错误，而用户以为自己已经跳过了。
@@ -319,12 +319,12 @@ def parse_flags(input_string, command="install", shown=None):
             continue
         # 静默模式：整段解释对脚本没用，给一行可匹配的即可。
         # 但要分清两种「不接受」：拼错了，还是这条命令不认它。
-        if quiet.is_silent():
+        if silent.is_silent():
             description = flags_module.describe(flag)
             if description:
-                quiet.misplaced(flag, description)
+                silent.misplaced(flag, description)
             else:
-                quiet.unknown("flag", flag)
+                silent.unknown("flag", flag)
             sys.exit(1)
         # 保留 "illegal" 这个词：随机回归用它在断言里识别「参数被拒」这一类结果。
         if flag in UPGRADE_ONLY_FLAGS:
@@ -561,7 +561,7 @@ def download_file(url, temp_path, config, input_string, display_name):
                 # disable=True 让 rich 不启动实时渲染（进度条是噪音）；
                 # 下载循环仍在这个 with 里，progress.update 变成无操作。
                 with Progress(*progress_columns, console=console,
-                              disable=quiet.is_silent()) as progress:
+                              disable=silent.is_silent()) as progress:
                     task_id = progress.add_task(
                         description=f"🌊 {display_name}",
                         total=total_size or None
@@ -597,9 +597,9 @@ def download_file(url, temp_path, config, input_string, display_name):
                     for chunk in response.iter_content(chunk_size=8192):
                         if chunk:
                             f.write(chunk)
-                            if config["verbose"] and not quiet.is_silent():
+                            if config["verbose"] and not silent.is_silent():
                                 print(".", end="", flush=True)
-                if config["verbose"] and not quiet.is_silent():
+                if config["verbose"] and not silent.is_silent():
                     print(" ")
 
             download_success = True
@@ -610,7 +610,7 @@ def download_file(url, temp_path, config, input_string, display_name):
             # 失败原因必须留下（这是错误，不是噪音）；问题本身可以被静默掉，
             # 因为静默模式下没有人能回答，问出来只会让人以为卡住了。
             print(f"{RED_BOLD}🌊 Download failed: {e}{RESET}")
-            if quiet.is_silent():
+            if silent.is_silent():
                 retry = ""
             else:
                 print(f"{RED_BOLD}🌊 Do you want to retry? [y/N]: {RESET}")
@@ -916,12 +916,12 @@ def handle_install(input_string):
         ParsePkgVersion = ver_flag
         steplog.detail(f"version from --ver: {ParsePkgVersion}")
     else:
-        quiet.say("🌊 Fetching version info...")
+        silent.say("🌊 Fetching version info...")
         # 必须把解析好的 Budget 传下去：不传就用 DEFAULT_TIMEOUT（30 秒），
         # 于是 --connect-timeout / --content-time / --max-time 对这条命令的
         # 第一个请求完全无效 —— 而这正是最容易卡住的那个请求。
         ParsePkgVersion = fetch_max_version(ParsePkgName, ARCH, config["timeout"])
-        quiet.say("🌊 Version info fetched successfully.")
+        silent.say("🌊 Version info fetched successfully.")
 
     # 版本号同样会进 URL 与目录名：`%`、`/`、`..` 这类一律拒绝
     ParsePkgVersion = require_safe_token(ParsePkgVersion, "package version")
@@ -1071,7 +1071,7 @@ def handle_install(input_string):
             ['bash', script_path, pkg_info_string, deps_string],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
         )
-        quiet.show(result)
+        silent.show(result)
         if result.returncode != 0:
             steplog.fail(
                 "the install shell stage failed (extract / verify / place)",
@@ -1100,7 +1100,7 @@ def handle_install(input_string):
         try:
             from linker import link_package
             if link_package(bin_name, ParsePkgVersion):
-                quiet.say(f"🌊 Linked {bin_name} -> {bin_name}@{ParsePkgVersion}")
+                silent.say(f"🌊 Linked {bin_name} -> {bin_name}@{ParsePkgVersion}")
         except Exception as error:
             print(f"{YELLOW}🌊 Warning: could not create the unversioned link ({error}).{RESET}")
 
@@ -1110,6 +1110,6 @@ if __name__ == "__main__":
         input_string = " ".join(sys.argv[1:])
         handle_install(input_string)
     except KeyboardInterrupt:
-        quiet.say("🌊 Operation cancelled by user.")
-        quiet.say("🌊 You can use -C to resume the download next time.")
+        silent.say("🌊 Operation cancelled by user.")
+        silent.say("🌊 You can use -C to resume the download next time.")
         sys.exit(130)

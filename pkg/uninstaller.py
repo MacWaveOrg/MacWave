@@ -21,7 +21,7 @@ RESET = '\033[0m'
 # -------------------- 配置加载 --------------------
 
 from configpaths import assert_inside, assert_inside_entry, load_base_dir, require_safe_token
-import quiet
+import silent
 
 # 只取「任何命令都接受」的那一组；模块名不用 flags ——
 # 这个函数里已经有个局部变量叫 flags（argv 里剥出来的旗标集合）。
@@ -189,7 +189,7 @@ def remove_dependency(artifact_dir, depender_kind, depender_name, depender_versi
         visited.add(resolved_dep)
 
         # 已无任何依赖者：先清软链接与它自己的依赖，再删除目录
-        quiet.say(f"🌊 Removing orphan dependency {dep_name}@{dep_version}...")
+        silent.say(f"🌊 Removing orphan dependency {dep_name}@{dep_version}...")
 
         remove_dep_links(dep_path)
 
@@ -226,7 +226,7 @@ def remove_one(pkg_name, version, installed):
     else:
         display_path = target
 
-    quiet.say(f"🌊 Deleting {to_tilde(display_path)}...")
+    silent.say(f"🌊 Deleting {to_tilde(display_path)}...")
 
     if target.is_dir():
         # 先按 _DEPS 清理依赖标记与孤立依赖，再删除整个目录
@@ -278,10 +278,10 @@ def refresh_link(pkg_name):
     if versions:
         version = get_max_version(versions)
         linker.create_link(pkg_name, version)
-        quiet.say(f"🌊 Unversioned link now points to {pkg_name}@{version}")
+        silent.say(f"🌊 Unversioned link now points to {pkg_name}@{version}")
     else:
         linker.remove_link(pkg_name)
-        quiet.say(f"🌊 Removed the unversioned link for {pkg_name}")
+        silent.say(f"🌊 Removed the unversioned link for {pkg_name}")
 
 
 def broken_link_target(pkg_name, versions):
@@ -313,11 +313,11 @@ def uninstall_versions(pkg_name, versions, keep_link=False):
     if changed:
         save_installed(installed)
     if keep_link:
-        quiet.say(f"🌊 Left the unversioned link for {pkg_name} untouched")
+        silent.say(f"🌊 Left the unversioned link for {pkg_name} untouched")
     else:
         refresh_link(pkg_name)
     for version in versions:
-        quiet.say(f"{GREEN}🌊 Successfully uninstalled {pkg_name}@{version}.{RESET}")
+        silent.say(f"{GREEN}🌊 Successfully uninstalled {pkg_name}@{version}.{RESET}")
 
 
 # -------------------- 交互式选择 --------------------
@@ -325,7 +325,7 @@ def uninstall_versions(pkg_name, versions, keep_link=False):
 def select_versions(pkg_name, versions):
     # 静默模式下没人能回答「删哪几个」，而这里没有安全的默认值 ——
     # 猜一个版本可能删错。所以明确拒绝，让用户自己写出 @<版本>。
-    if quiet.is_silent():
+    if silent.is_silent():
         print(f"{RED_BOLD}🌊 Error: {pkg_name} has {len(versions)} installed versions "
               f"({', '.join(versions)}).{RESET}")
         print(f"{RED_BOLD}🌊 --silent cannot ask which to remove; name one: "
@@ -340,7 +340,7 @@ def select_versions(pkg_name, versions):
     try:
         choice = input().strip()
     except (EOFError, KeyboardInterrupt):
-        quiet.say("🌊 Operation cancelled by user.")
+        silent.say("🌊 Operation cancelled by user.")
         sys.exit(130)
 
     selected = []

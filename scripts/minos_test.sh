@@ -172,7 +172,7 @@ else:
 
     # -s：不询问，直接拒绝。原因由调用点的 steplog.fail 负责输出
     # （纯 -s 时 fd 已指向 /dev/null，一个字节都不出去；-sS 才留着错误）。
-    inst.quiet.set_silent(True)
+    inst.silent.set_silent(True)
     said, ret = ask("y\n", higher, "jq", "1.8.2")
     check("-s：一个字都不打", said, "")
     check("-s：不询问、直接拒绝（答复被忽略）", ret, False)
@@ -183,11 +183,11 @@ else:
     check("-s + --force：也不打字", said, "")
 
     # -sS：行为同 -s，只是错误留在输出里（由 steplog 决定，本函数不打）
-    inst.quiet.set_silent(True, show_error=True)
+    inst.silent.set_silent(True, show_error=True)
     said, ret = ask("", higher, "jq", "1.8.2")
     check("-sS：同样不询问、直接拒绝", ret, False)
     check("-sS：本函数自己不打字", said, "")
-    inst.quiet.set_silent(False)
+    inst.silent.set_silent(False)
 
 print(f"# summary {passed} {failed}")
 PYEOF
