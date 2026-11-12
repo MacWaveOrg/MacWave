@@ -306,10 +306,15 @@ echo "========== 10. 子目录要被递归列举 =========="
 # 钉住递归行为。
 NESTED_REPO="$WORK/nested-repo"
 rm -rf "$NESTED_REPO"
-# 组件目录按清单建：清单里加了新组件（net/ 就是一个），这里自动跟上
+# 组件目录按清单建：清单里加了新组件（net/ 就是一个），这里自动跟上。
+# 资源目录（man/、info/）同样要建 —— 它们也在安装清单里，缺了生成器会直接报错。
 for component in $(sed -e 's/#.*//' "$SCRIPT_DIR/components.txt"); do
     mkdir -p "$NESTED_REPO/$component"
     printf '# %s\n' "$component" > "$NESTED_REPO/$component/sample.py"
+done
+for resource in $(sed -e 's/#.*//' "$SCRIPT_DIR/assets.txt"); do
+    mkdir -p "$NESTED_REPO/$resource"
+    printf '%s\n' "$resource" > "$NESTED_REPO/$resource/sample.txt"
 done
 mkdir -p "$NESTED_REPO/lib/nested"
 printf 'a = 1\n' > "$NESTED_REPO/lib/a.py"
