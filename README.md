@@ -473,11 +473,14 @@ install a throwaway copy under a temporary root, or run the scripts in
 | `pkg/` | Install, upgrade, uninstall, links, version parsing |
 | `surfboard/` | Dependency resolution, extraction, Mach-O relocation |
 | `net/` | Transport policy: domains, TLS, timeouts |
+| `man/` | man pages for `wave` and every subcommand, English and Chinese (generated) |
+| `info/` | Info manuals `wave.info` / `wave-zh.info` — `info wave-zh` (generated) |
 | `scripts/` | Tests and data audits |
 
 `lib/`, `cli/`, `config/`, `pkg/`, `surfboard/` and `net/` are the runtime components:
 `scripts/components.txt` is the single list that drives the install tree, the
-`sys.path` entries in `lib/wave.py`, and the test sandboxes.
+`sys.path` entries in `lib/wave.py`, and the test sandboxes. `man/` and `info/` are
+listed separately in `scripts/assets.txt` — installed, but never on `sys.path`.
 
 Each command is a module with a single handler, dispatched from `lib/wave.py`.
 All Mach-O rewriting is confined to `surfboard/`.

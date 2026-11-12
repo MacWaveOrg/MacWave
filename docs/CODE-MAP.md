@@ -49,6 +49,8 @@
 | `pkg/` | 软件包安装、查询、卸载、链接、解压、版本比较 | 核心，改动需跑端到端 |
 | `surfboard/` | 依赖处理与动态库路径重写 | 最复杂，改动需跑依赖链测试 |
 | `scripts/components.txt` | **运行时组件目录的唯一清单**：安装树装哪些目录、`wave.py` 的 sys.path、测试沙箱拷哪些目录，三处都读它。加一个顶层组件只改这里 | 改动它等于改安装布局，必须同时改 `wave.py` 与 `install.sh`（`structure_test.sh` 会对着改） |
+| `man/` | `wave` 与每条子命令的 man 页，中英各一套；由 `scripts/build_docs.py` 生成，**不要手改** | 改文案去改 `cli/help.py` / `cli/help_zh.py`，再跑生成器 |
+| `info/` | `wave.info` 与 `wave-zh.info`（Info 格式）：`info wave` / `info wave-zh`；同样生成 | 同上；`scripts/docs_test.sh` 比对生成物是否落后 |
 | `scripts/` | 回归测试与数据审计；另有 `build_portable_python.sh`（自建便携解释器，只在上游归档不可达或需要镜像时用；默认路径是直连上游） | 改核心逻辑时同步更新 |
 | `docs/` | 技术手册与本文 | 随代码更新 |
 | `.github/workflows/` | 持续集成与分支镜像 | 见 2.9 |
