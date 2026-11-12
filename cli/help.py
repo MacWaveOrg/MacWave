@@ -87,78 +87,159 @@ def get_project_version():
     return "unknown"
 
 
-def print_custom_help():
+# 「全局旗标」这一节的唯一来源：`wave -h` 与 man/info 手册都从它生成。
+# 每条是 (写法, 说明)。写法里若带 `<值>`，上色时值那一段会用另一种颜色。
+GLOBAL_FLAGS_TITLE = "Global Flags (can be used with any command)"
+GLOBAL_FLAGS = [
+    ("-s, --silent", "Print nothing at all; the exit code is the signal (beats -v; install / upgrade / uninstall / link / unlink / selfupdate)"),
+    ("-S, --show-error", "With -s, still print the error when a command fails "
+                         "(without the \U0001F30A, so scripts can parse it)"),
+    ("-C, --continue", "Resume interrupted downloads (like curl -C -)"),
+    ("--proxy <string>", "Specify an HTTP/HTTPS proxy (e.g., http://127.0.0.1:8080)"),
+    ("--skip-ssl", "Skip SSL certificate verification (insecure)"),
+    ("--limit-rate <string>", "Limit download speed (e.g., 200K, 1M, 5M)"),
+    ("--max-time <string>",
+     "Total time limit for one request/operation (e.g., 40s, 1min, 1min20s, 2h)"),
+    ("--connect-timeout <string>",
+     "Give up if the TCP/TLS handshake takes longer than this (like curl)"),
+    ("--content-time <string>",
+     "Give up if the server sends nothing for this long after connecting"),
+    ("--ver <string>", "Install a specific version (install only; --ver=1.0 works too)"),
+    ("--install-from-source", "Download from the upstream URL instead of MacWave's own store"),
+    ("-F, --force", "Install anyway when the package declares a newer macOS than this machine runs (install / upgrade)"),
+    ("--install-python-from-source", "Same, for the bundled Python (install / selfupdate)"),
+    ("MACWAVE_PIP_INDEX", "Env var. pip index for the Python deps; default pypi.org/simple"),
+]
+
+
+# 「`wave -h` 里那几节」的唯一来源：英文在这里，中文在 cli/help_zh.py，
+# 手册（man/info）也从这两份生成。
+#
+# 每节 {"id", "title", "rows": [(kind, 写法, 说明)]}，kind 决定上什么色：
+#   command  绿色命令名 + 黄色占位符（"wave link <name>"）
+#   flag     青色旗标 + 黄色占位符（"-s, --silent"、"MACWAVE_PIP_INDEX"）
+#
+# `id` 是给中文表当锚点用的 —— 中文只提供「标题 + 每条说明」，结构照英文走，
+# 所以两边不可能出现「英文有一节、中文少一节」。scripts/docs_test.sh 逐项比对。
+OVERVIEW = [
+    {
+        "id": "commands",
+        "title": "Commands",
+        "rows": [
+            ("command", "install", "Install a package (latest version)"),
+            ("command", "upgrade", "Install a package at the latest version"),
+            ("command", "uninstall", "Uninstall a package"),
+            ("command", "list", "List installed packages"),
+            ("command", "search", "Search for a package in the index"),
+            ("command", "info", "Display detailed information about a package"),
+            ("command", "selfupdate", "Update MacWave itself to the latest version"),
+            ("command", "link", "Link installed packages without a version number"),
+            ("command", "unlink", "Remove those unversioned links"),
+            ("command", "linkquery", "Show which version an unversioned link points to"),
+            ("command", "mirror", "Show which addresses packages are fetched from"),
+            ("command", "latest", "Show which packages have a newer version available"),
+            ("command", "shellenv", "Print the shell code that puts MacWave on your PATH"),
+            ("command", "manual", "Show the full manual (same text as man and info)"),
+        ],
+    },
+    {
+        "id": "flags",
+        "title": "Flags",
+        "rows": [
+            ("flag", "-h, --help", "Show help for any command"),
+            ("flag", "-V, --version", "Print version information"),
+            ("flag", "-v, --verbose", "Enable verbose output (show detailed logs)"),
+        ],
+    },
+    {
+        "id": "global",
+        "title": GLOBAL_FLAGS_TITLE,
+        "rows": [("flag", spec, desc) for spec, desc in GLOBAL_FLAGS],
+    },
+    {
+        "id": "special",
+        "title": "Special Flags",
+        "rows": [
+            ("command", "wave install <pkgname>@<version>", "Download certain version(s) of a package"),
+            ("flag", "--unlink", "Leave the unversioned link alone (install / uninstall)"),
+            # 只列规范写法；单数的 --remove-old-version 与 --rov 仍然接受，但不再宣传
+            ("flag", "-X, --remove-old-versions", "Remove older versions after upgrading"),
+            ("flag", "--all, -a", "Apply to every installed package (upgrade / link / unlink / linkquery)"),
+        ],
+    },
+    {
+        "id": "links",
+        "title": "Unversioned Links",
+        "rows": [
+            ("command", "wave link <name>", "Link a package to its highest installed version"),
+            ("command", "wave linkquery <name>", "Show what <name> is linked to (e.g. 🌊 ffmpeg@9.0)"),
+            ("command", "wave unlink <name>", "Remove that link"),
+        ],
+    },
+]
+
+OVERVIEW_NOTES = {
+    "links": "Links are created on install and re-pointed on uninstall; "
+             "--unlink never leaves one broken.",
+}
+
+OVERVIEW_FOOTER = {"en": "For more details, visit: https://macwave.org",
+                   "zh": "更多说明见 https://macwave.org"}
+
+USAGE_LINE = {"en": "wave <command> [package] [flags]",
+              "zh": "wave <命令> [软件包] [旗标]"}
+
+TAGLINE = {"en": "A package manager for macOS software developers.",
+           "zh": "macOS 开发者用的软件包管理器。"}
+
+# 子命令帮助里那两句固定文案（`wave install --help` 的抬头与结尾）。
+COMMAND_HELP_LABELS = {
+    "en": {"usage": "usage:", "flags": "Flags", "examples": "Examples",
+           "all_commands": "All commands"},
+    "zh": {"usage": "用法：", "flags": "旗标", "examples": "示例",
+           "all_commands": "全部命令"},
+}
+
+
+def _row_segments(kind, spec):
+    """把一条写法变成上色的若干段；与既有的 -h 输出逐字对应。"""
+    if kind == "command":
+        match = re.match(r"^(.*?)( <.*)$", spec)
+        if match:
+            return [(match.group(1), GREEN), (match.group(2), YELLOW)]
+        return [(spec, GREEN)]
+    return _flag_spec(spec)
+
+
+def overview_for(lang="en"):
+    """返回 (标题表, 说明表) —— 英文来自本文件，中文来自 cli/help_zh.py。"""
+    if lang == "en":
+        sections = OVERVIEW
+        notes = OVERVIEW_NOTES
+    else:
+        import help_zh
+        sections = help_zh.overview()
+        notes = help_zh.OVERVIEW_NOTES
+    return sections, notes
+
+
+def print_custom_help(lang="en"):
     """简版帮助：与 README 的 Command Reference 保持一致"""
     version = get_project_version()
-    print(f"{PURPLE}usage: {ORANGE}wave <command> [package] [flags]{RESET}")
+    print(f"{PURPLE}usage: {ORANGE}{USAGE_LINE[lang]}{RESET}")
     print()
     print(f"MacWave {version} 🌊")
-    print("A package manager for macOS software developers.")
+    print(TAGLINE[lang])
 
-    _print_section("Commands", [
-        (_command("install"), "Install a package (latest version)"),
-        (_command("upgrade"), "Install a package at the latest version"),
-        (_command("uninstall"), "Uninstall a package"),
-        (_command("list"), "List installed packages"),
-        (_command("search"), "Search for a package in the index"),
-        (_command("info"), "Display detailed information about a package"),
-        (_command("selfupdate"), "Update MacWave itself to the latest version"),
-        (_command("link"), "Link installed packages without a version number"),
-        (_command("unlink"), "Remove those unversioned links"),
-        (_command("linkquery"), "Show which version an unversioned link points to"),
-        (_command("mirror"), "Show which addresses packages are fetched from"),
-        (_command("latest"), "Show which packages have a newer version available"),
-        (_command("shellenv"), "Print the shell code that puts MacWave on your PATH"),
-    ])
-
-    _print_section("Flags", [
-        (_flag("-h, --help"), "Show help for any command"),
-        (_flag("-V, --version"), "Print version information"),
-        (_flag("-v, --verbose"), "Enable verbose output (show detailed logs)"),
-    ])
-
-    _print_section("Global Flags (can be used with any command)", [
-        (_flag("-s, --silent"), "Print nothing at all; the exit code is the signal (beats -v; install / upgrade / uninstall / link / unlink / selfupdate)"),
-        (_flag("-S, --show-error"), "With -s, still print the error when a command fails "
-                                    "(without the 🌊, so scripts can parse it)"),
-        (_flag("-C, --continue"), "Resume interrupted downloads (like curl -C -)"),
-        (_flag("--proxy", "<string>"), "Specify an HTTP/HTTPS proxy (e.g., http://127.0.0.1:8080)"),
-        (_flag("--skip-ssl"), "Skip SSL certificate verification (insecure)"),
-        (_flag("--limit-rate", "<string>"), "Limit download speed (e.g., 200K, 1M, 5M)"),
-        (_flag("--max-time", "<string>"),
-         "Total time limit for one request/operation (e.g., 40s, 1min, 1min20s, 2h)"),
-        (_flag("--connect-timeout", "<string>"),
-         "Give up if the TCP/TLS handshake takes longer than this (like curl)"),
-        (_flag("--content-time", "<string>"),
-         "Give up if the server sends nothing for this long after connecting"),
-        (_flag("--ver", "<string>"), "Install a specific version (install only; --ver=1.0 works too)"),
-        (_flag("--install-from-source"), "Download from the upstream URL instead of MacWave's own store"),
-        (_flag("-F, --force"), "Install anyway when the package declares a newer macOS than this machine runs (install / upgrade)"),
-        (_flag("--install-python-from-source"), "Same, for the bundled Python (install / selfupdate)"),
-        (_flag("MACWAVE_PIP_INDEX"), "Env var. pip index for the Python deps; default pypi.org/simple"),
-    ])
-
-    _print_section("Special Flags", [
-        (_command("wave install", (" <pkgname>@<version>", YELLOW)),
-         "Download certain version(s) of a package"),
-        (_flag("--unlink"), "Leave the unversioned link alone (install / uninstall)"),
-        # 只列规范写法；单数的 --remove-old-version 与 --rov 仍然接受，但不再宣传
-        (_flag("-X, --remove-old-versions"), "Remove older versions after upgrading"),
-        (_flag("--all, -a"), "Apply to every installed package (upgrade / link / unlink / linkquery)"),
-    ])
-
-    _print_section("Unversioned Links", [
-        (_command("wave link", (" <name>", YELLOW)),
-         "Link a package to its highest installed version"),
-        (_command("wave linkquery", (" <name>", YELLOW)),
-         "Show what <name> is linked to (e.g. 🌊 ffmpeg@9.0)"),
-        (_command("wave unlink", (" <name>", YELLOW)), "Remove that link"),
-    ])
-    _print_note("Links are created on install and re-pointed on uninstall; "
-                "--unlink never leaves one broken.")
+    sections, notes = overview_for(lang)
+    for section in sections:
+        rows = [(_row_segments(kind, spec), desc) for kind, spec, desc in section["rows"]]
+        _print_section(section["title"], rows)
+        if section["id"] in notes:
+            _print_note(notes[section["id"]])
 
     print()
-    print("For more details, visit: https://macwave.org")
+    print(OVERVIEW_FOOTER[lang])
 
 
 # -------------------- 子命令帮助 --------------------
@@ -316,6 +397,18 @@ COMMAND_HELP = {
         ],
         "examples": ["wave linkquery jq"],
     },
+    "manual": {
+        "usage": "wave manual [<command>] [--zh] [--color]",
+        "desc": "Show the full manual — the same text that ships as man pages and info "
+                "files — or just one command's section.",
+        "flags": [
+            ("--zh", "Print the Chinese edition"),
+            ("--color", "Colour headings and flags (plain text by default, so redirecting "
+                        "to a file stays clean)"),
+        ],
+        "examples": ["wave manual", "wave manual install", "wave manual --zh",
+                     "wave manual install --color"],
+    },
     "version": {
         "usage": "wave version",
         "desc": "Print the installed MacWave version.",
@@ -325,26 +418,39 @@ COMMAND_HELP = {
 }
 
 
-def print_command_help(command):
+def command_text(command, lang="en"):
+    """某条命令的 (说明, [(旗标, 说明)]) —— 中文来自 cli/help_zh.py。"""
+    entry = COMMAND_HELP[command]
+    if lang == "en":
+        return entry["desc"], list(entry["flags"])
+    import help_zh
+    translated = help_zh.COMMANDS_ZH[command]
+    return translated["desc"], list(translated["flags"].items())
+
+
+def print_command_help(command, lang="en"):
     """`wave <command> --help`：打印该命令自己的用法"""
     entry = COMMAND_HELP.get(command)
     if entry is None:
-        print_custom_help()
+        print_custom_help(lang)
         return
 
-    print(f"{PURPLE}usage: {ORANGE}{entry['usage']}{RESET}")
-    print()
-    print(entry["desc"])
+    labels = COMMAND_HELP_LABELS[lang]
+    desc, flags = command_text(command, lang)
 
-    _print_section("Flags", [(_flag_spec(name), text) for name, text in entry["flags"]])
+    print(f"{PURPLE}{labels['usage']} {ORANGE}{entry['usage']}{RESET}")
+    print()
+    print(desc)
+
+    _print_section(labels["flags"], [(_flag_spec(name), text) for name, text in flags])
 
     print()
-    print(f"{PURPLE}Examples:{RESET}")
+    print(f"{PURPLE}{labels['examples']}:{RESET}")
     for example in entry["examples"]:
         _print_note(example)
 
     print()
-    print(f"All commands: {GREEN}wave --help{RESET}")
+    print(f"{labels['all_commands']}: {GREEN}wave --help{RESET}")
 
 
 # -------------------- 版本与错误提示 --------------------
