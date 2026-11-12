@@ -50,8 +50,9 @@ import sys
 from contextlib import redirect_stdout
 
 repo = sys.argv[1]
-for sub in ("pkg", "net", "lib", "surfboard"):
-    sys.path.insert(0, f"{repo}/{sub}")
+components = [line.split("#", 1)[0].strip()
+              for line in open(f"{repo}/scripts/components.txt", encoding="utf-8")]
+sys.path[:0] = [f"{repo}/{name}" for name in components if name]
 
 import pkginstaller as inst
 import pkginfohelper as info
@@ -209,8 +210,9 @@ import json
 import sys
 
 repo = sys.argv[1]
-for sub in ("pkg", "net", "lib", "surfboard"):
-    sys.path.insert(0, f"{repo}/{sub}")
+components = [line.split("#", 1)[0].strip()
+              for line in open(f"{repo}/scripts/components.txt", encoding="utf-8")]
+sys.path[:0] = [f"{repo}/{name}" for name in components if name]
 
 import pkginfohelper as info
 

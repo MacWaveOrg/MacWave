@@ -213,7 +213,7 @@ if [[ -n "${MACWAVE_TEST:-}" ]]; then
     # 物理路径：macOS 上 /var 是指向 /private/var 的符号链接，这里若用逻辑路径，
     # 与下面比较用的 HOME（configpaths 已经 resolve 过）对不上，前缀判断就会失效。
     SYS_ROOT="$(cd "$_mw_root" && pwd -P)"
-    # 幂等：lib/configpaths.py 也会把 HOME 搬进测试根。从 wave.py 一路调用下来时
+    # 幂等：config/configpaths.py 也会把 HOME 搬进测试根。从 wave.py 一路调用下来时
     # HOME 已经被改过一次，这里再套一层就会变成 "<根><根>/Users/<你>"，配置目录于是
     # 永远找不到。两边都取物理路径再比较，才不会被 /var 与 /private/var 骗过去。
     _mw_home_real="$(cd "$HOME" 2>/dev/null && pwd -P)" || _mw_home_real="$HOME"
@@ -236,7 +236,7 @@ read_toml_string() {
         | head -n 1
 }
 
-# 配置目录：系统级优先，其次用户级（与 lib/configpaths.py 的规则一致）
+# 配置目录：系统级优先，其次用户级（与 config/configpaths.py 的规则一致）
 # 迁移可能把配置搬到用户级位置，所以做成函数，迁移之后要再解析一次。
 SYSTEM_CONFIG_DIR="$SYS_ROOT/opt/macwave_config"
 USER_CONFIG_DIR="$HOME/.config/macwave_config"
@@ -286,6 +286,8 @@ LIB_DIR="$BASE_DIR/lib"
 NET_DIR="$BASE_DIR/net"
 PKG_DIR="$BASE_DIR/pkg"
 SURFBOARD_DIR="$BASE_DIR/surfboard"
+CLI_DIR="$BASE_DIR/cli"
+CONFIG_CODE_DIR="$BASE_DIR/config"
 
 # ==========================================
 # 判断是否需要 sudo
@@ -572,7 +574,8 @@ fi
 # ==========================================
 
 for cache in "$LIB_DIR/__pycache__" "$NET_DIR/__pycache__" \
-             "$PKG_DIR/__pycache__" "$SURFBOARD_DIR/__pycache__"; do
+             "$PKG_DIR/__pycache__" "$SURFBOARD_DIR/__pycache__" \
+             "$CLI_DIR/__pycache__" "$CONFIG_CODE_DIR/__pycache__"; do
     if [[ -d "$cache" ]]; then
         echo "🌊 Removing stale bytecode cache: ${cache#"$BASE_DIR"/}"
         run_cmd rm -rf "$cache"

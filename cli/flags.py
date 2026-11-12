@@ -9,7 +9,7 @@
 #      短旗标簇里怎么拿掉某个字母、单独的 `-` 是不是终止符。这些是**纯函数**，
 #      不打印、不退出、不读配置 —— 谁都可以调，规则只有一份。
 #      在它之前，同一套规则至少写过四遍：pkginstaller.parse_flags 词法循环、
-#      silent.strip、upgrader.split_input、latest.split_arguments，
+#      cli/silent.strip、upgrader.split_input、latest.split_arguments，
 #      以及 pkginfohelper 里那句 `word.partition("=")[0]`。四份实现的差异只有
 #      「谁的词法更全」，于是 `-sX` 在一处能拆、另一处要另写一遍才认。
 #
@@ -27,7 +27,7 @@
 # 付出代价。代价是这份清单可能与真白名单走散，所以
 # scripts/flags_test.sh 会逐项比对，少一项就红。
 
-# 任何命令都接受（与 lib/help.py 的 Global Flags 一节对应）
+# 任何命令都接受（与 cli/help.py 的 Global Flags 一节对应）
 GLOBAL = {
     "-v", "--verbose",
     "-C", "--continue",
@@ -48,7 +48,7 @@ GLOBAL = {
 # 能静默的命令。**必须按命令列，不能放进 GLOBAL** —— GLOBAL 的意思是「谁都用」，
 # 而 `wave list -s` 是要被拒绝的（list 存在的目的就是打印，给它 -s 等于把命令废掉）。
 # 列在这里的唯一用处是让 describe("-s") 答得出「只适用于哪几条命令」，
-# wave.py 在分发前就用这句话报错。名单以 lib/silent.py 的 SILENT_COMMANDS 为准，
+# wave.py 在分发前就用这句话报错。名单以 cli/silent.py 的 SILENT_COMMANDS 为准，
 # scripts/flags_test.sh 逐项比对，走散就红。
 silent = {"-s", "--silent", "-S", "--show-error"}
 

@@ -467,10 +467,17 @@ install a throwaway copy under a temporary root, or run the scripts in
 
 | Directory | Responsibility |
 | --- | --- |
-| `lib/` | Entry point, help, configuration paths, self-update |
+| `lib/` | Entry point (`wave.py`), step tracing, telemetry-light helpers, self-update |
+| `cli/` | Argument handling: help text, flag catalogue and argv tokenizer, "did you mean", `-s`/`-S` |
+| `config/` | Where the install lives: config-directory resolution, environment self-check |
 | `pkg/` | Install, upgrade, uninstall, links, version parsing |
 | `surfboard/` | Dependency resolution, extraction, Mach-O relocation |
+| `net/` | Transport policy: domains, TLS, timeouts |
 | `scripts/` | Tests and data audits |
+
+`lib/`, `cli/`, `config/`, `pkg/`, `surfboard/` and `net/` are the runtime components:
+`scripts/components.txt` is the single list that drives the install tree, the
+`sys.path` entries in `lib/wave.py`, and the test sandboxes.
 
 Each command is a module with a single handler, dispatched from `lib/wave.py`.
 All Mach-O rewriting is confined to `surfboard/`.

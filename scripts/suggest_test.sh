@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # suggest_test.sh
-# `lib/suggest.py` —— 两类「你是不是想敲……」的建议：
+# `cli/suggest.py` —— 两类「你是不是想敲……」的建议：
 #   命令名（MISTYPED 语义表 + 拼写纠错）与包名（编辑距离 + 相似度）。
 #
 # 这两段平时都碰不到：命令名写对、包名写对时一次都不会跑。退化成「什么建议都不给」
@@ -43,7 +43,7 @@ sys.path[:0] = os.environ["MACWAVE_COMPONENT_PATHS"].split(os.pathsep)
 # suggest.py 只有纯函数，没有副作用，可以直接按文件导入。
 import importlib.util
 
-spec = importlib.util.spec_from_file_location("suggest", repo / "lib" / "suggest.py")
+spec = importlib.util.spec_from_file_location("suggest", repo / "cli" / "suggest.py")
 module = importlib.util.module_from_spec(spec)
 sys.modules["suggest"] = module
 spec.loader.exec_module(module)

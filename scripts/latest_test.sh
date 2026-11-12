@@ -135,8 +135,8 @@ echo "索引端口   = $PORT"
 echo -n "BASE_DIR 解析 = "
 HOME="$HOME_DIR" MACWAVE_API_DOMAIN="http://127.0.0.1:$PORT" \
   python3 -c "
-import sys
-sys.path.insert(0, '$BASE/lib')
+import os, sys
+sys.path[:0] = ['$BASE/' + name for name in os.environ['MACWAVE_COMPONENT_NAMES'].split()]
 from configpaths import load_base_dir
 print(load_base_dir())
 " 2>&1 | tail -1

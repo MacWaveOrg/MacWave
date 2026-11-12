@@ -338,7 +338,7 @@ mw_assert_no_escaping_links() {
     # **目标**无关。实测 Python 3.15 的 tarfile，filter='tar' 会把
     # `x -> /etc/hosts` 原样解出来；unzip / tar 命令行同样不管目标。
     #
-    # 规则与豁免清单的唯一实现是 lib/configpaths.py 的 assert_links_inside()，
+    # 规则与豁免清单的唯一实现是 config/configpaths.py 的 assert_links_inside()，
     # 这里只做转发 —— 换约束时改那一处，别在这里抄第二份。
     #
     # 第二个参数是拒绝时要清掉的临时目录：正常路径上由调用方在装完之后删，而这里
@@ -359,9 +359,9 @@ mw_assert_no_escaping_links() {
     # 所以不说一句的话，安装会在「解压成功」之后突兀地停住或报错。
     echo "🌊 Running security checks..."
 
-    local checker="$MW_BASE_DIR/lib/configpaths.py"
+    local checker="$MW_BASE_DIR/config/configpaths.py"
     if [[ ! -f "$checker" ]]; then
-        echo -e "${RED_BOLD}🌊 Error: lib/configpaths.py not found; cannot verify links in the payload.${RESET}"
+        echo -e "${RED_BOLD}🌊 Error: config/configpaths.py not found; cannot verify links in the payload.${RESET}"
         echo "🌊 Reinstall MacWave with lib/install.sh."
         exit 1
     fi

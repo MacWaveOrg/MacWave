@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # flags_test.sh
-# lib/flags.py 有两半，各测各的：
+# cli/flags.py 有两半，各测各的：
 #
 #   拆解（第 8 节）：flag_name / tokens / short_cluster / remove_short ——
 #       silent、upgrader、latest、parse_flags 四处都依赖它们的返回形状。
@@ -35,7 +35,9 @@ import re, sys
 from pathlib import Path
 
 repo = Path(sys.argv[1])
-sys.path.insert(0, str(repo / "lib"))
+components = [line.split("#", 1)[0].strip()
+              for line in (repo / "scripts" / "components.txt").read_text().splitlines()]
+sys.path[:0] = [str(repo / name) for name in components if name]
 import flags
 
 problems = []

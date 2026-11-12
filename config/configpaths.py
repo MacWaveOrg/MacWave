@@ -379,7 +379,7 @@ VERSION_FILE = CONFIG_DIR / VERSION_FILE_NAME
 
 if __name__ == "__main__":
     # 唯一的命令行入口：解压之后由 depsmanager.sh 调用，检查产物里的符号链接。
-    #   python3 lib/configpaths.py --check-links <目录> <描述，仅用于报错>
+    #   python3 config/configpaths.py --check-links <目录> <描述，仅用于报错>
     if len(sys.argv) >= 3 and sys.argv[1] == "--check-links":
         assert_links_inside(sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else sys.argv[2])
         sys.exit(0)

@@ -6,14 +6,14 @@
 
 ## What is in it
 
-Three things, and only one of them is new work:
+Four things, and only one of them is new work:
 
 1. **The fixes first shipped in 4.3.2**, unchanged — see [RELEASE-4.3.2](RELEASE-4.3.2.md)
    for the evidence. That is why the title carries a security prefix: on 4.3.0 / 4.3.1 this
    release is the shortest way out. **No new vulnerability is involved in 4.4.0 itself.**
-2. **The internals were split up.** Nothing users type changed; the code that decides how
-   it behaves is no longer all in one file — neither the entry point (§1, §2) nor the
-   argument handling (§3).
+2. **The internals were split up and re-laid-out.** Nothing users type changed; the code
+   that decides how it behaves is no longer all in one file — neither the entry point
+   (§1, §2), the argument handling (§3), nor the directory layout (§4).
 
 ### 1. `wave.py` only reads a command and hands it over
 
@@ -106,7 +106,32 @@ argument combinations (`-sX`, `-CsX`, `-Xa`, `--max-time=1min`, a bare `-`, unkn
 mixed with package names) and every pair of outputs was identical. The four single cases
 that differ at all are the ones where the *old* code differed from itself.
 
-### 4. What did not change
+### 4. The repository is laid out the way the install tree is
+
+`lib/` had grown into "everything that is not a package operation". Two groups inside it had
+nothing to do with the entry point, so they became their own top-level directories — in the
+repository **and** in the install tree, which mirror each other:
+
+| Directory | What lives there | Why it is its own place |
+| --- | --- | --- |
+| `cli/` | `help.py`, `flags.py` (the argv tokenizer), `suggest.py`, `silent.py` | All four answer "what did the user type?", and none of them needs the install location to answer it |
+| `config/` | `configpaths.py`, `configerror.py` | Both answer "where is this MacWave installed, if at all?" — the question everything else asks *first* |
+
+`lib/` keeps the entry point, step tracing, the two read-only commands (`latest`, `mirror`),
+and the four install/self-update scripts.
+
+This is not a cosmetic move: `scripts/components.txt` is the single list that drives the
+install manifest, the `sys.path` entries and the test sandboxes, so the two new directories
+are wired in at all three places by adding two lines. `bash scripts/structure_test.sh`
+enforces that `wave.py` and both installers know every directory in that list.
+
+One ordering detail is deliberate and load-bearing. On an upgrade from 4.3.x the old tree
+still has `lib/help.py` and friends, and `lib/` stays on `sys.path`. `wave.py` therefore puts
+`cli/` and `config/` **ahead** of `lib/`, and the generated update script deletes the flat
+copies once the new files are in place. Without both, an upgrade would keep running the old
+module while looking like it had updated.
+
+### 5. What did not change
 
 Checked by hand after the split, not inferred from a green build:
 
@@ -159,13 +184,14 @@ mutually exclusive formats.
 
 ## 这一版有什么
 
-三件事，只有一件是新做的：
+四件事，只有一件是新做的：
 
 1. **4.3.2 首发的那些修复**，原样带过来 —— 证据见
    [RELEASE-4.3.2](RELEASE-4.3.2.md)。标题带安全前缀就是这个原因：对还在 4.3.0 / 4.3.1
    上的人来说，这一版是最短的出路。**4.4.0 本身不涉及新的漏洞。**
-2. **内部结构拆开了。** 用户敲的东西一个都没变，但「决定行为的那部分代码」不再全挤在
-   一个文件里 —— 入口（第 1、2 节）与参数处理（第 3 节）都是。
+2. **内部结构拆开了、也重新分目录了。** 用户敲的东西一个都没变，但「决定行为的那部分
+   代码」不再全挤在一个文件里 —— 入口（第 1、2 节）、参数处理（第 3 节）、目录布局
+   （第 4 节）都是。
 
 ### 1. `wave.py` 只负责「读一个命令、交出去」
 
@@ -248,7 +274,28 @@ install 那条路径按构造是不变的（函数是搬过去的，不是重写
 与包名混着来），逐组比对输出，全部一致。唯一有差异的四组，是**旧代码自己跟自己**
 对不上的那几处。
 
-### 4. 什么没变
+### 4. 仓库布局与安装树一致了
+
+`lib/` 已经长成「不是软件包操作的东西都放这儿」。里面有两组东西与入口无关，于是各自
+独立成顶层目录 —— 仓库与安装树都是，两边布局完全一致：
+
+| 目录 | 装什么 | 为什么值得单独一处 |
+| --- | --- | --- |
+| `cli/` | `help.py`、`flags.py`（argv 拆解）、`suggest.py`、`silent.py` | 四者回答的都是「用户到底敲了什么」，而要回答这个问题都不需要知道安装位置 |
+| `config/` | `configpaths.py`、`configerror.py` | 两者回答的都是「这台机器上的 MacWave 装在哪、到底装没装」—— 而这是**别的模块第一件要问的事** |
+
+`lib/` 留下入口、步骤追踪、两个只读命令（`latest`、`mirror`）与四个安装/自更新脚本。
+
+这不是纯搬家：`scripts/components.txt` 是安装清单、`sys.path` 与测试沙箱共用的唯一
+来源，所以两个新目录只是给它加两行，三处就都跟上了。`bash scripts/structure_test.sh`
+会检查 `wave.py` 与两个安装脚本是否认得清单里的每一个目录。
+
+有一条顺序是有意的、且不能省。从 4.3.x 升级上来的树里还留着 `lib/help.py` 这些平铺
+副本，而 `lib/` 仍在 `sys.path` 上。所以 `wave.py` 把 `cli/` 与 `config/` 排在 `lib/`
+**之前**，生成的更新脚本又会在新文件就位后删掉那些平铺副本。少任一半，升级后的机器会
+看起来更新了、实际还在跑旧模块。
+
+### 5. 什么没变
 
 下面这些是拆完之后手敲出来的，不是「CI 绿了所以大概没变」：
 

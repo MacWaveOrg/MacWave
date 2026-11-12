@@ -271,7 +271,7 @@ def confirm_skip_ssl(flags):
 def _flag_pointer(text, flag):
     """把「you ran:」做成两行：命令行原样，下面用 ^ 指向出错的旗标。
 
-    与 lib/help.py 里「未知命令」的呈现方式一致 —— 命令行长的时候（好几个旗标
+    与 cli/help.py 里「未知命令」的呈现方式一致 —— 命令行长的时候（好几个旗标
     加限速加超时），只靠整行变红看不出是哪一段出的问题。
 
     位置必须按词边界找，不能用 str.find：`--ver` 会命中 `--verbose`，`--connect-time`
@@ -309,7 +309,7 @@ def parse_flags(input_string, command="install", shown=None):
     """
     # 词法交给 flags.tokens：单独的 "-" 表示参数结束、`--name=value` 归一化成
     # `--name`（值交给 flag_value 取）、`-abc` 拆成 -a -b -c。这三条规则的唯一
-    # 实现在 lib/flags.py，别在这里再写一遍。
+    # 实现在 cli/flags.py，别在这里再写一遍。
     found = flags_module.tokens(input_string.split(" "))
 
     # 白名单校验。报错必须点名是哪个参数、以及它是不是属于另一条命令 ——

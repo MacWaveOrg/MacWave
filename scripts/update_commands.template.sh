@@ -186,6 +186,25 @@ main() {
         fi
     done
 
+    # 4.4.0：配置解析与命令行层从 lib/ 搬到了 config/ 与 cli/。新位置的文件已经由
+    # 上面的 install_fresh / install_delta 下好（`want` 会先 mkdir -p，所以这两个
+    # 目录在旧安装树里也会被建出来），这里清掉 lib/ 下的平铺副本。
+    #
+    # 这一条比 4.1.6 那条**更**不能省：4.1.6 的旧文件已经没有代码 import，留着只是
+    # 说不清；而这里 lib/ 仍在 sys.path 上，留着 lib/help.py 就等于「同一个模块有
+    # 两份，哪份生效看路径顺序」—— wave.py 把 cli/ 排在 lib/ 之前，于是跑的是新的，
+    # 但下一次有人调整顺序就会悄悄退回旧代码。删掉才没有第二种可能。
+    for stale in "$MACWAVE_INSTALL_DIR/lib/configpaths.py" \
+                 "$MACWAVE_INSTALL_DIR/lib/configerror.py" \
+                 "$MACWAVE_INSTALL_DIR/lib/help.py" \
+                 "$MACWAVE_INSTALL_DIR/lib/flags.py" \
+                 "$MACWAVE_INSTALL_DIR/lib/suggest.py" \
+                 "$MACWAVE_INSTALL_DIR/lib/silent.py"; do
+        if [ -f "$stale" ]; then
+            run rm -f "$stale" || exit 1
+        fi
+    done
+
     return 0
 }
 

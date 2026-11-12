@@ -327,7 +327,7 @@ scenario_mid_failure() {
     echo ""
     echo "========== 4. 安装中途失败：给出指引且不误删 =========="
 
-    local victim="$MIRROR_BASE/lib/help.py" rc
+    local victim="$MIRROR_BASE/cli/help.py" rc
     mv "$victim" "$victim.off"
     reset_state
     install_run --ci --dir-option=1

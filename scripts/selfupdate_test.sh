@@ -368,7 +368,7 @@ if grep -qE '^[[:space:]]*run_cmd write_launcher' "$repo/lib/install.sh" "$repo/
 fi
 echo "  ✅ write_launcher 直接调用，没有经过 run_cmd"
 
-# 测试根的 HOME 重写必须是幂等的。lib/configpaths.py 会先把 HOME 搬进测试根，
+# 测试根的 HOME 重写必须是幂等的。config/configpaths.py 会先把 HOME 搬进测试根，
 # 若 shell 脚本再无条件套一层，HOME 会变成 "<根>/private/var/.../Users/<你>"，
 # 配置目录永远找不到 —— 这正是「用 MACWAVE_TEST 跑真实 selfupdate」失败的原因。
 # 脚本会把测试根解析成物理路径（macOS 上 /var 指向 /private/var），

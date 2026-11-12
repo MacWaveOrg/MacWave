@@ -61,7 +61,7 @@ echo "========== 1. --files 传进来的脏清单必须被过滤 =========="
 # ==========================================================
 
 gen "$WORK/dirty.sh" --files \
-    lib/wave.py lib/help.py lib/install.sh lib/uninstall.sh \
+    lib/wave.py cli/help.py lib/install.sh lib/uninstall.sh \
     pkg/__pycache__ pkg/linker.py \
     surfboard/__pycache__ surfboard/querier.py \
     docs/README.md 2>/dev/null
@@ -74,7 +74,7 @@ expect_absent "__pycache__ 被过滤"        "$list" "__pycache__"
 expect_absent "lib/install.sh 被过滤"     "$list" "lib/install.sh"
 expect_absent "lib/uninstall.sh 被过滤"   "$list" "lib/uninstall.sh"
 expect_absent "docs/ 不在安装目录被过滤"   "$list" "docs/"
-expect        "正常的 .py 保留"           "$list" "lib/help.py"
+expect        "正常的 .py 保留"           "$list" "cli/help.py"
 expect        "pkg 下的正常文件保留"       "$list" "pkg/linker.py"
 
 # .pyc 单独一条：有些工具会直接列出文件而不是目录
@@ -106,14 +106,14 @@ fi
 echo "========== 3. --delta 指向被过滤的文件要报错 =========="
 # ==========================================================
 
-gen "$WORK/baddelta.sh" --files lib/wave.py lib/help.py --delta pkg/__pycache__ >/dev/null 2>&1
+gen "$WORK/baddelta.sh" --files lib/wave.py cli/help.py --delta pkg/__pycache__ >/dev/null 2>&1
 if [ $? -ne 0 ]; then
     pass "--delta 里只有被过滤的条目时拒绝生成"
 else
     fail "--delta 里只有被过滤的条目时竟然生成了"
 fi
 
-gen "$WORK/okdelta.sh" --files lib/wave.py lib/help.py --delta lib/help.py >/dev/null 2>&1
+gen "$WORK/okdelta.sh" --files lib/wave.py cli/help.py --delta cli/help.py >/dev/null 2>&1
 if [ $? -eq 0 ]; then pass "--delta 是合法子集时正常生成"; else fail "--delta 合法却失败"; fi
 
 # ==========================================================
@@ -203,11 +203,11 @@ echo "========== 8. 文件下不到必须让整次更新失败 =========="
 # ==========================================================
 
 if command -v python3 >/dev/null 2>&1; then
-    mkdir -p "$WORK/www/main/lib" "$WORK/www/main/pkg"
-    printf 'new configerror\n' > "$WORK/www/main/lib/configerror.py"
+    mkdir -p "$WORK/www/main/lib" "$WORK/www/main/pkg" "$WORK/www/main/config"
+    printf 'new configerror\n' > "$WORK/www/main/config/configerror.py"
     printf 'new linker\n'      > "$WORK/www/main/pkg/linker.py"
     # 第三个文件故意不放在服务端
-    gen "$WORK/fail.sh" --files lib/configerror.py pkg/linker.py pkg/missing.py >/dev/null 2>&1
+    gen "$WORK/fail.sh" --files config/configerror.py pkg/linker.py pkg/missing.py >/dev/null 2>&1
 
     PORT=$(( 18900 + (RANDOM % 500) ))
     ( cd "$WORK/www" && exec python3 -m http.server "$PORT" --bind 127.0.0.1 ) >/dev/null 2>&1 &
@@ -239,7 +239,7 @@ if command -v python3 >/dev/null 2>&1; then
     expect_absent "报错里没有明文密码" "$out" "no-such-secret"
 
     # 全部存在时必须成功
-    gen "$WORK/ok.sh" --files lib/configerror.py pkg/linker.py >/dev/null 2>&1
+    gen "$WORK/ok.sh" --files config/configerror.py pkg/linker.py >/dev/null 2>&1
     out=$(MACWAVE_INSTALL_DIR="$WORK/install" \
           MACWAVE_CORE_URL="http://127.0.0.1:$PORT" \
           MACWAVE_BRANCH=main \

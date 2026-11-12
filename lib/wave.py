@@ -5,7 +5,16 @@
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+# configerror 要在读到 base_dir **之前**就跑（它判断的正是「这台机器装了没」），
+# 所以这几个目录只能按脚本自身的位置推 —— install 树与仓库里，lib/ 与 cli/、
+# config/ 都是同级目录，两种情形同一条规则。
+HERE = Path(__file__).resolve().parent      # <base_dir>/lib
+ROOT = HERE.parent                          # <base_dir>
+
+sys.path.insert(0, str(HERE))
+sys.path.insert(0, str(ROOT / "config"))
+sys.path.insert(0, str(ROOT / "cli"))
+
 from configerror import check_environment, check_dependencies
 check_environment()
 check_dependencies()
@@ -16,20 +25,23 @@ check_dependencies()
 from configpaths import load_base_dir
 
 BASE_DIR = load_base_dir()
+CLI_DIR = BASE_DIR / "cli"
+CONFIG_DIR = BASE_DIR / "config"
 LIB_DIR = BASE_DIR / "lib"
 NET_DIR = BASE_DIR / "net"
 PKG_DIR = BASE_DIR / "pkg"
 SURFBOARD_DIR = BASE_DIR / "surfboard"
 
-# 顺序与 scripts/components.txt 一致；net/ 里是传输层（domains / tls / timeouts）。
-sys.path.insert(0, str(SURFBOARD_DIR))
-sys.path.insert(0, str(PKG_DIR))
-sys.path.insert(0, str(NET_DIR))
-sys.path.insert(0, str(LIB_DIR))
+# 顺序与 scripts/components.txt 一致。逆序 insert 才会得到那个顺序：每次 insert(0)
+# 都插在最前面，所以最后插入的排在首位。cli/ 与 config/ 因此压在 lib/ 之上 ——
+# 从 4.3.x 升级上来的树里还留着 lib/help.py 之类的旧副本，不能让它们盖住新模块。
+for _component in (SURFBOARD_DIR, PKG_DIR, NET_DIR, LIB_DIR, CONFIG_DIR, CLI_DIR):
+    sys.path.insert(0, str(_component))
+del _component
 
 # 放在顶层：「未知命令」那条分支也要用它们，而那条分支在分发之前。
-#   silent  —— 静默旗标的解析与应用（见 lib/silent.py）
-#   suggest —— 命令名打错时的纠错建议（见 lib/suggest.py）
+#   silent  —— 静默旗标的解析与应用（见 cli/silent.py）
+#   suggest —— 命令名打错时的纠错建议（见 cli/suggest.py）
 import silent
 import suggest as suggest_module
 
@@ -107,7 +119,7 @@ def main():
             tls.grant()
 
         # `-s / --silent`（含 `-sS`）：剥掉旗标并落到运行期开关。细节与理由在
-        # lib/silent.py 的 A 段 —— 主程序只负责「剥完继续分发」。
+        # cli/silent.py 的 A 段 —— 主程序只负责「剥完继续分发」。
         words = silent.apply(words, FirstWord)
 
         # `wave <command> -h|--help`：打印该命令自己的用法后退出。

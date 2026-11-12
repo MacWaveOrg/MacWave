@@ -19,7 +19,7 @@ if [[ -n "${MACWAVE_TEST:-}" ]]; then
     # 物理路径：macOS 上 /var 是指向 /private/var 的符号链接，这里若用逻辑路径，
     # 与下面比较用的 HOME（configpaths 已经 resolve 过）对不上，前缀判断就会失效。
     SYS_ROOT="$(cd "$_mw_root" && pwd -P)"
-    # 幂等：lib/configpaths.py 也会把 HOME 搬进测试根。从 wave.py 一路调用下来时
+    # 幂等：config/configpaths.py 也会把 HOME 搬进测试根。从 wave.py 一路调用下来时
     # HOME 已经被改过一次，这里再套一层就会变成 "<根><根>/Users/<你>"，配置目录于是
     # 永远找不到。两边都取物理路径再比较，才不会被 /var 与 /private/var 骗过去。
     _mw_home_real="$(cd "$HOME" 2>/dev/null && pwd -P)" || _mw_home_real="$HOME"
@@ -1010,6 +1010,10 @@ REPO_DIR="$BASE_DIR/pkg"
 SURFBOARD_DIR="$BASE_DIR/surfboard"
 LIB_DIR="$BASE_DIR/lib"
 NET_DIR="$BASE_DIR/net"
+CLI_DIR="$BASE_DIR/cli"
+# 程序代码目录，与下面的 CONFIG_DIR（**配置文件**目录，/opt/macwave_config）不是
+# 一回事。两个名字只差一个词，变量名必须能一眼分开。
+CONFIG_CODE_DIR="$BASE_DIR/config"
 DEPS_DIR="$BASE_DIR/deps"
 DOWNLOAD_DIR="$BASE_DIR/downloads/tmp"
 
@@ -1070,6 +1074,8 @@ run_cmd mkdir -p "$REPO_DIR"
 run_cmd mkdir -p "$SURFBOARD_DIR"
 run_cmd mkdir -p "$LIB_DIR"
 run_cmd mkdir -p "$NET_DIR"
+run_cmd mkdir -p "$CLI_DIR"
+run_cmd mkdir -p "$CONFIG_CODE_DIR"
 run_cmd mkdir -p "$DEPS_DIR"
 run_cmd mkdir -p "$DOWNLOAD_DIR"
 run_cmd mkdir -p "$CONFIG_DIR"

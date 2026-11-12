@@ -161,7 +161,7 @@ echo "========== 5. 路径含引号/美元符时拒绝输出 =========="
 # 宁可报错，也不要输出一段会把用户 PATH 改坏的 shell 代码
 UNSAFE=$("$PYTHON" - <<PYEOF 2>&1
 import sys
-sys.path.insert(0, "$REPO_DIR/lib")
+sys.path[:0] = "$(component_paths)".split(":")
 from pathlib import Path
 from shellenv import render
 try:

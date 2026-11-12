@@ -92,7 +92,7 @@ lib/innocent.dylib -> /Users/someone/.ssh/id_rsa
 
 | 环节 | 位置 |
 | --- | --- |
-| 规则与豁免清单 | [`lib/configpaths.py`](./lib/configpaths.py) 的 `SYSTEM_LINK_PREFIXES` / `escaping_links()` / `assert_links_inside()` |
+| 规则与豁免清单 | [`config/configpaths.py`](./config/configpaths.py) 的 `SYSTEM_LINK_PREFIXES` / `escaping_links()` / `assert_links_inside()` |
 | 调用点 | [`surfboard/depsmanager.sh`](./surfboard/depsmanager.sh) 的 `mw_assert_no_escaping_links()`，`tree` 与 `binary` 两种形态都调 |
 | 回归 | [`scripts/linksafety_test.sh`](./scripts/linksafety_test.sh)：六种链接的判定、报错内容、真实漏斗拒绝且不留半成品、「合法产物不被误杀」 |
 
@@ -105,7 +105,7 @@ lib/innocent.dylib -> /Users/someone/.ssh/id_rsa
 - 落在上面那几处系统位置 → 放行；
 - 其它 → 拒绝，且报错要指出是哪个成员、指向哪里。
 
-相邻的两个工具函数别混用：[`lib/configpaths.py`](./lib/configpaths.py) 里
+相邻的两个工具函数别混用：[`config/configpaths.py`](./config/configpaths.py) 里
 `assert_inside()` 会跟随最后一段软链接，`assert_inside_entry()` 不跟随 —— 判断
 「链接本身在不在树内」用后者，判断「顺着它写会不会跑出去」用前者。
 
@@ -155,7 +155,7 @@ lib/innocent.dylib -> /Users/someone/.ssh/id_rsa
 - **`-s` 的静默不是靠「每个 print 都判断一下」**。`silent.silence_everything()`
   在 fd 层把 1、2 指向 `/dev/null`，子进程（curl、进度条）也一起闭嘴；带 `-S` 时
   不换 fd，改由 `machine_readable()` 剥掉行首 🌊。
-- **`lib/silent.py` 一个文件两段，别混**：A 段是参数层（哪些命令能静默、怎么剥
+- **`cli/silent.py` 一个文件两段，别混**：A 段是参数层（哪些命令能静默、怎么剥
   旗标），只被 `wave.py` 调用、会 `sys.exit` 也会改 fd；B 段是运行期闸门
   （`say` / `ask` / `show`），`pkg/` 与 `surfboard/` 都用它、**不许退出**。
   往这个文件里加东西时，先想清楚它属于「解析」还是「输出」，放进对应的段。
@@ -208,7 +208,7 @@ lib/innocent.dylib -> /Users/someone/.ssh/id_rsa
 ### 手工验证一条命令时
 
 `MACWAVE_TEST=<临时目录>` 是单条命令的隔离手段：程序把该目录当作 `/`，配置目录、
-安装目录、下载缓存与 `HOME` 全部挂进去（实现见 `lib/configpaths.py` 的
+安装目录、下载缓存与 `HOME` 全部挂进去（实现见 `config/configpaths.py` 的
 `_resolve_test_root`，shell 侧读 `MACWAVE_TEST_ROOT`）。不隔离就会读写本机真实的
 `~/.local/macwave`、`~/.config/macwave_config`，**包括真删掉你装着的包**。
 

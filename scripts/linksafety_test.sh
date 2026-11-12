@@ -31,7 +31,7 @@ RESET='\033[0m'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
 PYTHON=${PYTHON:-python3}
-CHECKER="$REPO_DIR/lib/configpaths.py"
+CHECKER="$REPO_DIR/config/configpaths.py"
 
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
@@ -257,8 +257,8 @@ else
     fail "安装流程里少了调用点（tree 或 binary）"
 fi
 
-if grep -q 'assert_links_inside' "$REPO_DIR/lib/configpaths.py"; then
-    pass "规则实现在 lib/configpaths.py"
+if grep -q 'assert_links_inside' "$REPO_DIR/config/configpaths.py"; then
+    pass "规则实现在 config/configpaths.py"
 else
     fail "找不到 assert_links_inside"
 fi

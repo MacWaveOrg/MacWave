@@ -14,7 +14,7 @@ RESET='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
-CONFIGPATHS_PY="$REPO_DIR/lib/configpaths.py"
+CONFIGPATHS_PY="$REPO_DIR/config/configpaths.py"
 
 if [[ ! -f "$CONFIGPATHS_PY" ]]; then
     echo -e "${RED_BOLD}🌊 Error: configpaths.py not found at $CONFIGPATHS_PY${RESET}"
