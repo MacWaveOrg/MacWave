@@ -36,16 +36,16 @@ COMMANDS_ZH = {
     "install": {
         "desc": "安装一个软件包，或它的某个指定版本。",
         "flags": {
-            "-C, --continue": "续传被中断的下载（同 curl -C -）",
+            "-C, --continue": "断点续传",
             "--proxy <string>": "HTTP/HTTPS 代理（例如 http://127.0.0.1:8080）",
             "--skip-ssl": "跳过 SSL 证书校验（不安全）",
-            "--limit-rate <string>": "限制下载速度（例如 200K、1M、5M）",
-            "--max-time <string>": "单次请求的总时限（40s、1min、1min20s、2h；纯数字按秒算）",
-            "--connect-timeout <string>": "握手超过这个时长就放弃（同 curl）",
-            "--content-time <string>": "超过这个时长收不到数据就放弃",
-            "--unlink": "不创建、也不改写那个不带版本号的链接",
-            "-F, --force": "包声明的最低 macOS 高于本机时仍然安装",
-            "-v, --verbose": "输出详细日志",
+            "--limit-rate <string>": "限速（例如 200K、1M、5M）",
+            "--max-time <string>": "单次请求最大时长（40s、1min、1min20s、2h；不输入单位默认 s）",
+            "--connect-timeout <string>": "握手最大时长",
+            "--content-time <string>": "接收数据的最大时长",
+            "--unlink": "取消此软件包不带版本号的软链接",
+            "-F, --force": "当前 macOS 版本低于软件包声明要求时仍继续安装",
+            "-v, --verbose": "详细模式",
         },
     },
     "upgrade": {
@@ -71,26 +71,26 @@ COMMANDS_ZH = {
         "flags": {},
     },
     "mirror": {
-        "desc": "显示每一类数据实际从哪个地址取，包括那些没被环境变量覆盖、仍在使用"
-                "内置默认值的项。",
+        "desc": "显示每一类数据实际获取地址，包括仍在使用内置默认值的项。",
         "flags": {
-            "--json": "以 JSON 输出配置",
-            "--yaml": "以 YAML 输出配置",
-            "--toml": "以 TOML 输出配置",
-            "--raw": "输出可以直接粘贴的 export 行",
-            "--only-set": "配合 --raw：只导出你改过的那些源，其余继续走内置默认值",
-            "--show-password": "打全密码，而不是固定的六个星号",
-            "--hide-user": "连用户名一起盖掉",
+            "--json": "以 JSON 格式输出配置",
+            "--yaml": "以 YAML 格式输出配置",
+            "--toml": "以 TOML 格式输出配置",
+            "--raw": "输出 export 行",
+            "--only-set": "配合 --raw：只导出用户改过的源（MACWAVE_*_DOMAIN 变量），"
+                          "其余继续走内置默认值",
+            "--show-password": "输出真实密码",
+            "--hide-user": "隐藏用户名",
         },
     },
     "latest": {
-        "desc": "把本机已装的版本与索引里的最新版本比一比。只报告，不下载任何东西。",
+        "desc": "将本机已装的版本与索引里的最新版本比较，不下载。",
         "flags": {
-            "-a, --all": "检查每个已装包",
+            "-a, --all": "检查每个已装软件包",
             "--max-time <string>": "每次请求的总时限（例如 40s、1min）",
-            "--connect-timeout <string>": "握手超过这个时长就放弃",
-            "--content-time <string>": "超过这个时长收不到数据就放弃",
-            "-v, --verbose": "每发一个请求就打一行",
+            "--connect-timeout <string>": "握手最大时长",
+            "--content-time <string>": "接收数据的最大时长",
+            "-v, --verbose": "详细模式",
         },
     },
     "uninstall": {
@@ -111,10 +111,10 @@ COMMANDS_ZH = {
     "info": {
         "desc": "显示作者、简介、主页，以及已安装版本与索引里的可用版本。",
         "flags": {
-            "--json": "以 JSON 输出同样这些字段",
-            "--yaml": "以 YAML 输出同样这些字段",
-            "--toml": "以 TOML 输出同样这些字段",
-            "--raw": "按索引里存储的原样输出记录，不做排版",
+            "--json": "以 JSON 格式输出",
+            "--yaml": "以 YAML 格式输出",
+            "--toml": "以 TOML 格式输出",
+            "--raw": "输出原格式",
         },
     },
     "selfupdate": {
@@ -153,7 +153,7 @@ COMMANDS_ZH = {
         "desc": "显示完整手册（与 man / info 里的是同一份内容），可按命令名只看一节。",
         "flags": {
             "--zh": "输出中文版",
-            "--color": "给标题与旗标上色（默认纯文本，方便重定向到文件）",
+            "--color": "给标题与旗标上色（默认纯文本）",
         },
     },
 }

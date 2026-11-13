@@ -21,7 +21,7 @@ HTTP/HTTPS 代理（例如 http://127.0.0.1:8080）
 限速（例如 200K、1M、5M）
 .TP
 .B \-\-max\-time <string>
-单次请求最大时长（40s、1min、1min20s、2h；不输入单位默认s）
+单次请求最大时长（40s、1min、1min20s、2h；不输入单位默认 s）
 .TP
 .B \-\-connect\-timeout <string>
 握手最大时长
@@ -31,9 +31,6 @@ HTTP/HTTPS 代理（例如 http://127.0.0.1:8080）
 .TP
 .B \-\-unlink
 取消此软件包不带版本号的软链接
-.TP
-.B \-\-install\-from\-source
-###########
 .TP
 .B \-F, \-\-force
 当前 macOS 版本低于软件包声明要求时仍继续安装
@@ -47,7 +44,6 @@ wave install jq
 wave install ffmpeg@6.1
 wave install jq --limit-rate 1M
 wave install jq --max-time=1min
-wave install jq --install-from-source
 .fi
 .SH 另见
 wave-zh(1)
