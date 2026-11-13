@@ -18,16 +18,23 @@ import re
 import sys
 from pathlib import Path
 
+# 版本比较与客户端共用一份实现，见 lib/versioncmp.py
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+import versioncmp  # noqa: E402
+
 # 版本目录名必须是纯数字段：3.14.9、4.0.0、2.5
 VERSION_DIR_RE = re.compile(r'^\d+(?:\.\d+)*$')
 
 
 def version_key(value):
-    # 只比数字段，补齐到四位：2.3 == 2.3.0，"2.10" 大于 "2.9"
-    parts = [int(part) for part in re.findall(r'\d+', str(value))]
-    while len(parts) < 4:
-        parts.append(0)
-    return parts
+    """版本键走 lib/versioncmp.py 那一份（PEP 440）。
+
+    这个脚本只扫纯数字目录（VERSION_DIR_RE），所以今天用不到预发布顺序；
+    但仍然与客户端共用同一个实现 —— 两份「差不多」的比较迟早会在某次改动后
+    给出相反的结论，而那种分歧表现为「指针说已最新、客户端说该升级」这种最难
+    查的状态。
+    """
+    return versioncmp.sort_key(value)
 
 
 def version_dirs(subdir, require):

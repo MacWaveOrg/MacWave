@@ -29,7 +29,7 @@ To go back to stable afterwards, run the normal install command:
 | What | Why |
 | --- | --- |
 | `wave selfupdate` will not offer 4.4.0-beta1 | The updater compares against the stable release pointer, which stays at 4.3.2. A beta must never be reachable that way — otherwise everyone gets dragged onto it. |
-| Once the final 4.4.0 ships, `wave selfupdate` still will not move you off the beta | Versions are compared by their numeric parts, so `4.4.0-beta1` sorts **above** `4.4.0`. Reinstall with the install command above to leave the beta. |
+| Once the final 4.4.0 ships, `wave selfupdate` moves you onto it | Versions are compared as PEP 440, so `4.4.0-beta1` sorts **below** `4.4.0`. The beta's own `lib/versioncmp.py` does this comparison, which is why the fix had to be inside the beta itself. |
 
 ## What is in it
 
@@ -48,7 +48,12 @@ Everything from 4.3.2, plus:
    and the Info files cannot drift apart.
 4. **`wave -h --zh` and `wave <command> -h --zh`** — the terminal help has a Chinese
    edition too.
-5. **Internals split up** — the argv tokenizer, the "did you mean" heuristics and the
+5. **Version comparison now follows PEP 440** (`lib/versioncmp.py`, backed by
+   `packaging`). The old comparator read the digits out of a version string, so
+   `4.4.0-beta1` came out **newer** than `4.4.0` — anyone who installed a beta would
+   never have been offered the final release. `4.4.0.dev1 < 4.4.0a1 < 4.4.0b1 <
+   4.4.0rc1 < 4.4.0 < 4.4.1` now holds, and `scripts/selfupdate_test.sh` pins it.
+6. **Internals split up** — the argv tokenizer, the "did you mean" heuristics and the
    `-s` / `-S` handling each live in one place now instead of four.
 
 ### Translators: please read
@@ -113,7 +118,7 @@ MACWAVE_VERSION=4.4.0-beta1 MACWAVE_BRANCH=4.4 \
 | 现象 | 原因 |
 | --- | --- |
 | `wave selfupdate` 不会提供 4.4.0-beta1 | 更新器比较的是正式版指针，它停在 4.3.2。beta 绝不能从这条路可达 —— 否则所有人都会被拖上去。 |
-| 将来 4.4.0 正式版发布后，`wave selfupdate` 也不会把你从 beta 挪走 | 版本按数字段比较，`4.4.0-beta1` 排在 `4.4.0` **之上**。要离开 beta，用上面那条安装命令重装。 |
+| 将来 4.4.0 正式版发布后，`wave selfupdate` 会把你升上去 | 版本按 PEP 440 比较，`4.4.0-beta1` 排在 `4.4.0` **之下**。做这个比较的是 beta 自带的 `lib/versioncmp.py` —— 所以这个修复必须放进 beta 本身。 |
 
 ## 这一版有什么
 
@@ -128,7 +133,11 @@ MACWAVE_VERSION=4.4.0-beta1 MACWAVE_BRANCH=4.4 \
    `info wave-zh`，以及给没装 texinfo 的机器准备的 `wave manual [--zh] [--color]`。
    全部由同一份源生成，所以终端帮助、man 页与 Info 文件不可能走散。
 4. **`wave -h --zh` 与 `wave <命令> -h --zh`** —— 终端帮助也有中文版了。
-5. **内部拆解** —— argv 拆解、「你是不是想敲」的启发式、`-s` / `-S` 的处理，
+5. **版本比较改用 PEP 440**（`lib/versioncmp.py`，底层是 `packaging`）。老的比较器
+   从版本串里抠数字，于是 `4.4.0-beta1` 算出来**比 `4.4.0` 新** —— 装过 beta 的人
+   永远等不到正式版。现在成立的是 `4.4.0.dev1 < 4.4.0a1 < 4.4.0b1 < 4.4.0rc1 <
+   4.4.0 < 4.4.1`，并由 `scripts/selfupdate_test.sh` 钉住。
+6. **内部拆解** —— argv 拆解、「你是不是想敲」的启发式、`-s` / `-S` 的处理，
    各自只有一处实现，不再各写四遍。
 
 ### 参与翻译的人请读这一段

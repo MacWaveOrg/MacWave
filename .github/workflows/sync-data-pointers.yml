@@ -42,6 +42,11 @@ jobs:
           repository: MacWaveOrg/Selfupdate
           path: data-selfupdate
 
+      # sync_latest_pointer.py 的版本比较与客户端共用 lib/versioncmp.py，那份用
+      # packaging 做 PEP 440 排序。runners 上不保证有这个模块，显式装一次。
+      - name: Ensure packaging is available
+        run: python3 -m pip install --quiet --user packaging
+
       - name: Check the Python pointer
         run: |
           python3 scripts/sync_latest_pointer.py \
@@ -74,6 +79,10 @@ jobs:
           repository: MacWaveOrg/Selfupdate
           path: data-selfupdate
           token: ${{ secrets.RELEASE_SYNC_TOKEN }}
+
+      # 同上：sync 这一步也要跑版本比较，需要 packaging。
+      - name: Ensure packaging is available
+        run: python3 -m pip install --quiet --user packaging
 
       - name: Sync the Python pointer
         run: |

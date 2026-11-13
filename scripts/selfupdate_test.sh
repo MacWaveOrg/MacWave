@@ -145,11 +145,23 @@ lenient = module.version_data('version "1.0"\nversion = "2.0"\nunknown-key = "x"
 assert lenient['version'] == '2.0', lenient
 assert lenient['unknown-key'] == 'x', lenient
 
-# 版本比较：补齐到四位，2.3 == 2.3.0，跨位数按数值比
+# 版本比较：PEP 440（packaging），见 lib/versioncmp.py
 assert module.version_key('2.3') == module.version_key('2.3.0')
 assert module.version_key('2.2.0') < module.version_key('2.3')
 assert module.version_key('2.10.0') > module.version_key('2.9.0')
 assert module.version_key('2.3') >= module.version_key('2.3')
+
+# 预发布必须排在正式版**之前**。这一条是必须钉死的：以前按数字段比较，
+# 4.4.0-beta1 被读成 [4,4,0,1]，比 4.4.0 的 [4,4,0,0] 大 —— 装过 beta 的人
+# 就永远等不到正式版，而平时没有预发布版本时怎么测都看不出来。
+assert module.version_key('4.4.0-beta1') < module.version_key('4.4.0'), 'beta 必须小于正式版'
+assert module.version_key('4.4.0b1') < module.version_key('4.4.0')
+assert module.version_key('4.4.0rc1') < module.version_key('4.4.0')
+assert module.version_key('4.4.0a1') < module.version_key('4.4.0b1')
+assert module.version_key('4.4.0.dev1') < module.version_key('4.4.0a1')
+assert module.version_key('4.4.0') < module.version_key('4.4.1')
+# 装着的正式版比「最新」还新时不应降级
+assert module.version_key('4.4.0') > module.version_key('4.4.0-beta1')
 
 print('🌊 Parsing and version comparison OK')
 PYEOF

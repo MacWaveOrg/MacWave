@@ -4,7 +4,6 @@
 
 import json
 import os
-import re
 import subprocess
 import sys
 import tempfile
@@ -24,6 +23,7 @@ RESET = '\033[0m'
 
 from configpaths import VERSION_FILE_NAME, config_dir_candidates, find_config_dir
 import domains
+import versioncmp
 import tls
 
 FETCH_TIMEOUT = 30
@@ -150,12 +150,9 @@ def version_data(text):
         sys.exit(1)
 
 
-def version_key(value):
-    # 只比较数字段（2.3 -> [2, 3, 0, 0]），避免依赖 packaging
-    parts = [int(part) for part in re.findall(r'\d+', str(value))]
-    while len(parts) < 4:
-        parts.append(0)
-    return parts
+# 版本比较只看一处（lib/versioncmp.py）。以前这里是「只比数字段」的实现，于是
+# 4.4.0-beta1 被判成比 4.4.0 大 —— 装过 beta 的人永远等不到正式版。
+version_key = versioncmp.sort_key
 
 
 def version_file():
