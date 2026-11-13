@@ -108,7 +108,7 @@ else
 fi
 
 echo
-echo "========== 3. 默认从自己的存储取，只有 --install-from-source 才读 url =========="
+echo "========== 3. 默认从自己的存储取；from_source 分支仍在下层（CLI 已够不到） =========="
 
 if PYTHONPATH="$PY_PATHS" python3 - << 'PY'
 import domains
@@ -240,9 +240,14 @@ fi
 
 echo "========== 5. 旗标解析 =========="
 
-# --install-from-source 不带值，所以不能进 FLAGS_TAKING_VALUE，
-# 否则 `wave install --install-from-source jq` 会把 jq 当成它的值。
+# `--install-from-source` 自 4.4 起暂时下线：CLI 层会干净拒绝它。这里钉住三件事：
+#   5a. 那个开关现在必须被拒绝（否则「下线」只是文档里的一句空话）
+#   5b. 它不带值 —— 不能进 FLAGS_TAKING_VALUE，否则重新上线时
+#       `wave install --install-from-source jq` 会把 jq 当成它的值
+#   5c. 包名解析本身不受它影响（纯函数，与是否接受这个旗标无关）
 if PYTHONPATH="$PY_PATHS" python3 - << 'PY'
+import io
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 # pkginstaller 顶层有 `BASE_DIR = load_base_dir()`，而 load_base_dir() 在找不到
@@ -254,22 +259,35 @@ configpaths.load_base_dir = lambda: Path("/nonexistent-base-dir")
 import pkginstaller
 
 ok = True
-for line, expected in [
-    ("wave install jq --install-from-source", True),
-    ("wave install --install-from-source jq", True),
-    ("wave install jq", False),
-]:
-    config = pkginstaller.handle_download_args(line)
-    if config["install_from_source"] is not expected:
-        print(f"    {line}: {config['install_from_source']}")
+
+for line in ("wave install jq --install-from-source",
+             "wave install --install-from-source jq"):
+    buffer = io.StringIO()
+    try:
+        with redirect_stdout(buffer), redirect_stderr(buffer):
+            pkginstaller.handle_download_args(line)
+    except SystemExit as exc:
+        if exc.code != 1:
+            print(f"    {line}: 退出码是 {exc.code}，应为 1")
+            ok = False
+    else:
+        print(f"    {line}: 竟然被接受了 —— 旗标没下线干净")
         ok = False
-    if pkginstaller.first_package_token(line) != "jq":
+
+for line, expected_package in [
+    ("wave install jq", "jq"),
+    ("wave install --install-from-source jq", "jq"),
+]:
+    if pkginstaller.first_package_token(line) != expected_package:
         print(f"    {line}: 包名被解析成 {pkginstaller.first_package_token(line)}")
         ok = False
+if "--install-from-source" in pkginstaller.FLAGS_TAKING_VALUE:
+    print("    --install-from-source 出现在 FLAGS_TAKING_VALUE 里（它不带值）")
+    ok = False
 raise SystemExit(0 if ok else 1)
 PY
 then
-    pass "旗标位置任意，包名不受影响"
+    pass "旗标已下线且包名解析不受影响"
 else
     fail "旗标解析不对"
 fi
