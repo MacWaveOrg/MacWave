@@ -1,19 +1,18 @@
 .TH WAVE-UPGRADE-ZH 1 "" "MacWave" "MacWave Manual"
 
 .SH 名称
-wave-upgrade-zh \- 把某个包升到最新版本；带 --all 时升级所有已装包。各版本共存，所以旧版本会一直留着，直到用 -X 清掉。
+wave-upgrade-zh \- 把软件包升级到最新版本；使用 --all 可升级所有已装包，旧版本会被保留。使用 -X, --remove-old-versions 可升级同时移除旧版。
 .SH 用法
 .B wave upgrade <package> | wave upgrade \-\-all
 .SH 说明
-把某个包升到最新版本；带 --all 时升级所有已装包。各版本共存，所以旧版本
-会一直留着，直到用 -X 清掉。
+把软件包升级到最新版本；使用 --all 可升级所有已装包，旧版本会被保留。使用 -X, --remove-old-versions 可升级同时移除旧版。
 .SH 选项
 .TP
 .B \-a, \-\-all
-升级每个有新版本的已装包
+升级所有有新版本的已装包
 .TP
 .B \-X, \-\-remove\-old\-versions
-顺带删掉比刚装上的版本更旧的版本
+升级同时移除旧版。
 .TP
 .B \-C, \-\-continue
 续传被中断的下载（同 curl -C -）
@@ -25,7 +24,7 @@ HTTP/HTTPS 代理（例如 http://127.0.0.1:8080）
 跳过 SSL 证书校验（不安全）
 .TP
 .B \-\-limit\-rate <string>
-限制下载速度（例如 200K、1M、5M）
+限速（例如 200K、1M、5M）
 .TP
 .B \-\-max\-time <string>
 单次请求的总时限（40s、1min、1min20s、2h；纯数字按秒算）
