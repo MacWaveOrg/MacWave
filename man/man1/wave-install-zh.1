@@ -9,7 +9,7 @@ wave-install-zh \- 安装一个软件包，或它的某个指定版本。
 .SH 选项
 .TP
 .B \-C, \-\-continue
-续传被中断的下载（同 curl -C -）
+断点续传
 .TP
 .B \-\-proxy <string>
 HTTP/HTTPS 代理（例如 http://127.0.0.1:8080）
@@ -18,25 +18,28 @@ HTTP/HTTPS 代理（例如 http://127.0.0.1:8080）
 跳过 SSL 证书校验（不安全）
 .TP
 .B \-\-limit\-rate <string>
-限制下载速度（例如 200K、1M、5M）
+限速（例如 200K、1M、5M）
 .TP
 .B \-\-max\-time <string>
-单次请求的总时限（40s、1min、1min20s、2h；纯数字按秒算）
+单次请求最大时长（40s、1min、1min20s、2h；不输入单位默认s）
 .TP
 .B \-\-connect\-timeout <string>
-握手超过这个时长就放弃（同 curl）
+握手最大时长
 .TP
 .B \-\-content\-time <string>
-超过这个时长收不到数据就放弃
+接收数据的最大时长
 .TP
 .B \-\-unlink
-不创建、也不改写那个不带版本号的链接
+取消此软件包不带版本号的软链接
+.TP
+.B \-\-install\-from\-source
+###########
 .TP
 .B \-F, \-\-force
-包声明的最低 macOS 高于本机时仍然安装
+当前 macOS 版本低于软件包声明要求时仍继续安装
 .TP
 .B \-v, \-\-verbose
-输出详细日志
+详细模式
 
 .SH 示例
 .nf
@@ -44,6 +47,7 @@ wave install jq
 wave install ffmpeg@6.1
 wave install jq --limit-rate 1M
 wave install jq --max-time=1min
+wave install jq --install-from-source
 .fi
 .SH 另见
 wave-zh(1)

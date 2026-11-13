@@ -1,27 +1,27 @@
 .TH WAVE-LATEST-ZH 1 "" "MacWave" "MacWave Manual"
 
 .SH 名称
-wave-latest-zh \- 把本机已装的版本与索引里的最新版本比一比。只报告，不下载任何东西。
+wave-latest-zh \- 将本机已装的版本与索引里的最新版本对比，不下载。
 .SH 用法
 .B wave latest <package> | wave latest \-\-all
 .SH 说明
-把本机已装的版本与索引里的最新版本比一比。只报告，不下载任何东西。
+将本机已装的版本与索引里的最新版本比较，不下载。
 .SH 选项
 .TP
 .B \-a, \-\-all
-检查每个已装包
+检查每个已装软件包
 .TP
 .B \-\-max\-time <string>
 每次请求的总时限（例如 40s、1min）
 .TP
 .B \-\-connect\-timeout <string>
-握手超过这个时长就放弃
+握手最大时长
 .TP
 .B \-\-content\-time <string>
-超过这个时长收不到数据就放弃
+接收数据的最大时长
 .TP
 .B \-v, \-\-verbose
-每发一个请求就打一行
+详细模式
 
 .SH 示例
 .nf
