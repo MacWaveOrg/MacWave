@@ -2,8 +2,8 @@
 
 # MacWave 🌊 Official Installer
 # This script downloads wave.py, installs dependencies, and configures PATH.
-# Usage: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/main/lib/install.sh)"
-# Unattended (CI): /bin/bash -c "$(curl -fsSL .../main/lib/install.sh)" -- --ci --dir-option=1
+# Usage: /bin/bash -c "$(curl -fsSL https://github.com/MacWaveOrg/MacWave/releases/latest/download/install.sh)"
+# Unattended (CI): /bin/bash -c "$(curl -fsSL .../releases/latest/download/install.sh)" -- --ci --dir-option=1
 
 # -------------------- 测试根（隔离） --------------------
 # MACWAVE_TEST 指向一个目录时，把它当作 /：HOME 和所有系统路径都挂到它下面，
@@ -286,10 +286,10 @@ PIP_INDEX_URL="$(mw_domain MACWAVE_PIP_INDEX "${MACWAVE_PIP_INDEX:-https://pypi.
 # MacWave 自身文件（后面再拼 /<分支>/<路径>）
 CORE_URL="$(mw_domain MACWAVE_CORE_DOMAIN "${MACWAVE_CORE_DOMAIN:-https://raw.githubusercontent.com/MacWaveOrg/MacWave}")"
 # 自更新数据：版本号、文件清单、目录迁移脚本
-SELFUPDATE_URL="$(mw_domain MACWAVE_SELFUPDATE_DOMAIN "${MACWAVE_SELFUPDATE_DOMAIN:-https://raw.githubusercontent.com/MacWaveOrg/Selfupdate/main}")"
+SELFUPDATE_URL="$(mw_domain MACWAVE_SELFUPDATE_DOMAIN "${MACWAVE_SELFUPDATE_DOMAIN:-https://raw.githubusercontent.com/MacWaveOrg/Selfupdate/HEAD}")"
 # 自带 CPython 的清单
 # 解释器单独一个仓库（体积与发布节奏都和自更新数据不同）
-PYTHON_DOMAIN_URL="$(mw_domain MACWAVE_PYTHON_DOMAIN "${MACWAVE_PYTHON_DOMAIN:-https://raw.githubusercontent.com/MacWaveOrg/Python/main}")"
+PYTHON_DOMAIN_URL="$(mw_domain MACWAVE_PYTHON_DOMAIN "${MACWAVE_PYTHON_DOMAIN:-https://raw.githubusercontent.com/MacWaveOrg/Python/HEAD}")"
 
 # ==========================================
 # 版本号与代码分支（从自更新数据读取，不写死在脚本里）
@@ -313,8 +313,36 @@ read_toml_string() {
         | head -n 1
 }
 
+# pre-release 的安装口：调用方可以用环境变量显式指定要装的版本与分支，
+# 覆盖上面从 configdata 读到的「最新正式版」。
+#
+# 为什么必须留这个口子：configdata 是 `wave selfupdate` 的唯一依据，beta 绝不能
+# 写进去 —— 一旦写进去，所有人的常规更新都会跳上 beta。所以「装 beta」只能由
+# 调用方显式指定，而这正是 beta Release 正文里那条命令做的事。
+#
+# 指向 releases/latest 的安装命令**不带**这两个变量，所以走那条路的人永远得到正式版。
+# 两个必须同时给：只给版本不给分支，会去取一条不含该版本文件的代码线。
+#
+# 名字被收成局部变量是必要的 —— 下面那两行赋值会直接覆盖同名环境变量。
+ENV_VERSION="${MACWAVE_VERSION:-}"
+ENV_BRANCH="${MACWAVE_BRANCH:-}"
+
 MACWAVE_VERSION="$(read_toml_string "$LATEST_VERSION_DATA" version)"
 LATEST_BRANCH="$(read_toml_string "$LATEST_VERSION_DATA" branch)"
+
+if [[ -n "$ENV_VERSION" && -n "$ENV_BRANCH" ]]; then
+    # 版本号会进 URL 与 JSON，只接受安全的字符 —— 不给「拼个奇怪的值让后面的
+    # 拼接变成别的东西」留余地。分支名同理由 git 的规则限制（不能有空格等）。
+    if [[ ! "$ENV_VERSION" =~ ^[A-Za-z0-9._-]+$ || ! "$ENV_BRANCH" =~ ^[A-Za-z0-9._-]+$ ]]; then
+        echo -e "${RED_BOLD}🌊 Error: refusing to install '$ENV_VERSION' from branch '$ENV_BRANCH'.${RESET}" >&2
+        echo -e "${YELLOW}🌊 Version and branch may only contain letters, digits, dot, dash and underscore.${RESET}" >&2
+        exit 1
+    fi
+    MACWAVE_VERSION="$ENV_VERSION"
+    LATEST_BRANCH="$ENV_BRANCH"
+    mw_say "${YELLOW}🌊 Installing $MACWAVE_VERSION from branch $LATEST_BRANCH (explicitly requested, not the latest stable release)." \
+        "${YELLOW}🌊 将安装 ${MACWAVE_VERSION}（分支 ${LATEST_BRANCH}）—— 这是显式指定的版本，不是最新正式版。"
+fi
 
 if [[ -z "$MACWAVE_VERSION" || -z "$LATEST_BRANCH" ]]; then
     if mw_dry_run; then

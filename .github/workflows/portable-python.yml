@@ -36,7 +36,7 @@ permissions:
 
 env:
   UPSTREAM_REPO: astral-sh/python-build-standalone
-  CONFIGDATA_URL: https://raw.githubusercontent.com/MacWaveOrg/configdata/main
+  CONFIGDATA_URL: https://raw.githubusercontent.com/MacWaveOrg/configdata/HEAD
   # configdata 里还没有声明时的兜底：让本工作流在 pythondata 第一次落地之前就能跑通
   DEFAULT_PYTHON_VERSION: "3.14.9"
 

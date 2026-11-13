@@ -154,8 +154,8 @@ COMPONENTS = [line.split("#", 1)[0].strip()
 COMPONENTS = [name for name in COMPONENTS if name]
 ARCH_MAP = {"aarch64": "arm64", "arm64": "arm64", "x86_64": "amd64", "amd64": "amd64"}
 
-SELFUPDATE_LATEST_URL = "https://raw.githubusercontent.com/MacWaveOrg/Selfupdate/main/macwavedata/latest.toml"
-CONFIGDATA_LATEST_URL = "https://raw.githubusercontent.com/MacWaveOrg/configdata/main/versiondata/latest_version"
+SELFUPDATE_LATEST_URL = "https://raw.githubusercontent.com/MacWaveOrg/Selfupdate/HEAD/macwavedata/latest.toml"
+CONFIGDATA_LATEST_URL = "https://raw.githubusercontent.com/MacWaveOrg/configdata/HEAD/versiondata/latest_version"
 
 
 # -------------------- 结果记录 --------------------

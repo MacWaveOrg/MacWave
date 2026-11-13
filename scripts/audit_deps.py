@@ -31,7 +31,9 @@ RESET = '\033[0m'
 # -------------------- 常量 --------------------
 
 DATA_REPO = "MacWaveOrg/infosource"
-BRANCH = "main"
+# 用 HEAD 而不是写死 main：HEAD 解析为仓库的默认分支，改默认分支名不必回来改这里。
+# 已实测 raw 与 trees API 都认 HEAD，且与 main 解析到同一个 SHA。
+BRANCH = "HEAD"
 RAW_BASE = f"https://raw.githubusercontent.com/{DATA_REPO}/{BRANCH}"
 TREE_API = f"https://api.github.com/repos/{DATA_REPO}/git/trees/{BRANCH}?recursive=1"
 CONFIG_FILES = (

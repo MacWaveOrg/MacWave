@@ -59,15 +59,15 @@ DESCRIPTION = {
 }
 
 DEFAULTS = {
-    "api":        "https://raw.githubusercontent.com/MacWaveOrg/infosource/main",
+    "api":        "https://raw.githubusercontent.com/MacWaveOrg/infosource/HEAD",
     # 默认指向 GitHub Releases：它的下载路径 /<tag>/<资产> 与静态镜像的 /<包名>/<文件> 同形，
     # 所以国内镜像站只要 rsync 出同一棵树即可。指向仓库文件会被 git 的 100 MiB 硬限拦住。
     "bottle":     "https://github.com/MacWaveOrg/Bottle/releases/download",
     "deps":       "https://github.com/MacWaveOrg/Deps/releases/download",
     "core":       "https://raw.githubusercontent.com/MacWaveOrg/MacWave",
       # 解释器单独一个仓库：体积（每架构约 26 MB）与发布节奏都和自更新数据不同
-    "python":     "https://raw.githubusercontent.com/MacWaveOrg/Python/main",
-    "selfupdate": "https://raw.githubusercontent.com/MacWaveOrg/Selfupdate/main",
+    "python":     "https://raw.githubusercontent.com/MacWaveOrg/Python/HEAD",
+    "selfupdate": "https://raw.githubusercontent.com/MacWaveOrg/Selfupdate/HEAD",
     # 预留：源码包的位置定了以后再接上
     "sourcecode": "",
 }
@@ -187,7 +187,9 @@ def index_list_url(arch, package_name=None):
         steplog.detail(f"listing source: mirror-provided {redact_url(url)}")
         return url
 
-    url = f"https://api.github.com/repos/MacWaveOrg/infosource/contents/{path}?ref=main"
+    # ref=HEAD 而不是 ref=main：HEAD 解析为默认分支，改默认分支名不必回来改这里。
+    # 返回的是 contents API 的 JSON 数组，与镜像那份纯文本由 listing_names 统一。
+    url = f"https://api.github.com/repos/MacWaveOrg/infosource/contents/{path}?ref=HEAD"
     steplog.detail("listing source: GitHub API (MACWAVE_API_DOMAIN not set)")
     return url
 

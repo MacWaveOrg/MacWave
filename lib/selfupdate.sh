@@ -88,10 +88,10 @@ PIP_INDEX_URL="$(mw_domain MACWAVE_PIP_INDEX "${MACWAVE_PIP_INDEX:-https://pypi.
 # MacWave 自身文件（后面再拼 /<分支>/<路径>）
 CORE_URL="$(mw_domain MACWAVE_CORE_DOMAIN "${MACWAVE_CORE_DOMAIN:-https://raw.githubusercontent.com/MacWaveOrg/MacWave}")"
 # 自更新数据：版本号、文件清单、目录迁移脚本
-SELFUPDATE_URL="$(mw_domain MACWAVE_SELFUPDATE_DOMAIN "${MACWAVE_SELFUPDATE_DOMAIN:-https://raw.githubusercontent.com/MacWaveOrg/Selfupdate/main}")"
+SELFUPDATE_URL="$(mw_domain MACWAVE_SELFUPDATE_DOMAIN "${MACWAVE_SELFUPDATE_DOMAIN:-https://raw.githubusercontent.com/MacWaveOrg/Selfupdate/HEAD}")"
 # 自带 CPython 的清单
 # 解释器单独一个仓库（体积与发布节奏都和自更新数据不同）
-PYTHON_DOMAIN_URL="$(mw_domain MACWAVE_PYTHON_DOMAIN "${MACWAVE_PYTHON_DOMAIN:-https://raw.githubusercontent.com/MacWaveOrg/Python/main}")"
+PYTHON_DOMAIN_URL="$(mw_domain MACWAVE_PYTHON_DOMAIN "${MACWAVE_PYTHON_DOMAIN:-https://raw.githubusercontent.com/MacWaveOrg/Python/HEAD}")"
 
 # ==========================================
 # 每个请求的超时
@@ -195,6 +195,10 @@ fi
 # 目标仓库、分支与版本
 # ==========================================
 
+# 这里**必须**是一个真实分支名，不能写成 HEAD：下面按 `<CORE_URL>/<分支>/<路径>`
+# 取文件，镜像站也是按分支铺成一层真实目录（见 docs/MIRROR-SETUP.md 的 core/ 一节），
+# 而 HEAD 在镜像上不是目录。默认值只在「手工跑本脚本、又没给分支」时生效 ——
+# `wave selfupdate` 永远从 configdata 传进来一条发布分支。
 BRANCH="${MACWAVE_UPDATE_BRANCH:-${1:-main}}"
 BASE_URL="$CORE_URL/$BRANCH"
 # 由 selfupdate.py 按 `wave selfupdate --install-python-from-source` 置位

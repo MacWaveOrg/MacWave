@@ -47,13 +47,13 @@ MacWave is a **package manager for macOS**, built to distribute the command-line
 In the terminal, run:
 
 ```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/install.sh)" && source ~/.zshrc
+/bin/bash -c "$(curl -fsSL https://github.com/MacWaveOrg/MacWave/releases/latest/download/install.sh)" && source ~/.zshrc
 ```
 
 Installer options go after `--`, which ends bash's own options:
 
 ```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/install.sh)" -- --zh
+/bin/bash -c "$(curl -fsSL https://github.com/MacWaveOrg/MacWave/releases/latest/download/install.sh)" -- --zh
 ```
 
 `--zh` prints the installer in Chinese. `--ci --dir-option=1` installs with no
@@ -85,7 +85,7 @@ Options go after `--`, which ends bash's own options:
 bash install.sh --ci --dir-option=1
 
 # straight from the repository
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/install.sh)" \
+/bin/bash -c "$(curl -fsSL https://github.com/MacWaveOrg/MacWave/releases/latest/download/install.sh)" \
   -- --ci --dir-option=2
 ```
 
@@ -105,7 +105,7 @@ the list.
 which otherwise needs a terminal (so use `--force` in CI):
 
 ```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/uninstall.sh)" -- --force
+/bin/bash -c "$(curl -fsSL https://github.com/MacWaveOrg/MacWave/releases/latest/download/uninstall.sh)" -- --force
 ```
 
 ## 🌊 Download Directory
@@ -239,7 +239,7 @@ A mirror is a static file tree, so `nginx`, an object bucket or any file server 
 To completely remove MacWave from your system, run the following command in your terminal:
 
 ```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/uninstall.sh)"
+/bin/bash -c "$(curl -fsSL https://github.com/MacWaveOrg/MacWave/releases/latest/download/uninstall.sh)"
 ```
 
 ## 🌊 Run Packages

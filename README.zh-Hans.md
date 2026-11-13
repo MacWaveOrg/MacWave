@@ -46,13 +46,13 @@ MacWave 是一个**面向 macOS 的包管理器**，用于分发 macOS 软件开
 在终端中运行：
 
 ```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/install.sh)" && source ~/.zshrc
+/bin/bash -c "$(curl -fsSL https://github.com/MacWaveOrg/MacWave/releases/latest/download/install.sh)" && source ~/.zshrc
 ```
 
 安装选项写在 `--` 之后（那个 `--` 用来结束 bash 自己的选项）：
 
 ```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/install.sh)" -- --zh
+/bin/bash -c "$(curl -fsSL https://github.com/MacWaveOrg/MacWave/releases/latest/download/install.sh)" -- --zh
 ```
 
 `--zh` 让安装程序用中文输出。`--ci --dir-option=1` 全程无交互安装。
@@ -82,7 +82,7 @@ MacWave 是一个**面向 macOS 的包管理器**，用于分发 macOS 软件开
 bash install.sh --ci --dir-option=1
 
 # 直接从仓库执行
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/install.sh)" \
+/bin/bash -c "$(curl -fsSL https://github.com/MacWaveOrg/MacWave/releases/latest/download/install.sh)" \
   -- --ci --dir-option=2
 ```
 
@@ -99,7 +99,7 @@ bash install.sh --ci --dir-option=1
 （因此在 CI 里请使用 `--force`）：
 
 ```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/uninstall.sh)" -- --force
+/bin/bash -c "$(curl -fsSL https://github.com/MacWaveOrg/MacWave/releases/latest/download/uninstall.sh)" -- --force
 ```
 
 ## 🌊 下载目录
@@ -232,7 +232,7 @@ wave install jq --proxy http://proxy.corp:3128
 要从系统中彻底移除 MacWave，请在终端中运行以下命令：
 
 ```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MacWaveOrg/MacWave/HEAD/lib/uninstall.sh)"
+/bin/bash -c "$(curl -fsSL https://github.com/MacWaveOrg/MacWave/releases/latest/download/uninstall.sh)"
 ```
 
 ## 🌊 运行软件包
