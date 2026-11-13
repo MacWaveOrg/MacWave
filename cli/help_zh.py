@@ -26,7 +26,6 @@ GLOBAL_FLAGS_ZH = {
     "--connect-timeout <string>": "TCP/TLS 握手超过这个时长就放弃（同 curl）",
     "--content-time <string>": "连上之后服务器超过这个时长没发数据就放弃",
     "--ver <string>": "安装指定版本（仅 install；`--ver=1.0` 这种写法也认）",
-    "--install-from-source": "从上游地址下载，而不走 MacWave 自己的存储",
     "-F, --force": "包声明的最低 macOS 高于本机时仍然安装（install / upgrade）",
     "--install-python-from-source": "同上，针对自带的 Python（install / selfupdate）",
     "MACWAVE_PIP_INDEX": "环境变量。Python 依赖的 pip 源，默认 pypi.org/simple",
@@ -45,8 +44,6 @@ COMMANDS_ZH = {
             "--connect-timeout <string>": "握手超过这个时长就放弃（同 curl）",
             "--content-time <string>": "超过这个时长收不到数据就放弃",
             "--unlink": "不创建、也不改写那个不带版本号的链接",
-            "--install-from-source": "按索引里的上游地址下载，而不是 MacWave 自己的存储"
-                                      "（依赖走同一条规则）",
             "-F, --force": "包声明的最低 macOS 高于本机时仍然安装",
             "-v, --verbose": "输出详细日志",
         },

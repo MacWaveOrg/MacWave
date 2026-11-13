@@ -8,8 +8,7 @@ wave \- macOS 开发者用的软件包管理器
 .SH 说明
 MacWave 把每个软件包装进安装根目录下、带版本号的独立目录，各版本并存，并
 维护一个不带版本号的链接，让同一个包既能带版本号、也能不带版本号调用。软
-件包从镜像或 MacWave 自己的存储取得；除非给了 --install-from-source，否
-则不在用户机器上编译任何东西。
+件包从镜像或 MacWave 自己的存储取得，不在用户机器上编译任何东西。
 .SH 命令
 .TP
 .B install
@@ -94,9 +93,6 @@ TCP/TLS 握手超过这个时长就放弃（同 curl）
 .TP
 .B \-\-ver <string>
 安装指定版本（仅 install；`--ver=1.0` 这种写法也认）
-.TP
-.B \-\-install\-from\-source
-从上游地址下载，而不走 MacWave 自己的存储
 .TP
 .B \-F, \-\-force
 包声明的最低 macOS 高于本机时仍然安装（install / upgrade）

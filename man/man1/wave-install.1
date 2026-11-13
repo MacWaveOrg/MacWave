@@ -33,10 +33,6 @@ Give up if no data arrives for this long
 .B \-\-unlink
 Do not create or re-point the unversioned link
 .TP
-.B \-\-install\-from\-source
-Download from the upstream URL in the index instead of MacWave's own
-bottle store (dependencies follow the same rule)
-.TP
 .B \-F, \-\-force
 Install anyway when the package declares a newer macOS than this machine
 runs
@@ -50,7 +46,6 @@ wave install jq
 wave install ffmpeg@6.1
 wave install jq --limit-rate 1M
 wave install jq --max-time=1min
-wave install jq --install-from-source
 .fi
 .SH SEE ALSO
 wave(1)

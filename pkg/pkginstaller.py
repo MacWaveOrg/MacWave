@@ -141,7 +141,6 @@ ALLOWED_FLAGS = {
     "--verbose", "--skip-ssl", "--continue",
     "--limit-rate", "--proxy", "--unlink", "--ver", "--max-time",
     "--connect-timeout", "--content-time",
-    "--install-from-source",
     "-F", "--force",
 }
 
@@ -432,9 +431,14 @@ def handle_download_args(input_string):
         "limit_rate": None,
         "proxy": None,
         "timeout": timeouts.Budget(),
-        # 4.0 只从 Bottle 存储取二进制，url 字段平时不读；
-        # 只有这个开关会让安装绕开 Bottle，直接回上游取（含依赖）。
-        "install_from_source": "--install-from-source" in flags,
+        # 4.0 只从 Bottle 存储取二进制，url 字段平时不读。
+        #
+        # `--install-from-source` 暂时下线（旗标不再接受，见 ALLOWED_FLAGS）：
+        # 它绕开自有存储直接回上游取，而这条路径的失败模式把用户指向了错的
+        # 地方（镜像缺件 vs 上游缺件分不清）。下层的实现仍在
+        # （net/domains.py 的 from_source 分支、depsinstaller 的透传），
+        # 重新上线的代价是「把旗标加回白名单 + 这行改回读 flags」。
+        "install_from_source": False,
         # 索引声明的最低系统版本高于本机时，跳过询问直接装。
         "force": "-F" in flags or "--force" in flags,
     }

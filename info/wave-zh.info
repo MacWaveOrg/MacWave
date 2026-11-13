@@ -4,8 +4,7 @@ File: wave-zh.info, Node: Top, Up: (dir)
 
 MacWave 把每个软件包装进安装根目录下、带版本号的独立目录，各版本并存，并
 维护一个不带版本号的链接，让同一个包既能带版本号、也能不带版本号调用。软
-件包从镜像或 MacWave 自己的存储取得；除非给了 --install-from-source，否
-则不在用户机器上编译任何东西。
+件包从镜像或 MacWave 自己的存储取得，不在用户机器上编译任何东西。
 
 * Menu:
 
@@ -71,9 +70,6 @@ File: wave-zh.info, Node: 全局旗标, Up: Top
   --ver <string>
       安装指定版本（仅 install；`--ver=1.0` 这种写法也认）
 
-  --install-from-source
-      从上游地址下载，而不走 MacWave 自己的存储
-
   -F, --force
       包声明的最低 macOS 高于本机时仍然安装（install / upgrade）
 
@@ -114,10 +110,6 @@ File: wave-zh.info, Node: install, Next: upgrade, Up: Top
   --unlink
       不创建、也不改写那个不带版本号的链接
 
-  --install-from-source
-      按索引里的上游地址下载，而不是 MacWave 自己的存储（依赖走同一条规
-      则）
-
   -F, --force
       包声明的最低 macOS 高于本机时仍然安装
 
@@ -130,7 +122,6 @@ Examples:
      wave install ffmpeg@6.1
      wave install jq --limit-rate 1M
      wave install jq --max-time=1min
-     wave install jq --install-from-source
 
 
 File: wave-zh.info, Node: upgrade, Next: uninstall, Prev: install, Up: Top

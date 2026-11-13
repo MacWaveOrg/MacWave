@@ -10,8 +10,7 @@ MacWave installs each package into its own versioned directory under the
 install root, keeps every version side by side, and maintains
 unversioned links so a package can be called with or without a version.
 Packages are fetched from a mirror or from MacWave's own bottle store;
-nothing is compiled on the user's machine unless --install-from-source
-is given.
+nothing is compiled on the user's machine.
 .SH COMMANDS
 .TP
 .B install
@@ -105,9 +104,6 @@ Give up if the server sends nothing for this long after connecting
 .TP
 .B \-\-ver <string>
 Install a specific version (install only; --ver=1.0 works too)
-.TP
-.B \-\-install\-from\-source
-Download from the upstream URL instead of MacWave's own store
 .TP
 .B \-F, \-\-force
 Install anyway when the package declares a newer macOS than this machine

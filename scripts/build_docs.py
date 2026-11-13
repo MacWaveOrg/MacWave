@@ -52,7 +52,7 @@ PROSE = {
             "install root, keeps every version side by side, and maintains unversioned "
             "links so a package can be called with or without a version. Packages are "
             "fetched from a mirror or from MacWave's own bottle store; nothing is "
-            "compiled on the user's machine unless --install-from-source is given."),
+            "compiled on the user's machine."),
         "commands": "COMMANDS",
         "global_flags": "GLOBAL FLAGS",
         "environment": "ENVIRONMENT",
@@ -87,8 +87,7 @@ PROSE = {
         "description": (
             "MacWave 把每个软件包装进安装根目录下、带版本号的独立目录，各版本并存，"
             "并维护一个不带版本号的链接，让同一个包既能带版本号、也能不带版本号调用。"
-            "软件包从镜像或 MacWave 自己的存储取得；除非给了 --install-from-source，"
-            "否则不在用户机器上编译任何东西。"),
+            "软件包从镜像或 MacWave 自己的存储取得，不在用户机器上编译任何东西。"),
         "commands": "命令",
         "global_flags": "全局旗标",
         "environment": "环境变量",

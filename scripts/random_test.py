@@ -23,7 +23,7 @@
 #   8. 等效参数的长/短形式随机（-h/--help、-V/--version、-a/--all、-C/--continue、-v/--verbose）。
 #   9. 随机池排除 test_* 测试夹具；单个产物体积上限 200MB。
 #  10. 4.x 新增的参数（`-s`/`-S`、`-X` 四种写法、`--all`、`--json/--yaml/--toml/--raw`、
-#      `--only-set`/`--show-password`/`--hide-user`、`--install-from-source`、`--proxy`、
+#      `--only-set`/`--show-password`/`--hide-user`、`--proxy`、
 #      以及未发布的 `--connect-timeout`/`--content-time`）都会跑到：会改系统的命令上按
 #      SILENT_PROBABILITY 随机带静默旗标，其余由阶段 7 的离线矩阵逐个覆盖。
 #
@@ -1705,11 +1705,16 @@ def phase_flag_matrix(wave, rng, checks):
         expect(checks, wave.run(["install", f"{flag}="], timeout=60), 1,
                f"wave install {flag}=（空值）", must_contain=(f"{flag} needs a value",))
 
-    # 9) 4.0 的来源与代理：缺包名 / 缺值时都不该被当成「未知旗标」
-    expect(checks, wave.run(["install", "--install-from-source"], timeout=60), 1,
-           "wave install --install-from-source（缺包名）", must_contain=("no package name",))
+    # 9) 代理缺值不该被当成「未知旗标」
     expect(checks, wave.run(["install", "--proxy"], timeout=60), 1,
            "wave install --proxy（缺值）", must_not_contain=("Traceback",))
+
+    # 9b) --install-from-source 已下线：它现在是一条**非法旗标**，不是「缺包名」。
+    # 这条断言故意盯住「下线之后仍然是干净拒绝」，而不是被静默忽略 ——
+    # 静默忽略会让用户以为上游直取生效了，实际走的还是存储。
+    expect(checks, wave.run(["install", "jq", "--install-from-source"], timeout=60), 1,
+           "wave install jq --install-from-source（已下线）",
+           must_contain=("illegal option",), must_not_contain=("Traceback",))
 
 
 # -------------------- pty 执行 --------------------

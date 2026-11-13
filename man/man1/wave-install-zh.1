@@ -32,9 +32,6 @@ HTTP/HTTPS 代理（例如 http://127.0.0.1:8080）
 .B \-\-unlink
 不创建、也不改写那个不带版本号的链接
 .TP
-.B \-\-install\-from\-source
-按索引里的上游地址下载，而不是 MacWave 自己的存储（依赖走同一条规则）
-.TP
 .B \-F, \-\-force
 包声明的最低 macOS 高于本机时仍然安装
 .TP
@@ -47,7 +44,6 @@ wave install jq
 wave install ffmpeg@6.1
 wave install jq --limit-rate 1M
 wave install jq --max-time=1min
-wave install jq --install-from-source
 .fi
 .SH 另见
 wave-zh(1)
