@@ -173,6 +173,58 @@ else
     fail "中文 man 页 ${ZH_PAGES} 页、英文 ${EN_PAGES} 页，应当一一对应"
 fi
 
+# 折行的收尾：中文不允许有以标点开头的行（`…旧版` / `。` 那种）。
+# 这是 build_docs.wrap 的 NO_BREAK_BEFORE 在守，但它是生成期的事 ——
+# 生成物里再查一遍，改折行算法时才不会悄悄退回去。
+ORPHANS=$(python3 - "$REPO_DIR" <<'PYEOF'
+import sys
+from pathlib import Path
+
+repo = Path(sys.argv[1])
+cjk = "。，、；：！？）」』】》〉”’"
+found = []
+for page in sorted((repo / "man" / "man1").glob("*.1")) + sorted((repo / "info").glob("*.info")):
+    for number, line in enumerate(page.read_text(encoding="utf-8").splitlines(), 1):
+        if line[:1] and line[0] in cjk:
+            found.append(f"{page.name}:{number}")
+print(" ".join(found))
+PYEOF
+)
+if [ -z "$ORPHANS" ]; then
+    pass "没有以标点开头的折行（中文排版）"
+else
+    fail "这些行以标点开头，读起来像断错行：${ORPHANS}"
+fi
+
+# 折行算法的边界行为：句号正好落在列边界时必须粘在前一行，不能单独成行。
+# 上面那条查的是「当前的文字恰好没踩到边界」，这条才真的把规则本身钉住 ——
+# 拿一个 40 列 + 句号的构造串，不依赖语料。
+WRAP_EDGE=$(python3 - "$REPO_DIR" <<'PYEOF'
+import importlib.util
+import sys
+from pathlib import Path
+
+repo = Path(sys.argv[1])
+spec = importlib.util.spec_from_file_location("build_docs", repo / "scripts" / "build_docs.py")
+build_docs = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(build_docs)
+
+# 20 个全角字 = 40 列，句号要占 2 列，正好越过 41 列的边界
+lines = build_docs.wrap("一" * 20 + "。" + "尾", 41)
+problems = []
+if any(line[:1] == "。" for line in lines):
+    problems.append("句号被挤到了新行")
+if not lines[0].endswith("。"):
+    problems.append("句号没有粘在前一行末尾")
+print("；".join(problems))
+PYEOF
+)
+if [ -z "$WRAP_EDGE" ]; then
+    pass "折行边界：句号不会单独成行"
+else
+    fail "折行边界不对 —— ${WRAP_EDGE}"
+fi
+
 if [ -f "$REPO_DIR/info/wave-zh.info" ]; then
     pass "info wave-zh 的文件在（info 按文件名找它）"
 else

@@ -159,6 +159,12 @@ def _atoms(text):
     return atoms
 
 
+# 这些字符不能出现在行首：中文的句读符号与闭括号、西文的同一类。
+# 不加这条，折行会把「……旧版」和「。」拆成两行（实测中文 info 菜单里就是这样）。
+# 允许它们让那一行超出 width 一两个字符 —— 比另起一行孤零零一个标点好看得多。
+NO_BREAK_BEFORE = set("。，、；：！？）」』】》〉”’,.;:!?)]}%")
+
+
 def wrap(text, width):
     """按显示宽度折行；不拆英文单词，中文可任意处断。
 
@@ -177,7 +183,8 @@ def wrap(text, width):
                     line += " "
                 continue
             atom_width = display_width(atom)
-            if line.strip() and display_width(line) + atom_width > width:
+            if (line.strip() and display_width(line) + atom_width > width
+                    and atom not in NO_BREAK_BEFORE):
                 lines.append(line.rstrip())
                 line = atom
             else:
