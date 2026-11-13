@@ -11,14 +11,14 @@ nothing is compiled on the user's machine.
 * Menu:
 
 * install::	Install a package, or one specific version of it.
-* upgrade::	Install the latest version of a package, or of every
-        installed package with --all. Versions coexist, so the old
-        ones stay until -X removes them.
+* upgrade::	Upgrade a package to its latest version; with --all, every
+        installed package. Old versions are kept — -X,
+        --remove-old-versions removes them in the same run.
 * uninstall::	Uninstall a package version. The unversioned link falls back
         to the highest remaining version, and goes away with the
         last one.
 * list::	List the packages you have installed, with their versions.
-* search::	Search the package index.
+* search::	Search the online package index.
 * info::	Show author, description, homepage and the installed /
         available versions.
 * selfupdate::	Update MacWave itself to the version published in the
@@ -32,8 +32,8 @@ nothing is compiled on the user's machine.
 * mirror::	Show the address each kind of data is fetched from,
         including the built-in defaults for anything not overridden
         by an environment variable.
-* latest::	Compare what you have with the newest version in the index.
-        Reports only; nothing is downloaded.
+* latest::	Compare what you have with the newest version in the index;
+        nothing is downloaded.
 * shellenv::	Print the shell code that prepends MacWave's directories to
         PATH. You eval it once from your shell profile; it does
         nothing on its own.
@@ -58,37 +58,38 @@ File: wave.info, Node: GLOBAL FLAGS, Up: Top
       🌊, so scripts can parse it)
 
   -C, --continue
-      Resume interrupted downloads (like curl -C -)
+      Resume an interrupted download
 
   --proxy <string>
-      Specify an HTTP/HTTPS proxy (e.g., http://127.0.0.1:8080)
+      HTTP/HTTPS proxy (e.g. http://127.0.0.1:8080)
 
   --skip-ssl
       Skip SSL certificate verification (insecure)
 
   --limit-rate <string>
-      Limit download speed (e.g., 200K, 1M, 5M)
+      Limit download speed (e.g. 200K, 1M, 5M; a bare number means
+      bytes)
 
   --max-time <string>
-      Total time limit for one request/operation (e.g., 40s, 1min,
-      1min20s, 2h)
+      Maximum total time for one request (40s, 1min, 1min20s, 2h; a bare
+      number means seconds)
 
   --connect-timeout <string>
-      Give up if the TCP/TLS handshake takes longer than this (like
-      curl)
+      Maximum time for the handshake
 
   --content-time <string>
-      Give up if the server sends nothing for this long after connecting
+      Maximum time to receive data
 
   --ver <string>
       Install a specific version (install only; --ver=1.0 works too)
 
   -F, --force
-      Install anyway when the package declares a newer macOS than this
-      machine runs (install / upgrade)
+      Install anyway when the running macOS is older than the package
+      declares
 
   --install-python-from-source
-      Same, for the bundled Python (install / selfupdate)
+      Fetch the bundled Python from its upstream URL instead of
+      MacWave's own repository
 
   MACWAVE_PIP_INDEX
       Env var. pip index for the Python deps; default pypi.org/simple
@@ -101,7 +102,7 @@ File: wave.info, Node: install, Next: upgrade, Up: Top
 Install a package, or one specific version of it.
 
   -C, --continue
-      Resume an interrupted download (like curl -C -)
+      Resume an interrupted download
 
   --proxy <string>
       HTTP/HTTPS proxy (e.g. http://127.0.0.1:8080)
@@ -110,27 +111,28 @@ Install a package, or one specific version of it.
       Skip SSL certificate verification (insecure)
 
   --limit-rate <string>
-      Limit download speed (e.g. 200K, 1M, 5M)
+      Limit download speed (e.g. 200K, 1M, 5M; a bare number means
+      bytes)
 
   --max-time <string>
-      Total time limit for the request (40s, 1min, 1min20s, 2h; bare
-      numbers are seconds)
+      Maximum total time for one request (40s, 1min, 1min20s, 2h; a bare
+      number means seconds)
 
   --connect-timeout <string>
-      Give up if the handshake takes longer (like curl)
+      Maximum time for the handshake
 
   --content-time <string>
-      Give up if no data arrives for this long
+      Maximum time to receive data
 
   --unlink
-      Do not create or re-point the unversioned link
+      Cancel the unversioned link for this package
 
   -F, --force
-      Install anyway when the package declares a newer macOS than this
-      machine runs
+      Install anyway when the running macOS is older than the package
+      declares
 
   -v, --verbose
-      Enable verbose output
+      Verbose mode
 
 Examples:
 
@@ -143,18 +145,18 @@ Examples:
 File: wave.info, Node: upgrade, Next: uninstall, Prev: install, Up: Top
 
 
-Install the latest version of a package, or of every installed package
-with --all. Versions coexist, so the old ones stay until -X removes
-them.
+Upgrade a package to its latest version; with --all, every installed
+package. Old versions are kept — -X, --remove-old-versions removes them
+in the same run.
 
   -a, --all
       Upgrade every installed package that has a newer version
 
   -X, --remove-old-versions
-      Also remove the versions older than the one just installed
+      Remove the older versions as part of the upgrade
 
   -C, --continue
-      Resume an interrupted download (like curl -C -)
+      Resume an interrupted download
 
   --proxy <string>
       HTTP/HTTPS proxy (e.g. http://127.0.0.1:8080)
@@ -163,24 +165,25 @@ them.
       Skip SSL certificate verification (insecure)
 
   --limit-rate <string>
-      Limit download speed (e.g. 200K, 1M, 5M)
+      Limit download speed (e.g. 200K, 1M, 5M; a bare number means
+      bytes)
 
   --max-time <string>
-      Total time limit for the request (40s, 1min, 1min20s, 2h; bare
-      numbers are seconds)
+      Maximum total time for one request (40s, 1min, 1min20s, 2h; a bare
+      number means seconds)
 
   --connect-timeout <string>
-      Give up if the handshake takes longer (like curl)
+      Maximum time for the handshake
 
   --content-time <string>
-      Give up if no data arrives for this long
+      Maximum time to receive data
 
   -F, --force
-      Upgrade anyway when the package declares a newer macOS than this
-      machine runs
+      Install anyway when the running macOS is older than the package
+      declares
 
   -v, --verbose
-      Enable verbose output
+      Verbose mode
 
 Examples:
 
@@ -197,7 +200,7 @@ Uninstall a package version. The unversioned link falls back to the
 highest remaining version, and goes away with the last one.
 
   --unlink
-      Leave the unversioned link alone
+      Cancel the unversioned link for this package
 
 Examples:
 
@@ -218,7 +221,7 @@ Examples:
 File: wave.info, Node: search, Next: info, Prev: list, Up: Top
 
 
-Search the package index.
+Search the online package index.
 
 Examples:
 
@@ -232,16 +235,16 @@ Show author, description, homepage and the installed / available
 versions.
 
   --json
-      Print the same fields as JSON
+      Print as JSON
 
   --yaml
-      Print the same fields as YAML
+      Print as YAML
 
   --toml
-      Print the same fields as TOML
+      Print as TOML
 
   --raw
-      Print the index record as stored, without the formatting
+      Print as stored
 
 Examples:
 
@@ -257,14 +260,14 @@ Update MacWave itself to the version published in the self-update
 repository.
 
   --max-time <string>
-      Total time limit for the request (40s, 1min, 1min20s, 2h; bare
-      numbers are seconds)
+      Maximum total time for one request (40s, 1min, 1min20s, 2h; a bare
+      number means seconds)
 
   --connect-timeout <string>
-      Give up if the handshake takes longer (like curl)
+      Maximum time for the handshake
 
   --content-time <string>
-      Give up if no data arrives for this long
+      Maximum time to receive data
 
   --install-python-from-source
       Fetch the bundled Python from its upstream URL instead of
@@ -337,17 +340,18 @@ variable.
       Print the configuration as TOML
 
   --raw
-      Print ready-to-paste export lines
+      Print export lines
 
   --only-set
-      With --raw: export only the sources you overrode, leaving the rest
-      to follow the built-in defaults
+      With --raw: export only the sources you overrode (the
+      MACWAVE_*_DOMAIN variables), leaving the rest to the built-in
+      defaults
 
   --show-password
-      Print passwords in full instead of six asterisks
+      Print the real password
 
   --hide-user
-      Also mask the user name
+      Hide the user name
 
 Examples:
 
@@ -360,20 +364,20 @@ Examples:
 File: wave.info, Node: latest, Next: shellenv, Prev: mirror, Up: Top
 
 
-Compare what you have with the newest version in the index. Reports
-only; nothing is downloaded.
+Compare what you have with the newest version in the index; nothing is
+downloaded.
 
   -a, --all
       Check every installed package
 
   --max-time <string>
-      Total time limit for each request (e.g. 40s, 1min)
+      Maximum total time for one request (40s, 1min)
 
   --connect-timeout <string>
-      Give up if the handshake takes longer
+      Maximum time for the handshake
 
   --content-time <string>
-      Give up if no data arrives for this long
+      Maximum time to receive data
 
   -v, --verbose
       Print each request as it is made
@@ -417,8 +421,7 @@ files — or just one command's section.
       Print the Chinese edition
 
   --color
-      Colour headings and flags (plain text by default, so redirecting
-      to a file stays clean)
+      Colour headings and flags (plain text by default)
 
 Examples:
 

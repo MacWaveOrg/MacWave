@@ -1,23 +1,23 @@
 .TH WAVE-UPGRADE 1 "" "MacWave" "MacWave Manual"
 
 .SH NAME
-wave-upgrade \- Install the latest version of a package, or of every installed package with --all. Versions coexist, so the old ones stay until -X removes them.
+wave-upgrade \- Upgrade a package to its latest version; with --all, every installed package. Old versions are kept — -X, --remove-old-versions removes them in the same run.
 .SH SYNOPSIS
 .B wave upgrade <package> | wave upgrade \-\-all
 .SH DESCRIPTION
-Install the latest version of a package, or of every installed package
-with --all. Versions coexist, so the old ones stay until -X removes
-them.
+Upgrade a package to its latest version; with --all, every installed
+package. Old versions are kept — -X, --remove-old-versions removes them
+in the same run.
 .SH OPTIONS
 .TP
 .B \-a, \-\-all
 Upgrade every installed package that has a newer version
 .TP
 .B \-X, \-\-remove\-old\-versions
-Also remove the versions older than the one just installed
+Remove the older versions as part of the upgrade
 .TP
 .B \-C, \-\-continue
-Resume an interrupted download (like curl -C -)
+Resume an interrupted download
 .TP
 .B \-\-proxy <string>
 HTTP/HTTPS proxy (e.g. http://127.0.0.1:8080)
@@ -26,24 +26,23 @@ HTTP/HTTPS proxy (e.g. http://127.0.0.1:8080)
 Skip SSL certificate verification (insecure)
 .TP
 .B \-\-limit\-rate <string>
-Limit download speed (e.g. 200K, 1M, 5M)
+Limit download speed (e.g. 200K, 1M, 5M; a bare number means bytes)
 .TP
 .B \-\-max\-time <string>
-Total time limit for the request (40s, 1min, 1min20s, 2h; bare numbers
-are seconds)
+Maximum total time for one request (40s, 1min, 1min20s, 2h; a bare
+number means seconds)
 .TP
 .B \-\-connect\-timeout <string>
-Give up if the handshake takes longer (like curl)
+Maximum time for the handshake
 .TP
 .B \-\-content\-time <string>
-Give up if no data arrives for this long
+Maximum time to receive data
 .TP
 .B \-F, \-\-force
-Upgrade anyway when the package declares a newer macOS than this machine
-runs
+Install anyway when the running macOS is older than the package declares
 .TP
 .B \-v, \-\-verbose
-Enable verbose output
+Verbose mode
 
 .SH EXAMPLES
 .nf

@@ -15,8 +15,8 @@ MacWave 把每个软件包装进安装根目录下、带版本号的独立目录
 安装一个软件包，或它的某个指定版本。
 .TP
 .B upgrade
-把某个包升到最新版本；带 --all 时升级所有已装包。各版本共存，所以旧版本
-会一直留着，直到用 -X 清掉。
+把软件包升级到最新版本；使用 --all 可升级所有已装包，旧版本会被保留。使
+用 -X, --remove-old-versions 可升级同时移除旧版。
 .TP
 .B uninstall
 卸载某个包的一个版本。不带版本号的链接会自动退到剩下的最高版本，并在最后
@@ -26,7 +26,7 @@ MacWave 把每个软件包装进安装根目录下、带版本号的独立目录
 列出已安装的软件包及其版本。
 .TP
 .B search
-在软件包索引里搜索。
+在软件包索引（线上）里搜索。
 .TP
 .B info
 显示作者、简介、主页，以及已安装版本与索引里的可用版本。
@@ -70,34 +70,34 @@ uninstall / link / unlink / selfupdate）
 与 -s 同用时，命令失败仍打印错误（不带 🌊，方便脚本解析）
 .TP
 .B \-C, \-\-continue
-续传被中断的下载（同 curl -C -）
+断点续传
 .TP
 .B \-\-proxy <string>
-指定 HTTP/HTTPS 代理（例如 http://127.0.0.1:8080）
+HTTP/HTTPS 代理（例如 http://127.0.0.1:8080）
 .TP
 .B \-\-skip\-ssl
 跳过 SSL 证书校验（不安全）
 .TP
 .B \-\-limit\-rate <string>
-限制下载速度（例如 200K、1M、5M）
+限速（例如 200K、1M、5M；不输入单位默认 B）
 .TP
 .B \-\-max\-time <string>
-单次请求/操作的总时限（例如 40s、1min、1min20s、2h）
+单次请求最大时长（40s、1min、1min20s、2h；不输入单位默认 s）
 .TP
 .B \-\-connect\-timeout <string>
-TCP/TLS 握手超过这个时长就放弃（同 curl）
+握手最大时长
 .TP
 .B \-\-content\-time <string>
-连上之后服务器超过这个时长没发数据就放弃
+接收数据的最大时长
 .TP
 .B \-\-ver <string>
 安装指定版本（仅 install；`--ver=1.0` 这种写法也认）
 .TP
 .B \-F, \-\-force
-包声明的最低 macOS 高于本机时仍然安装（install / upgrade）
+当前 macOS 版本低于软件包声明要求时仍继续安装
 .TP
 .B \-\-install\-python\-from\-source
-同上，针对自带的 Python（install / selfupdate）
+从上游地址取自带的 Python，而不是 MacWave 自己的仓库
 .TP
 .B MACWAVE_PIP_INDEX
 环境变量。Python 依赖的 pip 源，默认 pypi.org/simple

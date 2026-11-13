@@ -10,14 +10,14 @@ repository.
 .SH OPTIONS
 .TP
 .B \-\-max\-time <string>
-Total time limit for the request (40s, 1min, 1min20s, 2h; bare numbers
-are seconds)
+Maximum total time for one request (40s, 1min, 1min20s, 2h; a bare
+number means seconds)
 .TP
 .B \-\-connect\-timeout <string>
-Give up if the handshake takes longer (like curl)
+Maximum time for the handshake
 .TP
 .B \-\-content\-time <string>
-Give up if no data arrives for this long
+Maximum time to receive data
 .TP
 .B \-\-install\-python\-from\-source
 Fetch the bundled Python from its upstream URL instead of MacWave's own

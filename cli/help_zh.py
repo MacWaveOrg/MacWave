@@ -18,16 +18,16 @@
 GLOBAL_FLAGS_ZH = {
     "-s, --silent": "完全不输出，只靠退出码表达结果（压过 -v；适用于 install / upgrade / uninstall / link / unlink / selfupdate）",
     "-S, --show-error": "与 -s 同用时，命令失败仍打印错误（不带 🌊，方便脚本解析）",
-    "-C, --continue": "续传被中断的下载（同 curl -C -）",
-    "--proxy <string>": "指定 HTTP/HTTPS 代理（例如 http://127.0.0.1:8080）",
+    "-C, --continue": "断点续传",
+    "--proxy <string>": "HTTP/HTTPS 代理（例如 http://127.0.0.1:8080）",
     "--skip-ssl": "跳过 SSL 证书校验（不安全）",
-    "--limit-rate <string>": "限制下载速度（例如 200K、1M、5M）",
-    "--max-time <string>": "单次请求/操作的总时限（例如 40s、1min、1min20s、2h）",
-    "--connect-timeout <string>": "TCP/TLS 握手超过这个时长就放弃（同 curl）",
-    "--content-time <string>": "连上之后服务器超过这个时长没发数据就放弃",
+    "--limit-rate <string>": "限速（例如 200K、1M、5M；不输入单位默认 B）",
+    "--max-time <string>": "单次请求最大时长（40s、1min、1min20s、2h；不输入单位默认 s）",
+    "--connect-timeout <string>": "握手最大时长",
+    "--content-time <string>": "接收数据的最大时长",
     "--ver <string>": "安装指定版本（仅 install；`--ver=1.0` 这种写法也认）",
-    "-F, --force": "包声明的最低 macOS 高于本机时仍然安装（install / upgrade）",
-    "--install-python-from-source": "同上，针对自带的 Python（install / selfupdate）",
+    "-F, --force": "当前 macOS 版本低于软件包声明要求时仍继续安装",
+    "--install-python-from-source": "从上游地址取自带的 Python，而不是 MacWave 自己的仓库",
     "MACWAVE_PIP_INDEX": "环境变量。Python 依赖的 pip 源，默认 pypi.org/simple",
 }
 
@@ -39,7 +39,7 @@ COMMANDS_ZH = {
             "-C, --continue": "断点续传",
             "--proxy <string>": "HTTP/HTTPS 代理（例如 http://127.0.0.1:8080）",
             "--skip-ssl": "跳过 SSL 证书校验（不安全）",
-            "--limit-rate <string>": "限速（例如 200K、1M、5M）",
+            "--limit-rate <string>": "限速（例如 200K、1M、5M；不输入单位默认 B）",
             "--max-time <string>": "单次请求最大时长（40s、1min、1min20s、2h；不输入单位默认 s）",
             "--connect-timeout <string>": "握手最大时长",
             "--content-time <string>": "接收数据的最大时长",
@@ -49,20 +49,20 @@ COMMANDS_ZH = {
         },
     },
     "upgrade": {
-        "desc": "把某个包升到最新版本；带 --all 时升级所有已装包。各版本共存，"
-                "所以旧版本会一直留着，直到用 -X 清掉。",
+        "desc": "把软件包升级到最新版本；使用 --all 可升级所有已装包，旧版本会被保留。"
+                "使用 -X, --remove-old-versions 可升级同时移除旧版。",
         "flags": {
-            "-a, --all": "升级每个有新版本的已装包",
-            "-X, --remove-old-versions": "顺带删掉比刚装上的版本更旧的版本",
-            "-C, --continue": "续传被中断的下载（同 curl -C -）",
+            "-a, --all": "升级所有有新版本的已装包",
+            "-X, --remove-old-versions": "升级同时移除旧版",
+            "-C, --continue": "断点续传",
             "--proxy <string>": "HTTP/HTTPS 代理（例如 http://127.0.0.1:8080）",
             "--skip-ssl": "跳过 SSL 证书校验（不安全）",
-            "--limit-rate <string>": "限制下载速度（例如 200K、1M、5M）",
-            "--max-time <string>": "单次请求的总时限（40s、1min、1min20s、2h；纯数字按秒算）",
-            "--connect-timeout <string>": "握手超过这个时长就放弃（同 curl）",
-            "--content-time <string>": "超过这个时长收不到数据就放弃",
-            "-F, --force": "包声明的最低 macOS 高于本机时仍然升级",
-            "-v, --verbose": "输出详细日志",
+            "--limit-rate <string>": "限速（例如 200K、1M、5M；不输入单位默认 B）",
+            "--max-time <string>": "单次请求最大时长（40s、1min、1min20s、2h；不输入单位默认 s）",
+            "--connect-timeout <string>": "握手最大时长",
+            "--content-time <string>": "接收数据的最大时长",
+            "-F, --force": "当前 macOS 版本低于软件包声明要求时仍继续安装",
+            "-v, --verbose": "详细模式",
         },
     },
     "shellenv": {
@@ -87,7 +87,7 @@ COMMANDS_ZH = {
         "desc": "将本机已装的版本与索引里的最新版本比较，不下载。",
         "flags": {
             "-a, --all": "检查每个已装软件包",
-            "--max-time <string>": "每次请求的总时限（例如 40s、1min）",
+            "--max-time <string>": "单次请求最大时长（40s、1min、1min20s、2h；不输入单位默认 s）",
             "--connect-timeout <string>": "握手最大时长",
             "--content-time <string>": "接收数据的最大时长",
             "-v, --verbose": "详细模式",
@@ -97,7 +97,7 @@ COMMANDS_ZH = {
         "desc": "卸载某个包的一个版本。不带版本号的链接会自动退到剩下的最高版本，"
                 "并在最后一个版本被卸载时一起消失。",
         "flags": {
-            "--unlink": "不碰那个不带版本号的链接",
+            "--unlink": "取消此软件包不带版本号的软链接",
         },
     },
     "list": {
@@ -105,7 +105,7 @@ COMMANDS_ZH = {
         "flags": {},
     },
     "search": {
-        "desc": "在软件包索引里搜索。",
+        "desc": "在软件包索引（线上）里搜索。",
         "flags": {},
     },
     "info": {
@@ -120,9 +120,9 @@ COMMANDS_ZH = {
     "selfupdate": {
         "desc": "把 MacWave 自身更新到自更新仓库里发布的版本。",
         "flags": {
-            "--max-time <string>": "单次请求的总时限（40s、1min、1min20s、2h；纯数字按秒算）",
-            "--connect-timeout <string>": "握手超过这个时长就放弃（同 curl）",
-            "--content-time <string>": "超过这个时长收不到数据就放弃",
+            "--max-time <string>": "单次请求最大时长（40s、1min、1min20s、2h；不输入单位默认 s）",
+            "--connect-timeout <string>": "握手最大时长",
+            "--content-time <string>": "接收数据的最大时长",
             "--install-python-from-source": "从上游地址取自带的 Python，而不是 MacWave 自己的仓库",
         },
     },
@@ -175,10 +175,10 @@ OVERVIEW_TITLES = {
 OVERVIEW_DESC = {
     "commands": {
         "install": "安装软件包（最新版本）",
-        "upgrade": "把软件包升到最新版本",
+        "upgrade": "把软件包升级到最新版本",
         "uninstall": "卸载软件包",
         "list": "列出已安装的软件包",
-        "search": "在索引里搜索软件包",
+        "search": "在软件包索引（线上）里搜索",
         "info": "显示软件包的详细信息",
         "selfupdate": "把 MacWave 自身更新到最新版本",
         "link": "给已装软件包创建不带版本号的链接",
@@ -192,12 +192,12 @@ OVERVIEW_DESC = {
     "flags": {
         "-h, --help": "查看任意命令的帮助",
         "-V, --version": "打印版本信息",
-        "-v, --verbose": "输出详细日志",
+        "-v, --verbose": "详细模式",
     },
     "special": {
         "wave install <pkgname>@<version>": "下载某个指定版本的软件包",
-        "--unlink": "不碰那个不带版本号的链接（install / uninstall）",
-        "-X, --remove-old-versions": "升级之后删掉旧版本",
+        "--unlink": "取消此软件包不带版本号的软链接",
+        "-X, --remove-old-versions": "升级同时移除旧版",
         "--all, -a": "对所有已装包生效（upgrade / link / unlink / linkquery）",
     },
     "links": {

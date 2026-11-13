@@ -1,25 +1,25 @@
 .TH WAVE-LATEST 1 "" "MacWave" "MacWave Manual"
 
 .SH NAME
-wave-latest \- Compare what you have with the newest version in the index. Reports only; nothing is downloaded.
+wave-latest \- Compare what you have with the newest version in the index; nothing is downloaded.
 .SH SYNOPSIS
 .B wave latest <package> | wave latest \-\-all
 .SH DESCRIPTION
-Compare what you have with the newest version in the index. Reports
-only; nothing is downloaded.
+Compare what you have with the newest version in the index; nothing is
+downloaded.
 .SH OPTIONS
 .TP
 .B \-a, \-\-all
 Check every installed package
 .TP
 .B \-\-max\-time <string>
-Total time limit for each request (e.g. 40s, 1min)
+Maximum total time for one request (40s, 1min)
 .TP
 .B \-\-connect\-timeout <string>
-Give up if the handshake takes longer
+Maximum time for the handshake
 .TP
 .B \-\-content\-time <string>
-Give up if no data arrives for this long
+Maximum time to receive data
 .TP
 .B \-v, \-\-verbose
 Print each request as it is made

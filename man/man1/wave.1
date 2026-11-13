@@ -17,9 +17,9 @@ nothing is compiled on the user's machine.
 Install a package, or one specific version of it.
 .TP
 .B upgrade
-Install the latest version of a package, or of every installed package
-with --all. Versions coexist, so the old ones stay until -X removes
-them.
+Upgrade a package to its latest version; with --all, every installed
+package. Old versions are kept — -X, --remove-old-versions removes them
+in the same run.
 .TP
 .B uninstall
 Uninstall a package version. The unversioned link falls back to the
@@ -29,7 +29,7 @@ highest remaining version, and goes away with the last one.
 List the packages you have installed, with their versions.
 .TP
 .B search
-Search the package index.
+Search the online package index.
 .TP
 .B info
 Show author, description, homepage and the installed / available
@@ -56,8 +56,8 @@ built-in defaults for anything not overridden by an environment
 variable.
 .TP
 .B latest
-Compare what you have with the newest version in the index. Reports
-only; nothing is downloaded.
+Compare what you have with the newest version in the index; nothing is
+downloaded.
 .TP
 .B shellenv
 Print the shell code that prepends MacWave's directories to PATH. You
@@ -81,36 +81,36 @@ With -s, still print the error when a command fails (without the 🌊, so
 scripts can parse it)
 .TP
 .B \-C, \-\-continue
-Resume interrupted downloads (like curl -C -)
+Resume an interrupted download
 .TP
 .B \-\-proxy <string>
-Specify an HTTP/HTTPS proxy (e.g., http://127.0.0.1:8080)
+HTTP/HTTPS proxy (e.g. http://127.0.0.1:8080)
 .TP
 .B \-\-skip\-ssl
 Skip SSL certificate verification (insecure)
 .TP
 .B \-\-limit\-rate <string>
-Limit download speed (e.g., 200K, 1M, 5M)
+Limit download speed (e.g. 200K, 1M, 5M; a bare number means bytes)
 .TP
 .B \-\-max\-time <string>
-Total time limit for one request/operation (e.g., 40s, 1min, 1min20s,
-2h)
+Maximum total time for one request (40s, 1min, 1min20s, 2h; a bare
+number means seconds)
 .TP
 .B \-\-connect\-timeout <string>
-Give up if the TCP/TLS handshake takes longer than this (like curl)
+Maximum time for the handshake
 .TP
 .B \-\-content\-time <string>
-Give up if the server sends nothing for this long after connecting
+Maximum time to receive data
 .TP
 .B \-\-ver <string>
 Install a specific version (install only; --ver=1.0 works too)
 .TP
 .B \-F, \-\-force
-Install anyway when the package declares a newer macOS than this machine
-runs (install / upgrade)
+Install anyway when the running macOS is older than the package declares
 .TP
 .B \-\-install\-python\-from\-source
-Same, for the bundled Python (install / selfupdate)
+Fetch the bundled Python from its upstream URL instead of MacWave's own
+repository
 .TP
 .B MACWAVE_PIP_INDEX
 Env var. pip index for the Python deps; default pypi.org/simple
