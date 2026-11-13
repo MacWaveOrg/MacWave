@@ -1,34 +1,33 @@
 .TH WAVE-MIRROR-ZH 1 "" "MacWave" "MacWave Manual"
 
 .SH 名称
-wave-mirror-zh \- 显示每一类数据实际从哪个地址取，包括那些没被环境变量覆盖、仍在使用内置默认值的项。
+wave-mirror-zh \- 显示每一类数据实际获取地址，包括仍在使用内置默认值的项。
 .SH 用法
 .B wave mirror [flags]
 .SH 说明
-显示每一类数据实际从哪个地址取，包括那些没被环境变量覆盖、仍在使用内置默
-认值的项。
+显示每一类数据实际获取地址，包括仍在使用内置默认值的项。
 .SH 选项
 .TP
 .B \-\-json
-以 JSON 输出配置
+以 JSON 格式输出配置
 .TP
 .B \-\-yaml
-以 YAML 输出配置
+以 YAML 格式输出配置
 .TP
 .B \-\-toml
-以 TOML 输出配置
+以 TOML格式 输出配置
 .TP
 .B \-\-raw
-输出可以直接粘贴的 export 行
+输出 export 行
 .TP
 .B \-\-only\-set
-配合 --raw：只导出你改过的那些源，其余继续走内置默认值
+配合 --raw：只导出用户改过的源（ MACWAVE_*_DOMAIN 变量），其余继续走内置默认值
 .TP
 .B \-\-show\-password
-打全密码，而不是固定的六个星号
+输出真实密码
 .TP
 .B \-\-hide\-user
-连用户名一起盖掉
+隐藏用户名
 
 .SH 示例
 .nf
