@@ -1,0 +1,124 @@
+name: Keep release assets complete
+
+# 每个 Release 必须附上该 tag 下的**全部** .py / .sh（扁平、原文件名）与两份源码归档:
+#
+#     MacWave-<版本>.tar
+#     MacWave-<版本>.tar.gz
+#
+# 为什么值得单独一个工作流：漏了不会让任何东西报错。客户端从分支下的文件取代码
+# （见 update_commands.sh），Release 资产不参与安装流程 —— 所以一个资产为零的
+# Release 装起来完全正常，只有想离线核对或做第三方审计的人才会发现「下载不到源码」。
+# 4.3.1 与 4.3.2 就是这样漏掉的：两个 Release 各有 0 个资产，而 4.3.0 有 75 个。
+#
+# 触发:
+#   release: published  发完立刻查（漏了就红，通知到手）
+#   schedule            每天兜底一次（人工在网页上建的 Release 也能被查到）
+#   workflow_dispatch   手动
+#
+# 只读：这里**不自动补**。补资产要按 docs/RELEASE-CHECKLIST.md 第 7 步做（要处理
+# 撞名、要比对 blob 哈希、归档要从 tag 建），自动做容易补出一份内容不对的资产，
+# 比缺着更难发现。
+
+on:
+  release:
+    types: [published]
+  schedule:
+    - cron: '43 4 * * *'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Only check this tag (default: the latest five code releases)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      ONLY_TAG: ${{ inputs.tag }}
+    steps:
+      - name: Verify every recent release ships its sources
+        run: |
+          set -uo pipefail
+
+          # 索引更新之类的非代码 Release 不适用（它们没有 tag 下的源码可附）。
+          if [[ -n "$ONLY_TAG" ]]; then
+            tags=("$ONLY_TAG")
+          elif [[ "${{ github.event_name }}" == "release" ]]; then
+            tags=("${{ github.event.release.tag_name }}")
+          else
+            mapfile -t tags < <(gh release list --repo "$REPO" --limit 40 \
+              --json tagName,isDraft,isPrerelease \
+              --jq '.[] | select(.isDraft|not) | select(.isPrerelease|not) | .tagName' \
+              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 5)
+          fi
+
+          if [[ ${#tags[@]} -eq 0 ]]; then
+            echo "::error::no version tags found to check"
+            exit 1
+          fi
+
+          failed=0
+          for tag in "${tags[@]}"; do
+            echo "===== $tag"
+
+            # 该 tag 下应当附上的源码：全部 .py / .sh，排除 . 开头的目录
+            # （.Pseudocode/ 里有同名文件，扁平化后会与 pkg/pkginstaller.py 撞名）
+            gh api "repos/$REPO/git/trees/$tag?recursive=1" \
+              --jq '.tree[] | select(.type=="blob") | .path' \
+              | grep -E '\.(py|sh)$' | grep -v '^\.' > /tmp/src.txt || true
+            want=$(wc -l < /tmp/src.txt | tr -d ' ')
+
+            if [[ "$want" -eq 0 ]]; then
+              echo "::warning::$tag 的树上没有 .py / .sh，跳过"
+              continue
+            fi
+
+            gh release view "$tag" --repo "$REPO" --json assets \
+              --jq '.assets[].name' > /tmp/have.txt || true
+
+            # 期望的资产名 = 扁平化后的文件名。两处已知撞名，按检查单的写法处理:
+            #   .Pseudocode/ 已被上面的 grep -v '^\.' 排除（那里也有 pkginstaller.py）
+            #   scripts/mirror-check/install.sh 上传为 mirror-check-install.sh，
+            #   而 lib/install.sh 保留原名 —— 两个都要在期望清单里
+            awk '{
+                if ($0 == "scripts/mirror-check/install.sh") print "mirror-check-install.sh";
+                else { n = split($0, part, "/"); print part[n] }
+            }' /tmp/src.txt > /tmp/names.txt
+
+            missing=$(comm -23 <(sort -u /tmp/names.txt) <(sort -u /tmp/have.txt))
+            missing_count=$(printf '%s' "$missing" | grep -c . || true)
+
+            for archive in "MacWave-${tag#v}.tar" "MacWave-${tag#v}.tar.gz"; do
+              if ! grep -qx "$archive" /tmp/have.txt; then
+                missing="${missing}${missing:+$'\n'}${archive}"
+                missing_count=$((missing_count + 1))
+              fi
+            done
+
+            total=$(wc -l < /tmp/have.txt | tr -d ' ')
+            expected_total=$((want + 2))
+
+            if [[ "$missing_count" -eq 0 && "$total" -eq "$expected_total" ]]; then
+              echo "  ok: ${total} 个资产（${want} 源码 + 2 归档）"
+              continue
+            fi
+
+            failed=$((failed + 1))
+            echo "::error::$tag 的资产不全：期望 ${expected_total} 个（${want} 源码 + 2 归档），实际 ${total} 个"
+            if [[ -n "$missing" ]]; then
+              echo "::error::$tag 缺少 ${missing_count} 个：$(printf '%s' "$missing" | tr '\n' ' ')"
+            fi
+            echo "  补法见 docs/RELEASE-CHECKLIST.md 第 7 步（别手写清单，也别省略 --clobber）"
+          done
+
+          if [[ "$failed" -gt 0 ]]; then
+            echo "::error::$failed 个 Release 的源码资产不全"
+            exit 1
+          fi
+          echo "🌊 All checked releases ship their complete source"

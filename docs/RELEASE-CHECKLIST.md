@@ -343,6 +343,37 @@ gh release view "$TAG" -R MacWaveOrg/MacWave --json assets --jq '.assets | lengt
 `want`），Release 资产不参与安装流程。附源码是为了给人看 —— 离线核对、第三方审计、
 以及「这一版到底包含哪些文件」有个确定的答案。
 
+#### 漏了没人会喊：`.github/workflows/release-assets-check.yml` 会
+
+**4.3.1 与 4.3.2 两个 Release 各有 0 个资产**（4.3.0 有 75 个）。原因是这一步零反馈：
+客户端装代码走分支下的文件，一个资产为零的 Release 装起来完全正常；只有想离线核对
+或做第三方审计的人才会发现「下载不到源码」，而那时已经过去好几版了。
+
+所以加了守卫，判据是**数量与名字都要对**：
+
+```
+期望资产数 = 该 tag 下全部 .py/.sh（排除 . 开头的目录）+ 2 个归档
+```
+
+| 触发 | 什么时候 |
+| --- | --- |
+| `release: published` | 发完立刻查，漏了就红 |
+| 每天定时 | 网页上手工建的 Release 也能兜到 |
+| `workflow_dispatch` | 可带 `tag` 只查某一个版本 |
+
+它**只查不补**。补资产要处理撞名、比 blob 哈希、归档从 tag 建，自动补一份内容不对的
+资产比缺着更难发现。手工补的办法就是本节上面那段脚本；补完再跑一次这个工作流确认。
+
+自查任意几个版本（不需要 workflow）：
+
+```bash
+# 期望 vs 实际，逐个 tag 比
+for tag in v4.3.0 v4.3.1 v4.3.2; do
+    gh release view "$tag" --json assets --jq '.assets | length' \
+        | xargs -I{} echo "$tag 实际 {}"
+done
+```
+
 ### 第 8 步：等 CI 绿 —— 两条流水线都要绿
 
 **GitHub Actions 与 CircleCI 都成功，才算发布完成。缺一条就不算通过。**
