@@ -144,6 +144,7 @@ reading the old version pointer.
 | `Selfupdate` | `macwavedata/latest.toml` → 4.3.3 / `318F1452` / branch `4.3` |
 | `configdata` | `versiondata/latest_version` → 4.3.3 / `318F1452` / branch `4.3` |
 | `Pages` | version → 4.3.3 |
+| `MacWave` Release `v4.3.3` | every `.py` / `.sh` at the tag, flat, plus `MacWave-4.3.3.tar` and `.tar.gz` — asset count = file count + 2 |
 
 ---
 
@@ -284,3 +285,4 @@ wave selfupdate
 | `Selfupdate` | `macwavedata/latest.toml` → 4.3.3 / `318F1452` / 分支 `4.3` |
 | `configdata` | `versiondata/latest_version` → 4.3.3 / `318F1452` / 分支 `4.3` |
 | `Pages` | 版本号 → 4.3.3 |
+| `MacWave` 的 Release `v4.3.3` | 该 tag 下全部 `.py` / `.sh`（扁平） + `MacWave-4.3.3.tar` 与 `.tar.gz`，资产数 = 文件数 + 2 |
