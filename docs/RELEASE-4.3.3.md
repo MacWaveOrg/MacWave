@@ -1,6 +1,6 @@
 # MacWave 4.3.3 Release Notes
 
-- Released: 2026-11-14, build `318F1452`
+- Released: 2026-11-14, build `318F1457`
 - Branch: `4.3` (the 4.3 line; `4.4` is a separate line)
 - Previous release: [4.3.2](RELEASE-4.3.2.md)
 - **Security fix**: answering "no" to the `--skip-ssl` warning did not stop the command
@@ -141,8 +141,8 @@ reading the old version pointer.
 | Repository | Content |
 | --- | --- |
 | `Selfupdate` | `macwavedata/4.3.3/update_commands.sh` (generated from the fixed tree) |
-| `Selfupdate` | `macwavedata/latest.toml` → 4.3.3 / `318F1452` / branch `4.3` |
-| `configdata` | `versiondata/latest_version` → 4.3.3 / `318F1452` / branch `4.3` |
+| `Selfupdate` | `macwavedata/latest.toml` → 4.3.3 / `318F1457` / branch `4.3` |
+| `configdata` | `versiondata/latest_version` → 4.3.3 / `318F1457` / branch `4.3` |
 | `Pages` | version → 4.3.3 |
 | `MacWave` Release `v4.3.3` | every `.py` / `.sh` at the tag, flat, plus `MacWave-4.3.3.tar` and `.tar.gz` — asset count = file count + 2 |
 
@@ -150,7 +150,7 @@ reading the old version pointer.
 
 # MacWave 4.3.3 发布说明
 
-- 发布：2026-11-14，构建号 `318F1452`
+- 发布：2026-11-14，构建号 `318F1457`
 - 分支：`4.3`（4.3 这条线；`4.4` 是另一条）
 - 上一版：[4.3.2](RELEASE-4.3.2.md)
 - **安全修复**：`--skip-ssl` 的警告问「确定吗」，答「否」并不能让命令停下来
@@ -282,7 +282,7 @@ wave selfupdate
 | 仓库 | 内容 |
 | --- | --- |
 | `Selfupdate` | `macwavedata/4.3.3/update_commands.sh`（由修复后的树生成） |
-| `Selfupdate` | `macwavedata/latest.toml` → 4.3.3 / `318F1452` / 分支 `4.3` |
-| `configdata` | `versiondata/latest_version` → 4.3.3 / `318F1452` / 分支 `4.3` |
+| `Selfupdate` | `macwavedata/latest.toml` → 4.3.3 / `318F1457` / 分支 `4.3` |
+| `configdata` | `versiondata/latest_version` → 4.3.3 / `318F1457` / 分支 `4.3` |
 | `Pages` | 版本号 → 4.3.3 |
 | `MacWave` 的 Release `v4.3.3` | 该 tag 下全部 `.py` / `.sh`（扁平） + `MacWave-4.3.3.tar` 与 `.tar.gz`，资产数 = 文件数 + 2 |
