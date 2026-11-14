@@ -315,6 +315,27 @@ else
     fail "用法错误仍然是黄字"
 fi
 
+# --skip-ssl 是全工具唯一一处「用户主动要求降低安全性」的提示，必须与普通询问
+# 区分开：用 RED_BOLD（1;31），与下面那个 retry 询问同一种红。
+# 故意用一个**不存在的包名**：提示在取版本列表之前就打出来，所以这一段全程只碰
+# 本地假镜像，不会真的去下载。
+out=$(wave install no_such_pkg_for_skip_ssl --skip-ssl </dev/null 2>&1)
+plain=$(strip_ansi "$out")
+ok     "提示点名了旗标"     "$plain" "--skip-ssl"
+ok     "提示说明了后果"     "$plain" "skip SSL certificate verification"
+ok     "提示问了一句"       "$plain" "Are you sure?"
+if [[ "$out" == *$'\033[1;31m🌊 You selected --skip-ssl'* ]]; then
+    pass "--skip-ssl 的安全提示是红字"
+else
+    fail "--skip-ssl 的安全提示不是红字（应为 RED_BOLD）"
+fi
+# 拒绝（stdin 读到 EOF）之后不该继续安装
+if [[ "$out" != *"Successfully installed"* ]]; then
+    pass "读了 EOF 之后没有继续安装"
+else
+    fail "读了 EOF 之后仍然装了 —— 缺省应当往安全的方向倒"
+fi
+
 out=$(wave install jq --limt-rate=10M 2>&1)
 ok     "限速旗标拼错也给建议" "$(strip_ansi "$out")" "Did you mean --limit-rate?"
 

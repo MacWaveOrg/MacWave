@@ -249,7 +249,10 @@ def confirm_skip_ssl(flags):
             # 若这里默默拒绝，装失败时会抛一个 SSL 错误，而用户以为自己已经跳过了。
             allowed = True
         else:
-            print('🌊 You selected --skip-ssl, this will skip SSL certificate verification, which may cause security risks. Are you sure?')
+            # 红色：这是本工具唯一一处「用户主动要求降低安全性」的地方，提示必须
+            # 与普通询问区分开。与下面的 retry 询问同一种颜色（RED_BOLD）。
+            print(f"{RED_BOLD}🌊 You selected --skip-ssl, this will skip SSL certificate "
+                  f"verification, which may cause security risks. Are you sure?{RESET}")
             try:
                 confirm = input().strip()
             except (EOFError, KeyboardInterrupt):
