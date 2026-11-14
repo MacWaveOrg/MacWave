@@ -387,6 +387,9 @@ git push origin 4.1
 - 报错必须给出下一步；地址进输出前必须打码
 - 测试：见「测试」一节 —— 会改动系统的测试必须先设 `MACWAVE_TEST`
 - 推送：见「推送」一节 —— 没有实质内容不要单独推，CircleCI 额度有限
+- 发布：每个 Release 必须附该 tag 下**全部**源码（`.py` / `.sh` 扁平）+ 2 个源码树归档，
+  `资产数 = 文件数 + 2`；缺了等于这版没发完，当场补。脚本与判据见
+  [`docs/RELEASE-CHECKLIST.md`](./docs/RELEASE-CHECKLIST.md) 第 7 步
 
 发布流程见 [`docs/RELEASE-CHECKLIST.md`](./docs/RELEASE-CHECKLIST.md)，
 加软件包见 [`docs/ADD-PACKAGE-CHECKLIST.md`](./docs/ADD-PACKAGE-CHECKLIST.md)。
