@@ -485,7 +485,7 @@ def download_file(url, temp_path, config, input_string, display_name):
     request_kwargs = {"stream": True}
 
     # SSL 验证（内部变量 SkipSSLVerify 逻辑）
-    # 统一走 lib/tls.py：询问在 handle_download_args 里已经有结论，
+    # 统一走 net/tls.py：询问在 handle_download_args 里已经有结论，
     # 这里不再自己判断 config["skip_ssl_verify"]，避免两处各说各的。
     request_kwargs.update(tls.request_kwargs())
 
