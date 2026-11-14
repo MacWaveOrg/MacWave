@@ -239,33 +239,52 @@ def confirm_skip_ssl(flags):
     单独提出来是因为 `upgrade --all` 也要问：它在确认之前就要先取索引里的名字清单，
     若只在 handle_install 里问，那一次请求就享受不到这个旗标。已经授权过就不再问，
     批量升级因此只问一次。
+
+    **拒绝 = 中止整个命令，不是「照装一份带校验的」。** 这一条 4.3.3 才改对：以前
+    答 n 会继续安装（只是不跳过校验），结果是用户明明写了 --skip-ssl 却拿到一个
+    SSL 错误 —— 看起来像旗标没生效，实际是他自己刚拒绝过。语义与 `min_os` 那道
+    询问一致：只有明确答复 y/Y 才继续，其余（含直接回车、EOF、yes）一律中止。
+
+    中止放在函数内部，是因为 `upgrade --all` 那个调用点不读返回值 —— 只有「不
+    返回」才能保证两条入口行为一致。
     """
     if tls.enabled():
+        # 已经授权过（批量升级里问过一次了），不再重复询问。
         return True
-    allowed = False
-    if "--skip-ssl" in flags:
-        if quiet.is_silent():
-            # 静默模式不提问，也**不**改走「按拒绝处理」那条路：
-            # 用户已经把旗标写出来了，那就是他的意思（与 -X 同一条原则）。
-            # 若这里默默拒绝，装失败时会抛一个 SSL 错误，而用户以为自己已经跳过了。
-            allowed = True
-        else:
-            print('🌊 You selected --skip-ssl, this will skip SSL certificate verification, which may cause security risks. Are you sure?')
-            try:
-                confirm = input().strip()
-            except (EOFError, KeyboardInterrupt):
-                # 非交互（CI / 脚本里 stdin 是 /dev/null）读不到答复：按拒绝处理，
-                # 也就是不跳过 SSL 校验 —— 缺省往安全的方向倒。
-                confirm = ""
-            allowed = confirm in ("Y", "y")
 
-    # 询问有结论之后才真正开关：答应（或静默模式）就授权，否则撤销请求，
-    # 保证下游任何一处都不会在用户拒绝后仍关掉校验。
-    if allowed:
-        tls.grant()
-    else:
+    if "--skip-ssl" not in flags:
         tls.revoke()
-    return allowed
+        return False
+
+    if quiet.is_silent():
+        # 静默模式不提问，也**不**改走「按拒绝处理」那条路：
+        # 用户已经把旗标写出来了，那就是他的意思（与 -X 同一条原则）。
+        # 若这里默默拒绝，装失败时会抛一个 SSL 错误，而用户以为自己已经跳过了。
+        tls.grant()
+        return True
+
+    # 红色：这是本工具唯一一处「用户主动要求降低安全性」的地方，提示必须
+    # 与普通询问区分开。与下面的 retry 询问同一种颜色（RED_BOLD）。
+    print(f"{RED_BOLD}🌊 You selected --skip-ssl, this will skip SSL certificate "
+          f"verification, which may cause security risks. Are you sure? [y/N]{RESET}")
+    try:
+        confirm = input().strip()
+    except (EOFError, KeyboardInterrupt):
+        # 非交互（CI / 脚本里 stdin 是 /dev/null）读不到答复：按拒绝处理，
+        # 也就是**中止** —— 缺省往安全的方向倒。
+        confirm = ""
+
+    # 白名单：只有 y/Y 继续。空答复、n、yes、乱敲、EOF 全部落到下面这条。
+    if confirm not in ("Y", "y"):
+        tls.revoke()
+        steplog.fail(
+            "not installing with --skip-ssl: the confirmation was declined",
+            hint=["nothing was downloaded or installed",
+                  "run it again and answer y at the prompt to skip verification",
+                  "or drop --skip-ssl if certificate verification works on this network"])
+
+    tls.grant()
+    return True
 
 
 def _flag_pointer(text, flag):
