@@ -319,21 +319,34 @@ fi
 # 区分开：用 RED_BOLD（1;31），与下面那个 retry 询问同一种红。
 # 故意用一个**不存在的包名**：提示在取版本列表之前就打出来，所以这一段全程只碰
 # 本地假镜像，不会真的去下载。
-out=$(wave install no_such_pkg_for_skip_ssl --skip-ssl </dev/null 2>&1)
+out=$(wave install no_such_pkg_for_skip_ssl --skip-ssl </dev/null 2>&1); rc=$?
 plain=$(strip_ansi "$out")
 ok     "提示点名了旗标"     "$plain" "--skip-ssl"
 ok     "提示说明了后果"     "$plain" "skip SSL certificate verification"
 ok     "提示问了一句"       "$plain" "Are you sure?"
+ok     "提示给了默认答案"   "$plain" "[y/N]"
 if [[ "$out" == *$'\033[1;31m🌊 You selected --skip-ssl'* ]]; then
     pass "--skip-ssl 的安全提示是红字"
 else
     fail "--skip-ssl 的安全提示不是红字（应为 RED_BOLD）"
 fi
-# 拒绝（stdin 读到 EOF）之后不该继续安装
-if [[ "$out" != *"Successfully installed"* ]]; then
-    pass "读了 EOF 之后没有继续安装"
+
+# 白名单语义：读不到答复（EOF）就算拒绝，而且**拒绝要中止**。
+# 以前这里只「不跳过校验」然后继续装 —— 用户看到的是「写了旗标却报 SSL 错」。
+if [[ $rc -eq 1 ]]; then
+    pass "拒绝之后退出码是 1"
 else
-    fail "读了 EOF 之后仍然装了 —— 缺省应当往安全的方向倒"
+    fail "拒绝之后退出码应为 1，实际 $rc"
+fi
+ok     "拒绝时说明了原因"   "$plain" "confirmation was declined"
+not_ok "拒绝之后没有继续安装" "$plain" "Successfully installed"
+
+# 只有 y/Y 才放行：'yes' 这种「像肯定但不是 y」的答复同样按拒绝处理。
+out=$(printf 'yes\n' | wave install no_such_pkg_for_skip_ssl --skip-ssl 2>&1); rc=$?
+if [[ $rc -eq 1 ]] && [[ "$(strip_ansi "$out")" == *"confirmation was declined"* ]]; then
+    pass "答 yes 不算答应（白名单只认 y/Y）"
+else
+    fail "答 yes 应当被拒绝，实际退出码 $rc"
 fi
 
 out=$(wave install jq --limt-rate=10M 2>&1)

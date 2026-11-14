@@ -1245,22 +1245,32 @@ def run_resume_case(wave, rng, plan, checks):
 
 
 def run_skip_ssl_case(wave, plan, checks):
-    """--skip-ssl：既要看到安全提示，也要能正常下载。"""
+    """--skip-ssl：安全提示是**白名单**语义 —— 只有 y/Y 继续，其余一律中止。
+
+    这里钉两件事：
+      answer=y  → 真的跳过校验、装成功
+      answer≠y  → 退出码 1，**什么都没装**（以前是「照装一份带校验的」，于是用户
+                  明明写了 --skip-ssl 却拿到一个 SSL 错误，看起来像旗标没生效）
+
+    非 y 的答复挑几个典型的：n、直接回车（空串）、以及一个像肯定但不是 y 的词。
+    """
     banner(f"--skip-ssl：{plan.name}")
-    ok = True
-    for answer, expect_skip in (("n", False), ("y", True)):
-        label = f"install {plan.token} --skip-ssl (answer={answer})"
-        argv = install_args(plan.token, "--skip-ssl")
-        result = wave.run(argv, stdin=f"{answer}\n")
-        expect(checks, result, 0, label, must_contain=("You selected --skip-ssl",))
-        if answer == "n":
-            checks.check(f"{label}: 回答 n 时不跳过校验",
-                         "SHA256 verification passed!" in (result.stdout + result.stderr),
-                         describe(result))
-        if not verify_installed(wave, plan, checks, label):
-            ok = False
-        # 每次装完都卸掉，下一轮才是干净的首次安装
-        wave.run(["uninstall", uninstall_token(plan)])
+
+    label = f"install {plan.token} --skip-ssl (answer=y)"
+    result = wave.run(install_args(plan.token, "--skip-ssl"), stdin="y\n")
+    expect(checks, result, 0, label, must_contain=("You selected --skip-ssl",))
+    ok = verify_installed(wave, plan, checks, label)
+    wave.run(["uninstall", uninstall_token(plan)])
+
+    bin_dir = wave.layout.base_dir / "bin" / f"{plan.bin_name}@{plan.version}"
+    for answer in ("n", "", "yes"):
+        shown = "⏎" if answer == "" else answer
+        label = f"install {plan.token} --skip-ssl (answer={shown})"
+        result = wave.run(install_args(plan.token, "--skip-ssl"), stdin=f"{answer}\n")
+        expect(checks, result, 1, label,
+               must_contain=("You selected --skip-ssl", "confirmation was declined"))
+        # 中止必须是「什么都没发生」，不能只是换个退出码
+        checks.check(f"{label}: 中止后没装任何东西", not bin_dir.exists(), str(bin_dir))
     return ok
 
 
