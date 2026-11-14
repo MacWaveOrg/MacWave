@@ -56,6 +56,39 @@ git switch -c 4.2 main
 
 ---
 
+## 一点六、构建号（`build_number`）怎么算
+
+每次发版都要换一个，格式固定 8 个字符：
+
+```
+318F1452
+└┬┘│└─┬─┘
+ │ │  └── 发布时刻 HHMM（24 小时制）
+ │ └───── 周几的字母：周一=A、周二=B、周三=C、周四=D、周五=E、周六=F、周日=G
+ └─────── 当天的「年内第几天」，3 位补零（01-01 → 001，12-31 → 365 或 366）
+```
+
+例：2026-11-14 是周六、年内第 318 天，14:52 发布 → `318F1452`。
+
+取当前值一行命令（别手算，闰年与周边界都是坑）：
+
+```bash
+printf '%s%s%s\n' "$(date +%j)" "$(date +%u | tr '1-7' 'ABCDEFG')" "$(date +%H%M)"
+```
+
+三条容易错的地方：
+
+- **第四位是周几，不是「第几次构建」。** 4.3.3 之前所有构建号第四位都是 `A`
+  （`295A2033`、`300A1345`、`307A1409`、`313A1704`……），多数与真实周几不符 ——
+  这条规则以前没被实现过。**历史号不回改**：它只是个标识，改了反而让旧发布说明、
+  `Selfupdate/<版本>/` 目录与 tag 对不上。
+- **`HHMM` 只用于区分同一天内的多次发布**，不参与任何版本比较。客户端比的是
+  `version`（见 [`lib/versioncmp.py`](../lib/versioncmp.py)），构建号只显示给人看。
+- **三处必须写同一个值**：`configdata/versiondata/latest_version`、
+  `Selfupdate/macwavedata/latest.toml`、发布说明头部「发布日期 · 构建号」那一行。
+
+---
+
 ## 二、正确的发布顺序
 
 ### 第 1 步：在版本分支上完成功能与文档
@@ -88,7 +121,7 @@ git switch -c 4.1          # 从 main 切出，保证历史连续
 ```bash
 # configdata/versiondata/latest_version
 version: "<新版本>"
-build_number: "<构建号>"
+build_number: "<构建号，算法见一点六>"
 branch: "4.1"
 update_command: <<< …/MacWave/4.1/lib/selfupdate.sh >>>
 ```
@@ -160,7 +193,7 @@ grep -E 'want (lib/(install|uninstall)\.sh|.*__pycache__|.*\.pyc)' /tmp/update_c
 ```toml
 version = "<新版本>"
 release_date = "YYYY-MM-DD"
-build_number = "<构建号>"
+build_number = "<构建号，算法见一点六>"
 branch = "<新分支>"
 ```
 

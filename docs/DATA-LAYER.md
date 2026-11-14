@@ -138,10 +138,14 @@ min_os: "12.1"
 
 ```toml
 version = "4.0.0"
-release_date = "2026-11-XX"
-build_number = "400A0000"
+release_date = "2026-11-14"
+build_number = "318F1452"
 branch = "4.0"
 ```
+
+`build_number` 是「年内第几天 + 周几字母（周一=A … 周日=G）+ HHMM」共 8 个字符，
+算法与取值命令见 [`RELEASE-CHECKLIST.md`](./RELEASE-CHECKLIST.md) 的一点六。
+三处指针（本文件、`configdata`、发布说明）必须写同一个值。
 
 为什么分两个文件：`latest.toml` 每次发版都变，`update_commands.sh` 按版本冻结。混在一起
 就没法让装了旧版本的用户继续用他们那份说明——而旧版本仍在运行。
