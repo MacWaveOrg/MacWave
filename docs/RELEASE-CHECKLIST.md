@@ -301,7 +301,7 @@ tag 不可变但标题可变，改档位不需要动 tag。
 判据只有一个，能用命令验：
 
 ```
-资产数 = 该 tag 下 .py / .sh 的个数 + 2（两个归档）
+资产数 = 该 tag 下 .py / .sh 的个数 + 4（两个归档 + `SHA256SUMS` + `SHA256SUMS.asc`）
 ```
 
 这行字是 2026-11 才写下的，起因是 `v4.3.1` 与 `v4.3.2` 两个 Release 各有 **0 个资产**
@@ -348,7 +348,7 @@ gh release upload "$TAG" "MacWave-<版本>.tar" "MacWave-<版本>.tar.gz" -R Mac
 
 ```bash
 gh release view "$TAG" -R MacWaveOrg/MacWave --json assets --jq '.assets | length'
-# 应等于 py/sh 文件数 + 2（4.1.0 是 46 + 2 = 48）
+# 应等于 py/sh 文件数 + 4（4.3.3 是 77 + 4 = 81）
 ```
 
 五个容易踩的点：
@@ -403,7 +403,8 @@ gh release view "$TAG" -R MacWaveOrg/MacWave --json assets --jq '.assets | lengt
 所以加了守卫，判据是**数量与名字都要对**：
 
 ```
-期望资产数 = 该 tag 下全部 .py/.sh（排除 . 开头的目录）+ 2 个归档
+期望资产数 = 该 tag 下全部 .py/.sh（排除 . 开头的目录）+ 2 个归档 + 2 份签名
+（4.3.3 及以前发布的版本没有签名对，守卫按 publishedAt 放行；见下一节）
 ```
 
 | 触发 | 什么时候 |
@@ -424,6 +425,38 @@ for tag in v4.3.0 v4.3.1 v4.3.2; do
         | xargs -I{} echo "$tag 实际 {}"
 done
 ```
+
+#### 签名：`SHA256SUMS` + `SHA256SUMS.asc`
+
+资产传完之后再补两份文件，让**任何人**能核对「这批字节确实是 MacWave 发的」：
+
+```bash
+cd /tmp/rel && ls | grep -vE '^SHA256SUMS' | xargs shasum -a 256 > SHA256SUMS
+gpg --armor --detach-sign --output SHA256SUMS.asc SHA256SUMS
+gpg --verify SHA256SUMS.asc SHA256SUMS     # Good signature
+shasum -a 256 -c SHA256SUMS                # 全部 OK
+gh release upload "$TAG" SHA256SUMS SHA256SUMS.asc -R MacWaveOrg/MacWave --clobber
+```
+
+三条不能省：
+
+- **签清单，不逐文件签。** 验一次 `SHA256SUMS.asc` 就覆盖全部资产；逐个签是 79 次
+  操作、零额外收益。
+- **生成清单要 `grep -v '^SHA256SUMS'`。** 第二次跑的时候它已经在目录里，把自己算进去，
+  下一次 `-c` 必然失败。
+- **`.asc` 要 armored。** 能直接贴进 Release 正文与 Issue，拿到的人不看文档也知道
+  `gpg --verify`。
+
+公钥与指纹要发在**至少两个渠道**（仓库 `keys/`、README、官网、Release 正文），
+单渠道公布等于没公布 —— 能换资产的人通常也能换那一个渠道。
+
+守卫工作流按 `publishedAt` 判断：**2026-11-15 起发布的 Release 必须带这两份**，
+更早的（含补发的旧版本）允许没有。判据是发布日期，不是 tag 号 —— 补发一个旧版本时
+不该被要求补签。只有一份（缺 `.asc` 或只有 `.asc`）在任何日期都是错误：那比完全没有
+更糟，用户会以为「有签名」，去验时 404。
+
+密钥的生成、备份、轮换与格式说明见 `~/MD/密钥/`（不在仓库里，私钥相关的东西一律
+不进版本控制）。
 
 ### 第 8 步：等 CI 绿 —— 两条流水线都要绿
 

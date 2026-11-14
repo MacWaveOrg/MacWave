@@ -388,8 +388,10 @@ git push origin 4.1
 - 测试：见「测试」一节 —— 会改动系统的测试必须先设 `MACWAVE_TEST`
 - 推送：见「推送」一节 —— 没有实质内容不要单独推，CircleCI 额度有限
 - 发布：每个 Release 必须附该 tag 下**全部**源码（`.py` / `.sh` 扁平）+ 2 个源码树归档，
-  `资产数 = 文件数 + 2`；缺了等于这版没发完，当场补。脚本与判据见
+  2026-11-15 起再加 `SHA256SUMS` 与 `SHA256SUMS.asc` 两份签名，
+  `资产数 = 文件数 + 4`；缺了等于这版没发完，当场补。脚本与判据见
   [`docs/RELEASE-CHECKLIST.md`](./docs/RELEASE-CHECKLIST.md) 第 7 步
+- 密钥：私钥一律不进仓库、不进 CI、不进 Actions secret。签名只在本机做，CI 只负责验
 
 发布流程见 [`docs/RELEASE-CHECKLIST.md`](./docs/RELEASE-CHECKLIST.md)，
 加软件包见 [`docs/ADD-PACKAGE-CHECKLIST.md`](./docs/ADD-PACKAGE-CHECKLIST.md)。

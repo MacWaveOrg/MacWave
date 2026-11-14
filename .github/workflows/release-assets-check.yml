@@ -1,9 +1,12 @@
 name: Keep release assets complete
 
-# 每个 Release 必须附上该 tag 下的**全部** .py / .sh（扁平、原文件名）与两份源码归档:
+# 每个 Release 必须附上该 tag 下的**全部** .py / .sh（扁平、原文件名）、两份源码归档，
+# 以及 2026-11-15 起必须成对出现的签名清单:
 #
 #     MacWave-<版本>.tar
 #     MacWave-<版本>.tar.gz
+#     SHA256SUMS          ← 全部资产的 sha256
+#     SHA256SUMS.asc      ← 对上面那份的 GPG 分离签名
 #
 # 为什么值得单独一个工作流：漏了不会让任何东西报错。客户端从分支下的文件取代码
 # （见 update_commands.sh），Release 资产不参与安装流程 —— 所以一个资产为零的
@@ -45,6 +48,10 @@ jobs:
       - name: Verify every recent release ships its sources
         run: |
           set -uo pipefail
+
+          # 从这个日期（含）起发布的 Release 必须带 SHA256SUMS + SHA256SUMS.asc。
+          # 判据是 publishedAt，不是 tag 名 —— 补发一个旧版本时不该被要求补签。
+          SIG_REQUIRED_FROM="2026-11-15"
 
           # 索引更新之类的非代码 Release 不适用（它们没有 tag 下的源码可附）。
           if [[ -n "$ONLY_TAG" ]]; then
@@ -102,15 +109,38 @@ jobs:
             done
 
             total=$(wc -l < /tmp/have.txt | tr -d ' ')
-            expected_total=$((want + 2))
+
+            # 签名对：要么两份都在，要么都不在。只有一份比完全没有更糟 ——
+            # 用户会以为「有签名」，真去验却 404。
+            has_sum=0; grep -qx 'SHA256SUMS' /tmp/have.txt && has_sum=1
+            has_sig=0; grep -qx 'SHA256SUMS.asc' /tmp/have.txt && has_sig=1
+            sig_count=$((has_sum + has_sig))
+
+            if [[ "$sig_count" -eq 1 ]]; then
+              failed=$((failed + 1))
+              echo "::error::$tag 的签名只有一份：SHA256SUMS 与 SHA256SUMS.asc 必须成对出现"
+              echo "  补法见 docs/RELEASE-CHECKLIST.md 第 7 步的「签名」小节"
+              continue
+            fi
+
+            published=$(gh release view "$tag" --repo "$REPO" --json publishedAt --jq '.publishedAt // ""')
+            published_day="${published:0:10}"
+            if [[ -n "$published_day" && ! "$published_day" < "$SIG_REQUIRED_FROM" && "$sig_count" -eq 0 ]]; then
+              failed=$((failed + 1))
+              echo "::error::$tag 发布于 $published_day，从 $SIG_REQUIRED_FROM 起必须附 SHA256SUMS 与 SHA256SUMS.asc"
+              echo "  生成与签名见 docs/RELEASE-CHECKLIST.md 第 7 步的「签名」小节"
+              continue
+            fi
+
+            expected_total=$((want + 2 + sig_count))
 
             if [[ "$missing_count" -eq 0 && "$total" -eq "$expected_total" ]]; then
-              echo "  ok: ${total} 个资产（${want} 源码 + 2 归档）"
+              echo "  ok: ${total} 个资产（${want} 源码 + 2 归档 + ${sig_count} 签名）"
               continue
             fi
 
             failed=$((failed + 1))
-            echo "::error::$tag 的资产不全：期望 ${expected_total} 个（${want} 源码 + 2 归档），实际 ${total} 个"
+            echo "::error::$tag 的资产不全：期望 ${expected_total} 个（${want} 源码 + 2 归档 + ${sig_count} 签名），实际 ${total} 个"
             if [[ -n "$missing" ]]; then
               echo "::error::$tag 缺少 ${missing_count} 个：$(printf '%s' "$missing" | tr '\n' ' ')"
             fi
