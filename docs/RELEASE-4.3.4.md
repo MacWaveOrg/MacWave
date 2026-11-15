@@ -132,7 +132,7 @@ incident started** (a stale pointer sent a 4.4 tree down the 4.3.2 delta path).
 | `Selfupdate` | `macwavedata/latest.toml` → 4.3.4 / branch `4.3` |
 | `configdata` | `versiondata/latest_version` → 4.3.4 / branch `4.3` |
 | `Pages` | version → 4.3.4 |
-| `MacWave` Release `v4.3.4` | every `.py` / `.sh` at the tag, flat, plus `MacWave-4.3.4.tar` and `.tar.gz` — plus `SHA256SUMS` |
+| `MacWave` Release `v4.3.4` | every `.py` / `.sh` at the tag, flat, plus `MacWave-4.3.4.tar` and `.tar.gz` |
 
 ---
 
@@ -259,4 +259,4 @@ wave selfupdate
 | `Selfupdate` | `macwavedata/latest.toml` → 4.3.4 / 分支 `4.3` |
 | `configdata` | `versiondata/latest_version` → 4.3.4 / 分支 `4.3` |
 | `Pages` | 版本号 → 4.3.4 |
-| `MacWave` 的 Release `v4.3.4` | 该 tag 下全部 `.py` / `.sh`（扁平）+ `MacWave-4.3.4.tar` 与 `.tar.gz`，外加 `SHA256SUMS` |
+| `MacWave` 的 Release `v4.3.4` | 该 tag 下全部 `.py` / `.sh`（扁平）+ `MacWave-4.3.4.tar` 与 `.tar.gz` |
