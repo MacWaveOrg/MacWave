@@ -15,14 +15,27 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(ROOT / "config"))
 sys.path.insert(0, str(ROOT / "cli"))
 
-from configerror import check_environment, check_dependencies
-check_environment()
-check_dependencies()
+try:
+    from configerror import check_environment, check_dependencies
+    check_environment()
+    check_dependencies()
 
+    # -------------------- 配置与模块路径 --------------------
 
-# -------------------- 配置与模块路径 --------------------
-
-from configpaths import load_base_dir
+    from configpaths import load_base_dir
+except ModuleNotFoundError as exc:
+    # 安装树不完整（少了一个模块）。这种情况**必须给一条能照做的命令**，不能甩
+    # 一句 traceback：wave 起不来，患者手里就只剩 install.sh —— 而 2026-11-15
+    # 那次正是两者同时失效，用户试了七八次都以为是自己敲错了。
+    # 用 print 而不是 steplog：那些模块现在恰恰就是缺的那一批。
+    import sys as _sys
+    print(f"🌊 Error: this MacWave installation is incomplete: {exc}", file=_sys.stderr)
+    print(f"🌊 At        {Path(__file__).resolve()}", file=_sys.stderr)
+    print("🌊 Next      reinstall it (nothing you installed will be removed):", file=_sys.stderr)
+    print('🌊             /bin/bash -c "$(curl -fsSL '
+          'https://github.com/MacWaveOrg/MacWave/releases/latest/download/install.sh)"',
+          file=_sys.stderr)
+    _sys.exit(1)
 
 BASE_DIR = load_base_dir()
 CLI_DIR = BASE_DIR / "cli"

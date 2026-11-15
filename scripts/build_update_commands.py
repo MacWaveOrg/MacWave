@@ -129,6 +129,16 @@ def want_lines(paths):
     return "\n".join(lines)
 
 
+def list_lines(paths):
+    """全量清单的裸路径，一行一个，给脚本里的 tree_complete() 用。
+
+    与 want_lines 分开写：判断「安装树完整吗」只需要路径，不需要 +x 标记。
+    两者必须来自同一个 files 列表 —— 各写一份就会漂移，而漂移的后果是
+    「自检说完整、实际缺文件」（比不检查更糟）。
+    """
+    return "\n".join(paths)
+
+
 TEMPLATE = open(Path(__file__).resolve().parent / "update_commands.template.sh").read()
 
 
@@ -204,6 +214,7 @@ def main():
                         .replace("@@VERSION@@", args.version)
                         .replace("@@BRANCH@@", branch)
                         .replace("@@FULL@@", want_lines(files))
+                        .replace("@@FULL_FILES@@", list_lines(files))
                         .replace("@@DELTA@@", want_lines(delta)))
     args.out.chmod(0o755)
 

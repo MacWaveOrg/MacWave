@@ -156,18 +156,57 @@ install_delta() {
 @@DELTA@@
 }
 
+# 本版安装树应有的全部文件（与 install_fresh 同一份清单，见生成器里的 list_lines）。
+FULL_FILES="
+@@FULL_FILES@@
+"
+
+tree_complete() {
+    # 判断这棵安装树是不是「本版应有的文件一个不缺」。
+    #
+    # 为什么不能只看 lib/wave.py 在不在：那种判据会把三种坏树当成好树 ——
+    #   1. 上一版留下的一半升级（下到第 20 个文件时断网 / Ctrl-C）
+    #   2. 跨版本跳级升级：4.1.0 直接升 4.3.3，delta 只含 4.3.2→4.3.3 的差异
+    #   3. 文件被手工删过（2026-11-15 就出现过：4.4 的迁移删掉 lib/configerror.py，
+    #      但 lib/wave.py 还是 4.3.x 的，于是 wave 连启动都做不到）
+    # 缺一个就走全量，代价是多重下几个文件，换的是「永远能自愈」。
+    local path
+    for path in $FULL_FILES; do
+        [ -e "$MACWAVE_INSTALL_DIR/$path" ] || return 1
+    done
+    return 0
+}
+
 main() {
-    if [ "${MACWAVE_CURRENT_VERSION:-}" = "$VERSION" ]; then
+    # 「已经是这个版本」也要先确认树是完整的。VERSION.json 只证明「上次跑完过」，
+    # 不证明文件还在 —— 只信版本号的话，一棵坏树会永远停在 "Already at"，
+    # 无论跑多少次都不会修好（这正是 2026-11-15 那次的形态）。
+    if [ "${MACWAVE_FULL_INSTALL:-}" != "1" ] \
+       && [ "${MACWAVE_CURRENT_VERSION:-}" = "$VERSION" ] \
+       && tree_complete; then
         mw_say "🌊 Already at $VERSION; nothing to download." "🌊 已经是 ${VERSION}，无需下载。"
         return 0
     fi
 
-    if [ -f "$MACWAVE_INSTALL_DIR/lib/wave.py" ]; then
-        mw_say "🌊 Updating MacWave ${MACWAVE_CURRENT_VERSION:-unknown} -> $VERSION" "🌊 正在更新 MacWave ${MACWAVE_CURRENT_VERSION:-unknown} -> $VERSION"
-        install_delta || return 1
-    else
+    if [ "${MACWAVE_FULL_INSTALL:-}" = "1" ] || [ ! -f "$MACWAVE_INSTALL_DIR/lib/wave.py" ]; then
         mw_say "🌊 Installing MacWave $VERSION" "🌊 正在安装 MacWave $VERSION"
         install_fresh || return 1
+    elif ! tree_complete; then
+        # 树在那儿但不完整：增量的前提（「没变动的文件都是对的」）不成立，
+        # 直接全量补齐。这里不先跑 delta —— 缺的文件正好可能就是它要留着的那些。
+        mw_say "🌊 The installed tree is incomplete; reinstalling all of MacWave $VERSION"
+        mw_say "🌊 安装树不完整，正在重新安装 MacWave ${VERSION} 的全部文件"
+        install_fresh || return 1
+    else
+        mw_say "🌊 Updating MacWave ${MACWAVE_CURRENT_VERSION:-unknown} -> $VERSION" "🌊 正在更新 MacWave ${MACWAVE_CURRENT_VERSION:-unknown} -> $VERSION"
+        install_delta || return 1
+        # 增量之后再确认一次：delta 只含「上一版 → 本版」的差异，跨版本跳级时
+        # 会漏掉中间那些版本改过的文件。补全比报错好 —— 用户什么也没做错。
+        if ! tree_complete; then
+            mw_say "🌊 Some files are still missing after the update; fetching all of MacWave $VERSION"
+            mw_say "🌊 更新后仍有文件缺失，正在补齐 MacWave ${VERSION} 的全部文件"
+            install_fresh || return 1
+        fi
     fi
 
     # ── 目录结构变更的迁移写在这里 ──
@@ -194,12 +233,17 @@ main() {
     # 说不清；而这里 lib/ 仍在 sys.path 上，留着 lib/help.py 就等于「同一个模块有
     # 两份，哪份生效看路径顺序」—— wave.py 把 cli/ 排在 lib/ 之前，于是跑的是新的，
     # 但下一次有人调整顺序就会悄悄退回旧代码。删掉才没有第二种可能。
+    #
+    # lib/quiet.py 是漏过一次的：4.1.4 起它一直在清单里，4.4 把它并进了
+    # cli/silent.py，但它没被列进这份删除名单 —— 于是从 4.1.4~4.3.3 升上来的树里
+    # 会永久留一份没人 import 的 quiet.py。查出来时是 2026-11-15。
     for stale in "$MACWAVE_INSTALL_DIR/lib/configpaths.py" \
                  "$MACWAVE_INSTALL_DIR/lib/configerror.py" \
                  "$MACWAVE_INSTALL_DIR/lib/help.py" \
                  "$MACWAVE_INSTALL_DIR/lib/flags.py" \
                  "$MACWAVE_INSTALL_DIR/lib/suggest.py" \
-                 "$MACWAVE_INSTALL_DIR/lib/silent.py"; do
+                 "$MACWAVE_INSTALL_DIR/lib/silent.py" \
+                 "$MACWAVE_INSTALL_DIR/lib/quiet.py"; do
         if [ -f "$stale" ]; then
             run rm -f "$stale" || exit 1
         fi

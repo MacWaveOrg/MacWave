@@ -405,6 +405,90 @@ fi
 
 # ==========================================================
 echo
+echo "========== 12. 安装树不完整必须自愈（不能只信 VERSION.json）=========="
+# 2026-11-15 真机上出现过：wave 一启动就 ModuleNotFoundError，因为树里
+# lib/configerror.py 被上一条迁移删了、lib/wave.py 却还是旧版的。
+# 当时无论怎么重装都没用 —— 脚本只判断 lib/wave.py 在不在，于是永远走增量
+# （那次增量只有 1 个文件），而 VERSION.json 说「已经是这个版本」时更是直接
+# 返回 "Already at"，连下载都不做。四条断言把自愈行为钉死。
+if command -v python3 >/dev/null 2>&1; then
+    mkdir -p "$WORK/www4/main/lib"
+    printf 'new a\n' > "$WORK/www4/main/lib/a.py"
+    printf 'new b\n' > "$WORK/www4/main/lib/b.py"
+    gen "$WORK/heal.sh" --files lib/a.py lib/b.py >/dev/null 2>&1
+
+    PORT4=$(( 20000 + (RANDOM % 400) ))
+    ( cd "$WORK/www4" && exec python3 -m http.server "$PORT4" --bind 127.0.0.1 ) >/dev/null 2>&1 &
+    server4=$!
+    for _ in $(seq 1 40); do
+        if python3 -c "import socket,sys; s=socket.socket(); s.settimeout(0.2); sys.exit(0 if s.connect_ex(('127.0.0.1',$PORT4))==0 else 1)"; then
+            break
+        fi
+        sleep 0.1
+    done
+
+    heal() {  # heal <安装目录> <当前版本> [FULL_INSTALL]
+        MACWAVE_INSTALL_DIR="$1" \
+        MACWAVE_CORE_URL="http://127.0.0.1:$PORT4" \
+        MACWAVE_BRANCH=main \
+        MACWAVE_CURRENT_VERSION="$2" \
+        MACWAVE_FULL_INSTALL="${3:-}" \
+        MACWAVE_LANG=en \
+        bash "$WORK/heal.sh" 2>&1
+    }
+
+    # A) 树完整 + 版本号已到位 → 应该什么都不做
+    I_A="$WORK/heal-a"; mkdir -p "$I_A/lib"
+    printf 'w\n' > "$I_A/lib/wave.py"; printf 'old a\n' > "$I_A/lib/a.py"; printf 'old b\n' > "$I_A/lib/b.py"
+    out=$(heal "$I_A" 9.9.9)
+    expect "完整树且版本相同 → Already at" "$out" "Already at 9.9.9"
+    if [[ "$(cat "$I_A/lib/a.py")" == "old a" ]]; then
+        pass "完整树且版本相同时没有重下文件"
+    else
+        fail "完整树且版本相同时不该重下文件"
+    fi
+
+    # B) 版本号已到位但文件缺一个 → 必须修，而不是 "Already at"
+    I_B="$WORK/heal-b"; mkdir -p "$I_B/lib"
+    printf 'w\n' > "$I_B/lib/wave.py"; printf 'old a\n' > "$I_B/lib/a.py"
+    out=$(heal "$I_B" 9.9.9)
+    expect_absent "版本号到位但缺文件时不说 Already at" "$out" "Already at"
+    if [[ "$(cat "$I_B/lib/b.py" 2>/dev/null)" == "new b" ]]; then
+        pass "缺的文件被补上了（版本号相同也照样修）"
+    else
+        fail "缺的文件没被补上 —— 这棵树永远修不好"
+    fi
+
+    # C) 版本不同、树又不完整 → 走全量，不走增量
+    I_C="$WORK/heal-c"; mkdir -p "$I_C/lib"
+    printf 'w\n' > "$I_C/lib/wave.py"
+    out=$(heal "$I_C" 1.0.0)
+    expect "树不完整时走全量" "$out" "reinstalling all of MacWave 9.9.9"
+    if [[ -f "$I_C/lib/a.py" && -f "$I_C/lib/b.py" ]]; then
+        pass "全量把缺的文件都装上了"
+    else
+        fail "全量之后仍然缺文件"
+    fi
+
+    # D) MACWAVE_FULL_INSTALL=1 → 即使树完整、版本相同也重装全部
+    I_D="$WORK/heal-d"; mkdir -p "$I_D/lib"
+    printf 'w\n' > "$I_D/lib/wave.py"; printf 'old a\n' > "$I_D/lib/a.py"; printf 'old b\n' > "$I_D/lib/b.py"
+    out=$(heal "$I_D" 9.9.9 1)
+    expect "强制全量不问版本号" "$out" "Installing MacWave 9.9.9"
+    if [[ "$(cat "$I_D/lib/a.py")" == "new a" ]]; then
+        pass "强制全量真的覆盖了旧文件"
+    else
+        fail "强制全量没有覆盖旧文件"
+    fi
+
+    kill "$server4" 2>/dev/null || true
+    wait "$server4" 2>/dev/null || true
+else
+    echo "  ·  跳过：没有 python3 起本地服务"
+fi
+
+# ==========================================================
+echo
 echo "=========================================="
 echo -e "🌊 Passed: $PASSED"
 echo -e "🌊 Failed: $FAILED"
