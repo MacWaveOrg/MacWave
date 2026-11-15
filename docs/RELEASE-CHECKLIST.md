@@ -450,7 +450,7 @@ gh release upload "$TAG" SHA256SUMS SHA256SUMS.asc -R MacWaveOrg/MacWave --clobb
 公钥与指纹要发在**至少两个渠道**（仓库 `keys/`、README、官网、Release 正文），
 单渠道公布等于没公布 —— 能换资产的人通常也能换那一个渠道。
 
-守卫工作流按 `publishedAt` 判断：**2026-11-15 起发布的 Release 必须带这两份**，
+守卫工作流按 `publishedAt` 判断：**2026-12-01 起发布的 Release 必须带这两份**，
 更早的（含补发的旧版本）允许没有。判据是发布日期，不是 tag 号 —— 补发一个旧版本时
 不该被要求补签。只有一份（缺 `.asc` 或只有 `.asc`）在任何日期都是错误：那比完全没有
 更糟，用户会以为「有签名」，去验时 404。
