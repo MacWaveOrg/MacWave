@@ -1,8 +1,10 @@
 # MacWave 4.4.0-beta2
 
 Prerelease. `releases/latest` still points at 4.3.4 — installing this build is a
-deliberate choice, and `wave selfupdate` will move you **back** to the stable line
-when a newer 4.3.x ships.
+deliberate choice. On a beta, `wave selfupdate` refuses to run: betas live on their own
+branch, and selfupdate would mix two lines of code in one tree. Moving between lines —
+beta to stable, or beta to the next stable — is a reinstall, and the refusal prints the
+exact command.
 
 ## What changed since beta1
 
@@ -42,8 +44,10 @@ stable build:
 
 # MacWave 4.4.0-beta2
 
-预发布版。`releases/latest` 仍指向 4.3.4 —— 装这个版本是一个明确的选择；等 4.3.x
-出了更新的正式版，`wave selfupdate` 会把你带回稳定线。
+预发布版。`releases/latest` 仍指向 4.3.4 —— 装这个版本是一个明确的选择。在 beta 上
+`wave selfupdate` 会**拒绝执行**：beta 在自己的分支上，selfupdate 会把两条线的代码
+混进一棵树。换线（beta 回稳定、或 beta 升下一个正式版）都是重装一次，拒绝时会打印
+具体命令。
 
 ## 相对 beta1 改了什么
 
