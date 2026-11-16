@@ -315,7 +315,7 @@ if [[ -n "$CURRENT_VERSION" ]] && is_prerelease "$CURRENT_VERSION"; then
     echo -e "${RED_BOLD}🌊 Error: MacWave $CURRENT_VERSION is a beta build, and selfupdate does not handle beta builds.${RESET}" >&2
     echo -e "${RED_BOLD}🌊 Why       betas live on their own branch; selfupdate would mix two lines of code in one tree.${RESET}" >&2
     echo -e "${RED_BOLD}🌊 Next      install the version you want from its Release page:${RESET}" >&2
-    echo -e "${RED_BOLD}🌊           stable: /bin/bash -c \"\$(curl -fsSL https://github.com/MacWaveOrg/MacWave/releases/latest/download/install.sh)\"${RESET}" >&2
+    echo -e "${RED_BOLD}🌊           stable: /bin/bash -c \"\$(curl -fsSL --max-time 60 https://github.com/MacWaveOrg/MacWave/releases/latest/download/install.sh)\"${RESET}" >&2
     echo -e "${RED_BOLD}🌊           this beta: https://github.com/MacWaveOrg/MacWave/releases/tag/v$CURRENT_VERSION${RESET}" >&2
     echo -e "${RED_BOLD}🌊 Your current installation has not been changed.${RESET}" >&2
     exit 1

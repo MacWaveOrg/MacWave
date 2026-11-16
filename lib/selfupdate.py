@@ -158,7 +158,10 @@ version_key = versioncmp.sort_key
 # 官方安装入口。beta 用户被拦下来之后要照着这条命令重装，所以写在这里而不是
 # 只在文案里 —— 同一个地址在 install.sh 的用法注释、官网、发布说明里也有，
 # 改的时候一起改。
+# 命令里的 curl 也带 --max-time：这条是给用户抄的，没有超时就会一直挂着。
+# scripts/net_policy_test.sh 里那条契约同样要求每个 curl 有超时 —— 打印出来的也算。
 INSTALL_SH_URL = "https://github.com/MacWaveOrg/MacWave/releases/latest/download/install.sh"
+INSTALL_SH_TIMEOUT = "--max-time 60"
 RELEASE_TAG_URL = "https://github.com/MacWaveOrg/MacWave/releases/tag"
 
 
@@ -178,7 +181,7 @@ def refuse_on_prerelease(current):
     print(f"{RED_BOLD}🌊 Why       betas live on their own branch; selfupdate would mix two "
           f"lines of code in one tree.{RESET}")
     print(f"{RED_BOLD}🌊 Next      install the version you want from its Release page:{RESET}")
-    print(f"{RED_BOLD}🌊           stable: /bin/bash -c \"$(curl -fsSL {INSTALL_SH_URL})\"{RESET}")
+    print(f"{RED_BOLD}🌊           stable: /bin/bash -c \"$(curl -fsSL {INSTALL_SH_TIMEOUT} {INSTALL_SH_URL})\"{RESET}")
     print(f"{RED_BOLD}🌊           this beta: {RELEASE_TAG_URL}/v{current}{RESET}")
     print(f"{RED_BOLD}🌊 Your current installation has not been changed.{RESET}")
     sys.exit(1)

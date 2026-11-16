@@ -362,6 +362,11 @@ git push origin 4.1
 
 - **只标记纯文档提交。** 碰了 `lib/`、`pkg/`、`surfboard/`、`scripts/` 就照常跑，
   双绿门槛见上一节。
+- **一次推送里既有代码又有文档时，别把带标记的那条放在最后。** 判据是「最后一条」，
+  所以「先推代码、再补一条 docs + 标记」会让**整次**推送不建 pipeline，代码提交
+  从未被验证 —— 2026-11-16 实际发生过（`912eeef` 是代码，`50740b7` 是文档带标记）。
+  要么把文档提交放到代码提交之前，要么事后手动补一次：
+  `gh workflow run format-test.yml --ref <分支>`（`workflow_dispatch` 不受标记影响）。
 - **`sync-release-branch.yml` 也会被跳过** —— 往 `4.1` 推 `[skip ci]` 之后 `main`
   不会自动跟上。要么等下一次正常推送（它会自己补），要么手动跑一次：
   `gh workflow run sync-release-branch.yml --repo MacWaveOrg/MacWave`。
