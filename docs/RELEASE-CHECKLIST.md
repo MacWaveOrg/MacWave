@@ -430,6 +430,31 @@ for tag in v4.3.0 v4.3.1 v4.3.2; do
 done
 ```
 
+#### beta 只能在它自己的 Release 上装
+
+`MACWAVE_VERSION` / `MACWAVE_BRANCH` 这两个环境变量是 beta 的**唯一**安装口：
+
+```bash
+MACWAVE_VERSION=4.4.0-beta2 MACWAVE_BRANCH=4.4 \
+  /bin/bash -c "$(curl -fsSL https://github.com/MacWaveOrg/MacWave/releases/download/v4.4.0-beta2/install.sh)"
+```
+
+`install.sh` 从发布指针（`latest.toml`）读版本号，**不从它被下载的那个 URL 读** ——
+只写 tag URL、不带这两个变量，装的其实是当前正式版。`4.4.0-beta2` 的说明第一版就写
+错过这一点，等于让人白装一次。
+
+三条连带规则：
+
+- **`latest.toml` 永远不写 beta。** 写进去所有人的常规更新都会跳上 beta。
+- **beta 上 `wave selfupdate` 一律拒绝**（`lib/selfupdate.py` 与 `lib/selfupdate.sh`
+  各一处，共用 `lib/versioncmp.py` 的判定）。理由是 beta 与正式版在不同分支上，
+  而 selfupdate 的增量按 `latest.toml` 的分支算 —— 盖到一棵 beta 树上就是两条线
+  混在一起（2026-11-15 那次 `wave` 启动即崩，就是这么来的）。
+- **回稳定线也是重装**：`/bin/bash -c "$(curl -fsSL .../releases/latest/download/install.sh)"`。
+
+写 beta 的发布说明时，安装命令必须是上面那两行带变量的形式，且明说「不带变量会装到
+正式版」。
+
 #### 签名：`SHA256SUMS` + `SHA256SUMS.asc`
 
 资产传完之后再补两份文件，让**任何人**能核对「这批字节确实是 MacWave 发的」：

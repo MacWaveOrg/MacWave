@@ -392,6 +392,9 @@ git push origin 4.1
   `资产数 = 文件数 + 4`；缺了等于这版没发完，当场补。脚本与判据见
   [`docs/RELEASE-CHECKLIST.md`](./docs/RELEASE-CHECKLIST.md) 第 7 步
 - 密钥：私钥一律不进仓库、不进 CI、不进 Actions secret。签名只在本机做，CI 只负责验
+- beta：`latest.toml` 永不写 beta；装 beta 只能带
+  `MACWAVE_VERSION=<版本> MACWAVE_BRANCH=<分支>` 跑对应 tag 的 `install.sh`
+  （不带变量装到的是正式版）；beta 上 `wave selfupdate` 一律拒绝，回稳定线也是重装
 
 发布流程见 [`docs/RELEASE-CHECKLIST.md`](./docs/RELEASE-CHECKLIST.md)，
 加软件包见 [`docs/ADD-PACKAGE-CHECKLIST.md`](./docs/ADD-PACKAGE-CHECKLIST.md)。

@@ -237,6 +237,90 @@ else
 fi
 
 # ==========================================
+# 3.5 beta 版不许 selfupdate（Python 与 shell 两条入口都要拦）
+# ==========================================
+#
+# beta 与正式版在不同分支上，selfupdate 的增量按 latest.toml 里那条正式版分支算 ——
+# 盖到一棵 beta 树上就是两条线混在一起（2026-11-15 那次 wave 启动即崩的成因）。
+# 两条入口分别验：wave selfupdate 走 selfupdate.py，直接 bash 走 selfupdate.sh。
+#
+# 全程离线：python 那条在联网之前就退出；shell 那条用 MACWAVE_UPDATE_VERSION
+# 跳过取 latest.toml。两条都不该改动 VERSION.json。
+
+echo "========== beta builds cannot selfupdate =========="
+
+BETA_VERSION="4.4.0-beta2"
+cp "$VERSION_FILE" "$SU_WORK/VERSION.json.bak"
+python3 - "$VERSION_FILE" "$BETA_VERSION" << 'PYEOF'
+import json
+import sys
+
+path, beta = sys.argv[1], sys.argv[2]
+with open(path) as handle:
+    data = json.load(handle)
+data["version"] = beta
+with open(path, "w") as handle:
+    json.dump(data, handle, indent=2)
+PYEOF
+
+LOG_FILE="$(mktemp)"
+RC=0
+python3 "$WAVE_BIN" selfupdate > "$LOG_FILE" 2>&1 || RC=$?
+cat "$LOG_FILE"
+
+if [[ "$RC" -ne 0 ]] && grep -q 'is a beta build' "$LOG_FILE"; then
+    echo -e "${GREEN}🌊 OK: wave selfupdate refuses a beta${RESET}"
+else
+    echo -e "${RED_BOLD}🌊 FAIL: expected wave selfupdate to refuse a beta (exit $RC)${RESET}"
+    FAILED=$((FAILED + 1))
+fi
+
+# 必须在联网之前就退出 —— 否则用户先看到 "Fetching the latest version..."，
+# 以为在正常推进，然后才被拒绝。
+if grep -q 'Fetching the latest version' "$LOG_FILE"; then
+    echo -e "${RED_BOLD}🌊 FAIL: the refusal happened after contacting the network${RESET}"
+    FAILED=$((FAILED + 1))
+else
+    echo -e "${GREEN}🌊 OK: refused before any network request${RESET}"
+fi
+
+# 拒绝必须把话说全：为什么、去哪装、以及装了什么命令。用户在 beta 上被拦住，
+# 唯一出路就是重装，命令不能让他自己去找。
+if grep -q 'install.sh' "$LOG_FILE" && grep -q "releases/tag/v$BETA_VERSION" "$LOG_FILE"; then
+    echo -e "${GREEN}🌊 OK: the refusal names the reinstall command and the Release page${RESET}"
+else
+    echo -e "${RED_BOLD}🌊 FAIL: the refusal does not say how to install${RESET}"
+    FAILED=$((FAILED + 1))
+fi
+rm -f "$LOG_FILE"
+
+# shell 那条入口：直接执行 lib/selfupdate.sh（文件头写着这条路，3.x 的
+# update_command 也走它）。MACWAVE_UPDATE_VERSION 让它跳过取 latest.toml，
+# 于是这一段不碰网络。
+LOG_FILE="$(mktemp)"
+RC=0
+MACWAVE_UPDATE_VERSION=4.0.1 MACWAVE_UPDATE_BRANCH=4.0 \
+    bash "$SELFUPDATE_SH" > "$LOG_FILE" 2>&1 || RC=$?
+cat "$LOG_FILE"
+
+if [[ "$RC" -ne 0 ]] && grep -q 'is a beta build' "$LOG_FILE"; then
+    echo -e "${GREEN}🌊 OK: lib/selfupdate.sh refuses a beta too${RESET}"
+else
+    echo -e "${RED_BOLD}🌊 FAIL: lib/selfupdate.sh did not refuse a beta (exit $RC)${RESET}"
+    FAILED=$((FAILED + 1))
+fi
+rm -f "$LOG_FILE"
+
+if [[ "$(python3 -c "import json; print(json.load(open('$VERSION_FILE'))['version'])")" == "$BETA_VERSION" ]]; then
+    echo -e "${GREEN}🌊 OK: VERSION.json untouched by both refusals${RESET}"
+else
+    echo -e "${RED_BOLD}🌊 FAIL: a refusal changed VERSION.json${RESET}"
+    FAILED=$((FAILED + 1))
+fi
+
+cp "$SU_WORK/VERSION.json.bak" "$VERSION_FILE"
+
+# ==========================================
 # 4. --max-time：时长时间解析与下载重试（离线，不碰网络）
 # ==========================================
 

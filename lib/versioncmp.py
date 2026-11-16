@@ -55,6 +55,17 @@ def compare(left, right):
     return (a > b) - (a < b)
 
 
+def is_prerelease(value):
+    """是不是预发布版（`4.4.0-beta2`、`4.4.0rc1`、`4.4.0.dev1` …）。
+
+    beta 与正式版走**不同的分支**，所以 `wave selfupdate` 不能碰 beta —— 它按
+    latest.toml 里的 branch 取文件，那是一条正式版分支，把它的增量盖在一棵 beta
+    树上就成了两条线混在一起（2026-11-15 那次事故的成因）。判定放在这里，
+    与版本比较同一处，shell 侧那份见 lib/selfupdate.sh 的 is_prerelease()。
+    """
+    return version(value).is_prerelease
+
+
 def is_newer(candidate, current):
     """candidate 是否比 current 新。current 为空视为「没装」，一律算新。"""
     if not current:

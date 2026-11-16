@@ -272,6 +272,55 @@ resolve_config_dir() {
 
 resolve_config_dir
 
+# ==========================================
+# 本机版本与预发布守卫
+# ==========================================
+#
+# 这两步要排在「申请管理员权限」之前：被拒绝的命令不该先问用户要密码。
+# 读 VERSION.json 不需要任何权限。
+
+CURRENT_VERSION="$(python3 - "$VERSION_FILE" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1]) as handle:
+        print(json.load(handle).get("version", ""))
+except Exception:
+    print("")
+PY
+)"
+
+is_prerelease() {
+    # 是不是预发布版（4.4.0-beta2 / 4.4.0rc1 / 4.4.0.dev1 …）。
+    #
+    # 唯一权威是 lib/versioncmp.py 的 is_prerelease()（PEP 440，用 packaging）。
+    # 这里是同一判定的 shell 版，写窄一点：MacWave 自己的预发布一律写成
+    # X.Y.Z-betaN，再加上 PEP 440 允许的紧凑写法（4.4.0b2 / 4.4.0rc1 / .dev1）。
+    # scripts/selfupdate_test.sh 会逐串断言两边结论一致，漂移会红。
+    #
+    # 为什么要在这里也判一次：selfupdate.sh 可以直接执行（文件头就写着这条路），
+    # 也可以被 3.x 客户端的 update_command 拉起来 —— 那些路径不经过 selfupdate.py。
+    local v="${1,,}"
+    case "$v" in
+        *-beta*|*-alpha*|*-rc*|*-dev*|*-pre*) return 0 ;;
+    esac
+    [[ "$v" =~ ^[0-9]+(\.[0-9]+)*((a|b|rc)[0-9]+|\.dev[0-9]+)$ ]]
+}
+
+# beta / rc 一律不许 selfupdate：它们与正式版在不同分支上，而 selfupdate 的增量
+# 是按 latest.toml 里那条正式版分支算的 —— 盖到一棵 beta 树上就是两条线混在一起。
+# 重装是唯一安全的路径（全量，且由 install.sh 重新决定分支）。
+if [[ -n "$CURRENT_VERSION" ]] && is_prerelease "$CURRENT_VERSION"; then
+    echo -e "${RED_BOLD}🌊 Error: MacWave $CURRENT_VERSION is a beta build, and selfupdate does not handle beta builds.${RESET}" >&2
+    echo -e "${RED_BOLD}🌊 Why       betas live on their own branch; selfupdate would mix two lines of code in one tree.${RESET}" >&2
+    echo -e "${RED_BOLD}🌊 Next      install the version you want from its Release page:${RESET}" >&2
+    echo -e "${RED_BOLD}🌊           stable: /bin/bash -c \"\$(curl -fsSL https://github.com/MacWaveOrg/MacWave/releases/latest/download/install.sh)\"${RESET}" >&2
+    echo -e "${RED_BOLD}🌊           this beta: https://github.com/MacWaveOrg/MacWave/releases/tag/v$CURRENT_VERSION${RESET}" >&2
+    echo -e "${RED_BOLD}🌊 Your current installation has not been changed.${RESET}" >&2
+    exit 1
+fi
+
 echo "🌊 Updating from branch: $BRANCH"
 echo ""
 
@@ -482,18 +531,6 @@ echo "🌊 Updating MacWave to $VERSION"
 # 这类升级通常同时改仓库与目录结构，selfupdate 只适合同大版本内的小版本升级。
 # selfupdate.sh 是从「目标分支」拉下来执行的，守卫放在这里，以后每个大版本自带的
 # selfupdate.sh 都会带上它，规则自动生效，不必逐版本写死在数据里。
-
-CURRENT_VERSION="$(python3 - "$VERSION_FILE" <<'PY'
-import json
-import sys
-
-try:
-    with open(sys.argv[1]) as handle:
-        print(json.load(handle).get("version", ""))
-except Exception:
-    print("")
-PY
-)"
 
 major_of() {
     # 取版本号里第一段数字当大版本号："2.6.1" -> "2"，"3.0" -> "3"

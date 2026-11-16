@@ -155,6 +155,35 @@ def version_data(text):
 version_key = versioncmp.sort_key
 
 
+# 官方安装入口。beta 用户被拦下来之后要照着这条命令重装，所以写在这里而不是
+# 只在文案里 —— 同一个地址在 install.sh 的用法注释、官网、发布说明里也有，
+# 改的时候一起改。
+INSTALL_SH_URL = "https://github.com/MacWaveOrg/MacWave/releases/latest/download/install.sh"
+RELEASE_TAG_URL = "https://github.com/MacWaveOrg/MacWave/releases/tag"
+
+
+def refuse_on_prerelease(current):
+    """当前装的是 beta / rc 时，拒绝 selfupdate 并给出重装命令。
+
+    为什么必须拒绝，而不是「让它升到正式版」：beta 与正式版在**不同分支**上，
+    selfupdate 取的增量是按 latest.toml 里那条正式版分支算的。把它的文件盖在一棵
+    beta 树上，得到的是两条线混在一起的安装（2026-11-15 那次 wave 启动即崩，
+    就是这么来的）。重装是唯一安全的路径 —— 它走全量，且由 install.sh 重新
+    决定分支。
+
+    消息全部用 RED_BOLD：这不是用法提示，是「你什么都没装成」的失败。
+    """
+    print(f"{RED_BOLD}🌊 Error: MacWave {current} is a beta build, and selfupdate does not "
+          f"handle beta builds.{RESET}")
+    print(f"{RED_BOLD}🌊 Why       betas live on their own branch; selfupdate would mix two "
+          f"lines of code in one tree.{RESET}")
+    print(f"{RED_BOLD}🌊 Next      install the version you want from its Release page:{RESET}")
+    print(f"{RED_BOLD}🌊           stable: /bin/bash -c \"$(curl -fsSL {INSTALL_SH_URL})\"{RESET}")
+    print(f"{RED_BOLD}🌊           this beta: {RELEASE_TAG_URL}/v{current}{RESET}")
+    print(f"{RED_BOLD}🌊 Your current installation has not been changed.{RESET}")
+    sys.exit(1)
+
+
 def version_file():
     # 配置目录可能在上一次升级里被迁移（见 update_commands.sh 里的迁移步骤），
     # 所以每次都重新解析一遍，不要用模块级常量。
@@ -181,6 +210,12 @@ def handle_selfupdate(input_string=""):
         print(f"{RED_BOLD}🌊 Error: MacWave is not installed. Run lib/install.sh first.{RESET}")
         sys.exit(1)
 
+    # 先看本机装的是什么，再决定要不要联网 —— 判断 beta 不需要网络，
+    # 早退一步就少一次「Fetching the latest version...」之后的失败。
+    current = installed_version()
+    if current and versioncmp.is_prerelease(current):
+        refuse_on_prerelease(current)
+
     timeout_raws, budget = timeouts_from(input_string)
     install_python_from_source = "--install-python-from-source" in input_string.split()
 
@@ -200,7 +235,6 @@ def handle_selfupdate(input_string=""):
 
     print(f"🌊 Latest version found: {latest}")
 
-    current = installed_version()
     if current and version_key(current) >= version_key(latest):
         print(f"{GREEN}🌊 MacWave is already up to date (current: {current}).{RESET}")
         sys.exit(0)

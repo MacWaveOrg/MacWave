@@ -16,16 +16,26 @@ Two fixes, both about commands that reported success while doing nothing:
 ## Install
 
 ```bash
-/bin/bash -c "$(curl -fsSL https://github.com/MacWaveOrg/MacWave/releases/download/v4.4.0-beta2/install.sh)"
+MACWAVE_VERSION=4.4.0-beta2 MACWAVE_BRANCH=4.4 \
+  /bin/bash -c "$(curl -fsSL https://github.com/MacWaveOrg/MacWave/releases/download/v4.4.0-beta2/install.sh)"
 ```
 
-Note `releases/download/v4.4.0-beta2` — **not** `releases/latest`, which stays on the
-stable line.
+**The two environment variables are the whole point.** `install.sh` reads the version
+from the release pointer (`latest.toml`), not from the URL it was downloaded from — so
+without them you get the current stable build, not this beta. The URL only decides which
+copy of `install.sh` you run.
+
+This also means `wave selfupdate` cannot be used on a beta: it follows the same pointer,
+and a beta lives on a different branch. It refuses, in red, and tells you where to
+reinstall from. `VERSION.json` records `"version": "4.4.0-beta2"`, which is how it knows.
 
 ## Back to stable
 
+`wave selfupdate` is refused on a beta, so leaving the beta is also a reinstall of the
+stable build:
+
 ```bash
-wave selfupdate
+/bin/bash -c "$(curl -fsSL https://github.com/MacWaveOrg/MacWave/releases/latest/download/install.sh)"
 ```
 
 ---
@@ -47,13 +57,22 @@ wave selfupdate
 ## 安装
 
 ```bash
-/bin/bash -c "$(curl -fsSL https://github.com/MacWaveOrg/MacWave/releases/download/v4.4.0-beta2/install.sh)"
+MACWAVE_VERSION=4.4.0-beta2 MACWAVE_BRANCH=4.4 \
+  /bin/bash -c "$(curl -fsSL https://github.com/MacWaveOrg/MacWave/releases/download/v4.4.0-beta2/install.sh)"
 ```
 
-注意是 `releases/download/v4.4.0-beta2`，**不是** `releases/latest` —— 后者留在稳定线。
+**这两个环境变量是关键。** `install.sh` 从发布指针（`latest.toml`）读版本号，不是从
+它被下载的那个 URL 读 —— 不带上它们，装到的是当前正式版，不是这个 beta。URL 只决定
+你跑的是哪一份 `install.sh`。
+
+这也是为什么 beta 上不能用 `wave selfupdate`：它读的是同一个指针，而 beta 在另一条
+分支上。它会用红字拒绝，并告诉你该去哪里重装。`VERSION.json` 里写着
+`"version": "4.4.0-beta2"`，它就是这么知道的。
 
 ## 回到稳定版
 
+beta 上 `wave selfupdate` 会被拒绝，所以回稳定线也是重装一次正式版：
+
 ```bash
-wave selfupdate
+/bin/bash -c "$(curl -fsSL https://github.com/MacWaveOrg/MacWave/releases/latest/download/install.sh)"
 ```
