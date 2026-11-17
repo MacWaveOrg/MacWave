@@ -1766,17 +1766,45 @@ mw_say "${YELLOW}Please read the agreement before use (see bottom of https://mac
 if mw_dry_run; then
     # 试运行不碰终端：否则 `install.sh --dry-run` 会停在协议提问上，
     # 只想看输出的人反而被卡住。真实安装仍然要求回答。
-    agreement="y"
+    agreement="yes"
     mw_plan "🌊 Dry run: the agreement is not asked and nothing is recorded." \
         "🌊 试运行：不询问用户协议，也不记录任何同意。"
 elif [[ "$CLI_CI" == "true" ]]; then
     mw_say "🌊 --ci: the agreement is accepted automatically." "🌊 --ci：自动接受用户协议。"
-    agreement="y"
+    agreement="yes"
 else
-    mw_say "${YELLOW}Have you read and agreed to the agreement? [Y/n]${RESET}" "${YELLOW}你是否已阅读并同意该协议？[Y/n]${RESET}"
-    read -r agreement < /dev/tty
+    # 回答归一化：去空白、转小写后再判断。空 / y / yes → 同意，n / no → 拒绝，
+    # 其它输入重新提问，连续 3 次无法识别就按拒绝处理。
+    # 不用 ${var,,}：macOS 自带 bash 3.2 没有这个展开。
+    agreement=""
+    _agreement_tries=0
+    while [[ -z "$agreement" ]]; do
+        _agreement_tries=$((_agreement_tries + 1))
+        mw_say "${YELLOW}Have you read and agreed to the agreement? [Y/n]${RESET}" "${YELLOW}你是否已阅读并同意该协议？[Y/n]${RESET}"
+        _answer=""
+        read -r _answer < /dev/tty || _answer=""
+        _answer=$(printf '%s' "$_answer" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+        case "$_answer" in
+            ""|y|yes)
+                agreement="yes"
+                ;;
+            n|no)
+                agreement="no"
+                ;;
+            *)
+                if [[ "$_agreement_tries" -ge 3 ]]; then
+                    mw_say "${YELLOW}Unrecognized answer, treating it as \"no\".${RESET}" \
+                        "${YELLOW}无法识别的回答，按「不同意」处理。${RESET}"
+                    agreement="no"
+                else
+                    mw_say "${YELLOW}Please answer y (agree) or n (do not agree).${RESET}" \
+                        "${YELLOW}请回答 y（同意）或 n（不同意）。${RESET}"
+                fi
+                ;;
+        esac
+    done
 fi
-if [[ -z "$agreement" || "$agreement" =~ ^[Yy]$ ]]; then
+if [[ "$agreement" == "yes" ]]; then
     if ! mw_dry_run; then
         mw_say "${GREEN}You have agreed to the agreement.${RESET}" "${GREEN}已记录你的同意。${RESET}"
     fi
