@@ -43,46 +43,6 @@ def version(value):
             return _ZERO
         return Version(".".join(parts))
 
-Last login: Mon Nov 16 13:45:19 on ttys007
-gaochengfang@gaochengfangdeMacBook-Air ~ % diskutil list physical | grep -A2 external
-
-/dev/disk8 (external, physical):
-   #:                       TYPE NAME                    SIZE       IDENTIFIER
-   0:     FDisk_partition_scheme                        *248.0 GB   disk8
-gaochengfang@gaochengfangdeMacBook-Air ~ % diskutil unmountDisk /dev/disk8
-
-Unmount of all volumes on disk8 was successful
-gaochengfang@gaochengfangdeMacBook-Air ~ % sudo dd if=~/Downloads/Windows11_ChinaOnly_x64_zh-cn_26300_9457.iso \
-        of=/dev/rdisk8 bs=4m
-
-Password:
-dd: ~/Downloads/Windows11_ChinaOnly_x64_zh-cn_26300_9457.iso: No such file or directory
-gaochengfang@gaochengfangdeMacBook-Air ~ % sudo dd if=/Users/gaochengfang/Downloads/Windows11_ChinaOnly_x64_zh-cn_26300_9457.iso \
-        of=/dev/rdisk8 bs=4m
-load: 3.81  cmd: dd 4594 uninterruptible 0.00u 0.09s
-68+0 records in
-68+0 records out
-285212672 bytes transferred in 10.402616 secs (27417399 bytes/sec)
-load: 5.06  cmd: dd 4594 running 0.00u 0.19s
-147+0 records in
-147+0 records out
-616562688 bytes transferred in 20.696046 secs (29791328 bytes/sec)
-
-
-load: 5.31  cmd: dd 4594 uninterruptible 0.00u 0.66s
-505+0 records in
-505+0 records out
-2118123520 bytes transferred in 114.264892 secs (18536958 bytes/sec)
-
-
-2054+1 records in
-2054+1 records out
-8615434240 bytes transferred in 692.427670 secs (12442360 bytes/sec)
-gaochengfang@gaochengfangdeMacBook-Air ~ % 
-gaochengfang@gaochengfangdeMacBook-Air ~ % 
-gaochengfang@gaochengfangdeMacBook-Air ~ % 
-gaochengfang@gaochengfangdeMacBook-Air ~ % 
-gaochengfang@gaochengfangdeMacBook-Air ~ % 
 
 def sort_key(value):
     """给 sorted() / max() 用的键。"""
