@@ -84,15 +84,15 @@ jobs:
           command: |
             dirs="$(sed -e 's/#.*//' scripts/components.txt)"
             for file in $(find $dirs -maxdepth 1 -name '*.sh') scripts/*.sh; do
-                bash -n "$file" || { echo "syntax error: $file"; exit 1; }
+                /bin/bash -n "$file" || { echo "syntax error: $file"; exit 1; }
             done
             echo "all shell files parse"
 
       - run:
           name: Flag and suggestion tests
           command: |
-            bash scripts/flags_test.sh
-            bash scripts/suggest_test.sh
+            /bin/bash scripts/flags_test.sh
+            /bin/bash scripts/suggest_test.sh
 
       - run:
           name: Dependency declarations agree
@@ -107,8 +107,8 @@ jobs:
       - run:
           name: Message and domain tests
           command: |
-            bash scripts/message_test.sh
-            bash scripts/domains_test.sh
+            /bin/bash scripts/message_test.sh
+            /bin/bash scripts/domains_test.sh
 
       - run:
           name: Project structure, transport contracts, link safety
@@ -116,18 +116,18 @@ jobs:
           # --skip-ssl 与超时策略（AST 检查）；产物里的符号链接是否跳出 base_dir。
           # 三条都是纯离线、秒级。
           command: |
-            bash scripts/structure_test.sh
-            bash scripts/shell_lint.sh
-            bash scripts/dir_guard_test.sh
-            bash scripts/net_policy_test.sh
-            bash scripts/linksafety_test.sh
-            bash scripts/minos_test.sh
+            /bin/bash scripts/structure_test.sh
+            /bin/bash scripts/shell_lint.sh
+            /bin/bash scripts/dir_guard_test.sh
+            /bin/bash scripts/net_policy_test.sh
+            /bin/bash scripts/linksafety_test.sh
+            /bin/bash scripts/minos_test.sh
 
       - run:
           name: Output format and update-command tests
           command: |
-            bash scripts/info_format_test.sh
-            bash scripts/update_commands_test.sh
+            /bin/bash scripts/info_format_test.sh
+            /bin/bash scripts/update_commands_test.sh
 
 workflows:
   quick-feedback:

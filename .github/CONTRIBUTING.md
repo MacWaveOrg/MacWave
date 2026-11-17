@@ -33,9 +33,9 @@ shellcheck -S warning lib/*.sh pkg/*.sh surfboard/*.sh scripts/*.sh
 ## Running the tests
 
 ```bash
-bash scripts/flags_test.sh        # 每个测试独立，可以单跑
-bash scripts/upgrade_test.sh
-bash scripts/depsync_test.sh      # 改了依赖？这一条会告诉你有几处没跟上
+/bin/bash scripts/flags_test.sh        # 每个测试独立，可以单跑
+/bin/bash scripts/upgrade_test.sh
+/bin/bash scripts/depsync_test.sh      # 改了依赖？这一条会告诉你有几处没跟上
 ```
 
 Anything that installs or uninstalls for real must set `MACWAVE_TEST`, or it

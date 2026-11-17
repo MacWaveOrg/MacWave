@@ -103,47 +103,47 @@ jobs:
 
       - name: Run config path test
         run: |
-          bash scripts/configpath_test.sh
+          /bin/bash scripts/configpath_test.sh
 
       # 纯离线：地址怎么拼、环境变量怎么覆盖、shell 与 Python 的默认值是否一致。
       # 放在需要联网的那些之前，地址层坏了就没必要再等网络超时。
       - name: Run domain test
         run: |
-          bash scripts/domains_test.sh
+          /bin/bash scripts/domains_test.sh
 
       # 结构：components.txt 与 wave.py / install.sh / CI 是否对得上。
       - name: Check project structure
         run: |
-          bash scripts/structure_test.sh
+          /bin/bash scripts/structure_test.sh
 
       # 变量后面紧跟多字节字符会在非 UTF-8 locale 下变成 unbound variable。
       # 本机 locale 是 UTF-8 时完全看不出，只有 CI 会红 —— 已经踩过两次。
       - name: Lint shell scripts
         run: |
-          bash scripts/shell_lint.sh
+          /bin/bash scripts/shell_lint.sh
 
       # 安装目录白名单：/usr/local、/opt、$HOME 等绝不能被当作 BASE_DIR。
       # 装到系统目录时脚本会 chown -R，拒绝协议时还会 rm -rf —— 指错目录的后果
       # 是接管或删掉别的软件。纯函数测试，离线。
       - name: Check installation directory guard
         run: |
-          bash scripts/dir_guard_test.sh
+          /bin/bash scripts/dir_guard_test.sh
 
       # 传输层契约：每个请求点都带策略（AST 检查，不是 grep）。
       - name: Check transport-layer contracts
         run: |
-          bash scripts/net_policy_test.sh
+          /bin/bash scripts/net_policy_test.sh
 
       # 产物里的符号链接不得跳出 base_dir（系统库位置除外）。
       - name: Check symbolic links in payloads
         run: |
-          bash scripts/linksafety_test.sh
+          /bin/bash scripts/linksafety_test.sh
 
       # min_os（实验性，4.3 转正）：版本解析、安装前提醒、info 展示。
       # 字段还没在索引里普及，所以「缺失必须静默」也是断言的一部分。
       - name: Check min_os handling
         run: |
-          bash scripts/minos_test.sh
+          /bin/bash scripts/minos_test.sh
 
       - name: Audit dependency data
         run: |
@@ -151,67 +151,67 @@ jobs:
 
       - name: Run format tests
         run: |
-          bash scripts/format_test.sh
+          /bin/bash scripts/format_test.sh
 
       - name: Run dependency chain test
         run: |
-          bash scripts/deps_test.sh --infosource infosource-data
+          /bin/bash scripts/deps_test.sh --infosource infosource-data
 
       # 离线：假镜像起在 localhost，只验「报错说清楚了该怎么办」
       - name: Run message test
         run: |
-          bash scripts/message_test.sh
+          /bin/bash scripts/message_test.sh
 
       # 离线：假索引起在 localhost，只验「有没有更新」的判断与说法
       - name: Run latest test
         run: |
-          bash scripts/latest_test.sh
+          /bin/bash scripts/latest_test.sh
 
       # 离线：假索引起在 localhost，验 info 的四种输出格式
       - name: Run info format test
         run: |
-          bash scripts/info_format_test.sh
+          /bin/bash scripts/info_format_test.sh
 
       - name: Run unversioned link test
         run: |
-          bash scripts/link_test.sh
+          /bin/bash scripts/link_test.sh
 
       - name: Run upgrade test
         run: |
-          bash scripts/upgrade_test.sh
+          /bin/bash scripts/upgrade_test.sh
 
       # 会真的按 configdata 仓库的 update_command 更新一遍安装目录，所以放最后
       - name: Run selfupdate test
         run: |
-          bash scripts/selfupdate_test.sh
+          /bin/bash scripts/selfupdate_test.sh
 
       # 升级脚本生成：清单过滤（__pycache__ / EXCLUDED / 非安装目录）、空 delta 拒绝、
       # 可执行位、报错地址打码、以及「文件下不到必须让整次更新失败」
       - name: Run update commands test
         run: |
-          bash scripts/update_commands_test.sh
+          /bin/bash scripts/update_commands_test.sh
 
       # 旗标诊断层：lib/flags.py 必须与各命令真白名单一致（它只在「命令名写错」
       # 那条路径上用到，平时跑不到，走散也没人发现），外加 -s 与未知命令的行为
       - name: Run flag test
         run: |
-          bash scripts/flags_test.sh
+          /bin/bash scripts/flags_test.sh
 
       # 包名建议：只在 404 那条路径上跑到，平时 install 一次都碰不到。
       # 退化成「什么都不建议」时，表现只是少一行提示，不会有人报 bug。
       - name: Run suggestion test
         run: |
-          bash scripts/suggest_test.sh
+          /bin/bash scripts/suggest_test.sh
 
       # 依赖清单曾散在六处，改一处漏五处。这条断言它们与 pyproject.toml 一致。
       - name: Run dependency declaration test
         run: |
-          bash scripts/depsync_test.sh
+          /bin/bash scripts/depsync_test.sh
 
       # 文档互相引用的相对链接，断了没有任何机制会告诉你
       - name: Run markdown structure test
         run: |
-          bash scripts/markdown_test.sh
+          /bin/bash scripts/markdown_test.sh
 
       # 静态检查：配置在 pyproject.toml 与 .shellcheckrc 里。
       # 只装工具、不自动修 —— CI 的职责是「报告」，改动应当由人提交。

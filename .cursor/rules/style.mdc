@@ -137,6 +137,26 @@ set -uo pipefail
 - 目录权限 `700`，文件 `600`。**给目录 `chmod 600` 会把你自己锁在外面**（缺 `x` 位，`cd ..` 都出不来）
 - macOS 没有 `timeout` 命令，用 Python 或 `perl` 计时
 
+### 调用 bash 一律写 `/bin/bash`
+
+```bash
+/bin/bash scripts/format_test.sh
+```
+
+反例是把 `/bin/bash` 换成裸 `bash`（走 PATH，在开发机上常常是 Homebrew 的 5.x）——
+这里不写成可复制的代码行，否则它自己就会被下面说的 lint 拦下来。
+
+PATH 上的 `bash` 在开发机上往往是 `/opt/homebrew/bin/bash`（5.x），而 macOS 自带的是
+3.2。`${var,,}`、`${var^^}`、`mapfile`、`readarray`、`declare -A`、`&>>`、`|&` 在 3.2 上
+直接是语法错误，**报出来的样子是「脚本一句提示都没有就退出」**，还常常把后面的断言一起
+带红，看起来像两个不相关的缺陷。
+
+同一条适用于：`.sh` 里的调用、Python 的 `subprocess` 参数、CI 配置、README 与文档示例。
+
+现状与影响范围：2026-11-16 的 beta 拦截用了 `${1,,}`，本地拿 Homebrew 的 5.x 验过全绿，
+CI 上 3.2 一跑就死。`scripts/shell_lint.sh` 第 5 节现在会拦住命令位置的裸 `bash`；
+自查与验证也用 `/bin/bash`，别用 `bash`。
+
 ## 八、`$变量` 紧邻中文时必须加花括号
 
 ```bash

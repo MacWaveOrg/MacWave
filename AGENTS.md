@@ -186,6 +186,13 @@ lib/innocent.dylib -> /Users/someone/.ssh/id_rsa
 - 唯一权威是根目录的 [`.editorconfig`](./.editorconfig)：`indent_style = space`、`indent_size = 4`。
   JSON / YAML 例外，那些文件用 2 空格。
 - 不要为了让 `git diff` 好看去重排缩进；只改你要改的行。
+- **shell 一律写绝对路径 `/bin/bash`，不要裸 `bash`。** 裸 `bash` 走 PATH，而 PATH 上
+  的可能是 `/opt/homebrew/bin/bash`（5.x）；macOS 自带的是 3.2，`${var,,}`、`mapfile`、
+  `declare -A` 在它上面直接是语法错误，症状是「脚本一句提示都没有就退出」。
+  这条覆盖脚本、测试、CI（`.github/workflows`、`.circleci`）与文档里的示例命令。
+  `scripts/shell_lint.sh` 第 5 节会拦（只查命令位置，散文与 `~/.bashrc` 不算）。
+  同理，**验证 shell 行为时也用 `/bin/bash` 跑**，别用 Homebrew 那个：2026-11-16 用
+  `bash`（5.x）验过全绿，CI 上 `/bin/bash`（3.2）一跑就死，两条流水线各红一次。
 
 ## 测试
 

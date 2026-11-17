@@ -181,18 +181,18 @@ if grep -q '^redact_url() {' "$WORK/ru.sh"; then
 
     secret_user="alice"
     secret_pass="s3cr3tWith@At"
-    masked=$(bash -c "source '$WORK/ru.sh'; redact_url 'https://$secret_user:$secret_pass@mirror.repohub.top/MacWave/core/4.1/lib/wave.py'")
+    masked=$(/bin/bash -c "source '$WORK/ru.sh'; redact_url 'https://$secret_user:$secret_pass@mirror.repohub.top/MacWave/core/4.1/lib/wave.py'")
     expect_absent "密码被隐去"       "$masked" "$secret_pass"
     expect        "用户名打码成形"   "$masked" ":***@"
     expect        "主机与路径保留"   "$masked" "mirror.repohub.top/MacWave/core/4.1/lib/wave.py"
 
     plain="https://mirror.repohub.top/MacWave/core/4.1/lib/wave.py"
-    same=$(bash -c "source '$WORK/ru.sh'; redact_url '$plain'")
+    same=$(/bin/bash -c "source '$WORK/ru.sh'; redact_url '$plain'")
     if [ "$same" = "$plain" ]; then pass "无凭据的地址原样返回"; else fail "无凭据的地址被改坏了：$same"; fi
 
     # 路径里的 @ 是合法文件名字符（jq@1.8.2.arm64），不能被当成密码位置
     withat="https://mirror.repohub.top/MacWave/bottle/jq/jq@1.8.2.arm64"
-    same=$(bash -c "source '$WORK/ru.sh'; redact_url '$withat'")
+    same=$(/bin/bash -c "source '$WORK/ru.sh'; redact_url '$withat'")
     if [ "$same" = "$withat" ]; then pass "路径里的 @ 不被误判"; else fail "路径里的 @ 把地址改坏了：$same"; fi
 else
     fail "模板里找不到 redact_url"
@@ -227,7 +227,7 @@ if command -v python3 >/dev/null 2>&1; then
           MACWAVE_CORE_URL="http://127.0.0.1:$PORT" \
           MACWAVE_BRANCH=main \
           MACWAVE_CURRENT_VERSION=9.9.8 \
-          bash "$WORK/fail.sh" 2>&1)
+          /bin/bash "$WORK/fail.sh" 2>&1)
     rc=$?
 
     if [ "$rc" -ne 0 ]; then
@@ -244,7 +244,7 @@ if command -v python3 >/dev/null 2>&1; then
           MACWAVE_CORE_URL="http://127.0.0.1:$PORT" \
           MACWAVE_BRANCH=main \
           MACWAVE_CURRENT_VERSION=9.9.8 \
-          bash "$WORK/ok.sh" 2>&1)
+          /bin/bash "$WORK/ok.sh" 2>&1)
     rc=$?
     if [ "$rc" -eq 0 ]; then pass "文件齐全时正常成功"; else fail "文件齐全却失败（退出码 ${rc}）"; fi
 
@@ -380,7 +380,7 @@ if command -v python3 >/dev/null 2>&1; then
           MACWAVE_CORE_URL="http://127.0.0.1:$PORT3" \
           MACWAVE_BRANCH=main \
           MACWAVE_CURRENT_VERSION=4.1.5 \
-          bash "$WORK/migrate.sh" 2>&1)
+          /bin/bash "$WORK/migrate.sh" 2>&1)
     rc=$?
 
     kill "$server3" 2>/dev/null || true
@@ -434,7 +434,7 @@ if command -v python3 >/dev/null 2>&1; then
         MACWAVE_CURRENT_VERSION="$2" \
         MACWAVE_FULL_INSTALL="${3:-}" \
         MACWAVE_LANG=en \
-        bash "$WORK/heal.sh" 2>&1
+        /bin/bash "$WORK/heal.sh" 2>&1
     }
 
     # A) 树完整 + 版本号已到位 → 应该什么都不做

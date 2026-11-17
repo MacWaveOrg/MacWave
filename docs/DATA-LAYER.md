@@ -287,7 +287,7 @@ amd64_sha256 = "600c..."
 curl -fsSL "$MACWAVE_SELFUPDATE_DOMAIN/macwavedata/latest.toml"
 
 # 2. 该版本的更新脚本存在且是合法 shell
-curl -fsSL "$MACWAVE_SELFUPDATE_DOMAIN/macwavedata/<版本>/update_commands.sh" | bash -n
+curl -fsSL "$MACWAVE_SELFUPDATE_DOMAIN/macwavedata/<版本>/update_commands.sh" | /bin/bash -n
 
 # 3. 索引里的 sha256 与实际文件逐字相同
 curl -fsSL "$MACWAVE_BOTTLE_DOMAIN/<包名>/<包名>%40<版本>.<架构><扩展名>" | shasum -a 256
@@ -298,7 +298,7 @@ curl -fsSL "$MACWAVE_PYTHON_DOMAIN/pythondata/latest.toml"
 # 5. 首次安装（不碰现有安装）
 MACWAVE_BOTTLE_DOMAIN=... MACWAVE_API_DOMAIN=... \
 MACWAVE_SELFUPDATE_DOMAIN=... MACWAVE_PYTHON_DOMAIN=... MACWAVE_CORE_DOMAIN=... \
-  bash lib/install.sh
+  /bin/bash lib/install.sh
 ```
 
 第 3 条是唯一能证明「字节原样」的检查，务必做一次。

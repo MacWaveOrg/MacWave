@@ -79,7 +79,7 @@ MacWave 是一个**面向 macOS 的包管理器**，用于分发 macOS 软件开
 
 ```bash
 # 脚本已在本地
-bash install.sh --ci --dir-option=1
+/bin/bash install.sh --ci --dir-option=1
 
 # 直接从仓库执行
 /bin/bash -c "$(curl -fsSL https://github.com/MacWaveOrg/MacWave/releases/latest/download/install.sh)" \
@@ -478,12 +478,12 @@ shallow clone 会报：
 每个脚本都会完整跑一遍，结果以 `PASS` 或 `FAIL` 呈现：
 
 ```bash
-bash scripts/configpath_test.sh    # 配置目录的解析规则
-bash scripts/format_test.sh        # 全部受支持的归档格式
-bash scripts/deps_test.sh          # 依赖安装与级联清理
-bash scripts/link_test.sh          # 不含版本号的软链接
-bash scripts/upgrade_test.sh       # wave upgrade（离线）
-bash scripts/selfupdate_test.sh    # 自更新，最后一步会真的更新一遍
+/bin/bash scripts/configpath_test.sh    # 配置目录的解析规则
+/bin/bash scripts/format_test.sh        # 全部受支持的归档格式
+/bin/bash scripts/deps_test.sh          # 依赖安装与级联清理
+/bin/bash scripts/link_test.sh          # 不含版本号的软链接
+/bin/bash scripts/upgrade_test.sh       # wave upgrade（离线）
+/bin/bash scripts/selfupdate_test.sh    # 自更新，最后一步会真的更新一遍
 python3 scripts/random_test.py     # 随机化端到端回归，需要联网
 python3 scripts/audit_deps.py data # 用已装的库审计索引数据
 ```

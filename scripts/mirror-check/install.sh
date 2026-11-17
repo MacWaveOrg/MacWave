@@ -5,7 +5,7 @@ DIR=${DIR:-/root/mirror-check}
 # 权限在 rsync 之后可能被覆盖成 644（本地没加 +x 时），这里每次都兜底
 chmod +x "$DIR/check.sh" "$DIR/run.sh" "$DIR/install.sh" 2>/dev/null || true
 
-if ! bash -n "$DIR/check.sh"; then
+if ! /bin/bash -n "$DIR/check.sh"; then
     echo "❌ check.sh 语法有问题，不安装"; exit 1
 fi
 

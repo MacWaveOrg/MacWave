@@ -162,7 +162,7 @@ mw_extract_binary() {
             mkdir -p "$extract_dir"
 
             # 解压脚本的输出全部转 stderr，保证本函数的 stdout 只有二进制路径
-            if ! bash "$unzip_script" "$original_file" "$extract_dir" >&2; then
+            if ! /bin/bash "$unzip_script" "$original_file" "$extract_dir" >&2; then
                 echo -e "${RED_BOLD}🌊 Error: Extraction failed.${RESET}" >&2
                 rm -rf "$extract_dir"
                 exit 1
@@ -220,7 +220,7 @@ mw_extract_all() {
             mkdir -p "$extract_dir"
 
             # 解压脚本的输出全部转 stderr，保证本函数的 stdout 只有目录路径
-            if ! bash "$unzip_script" "$original_file" "$extract_dir" >&2; then
+            if ! /bin/bash "$unzip_script" "$original_file" "$extract_dir" >&2; then
                 echo -e "${RED_BOLD}🌊 Error: Extraction failed.${RESET}" >&2
                 rm -rf "$extract_dir"
                 exit 1

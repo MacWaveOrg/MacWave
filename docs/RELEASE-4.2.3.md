@@ -41,7 +41,7 @@ update_commands.sh: line 125: repo_path?: unbound variable
 
 The three locale behaviours differ, which is why it never surfaced during development:
 
-| locale | `/bin/bash` 3.2 | bash 5.x |
+| locale | macOS bundled `/bin/bash` 3.2 | Homebrew's `bash` 5.x |
 | --- | --- | --- |
 | `C` / `POSIX` | ✅ fine | ✅ fine |
 | `en_US.UTF-8` | ❌ unbound variable | ✅ fine |
@@ -179,7 +179,7 @@ update_commands.sh: line 125: repo_path?: unbound variable
 
 三种 locale 行为不同，这决定了它为什么没在开发时暴露：
 
-| locale | `/bin/bash` 3.2 | bash 5.x |
+| locale | macOS 自带的 `/bin/bash` 3.2 | Homebrew 的 `bash` 5.x |
 | --- | --- | --- |
 | `C` / `POSIX` | ✅ 正常 | ✅ 正常 |
 | `en_US.UTF-8` | ❌ 报 unbound variable | ✅ 正常 |

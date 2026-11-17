@@ -585,7 +585,7 @@ if ! fetch_to_file "$UPDATE_COMMANDS_URL" "$UPDATE_COMMANDS_TMP" "$FILE_TIMEOUT"
     exit 1
 fi
 
-if ! bash -n "$UPDATE_COMMANDS_TMP" 2>/dev/null; then
+if ! /bin/bash -n "$UPDATE_COMMANDS_TMP" 2>/dev/null; then
     echo -e "${RED_BOLD}🌊 Error: the update commands for $VERSION are not valid shell.${RESET}"
     echo -e "${RED_BOLD}🌊 Nothing was updated. Please report this to the administrator.${RESET}"
     exit 1
@@ -606,7 +606,7 @@ MACWAVE_NEED_SUDO="$([ "$NEED_SUDO" = "true" ] && echo 1 || echo "")"
 export MACWAVE_NEED_SUDO
 export MACWAVE_SILENT=""
 
-if ! bash "$UPDATE_COMMANDS_TMP"; then
+if ! /bin/bash "$UPDATE_COMMANDS_TMP"; then
     echo -e "${RED_BOLD}🌊 Error: the update commands for $VERSION failed.${RESET}" >&2
     # VERSION.json 只在全部文件到位后才写，所以版本号还是旧的：
     # 网络恢复后再跑一次 wave selfupdate 就会从这里继续。

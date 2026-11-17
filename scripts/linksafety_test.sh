@@ -152,7 +152,7 @@ touch "$WORK/craft/lib/ok.dylib"
 tar --no-xattrs -czf "$BASE/downloads/tmp/evil-1.0.tar.gz" -C "$WORK/craft" . 2>/dev/null
 SHA=$(shasum -a 256 "$BASE/downloads/tmp/evil-1.0.tar.gz" | awk '{print $1}')
 
-OUT=$(cd "$BASE" && bash -c "
+OUT=$(cd "$BASE" && /bin/bash -c "
     source ./surfboard/depsmanager.sh
     mw_install_artifact \"evil
 1.0
@@ -197,7 +197,7 @@ echo "--- 裸二进制：没有链接可查，但仍然要说一句 ---"
 printf 'not-a-real-binary' > "$BASE/downloads/tmp/plainbin-1.0"
 PSHA=$(shasum -a 256 "$BASE/downloads/tmp/plainbin-1.0" | awk '{print $1}')
 
-OUT=$(cd "$BASE" && bash -c "
+OUT=$(cd "$BASE" && /bin/bash -c "
     source ./surfboard/depsmanager.sh
     mw_install_artifact \"plainbin
 1.0
@@ -226,7 +226,7 @@ ln -s /usr/lib/libSystem.B.dylib "$WORK/craft2/lib/system"
 tar --no-xattrs -czf "$BASE/downloads/tmp/good-1.0.tar.gz" -C "$WORK/craft2" . 2>/dev/null
 SHA2=$(shasum -a 256 "$BASE/downloads/tmp/good-1.0.tar.gz" | awk '{print $1}')
 
-OUT=$(cd "$BASE" && bash -c "
+OUT=$(cd "$BASE" && /bin/bash -c "
     source ./surfboard/depsmanager.sh
     mw_install_artifact \"good
 1.0

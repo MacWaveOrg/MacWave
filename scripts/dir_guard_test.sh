@@ -61,7 +61,7 @@ fi
 
 # 校验函数只依赖 mw_say_err 与 $HOME
 probe() {
-    bash -c 'source /dev/stdin <<< "$1"; validate_custom_dir "$2"' _ "$BODY" "$1" >/dev/null 2>&1
+    /bin/bash -c 'source /dev/stdin <<< "$1"; validate_custom_dir "$2"' _ "$BODY" "$1" >/dev/null 2>&1
 }
 
 expect_reject() {
@@ -366,7 +366,7 @@ chmod 755 "$WORK/bin/sudo"
 probe_handover() {   # probe_handover <need_sudo> <dir>
     : > "$SUDO_LOG"
     PATH="$WORK/bin:$PATH" SUDO_LOG="$SUDO_LOG" \
-        bash -c 'source /dev/stdin <<< "$1"; NEED_SUDO="$2"; CURRENT_USER="$(whoami)"; hand_over_system_install "$3"' \
+        /bin/bash -c 'source /dev/stdin <<< "$1"; NEED_SUDO="$2"; CURRENT_USER="$(whoami)"; hand_over_system_install "$3"' \
         _ "$SELF_BODY" "$1" "$2" >/dev/null 2>&1
     cat "$SUDO_LOG"
 }
@@ -418,7 +418,7 @@ run_uninstall() {   # run_uninstall <测试根>
     local copy="$WORK/uninstall-copy.sh"
     cp "$UNINSTALL_SH" "$copy"
     PATH="$WORK/bin:$PATH" SUDO_LOG="$SUDO_LOG" MACWAVE_TEST="$1" \
-        bash "$copy" --force 2>&1
+        /bin/bash "$copy" --force 2>&1
 }
 
 # 真实跑一遍：两个目录，一个像 MacWave、一个不像。

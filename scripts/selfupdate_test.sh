@@ -300,7 +300,7 @@ rm -f "$LOG_FILE"
 LOG_FILE="$(mktemp)"
 RC=0
 MACWAVE_UPDATE_VERSION=4.0.1 MACWAVE_UPDATE_BRANCH=4.0 \
-    bash "$SELFUPDATE_SH" > "$LOG_FILE" 2>&1 || RC=$?
+    /bin/bash "$SELFUPDATE_SH" > "$LOG_FILE" 2>&1 || RC=$?
 cat "$LOG_FILE"
 
 if [[ "$RC" -ne 0 ]] && grep -q 'is a beta build' "$LOG_FILE"; then
@@ -547,7 +547,7 @@ fi
 
 echo "========== end-to-end selfupdate =========="
 
-if ! bash -n "$SELFUPDATE_SH"; then
+if ! /bin/bash -n "$SELFUPDATE_SH"; then
     echo -e "${RED_BOLD}🌊 FAIL: selfupdate.sh has a syntax error${RESET}"
     FAILED=$((FAILED + 1))
 fi

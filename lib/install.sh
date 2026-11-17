@@ -1011,7 +1011,7 @@ fetch_update_commands() {
         exit 1
     fi
 
-    if ! bash -n "$UPDATE_COMMANDS_TMP" 2>/dev/null; then
+    if ! /bin/bash -n "$UPDATE_COMMANDS_TMP" 2>/dev/null; then
         echo -e "${RED_BOLD}🌊 Error: the update commands for $MACWAVE_VERSION are not valid shell.${RESET}"
         echo -e "${RED_BOLD}🌊 Nothing was installed. Please report this to the administrator.${RESET}"
         exit 1
@@ -1237,7 +1237,7 @@ export MACWAVE_NEED_SUDO MACWAVE_SILENT
 if mw_dry_run; then
     mw_plan "🌊 Dry run: the update commands would run now and download the program files." \
         "🌊 试运行：更新命令本该在此执行并下载程序文件，实际未执行。"
-elif ! bash "$UPDATE_COMMANDS_TMP"; then
+elif ! /bin/bash "$UPDATE_COMMANDS_TMP"; then
     echo -e "${RED_BOLD}🌊 Error: the update commands for $MACWAVE_VERSION failed.${RESET}"
     echo -e "${RED_BOLD}🌊 Nothing was recorded as installed. Fix the cause above, then run the installer again.${RESET}"
     exit 1

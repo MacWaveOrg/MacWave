@@ -6,7 +6,7 @@ LOG="$DIR/last-run.log"
 HIST="$DIR/history.log"
 ALERT="$DIR/ALERT"
 
-bash "$DIR/check.sh" > "$LOG" 2>&1
+/bin/bash "$DIR/check.sh" > "$LOG" 2>&1
 rc=$?
 
 ts=$(date '+%Y-%m-%d %H:%M:%S')

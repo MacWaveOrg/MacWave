@@ -94,10 +94,10 @@ echo "========== 2. 每个脚本都能通过 bash -n =========="
 
 SYNTAX_BAD=0
 while IFS= read -r script; do
-    if ! bash -n "$script" 2>/dev/null; then
+    if ! /bin/bash -n "$script" 2>/dev/null; then
         SYNTAX_BAD=$((SYNTAX_BAD + 1))
         echo -e "${RED_BOLD}  语法错误：${script#"$REPO_DIR"/}${RESET}"
-        bash -n "$script" 2>&1 | head -3 | sed 's/^/    /'
+        /bin/bash -n "$script" 2>&1 | head -3 | sed 's/^/    /'
     fi
 done < <(
     for _component in $(components); do
@@ -177,6 +177,31 @@ if [[ -z "$BASH4_BAD" ]]; then
 else
     echo "$BASH4_BAD" | sed 's/^/  /'
     fail "$(echo "$BASH4_BAD" | grep -c .) 处用了 bash 4 专有语法；macOS 自带 /bin/bash 是 3.2"
+fi
+
+echo "========== 5. 一律用 /bin/bash，不要裸 bash =========="
+# `bash` 走 PATH，而 PATH 上的 bash 可能是 /opt/homebrew/bin/bash（5.x）。
+# 本机写起来没差别，行为却差很多：`${var,,}`、`mapfile`、`declare -A` 在 macOS
+# 自带的 3.2 上是语法错误，报出来的样子是「脚本一句提示都没有就退出」。
+#
+# 2026-11-16 实际踩到：beta 拦截里用了 `${1,,}`，本地用 Homebrew 的 bash 5 验过全绿，
+# CI 上 /bin/bash 3.2 一跑就死，还把排在前面的断言一起带红。
+#
+# 所以：脚本、测试、工作流、文档里的命令，一律写 `/bin/bash`。这条只查**命令位置**
+# 的裸 bash（行首、`;` `&&` `||` `|` `(` `!` `$(` 之后），散文里的「bash 3.2」
+# 「~/.bashrc」不算。
+BARE_BASH=$(cd "$REPO_DIR" && grep -rnE '(^[[:space:]]*|&&[[:space:]]*|\|\|[[:space:]]*|[;&|(){}!][[:space:]]*|\$\([[:space:]]*)bash([[:space:]]|$)' \
+    --include=*.sh --include=*.py --include=*.yml --include=*.md --include=*.mdc . 2>/dev/null \
+    | grep -v '^\./\.git/' \
+    | grep -v 'shell_lint\.sh:' \
+    | grep -vE ':[0-9]+:[[:space:]]*#' \
+    || true)
+
+if [[ -z "$BARE_BASH" ]]; then
+    pass "没有裸 bash 调用（一律 /bin/bash）"
+else
+    echo "$BARE_BASH" | head -20 | sed 's/^/  /'
+    fail "$(echo "$BARE_BASH" | grep -c .) 处调用了裸 bash；请写 /bin/bash（PATH 上的可能是 Homebrew 5.x）"
 fi
 
 echo

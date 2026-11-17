@@ -104,8 +104,8 @@ wave upgrade -a -s          # 静默批处理
 它表达的意思本来就是「无人值守、给 CI 用」，所以直接改名：
 
 ```bash
-bash install.sh --ci --dir-option=1
-bash install.sh --CI --dir-option=2      # 大小写等价
+/bin/bash install.sh --ci --dir-option=1
+/bin/bash install.sh --CI --dir-option=2      # 大小写等价
 ```
 
 旧写法**没有保留为别名** —— 留着等于把那个坑留在原地，现在会明确报

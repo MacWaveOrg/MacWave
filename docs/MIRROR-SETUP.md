@@ -369,7 +369,7 @@ rsync -a -e "ssh -o ControlPath=$HOME/.ssh/cm-lw" \
   root@<服务器>:/root/mirror-sync/
 
 # 服务器上
-bash /root/mirror-sync/sync-install.sh
+/bin/bash /root/mirror-sync/sync-install.sh
 ```
 
 cron 定在 **03:23**，排在巡检（04:17）之前 —— 先同步再体检，体检看到的就是同步后的状态。
@@ -377,9 +377,9 @@ cron 定在 **03:23**，排在巡检（04:17）之前 —— 先同步再体检�
 ### 三种跑法
 
 ```bash
-bash /root/mirror-sync/mirror-sync.sh --dry-run       # 只看会动哪些树，不写文件
-bash /root/mirror-sync/mirror-sync.sh --no-payloads   # 只同步 git 树与清单（快）
-bash /root/mirror-sync/mirror-sync.sh                 # 全量，含产物
+/bin/bash /root/mirror-sync/mirror-sync.sh --dry-run       # 只看会动哪些树，不写文件
+/bin/bash /root/mirror-sync/mirror-sync.sh --no-payloads   # 只同步 git 树与清单（快）
+/bin/bash /root/mirror-sync/mirror-sync.sh                 # 全量，含产物
 ```
 
 退出码 0 表示全部成功，1 表示有任何一步失败。`cron` 里默认带 `--no-payloads`：
@@ -447,7 +447,7 @@ rsync -a -e "ssh -o ControlPath=$HOME/.ssh/cm-lw" \
   scripts/mirror-check/ root@<服务器>:/root/mirror-check/
 
 # 服务器上
-bash /root/mirror-check/install.sh
+/bin/bash /root/mirror-check/install.sh
 ```
 
 装完 cron 里多一行，每天 04:17 跑。**时间刻意不取整点**，避开全网都在打 GitHub 的时刻。

@@ -82,7 +82,7 @@ Options go after `--`, which ends bash's own options:
 
 ```bash
 # script already on disk
-bash install.sh --ci --dir-option=1
+/bin/bash install.sh --ci --dir-option=1
 
 # straight from the repository
 /bin/bash -c "$(curl -fsSL https://github.com/MacWaveOrg/MacWave/releases/latest/download/install.sh)" \
@@ -503,12 +503,12 @@ counted, so removing one package does not remove a library another still uses.
 Each script runs end to end and reports `PASS` or `FAIL`:
 
 ```bash
-bash scripts/configpath_test.sh    # configuration directory resolution
-bash scripts/format_test.sh        # every supported archive format
-bash scripts/deps_test.sh          # dependency install and cascade removal
-bash scripts/link_test.sh          # versionless links
-bash scripts/upgrade_test.sh       # wave upgrade, offline
-bash scripts/selfupdate_test.sh    # self-update; ends by updating for real
+/bin/bash scripts/configpath_test.sh    # configuration directory resolution
+/bin/bash scripts/format_test.sh        # every supported archive format
+/bin/bash scripts/deps_test.sh          # dependency install and cascade removal
+/bin/bash scripts/link_test.sh          # versionless links
+/bin/bash scripts/upgrade_test.sh       # wave upgrade, offline
+/bin/bash scripts/selfupdate_test.sh    # self-update; ends by updating for real
 python3 scripts/random_test.py     # randomised end-to-end regression, needs network
 python3 scripts/audit_deps.py data # audit the index against the installed libraries
 ```

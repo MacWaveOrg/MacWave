@@ -7,7 +7,7 @@ DIR=${DIR:-/root/mirror-sync}
 # 权限在 rsync 之后可能被覆盖成 644，这里每次都兜底
 chmod +x "$DIR"/*.sh 2>/dev/null || true
 
-if ! bash -n "$DIR/mirror-sync.sh"; then
+if ! /bin/bash -n "$DIR/mirror-sync.sh"; then
     echo "❌ mirror-sync.sh 语法有问题，不安装"; exit 1
 fi
 
@@ -19,7 +19,7 @@ crontab -l | grep "$DIR/sync-run.sh" | sed 's/^/   /'
 
 echo
 echo "首次执行一次（只同步 git 树与清单，不碰产物）…"
-bash "$DIR/sync-run.sh" --no-payloads
+/bin/bash "$DIR/sync-run.sh" --no-payloads
 rc=$?
 echo
 if (( rc == 0 )); then
