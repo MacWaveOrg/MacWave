@@ -1099,6 +1099,14 @@ install_failed() {
 }
 trap install_failed ERR
 
+# 回滚（拒绝协议时）要不要删这棵树，取决于它是不是**本次**安装建出来的：
+# 覆盖升级时 BASE_DIR 本来就在，删掉它等于毁掉用户已有的安装。
+# 必须在第一条 mkdir 之前判断。
+TREE_PREEXISTED=0
+if [[ -d "$BASE_DIR" || -d "$CONFIG_DIR" ]]; then
+    TREE_PREEXISTED=1
+fi
+
 run_cmd mkdir -p "$INSTALL_DIR"
 run_cmd mkdir -p "$LINKS_DIR"
 run_cmd mkdir -p "$REPO_DIR"
