@@ -1812,11 +1812,24 @@ else
     # 回滚要连 rc 里的 PATH 一起清掉，否则会留下指向已删除目录的一行。
     # 这里不写死 sudo：用户级安装全程无需提权，回滚也不该突然要密码。
     mw_say "${RED_BOLD}You do not agree to the agreement. Installation stopped.${RESET}" "${RED_BOLD}你未同意该协议，安装已停止。${RESET}"
-    mw_say "${RED_BOLD}🌊 Cleaning up downloaded files...${RESET}" "${RED_BOLD}🌊 正在清理已下载的文件……${RESET}"
-    run_cmd rm -rf "$BASE_DIR"
-    run_cmd rm -rf "$CONFIG_DIR"
-    remove_lw_path_entries "$RC_FILE"
-    mw_say "${RED_BOLD}🌊 All files have been deleted.${RESET}" "${RED_BOLD}🌊 所有文件已删除。${RESET}"
+    # 回滚只清本次安装建出来的东西。升级覆盖时 BASE_DIR 早就存在，
+    # 删掉它就是毁掉用户已有的安装。
+    _cleanup_rc="$RC_FILE"
+    if [[ -n "${EXISTING_RC:-}" ]]; then
+        _cleanup_rc="$EXISTING_RC"
+    fi
+    if [[ "$TREE_PREEXISTED" == "0" ]]; then
+        mw_say "${RED_BOLD}🌊 Cleaning up downloaded files...${RESET}" "${RED_BOLD}🌊 正在清理已下载的文件……${RESET}"
+        run_cmd rm -rf "$BASE_DIR"
+        run_cmd rm -rf "$CONFIG_DIR"
+        # 回滚要连 rc 里的 PATH 一起清掉，否则会留下指向已删除目录的一行。
+        # 这里不写死 sudo：用户级安装全程无需提权，回滚也不该突然要密码。
+        remove_lw_path_entries "$_cleanup_rc"
+        mw_say "${RED_BOLD}🌊 All files have been deleted.${RESET}" "${RED_BOLD}🌊 所有文件已删除。${RESET}"
+    else
+        mw_say "${YELLOW}🌊 Existing installation left untouched; run the installer again to continue.${RESET}" \
+            "${YELLOW}🌊 已有安装保持原样，重新运行安装器可继续。${RESET}"
+    fi
     exit 1
 fi
 
