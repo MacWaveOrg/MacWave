@@ -156,6 +156,29 @@ else
     fail "$SAY_BAD 处仍在用 say / say_err（粘贴到终端会让机器朗读）"
 fi
 
+echo "========== 4. 不许用只有 bash 4 才有的语法 =========="
+# macOS 自带的是 /bin/bash 3.2，而 Homebrew 装的是 5.x。在 5.x 上写得顺手的
+# `${var,,}`（小写化）、`mapfile`、`declare -A`、`&>>` 到了 3.2 上会报
+# "bad substitution" 或 "command not found"，然后**脚本退出，一句提示都没有**。
+#
+# 2026-11-16 实际踩过：selfupdate 的 beta 拦截里用了 `${1,,}`，本地用 `bash`
+# （5.x）验过全绿，CI 上 /bin/bash 3.2 一跑就直接退出 —— 顺便把排在前面的
+# 跨大版本断言也带红了，因为脚本在那之前就死了。
+#
+# 所以：新写 shell 一律用 `/bin/bash` 验（`/bin/bash -n`、`/bin/bash 脚本`），
+# 并且不要用下面这些写法。
+BASH4_BAD=$(grep -rnE '(\$\{[0-9@*#?A-Za-z_][A-Za-z0-9_]*,,|\$\{[0-9@*#?A-Za-z_][A-Za-z0-9_]*\^\^|^[[:space:]]*(mapfile|readarray)\b|[[:space:]]declare[[:space:]]+-A|&>>|\|&)' \
+    --include=*.sh "$REPO_DIR"/lib "$REPO_DIR"/pkg "$REPO_DIR"/surfboard "$REPO_DIR"/scripts 2>/dev/null \
+    | grep -v '^.*shell_lint\.sh:' \
+    | grep -vE ':[0-9]+:[[:space:]]*#' || true)
+
+if [[ -z "$BASH4_BAD" ]]; then
+    pass "没有 bash 4 专有语法（macOS 自带 3.2）"
+else
+    echo "$BASH4_BAD" | sed 's/^/  /'
+    fail "$(echo "$BASH4_BAD" | grep -c .) 处用了 bash 4 专有语法；macOS 自带 /bin/bash 是 3.2"
+fi
+
 echo
 echo "=========================================="
 echo -e "🌊 Passed: $PASSED"

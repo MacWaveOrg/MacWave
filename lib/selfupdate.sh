@@ -301,7 +301,11 @@ is_prerelease() {
     #
     # 为什么要在这里也判一次：selfupdate.sh 可以直接执行（文件头就写着这条路），
     # 也可以被 3.x 客户端的 update_command 拉起来 —— 那些路径不经过 selfupdate.py。
-    local v="${1,,}"
+    # 小写化用 tr 而不是 ${var,,}：后者是 bash 4 的语法，而 macOS 自带的是
+    # bash 3.2 —— 它会在调用时报 "bad substitution" 并退出，症状是「脚本莫名
+    # 退出 1，一条消息都没有」。测试要用 /bin/bash 跑，不能用 Homebrew 的 5.x。
+    local v
+    v="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
     case "$v" in
         *-beta*|*-alpha*|*-rc*|*-dev*|*-pre*) return 0 ;;
     esac
