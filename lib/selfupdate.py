@@ -4,6 +4,7 @@
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -292,6 +293,22 @@ def _refuse_agreement(current, silent):
     sys.exit(1)
 
 
+def _is_cross_major(current, latest):
+    """这次更新是不是跨大版本。
+
+    只用来决定**要不要问协议**，不参与拒绝：跨大版本的更新本来就装不了（要重装），
+    在它上面问「同不同意新协议」纯属噪音 —— 用户答应了也还是得去官网重装。
+    真正的拒绝在 lib/selfupdate.sh 里（那里才是唯一判定处，因为 selfupdate.sh 才是
+    「从目标分支拉下来执行」的那一份，每个大版本自带自己的规则）。
+    """
+    def major_of(value):
+        match = re.search(r"[0-9]+", str(value or ""))
+        return match.group(0) if match else ""
+
+    left, right = major_of(current), major_of(latest)
+    return bool(left) and bool(right) and left != right
+
+
 def confirm_agreement(current):
     """协议更新后的同意询问。
 
@@ -381,7 +398,7 @@ def handle_selfupdate(input_string=""):
     # 「确实要更新」之后才问协议：没东西可装的时候不打扰人。
     # 也正因为这个位置，问的是「要不要跨过这道门槛去做这次更新」——
     # 与协议第 2 条给的选项（放弃更新 / 继续用已同意的那一版）对得上。
-    if agreement_needs_consent(current):
+    if agreement_needs_consent(current) and not _is_cross_major(current, latest):
         confirm_agreement(current)
 
     if current:

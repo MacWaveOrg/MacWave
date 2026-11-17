@@ -376,6 +376,16 @@ for current, recorded_id, expected in cases:
     got = module.agreement_needs_consent(current)
     assert got is expected, f'current={current} recorded={recorded_id!r}: 期望 {expected}，实际 {got}'
 
+# 跨大版本不问协议：那种更新本来就装不了（要重装），问同意是噪音。
+# 这一条同时钉住了「协议问询不能盖过大版本守卫」—— 2026-11-17 CI 上就是这么红的：
+# 装 0.1 想升 4.x，协议问询先跳出来，把「请去官网重装」那条挡住了。
+for current, latest in (('0.1', '4.0.1'), ('4.3.4', '5.0.0')):
+    recorded['id'] = ''
+    assert module.agreement_needs_consent(current) is True, current
+    assert module._is_cross_major(current, latest) is True, current
+for current, latest in (('4.3.4', '4.4.0'), ('4.0.0', '4.0.1')):
+    assert module._is_cross_major(current, latest) is False, current
+
 # 协议标识必须与官网落款一致，且是个日期形状（改协议时忘改这里会静默失真）
 import re
 assert re.fullmatch(r'\d{4}-\d{2}-\d{2}', module.AGREEMENT_ID), module.AGREEMENT_ID
