@@ -190,6 +190,7 @@
 | `sandbox_test.sh` | 安装器/卸载器在系统沙箱里跑，宿主除沙箱外零写入，且离线 |
 | `configpath_test.sh` | 配置目录解析的优先级与容错回落 |
 | `audit_deps.py` | 数据审计：检查数据完整性，或把已装产物的实际动态库引用与声明对比 |
+| `LOCAL-cache_probe.py` | 开发机排障，不参与 CI（`LOCAL-` 前缀的文件只在本机，被 `.gitignore` 忽略）：探测 DeepSeek 前缀缓存是否生效，四条已知形状的请求把「缓存命中率掉了」分清是平台侧还是 agent 客户端（头部注入动态内容 / 自动摘要 / 中途改规则）。key 只从 `DEEPSEEK_API_KEY` 读 |
 | `linksafety_test.sh` | 产物里的符号链接：树内与系统位置放行、越界拒绝（绝对路径 / 相对爬出 / 指向目录 / 悬空但指向外面）、真实漏斗拒绝且不留半成品、合法产物不被误杀 |
 | `minos_test.sh` | `min_os`（实验性，4.3 转正）：版本串解析（位数不同也比）、低于声明才提醒、字段缺失必须静默、非交互往安全侧倒、`--force` 越过、info 三种格式里没有声明时不出现、回填脚本幂等。离线 |
 | `structure_test.sh` | 项目结构自检：`scripts/components.txt` 里的每个组件，`wave.py` 都建了 sys.path、`install.sh` 都建了目录、CI 都覆盖；并且脚本与 CI 里不许再手写一份「lib pkg surfboard」 |
