@@ -1,11 +1,19 @@
 #!/bin/bash
+
+# bash 3.2 (macOS)
+
 # MacWave Uninstaller
 # 卸载 MacWave 及清理环境配置
+
+set -eE
+set -u
+set -o pipefail
 
 # -------------------- 测试根（隔离） --------------------
 # MACWAVE_TEST 指向一个目录时，把它当作 /：HOME 和所有系统路径都挂到它下面，
 # 整条链路都落在那个目录里，完全不碰真实系统。
 # 没设置时 SYS_ROOT 为空，下面 "$SYS_ROOT/opt/..." 就还是 "/opt/..."，行为不变。
+
 SYS_ROOT=""
 if [[ -n "${MACWAVE_TEST:-}" ]]; then
     _mw_root="$MACWAVE_TEST"
