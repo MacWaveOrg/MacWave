@@ -193,7 +193,7 @@ of `install.sh` runs.
 | `Selfupdate` | `macwavedata/latest.toml` — **unchanged**: a beta never goes there |
 | `configdata` | `versiondata/latest_version` — **unchanged** (`4.3.4` / branch `4.3`) |
 | `Pages` | **unchanged** |
-| `MacWave` Release `v4.4.0-beta3` | every `.py` / `.sh` at the tag, flat (89 files), plus `MacWave-4.4.0-beta3.tar`, `.tar.gz`, `SHA256SUMS`, `SHA256SUMS.asc` — asset count = 89 + 4 = 93 |
+| `MacWave` Release `v4.4.0-beta3` | every `.py` / `.sh` at the tag, flat (89 files), plus `MacWave-4.4.0-beta3.tar` and `.tar.gz` — asset count = 89 + 2 = 91. No `SHA256SUMS` / `SHA256SUMS.asc` in this build: signatures are required from 2026-12-01 onwards, which is the next release, so nothing here is signed |
 
 ---
 
@@ -364,4 +364,4 @@ beta 上 `wave selfupdate` 会被拒绝，所以这是重装：
 | `Selfupdate` | `macwavedata/latest.toml` —— **不动**：beta 永远不写进去 |
 | `configdata` | `versiondata/latest_version` —— **不动**（`4.3.4` / 分支 `4.3`） |
 | `Pages` | **不动** |
-| `MacWave` Release `v4.4.0-beta3` | tag 下全部 `.py` / `.sh` 扁平（89 个），加 `MacWave-4.4.0-beta3.tar`、`.tar.gz`、`SHA256SUMS`、`SHA256SUMS.asc` —— 资产数 = 89 + 4 = 93 |
+| `MacWave` Release `v4.4.0-beta3` | tag 下全部 `.py` / `.sh` 扁平（89 个），加 `MacWave-4.4.0-beta3.tar`、`.tar.gz` —— 资产数 = 89 + 2 = 91。这一版没有 `SHA256SUMS` / `SHA256SUMS.asc`：签名按规则从 2026-12-01 起为必做，那是下一个版本，所以这里没有签名 |
