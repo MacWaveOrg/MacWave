@@ -37,15 +37,13 @@ set -o pipefail
 # 顺带说明：这里说的是**文件描述符**，不是 `fd` 这个命令 —— 安装器只用 bash 内建
 # 与 curl / tar / sed 这类 macOS 自带工具，不需要用户预先装任何东西。
 #
-# **位置必须比第一条输出还早**：测试根那一行、颜色定义、横幅都排在下面，
-# 装晚了就会出现「前几行有 emoji、后面没有」这种半吊子输出。
-# 同样地，--raw 的初值也必须在这里定，别在预扫之后再赋一次 false。
+# **装在第一条输出之前**：参数解析本身不打字，解析完立刻装过滤器，之后的测试根
+# 提示、横幅、错误提示就都在过滤范围内。之前这里要先扫一遍参数才能做到「一律」，
+# 那正是「版本号请求夹在解析中间」逼出来的结构 —— 现在解析在前、取版本在后，
+# 一遍扫描就够。
+# 注意：这里**只定义**过滤器，不安装它。参数还没解析，此刻还不知道有没有 --raw；
+# 真正把它接到 1、2 号文件描述符上，是在参数解析之后（见“装上 --raw 的过滤器”）。
 CLI_RAW=false
-for _mw_arg in "$@"; do
-    case "$_mw_arg" in
-        --raw|--RAW) CLI_RAW=true ;;
-    esac
-done
 
 mw_raw() { [[ "${CLI_RAW:-false}" == "true" ]]; }
 
@@ -63,37 +61,6 @@ mw_raw_filter() {
     done
 }
 
-if mw_raw; then
-    exec > >(mw_raw_filter) 2>&1
-fi
-
-# -------------------- 测试根（隔离） --------------------
-# MACWAVE_TEST 指向一个目录时，把它当作 /：HOME 和所有系统路径都挂到它下面，
-# 整条链路都落在那个目录里，完全不碰真实系统。
-# 没设置时 SYS_ROOT 为空，下面 "$SYS_ROOT/opt/..." 就还是 "/opt/..."，行为不变。
-SYS_ROOT=""
-if [[ -n "${MACWAVE_TEST:-}" ]]; then
-    _mw_root="$MACWAVE_TEST"
-    if [[ "$_mw_root" == "~"* ]]; then
-        _mw_root="${HOME}${_mw_root#\~}"
-    fi
-    mkdir -p "$_mw_root"
-    # 物理路径：macOS 上 /var 是指向 /private/var 的符号链接，这里若用逻辑路径，
-    # 与下面比较用的 HOME（configpaths 已经 resolve 过）对不上，前缀判断就会失效。
-    SYS_ROOT="$(cd "$_mw_root" && pwd -P)"
-    # 幂等：config/configpaths.py 也会把 HOME 搬进测试根。从 wave.py 一路调用下来时
-    # HOME 已经被改过一次，这里再套一层就会变成 "<根><根>/Users/<你>"，配置目录于是
-    # 永远找不到。两边都取物理路径再比较，才不会被 /var 与 /private/var 骗过去。
-    _mw_home_real="$(cd "$HOME" 2>/dev/null && pwd -P)" || _mw_home_real="$HOME"
-    case "$_mw_home_real" in
-        "$SYS_ROOT"|"$SYS_ROOT"/*) ;;
-        *) export HOME="$SYS_ROOT${HOME}" ;;
-    esac
-    mkdir -p "$HOME"
-    # mw_say 到这里还没定义（它与 MW_LANG 都在下面），所以直接 echo：
-    # 以前这里调用 mw_say，隔离运行时第一行永远是 "mw_say: command not found"。
-    echo "🌊 Test root: $SYS_ROOT"
-fi
 
 # ==========================================
 # 颜色定义
@@ -106,11 +73,6 @@ RESET='\033[0m'
 SKY_BLUE='\033[38;5;74m'
 RED='\033[1;31m'
 
-# --raw：调色板整体清空。脚本里几十处 ${RED_BOLD}… 因此自然没有颜色，
-# 不必逐个调用点判断 —— 与上面那个输出过滤器一起构成「一律」。
-if mw_raw; then
-    RED_BOLD=""; RED=""; GREEN=""; YELLOW=""; SKY_BLUE=""; RESET=""
-fi
 
 # ==========================================
 # 语言
@@ -273,18 +235,6 @@ mw_plan() {
     fi
 }
 
-# 先扫一遍参数里的两个流程开关，不消费参数（真正的解析在下面）：
-#   --zh      —— 否则 `--help --zh` 会因为 --help 先被处理而输出英文；
-#   --dry-run —— 版本号在解析参数**之前**就要读，试运行必须在那之前生效，
-#                否则断网的机器上第一步就退出了，看不到后面任何输出。
-for _mw_arg in "$@"; do
-    case "$_mw_arg" in
-        --zh|--ZH) MW_LANG="zh" ;;
-        --dry-run|--DRY-RUN) CLI_DRY_RUN=true ;;
-        --raw|--RAW) CLI_RAW=true ;;
-    esac
-done
-
 
 
 # ==========================================
@@ -386,79 +336,6 @@ if [[ -n "${MACWAVE_CACERT:-}" ]]; then
     CURL_CACERT="$_cacert"
 fi
 
-# ==========================================
-# 版本号与代码分支（从自更新数据读取，不写死在脚本里）
-# ==========================================
-#
-# macwavedata/latest.toml 里的 version 是这次要安装的版本，branch 是配套的代码分支：
-# 两者一起读，保证「下载的代码」和「写进 VERSION.json 的版本号」对应同一个版本。
-#
-# 格式是 TOML 的一个子集：平铺的 `key = "value"`，允许行尾 # 注释。
-# 这里用 sed 而不是引 TOML 解析器，因为此刻客户端还没有可用的 Python 环境。
-
-LATEST_DATA_URL="$SELFUPDATE_URL/macwavedata/latest.toml"
-# `|| true` 不能省：赋值语句的退出码就是 curl 的退出码，在 `set -e` 下取不到
-# 版本会直接静默退出（实测 exit 7，下面那段「读不到版本」的提示一个字都打不出来）。
-LATEST_VERSION_DATA="$(curl -fsSL --max-time 30 ${CURL_CACERT:+--cacert "$CURL_CACERT"} "$LATEST_DATA_URL" 2>/dev/null || true)"
-
-read_toml_string() {
-    # read_toml_string <文本> <键> —— 取平铺的字符串值，去掉引号与行尾注释
-    printf '%s\n' "$1" \
-        | sed -n "s/^[[:space:]]*$2[[:space:]]*=[[:space:]]*\"\([^\"]*\)\".*/\1/p" \
-        | head -n 1
-}
-
-# pre-release 的安装口：调用方可以用环境变量显式指定要装的版本与分支，
-# 覆盖上面从 configdata 读到的「最新正式版」。
-#
-# 为什么必须留这个口子：configdata 是 `wave selfupdate` 的唯一依据，beta 绝不能
-# 写进去 —— 一旦写进去，所有人的常规更新都会跳上 beta。所以「装 beta」只能由
-# 调用方显式指定，而这正是 beta Release 正文里那条命令做的事。
-#
-# 指向 releases/latest 的安装命令**不带**这两个变量，所以走那条路的人永远得到正式版。
-# 两个必须同时给：只给版本不给分支，会去取一条不含该版本文件的代码线。
-#
-# 名字被收成局部变量是必要的 —— 下面那两行赋值会直接覆盖同名环境变量。
-ENV_VERSION="${MACWAVE_VERSION:-}"
-ENV_BRANCH="${MACWAVE_BRANCH:-}"
-
-MACWAVE_VERSION="$(read_toml_string "$LATEST_VERSION_DATA" version)"
-LATEST_BRANCH="$(read_toml_string "$LATEST_VERSION_DATA" branch)"
-
-if [[ -n "$ENV_VERSION" && -n "$ENV_BRANCH" ]]; then
-    # 版本号会进 URL 与 JSON，只接受安全的字符 —— 不给「拼个奇怪的值让后面的
-    # 拼接变成别的东西」留余地。分支名同理由 git 的规则限制（不能有空格等）。
-    if [[ ! "$ENV_VERSION" =~ ^[A-Za-z0-9._-]+$ || ! "$ENV_BRANCH" =~ ^[A-Za-z0-9._-]+$ ]]; then
-        echo -e "${RED_BOLD}🌊 Error: refusing to install '$ENV_VERSION' from branch '$ENV_BRANCH'.${RESET}" >&2
-        echo -e "${YELLOW}🌊 Version and branch may only contain letters, digits, dot, dash and underscore.${RESET}" >&2
-        exit 1
-    fi
-    MACWAVE_VERSION="$ENV_VERSION"
-    LATEST_BRANCH="$ENV_BRANCH"
-    mw_say "${YELLOW}🌊 Installing $MACWAVE_VERSION from branch $LATEST_BRANCH (explicitly requested, not the latest stable release)." \
-        "${YELLOW}🌊 将安装 ${MACWAVE_VERSION}（分支 ${LATEST_BRANCH}）—— 这是显式指定的版本，不是最新正式版。"
-fi
-
-if [[ -z "$MACWAVE_VERSION" || -z "$LATEST_BRANCH" ]]; then
-    if mw_dry_run; then
-        # 试运行可能只是想看输出，不该因为断网就断在第一行：用占位值把流程
-        # 走完，后面每一处都只打印、不落地。真实安装仍然在这里退出。
-        MACWAVE_VERSION="${MACWAVE_VERSION:-unknown}"
-        LATEST_BRANCH="${LATEST_BRANCH:-unknown}"
-        mw_say "${YELLOW}🌊 Dry run: could not read the latest version; using '$MACWAVE_VERSION'." \
-            "${YELLOW}🌊 试运行：读不到最新版本号，用占位值 '$MACWAVE_VERSION'。"
-        mw_say "${YELLOW}🌊   $(mw_redact "$LATEST_DATA_URL")" \
-            "${YELLOW}🌊   $(mw_redact "$LATEST_DATA_URL")"
-    else
-        echo -e "${RED_BOLD}🌊 Error: Cannot read the latest version from the self-update data.${RESET}" >&2
-        echo -e "${RED_BOLD}🌊   $(mw_redact "$LATEST_DATA_URL")${RESET}" >&2
-        echo -e "${RED_BOLD}🌊 Check your network or proxy, then run the installer again.${RESET}" >&2
-        exit 1
-    fi
-fi
-
-BRANCH="$LATEST_BRANCH"
-BASE_URL="$CORE_URL/$BRANCH"
 
 # ==========================================
 # 辅助函数：将路径中的 $HOME 替换为 ~
@@ -797,12 +674,14 @@ usage() {
            '  /bin/bash -c "$(curl -fsSL <url>)" -- --ci --dir-option=1'
 }
 
-# 语言与 --dry-run / --raw 的预扫已在文件上方完成（版本号要在解析之前就用到），
-# 这里只做真正的参数解析。
+# 参数在这里**一次**解析完。以前要扫两遍：一遍为了让 --raw 赶在第一条输出之前
+# 生效，一遍为了让 --zh/--dry-run 赶在「读版本号」之前生效 —— 那是因为取版本号的
+# 网络请求被放在了解析之前。现在取版本在后面，扫一遍就够。
 #
 # 留一份原始参数：下面的 while 会一路 shift 把 "$@" 掏空，而 --help 的连用规则
 # 要在解析之后回头检查「用户到底还给了什么」。
 CLI_ARGV=("$@")
+PARSE_ERROR_OPT=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -847,12 +726,48 @@ while [[ $# -gt 0 ]]; do
             CLI_PRINT_USAGE=true
             ;;
         *)
-            mw_say_err "${RED_BOLD}🌊 Error: unknown option '$1'. Try --help.${RESET}" "${RED_BOLD}🌊 错误：未知选项 '$1'。可试 --help。${RESET}"
-            exit 1
+            # 不在这里打印：此刻还没有装上 --raw 的过滤器、也没定语言。
+            # 记下来，等输出环境就绪再报（见下面「报告解析错误」）。
+            PARSE_ERROR_OPT="$1"
+            break
             ;;
     esac
     shift
 done
+
+# ==========================================
+# 装上 --raw 的过滤器，并确定语言
+# ==========================================
+#
+# 到这里参数已经解析完：--raw / --zh 都有结论了，而**还没有输出过任何东西**。
+# 所以过滤器只需要装一次、也只需要扫一遍参数 —— 解析在前、取版本在后，正是为此。
+#
+# 但解析可能在第一处未知选项就停下（那时 --raw 还没被读到）。所以这里从**原始
+# 参数**再认一次呈现类旗标，保证「未知选项 + --raw」报出来的错也是干净的。
+_PRESENTATION_APPLIED=false
+mw_apply_presentation() {
+    [[ "$_PRESENTATION_APPLIED" == "true" ]] && return 0
+    local arg
+    for arg in ${CLI_ARGV[@]+"${CLI_ARGV[@]}"}; do
+        case "$arg" in
+            --raw|--RAW) CLI_RAW=true ;;
+            --zh|--ZH) MW_LANG="zh" ;;
+        esac
+    done
+    if mw_raw; then
+        RED_BOLD=""; RED=""; GREEN=""; YELLOW=""; SKY_BLUE=""; RESET=""
+        exec > >(mw_raw_filter) 2>&1
+    fi
+    _PRESENTATION_APPLIED=true
+}
+mw_apply_presentation
+
+# 参数没认出来：现在才报（语言与 --raw 都已就绪）。
+if [[ -n "$PARSE_ERROR_OPT" ]]; then
+    mw_say_err "${RED_BOLD}🌊 Error: unknown option '$PARSE_ERROR_OPT'. Try --help.${RESET}" \
+        "${RED_BOLD}🌊 错误：未知选项 '$PARSE_ERROR_OPT'。可试 --help。${RESET}"
+    exit 1
+fi
 
 # ==========================================
 # --help 的连用规则
@@ -957,6 +872,108 @@ resolve_custom_dir() {
     validated=$(validate_custom_dir "$custom_dir") || exit 1
     BASE_DIR="$validated"
 }
+
+# -------------------- 测试根（隔离） --------------------
+# MACWAVE_TEST 指向一个目录时，把它当作 /：HOME 和所有系统路径都挂到它下面，
+# 整条链路都落在那个目录里，完全不碰真实系统。
+# 没设置时 SYS_ROOT 为空，下面 "$SYS_ROOT/opt/..." 就还是 "/opt/..."，行为不变。
+SYS_ROOT=""
+if [[ -n "${MACWAVE_TEST:-}" ]]; then
+    _mw_root="$MACWAVE_TEST"
+    if [[ "$_mw_root" == "~"* ]]; then
+        _mw_root="${HOME}${_mw_root#\~}"
+    fi
+    mkdir -p "$_mw_root"
+    # 物理路径：macOS 上 /var 是指向 /private/var 的符号链接，这里若用逻辑路径，
+    # 与下面比较用的 HOME（configpaths 已经 resolve 过）对不上，前缀判断就会失效。
+    SYS_ROOT="$(cd "$_mw_root" && pwd -P)"
+    # 幂等：config/configpaths.py 也会把 HOME 搬进测试根。从 wave.py 一路调用下来时
+    # HOME 已经被改过一次，这里再套一层就会变成 "<根><根>/Users/<你>"，配置目录于是
+    # 永远找不到。两边都取物理路径再比较，才不会被 /var 与 /private/var 骗过去。
+    _mw_home_real="$(cd "$HOME" 2>/dev/null && pwd -P)" || _mw_home_real="$HOME"
+    case "$_mw_home_real" in
+        "$SYS_ROOT"|"$SYS_ROOT"/*) ;;
+        *) export HOME="$SYS_ROOT${HOME}" ;;
+    esac
+    mkdir -p "$HOME"
+    # 用 mw_say：现在它已经定义好了（参数解析更早），并行输出也走同一个闸门。
+    # 这行带 🌊，--raw 时会被过滤器剥掉。
+    mw_say "🌊 Test root: $SYS_ROOT" "🌊 测试根：$SYS_ROOT"
+fi
+
+# ==========================================
+# 版本号与代码分支（从自更新数据读取，不写死在脚本里）
+# ==========================================
+#
+# macwavedata/latest.toml 里的 version 是这次要安装的版本，branch 是配套的代码分支：
+# 两者一起读，保证「下载的代码」和「写进 VERSION.json 的版本号」对应同一个版本。
+#
+# 格式是 TOML 的一个子集：平铺的 `key = "value"`，允许行尾 # 注释。
+# 这里用 sed 而不是引 TOML 解析器，因为此刻客户端还没有可用的 Python 环境。
+
+LATEST_DATA_URL="$SELFUPDATE_URL/macwavedata/latest.toml"
+# `|| true` 不能省：赋值语句的退出码就是 curl 的退出码，在 `set -e` 下取不到
+# 版本会直接静默退出（实测 exit 7，下面那段「读不到版本」的提示一个字都打不出来）。
+LATEST_VERSION_DATA="$(curl -fsSL --max-time 30 ${CURL_CACERT:+--cacert "$CURL_CACERT"} "$LATEST_DATA_URL" 2>/dev/null || true)"
+
+read_toml_string() {
+    # read_toml_string <文本> <键> —— 取平铺的字符串值，去掉引号与行尾注释
+    printf '%s\n' "$1" \
+        | sed -n "s/^[[:space:]]*$2[[:space:]]*=[[:space:]]*\"\([^\"]*\)\".*/\1/p" \
+        | head -n 1
+}
+
+# pre-release 的安装口：调用方可以用环境变量显式指定要装的版本与分支，
+# 覆盖上面从 configdata 读到的「最新正式版」。
+#
+# 为什么必须留这个口子：configdata 是 `wave selfupdate` 的唯一依据，beta 绝不能
+# 写进去 —— 一旦写进去，所有人的常规更新都会跳上 beta。所以「装 beta」只能由
+# 调用方显式指定，而这正是 beta Release 正文里那条命令做的事。
+#
+# 指向 releases/latest 的安装命令**不带**这两个变量，所以走那条路的人永远得到正式版。
+# 两个必须同时给：只给版本不给分支，会去取一条不含该版本文件的代码线。
+#
+# 名字被收成局部变量是必要的 —— 下面那两行赋值会直接覆盖同名环境变量。
+ENV_VERSION="${MACWAVE_VERSION:-}"
+ENV_BRANCH="${MACWAVE_BRANCH:-}"
+
+MACWAVE_VERSION="$(read_toml_string "$LATEST_VERSION_DATA" version)"
+LATEST_BRANCH="$(read_toml_string "$LATEST_VERSION_DATA" branch)"
+
+if [[ -n "$ENV_VERSION" && -n "$ENV_BRANCH" ]]; then
+    # 版本号会进 URL 与 JSON，只接受安全的字符 —— 不给「拼个奇怪的值让后面的
+    # 拼接变成别的东西」留余地。分支名同理由 git 的规则限制（不能有空格等）。
+    if [[ ! "$ENV_VERSION" =~ ^[A-Za-z0-9._-]+$ || ! "$ENV_BRANCH" =~ ^[A-Za-z0-9._-]+$ ]]; then
+        echo -e "${RED_BOLD}🌊 Error: refusing to install '$ENV_VERSION' from branch '$ENV_BRANCH'.${RESET}" >&2
+        echo -e "${YELLOW}🌊 Version and branch may only contain letters, digits, dot, dash and underscore.${RESET}" >&2
+        exit 1
+    fi
+    MACWAVE_VERSION="$ENV_VERSION"
+    LATEST_BRANCH="$ENV_BRANCH"
+    mw_say "${YELLOW}🌊 Installing $MACWAVE_VERSION from branch $LATEST_BRANCH (explicitly requested, not the latest stable release)." \
+        "${YELLOW}🌊 将安装 ${MACWAVE_VERSION}（分支 ${LATEST_BRANCH}）—— 这是显式指定的版本，不是最新正式版。"
+fi
+
+if [[ -z "$MACWAVE_VERSION" || -z "$LATEST_BRANCH" ]]; then
+    if mw_dry_run; then
+        # 试运行可能只是想看输出，不该因为断网就断在第一行：用占位值把流程
+        # 走完，后面每一处都只打印、不落地。真实安装仍然在这里退出。
+        MACWAVE_VERSION="${MACWAVE_VERSION:-unknown}"
+        LATEST_BRANCH="${LATEST_BRANCH:-unknown}"
+        mw_say "${YELLOW}🌊 Dry run: could not read the latest version; using '$MACWAVE_VERSION'." \
+            "${YELLOW}🌊 试运行：读不到最新版本号，用占位值 '$MACWAVE_VERSION'。"
+        mw_say "${YELLOW}🌊   $(mw_redact "$LATEST_DATA_URL")" \
+            "${YELLOW}🌊   $(mw_redact "$LATEST_DATA_URL")"
+    else
+        echo -e "${RED_BOLD}🌊 Error: Cannot read the latest version from the self-update data.${RESET}" >&2
+        echo -e "${RED_BOLD}🌊   $(mw_redact "$LATEST_DATA_URL")${RESET}" >&2
+        echo -e "${RED_BOLD}🌊 Check your network or proxy, then run the installer again.${RESET}" >&2
+        exit 1
+    fi
+fi
+
+BRANCH="$LATEST_BRANCH"
+BASE_URL="$CORE_URL/$BRANCH"
 
 # ==========================================
 # 显示欢迎信息

@@ -78,6 +78,19 @@ else
     fail "--help 竟然产生了安装产物"
 fi
 
+# --help 不该碰网络：版本号请求排在参数解析之后，所以连版本源都连不上时，
+# 它也必须能照常打出用法。这条是结构保证，不是巧合 —— 早先的写法是先取版本、
+# 再解析参数，`--help` 在断网机器上会直接报「读不到版本号」。
+OUT=$(MACWAVE_TEST="$WORK/help-offline" \
+      MACWAVE_SELFUPDATE_DOMAIN="http://127.0.0.1:1" \
+      /bin/bash "$INSTALL_SH" --help < /dev/null 2>&1)
+RC=$?
+if [[ "$RC" -eq 0 ]] && has "$OUT" "Usage:" && hasnt "$OUT" "Cannot read the latest version"; then
+    pass "--help 不联网：版本源不可达时仍能打用法"
+else
+    fail "--help 仍然依赖版本源（rc=${RC}）"
+fi
+
 # -------------------- 2. --help 与呈现类旗标 --------------------
 
 run_install help-zh --help --zh
