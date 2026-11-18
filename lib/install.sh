@@ -687,6 +687,9 @@ CLI_CI=false
 NO_NOISE=false
 CLI_DIR_OPTION=""
 CLI_CUSTOM_DIR=""
+# --skip-probe：不真写那个探针文件，提权判定只用 test -w 的静态结论。
+# 见「是否需要 sudo」那一节里 mw_can_write 的说明。
+CLI_SKIP_PROBE=false
 # 默认从我们自己的 Python 仓库取解释器；这个开关让它回上游取
 INSTALL_PYTHON_FROM_SOURCE=""
 
@@ -718,6 +721,11 @@ Options:
       --raw               Plain output for logs and scripts: no emoji, no
                           colours, ASCII progress bars. Interaction is
                           unchanged; combine with --ci for unattended runs.
+      --skip-probe        Do not create the temporary probe file used to decide
+                          whether privilege is needed; rely on the permission
+                          bits alone. Use it when the target must stay
+                          untouched -- a wrong guess only moves the failure to
+                          the first real write.
       --dir-option=N      Pick menu entry N without prompting (1-$CUSTOM_OPTION).
       --dir-option=DIR    Use DIR as the installation directory (shorthand for
                           --dir-option=$CUSTOM_OPTION=DIR).
@@ -763,6 +771,9 @@ MacWave 安装程序
                           因此在断网的机器上也能看完整个输出。
       --raw               给日志和脚本用的输出：不带 🌊、不带颜色、进度条用
                           井号刻度。交互不变；无人值守请再配 --ci。
+      --skip-probe        判定是否需要提权时不在目标里建那个临时探针文件，只用
+                          权限位判断。适合「目标必须一点痕迹都不留」的场合 ——
+                          判断错了只是把失败推迟到第一次真正写入。
       --dir-option=N      不提问，直接选菜单第 N 项（1-${CUSTOM_OPTION}）。
       --dir-option=DIR    用 DIR 作为安装目录（等价于
                           --dir-option=$CUSTOM_OPTION=DIR）。
@@ -804,6 +815,9 @@ while [[ $# -gt 0 ]]; do
             ;;
         --raw|--RAW)
             CLI_RAW=true
+            ;;
+        --skip-probe|--SKIP-PROBE)
+            CLI_SKIP_PROBE=true
             ;;
         --dir-option=*)
             _value="${1#--dir-option=}"
@@ -1285,8 +1299,12 @@ mw_can_write() {
     [[ -d "$path" ]] || return 1
     [[ -w "$path" ]] || return 1
 
-    # --dry-run 的承诺是「不写文件」，所以试运行只用上面那步静态判断。
-    mw_dry_run && return 0
+    # --dry-run 的承诺是「不写文件」，所以试运行只用上面那步静态判断；
+    # --skip-probe 是用户显式要求跳过这次写探针（例如目标目录在别人的地盘上，
+    # 不想留下任何痕迹，宁可事后由真正的写入报错）。
+    if mw_dry_run || [[ "${CLI_SKIP_PROBE:-false}" == "true" ]]; then
+        return 0
+    fi
 
     errfile="$(mktemp -t macwave-write-probe)"
     if probe="$(mktemp "$path/.macwave-write-probe.XXXXXX" 2>"$errfile")"; then

@@ -276,6 +276,54 @@ else
 fi
 chmod 755 "$PROBE_ROOT/locked"
 
+# -------------------- 8. --skip-probe --------------------
+
+echo
+echo "========== --skip-probe =========="
+
+probe_run_flag() {
+    # 与 probe_run 相同，但把 CLI_SKIP_PROBE 打开
+    /bin/bash -c '
+mw_dry_run() { return 1; }
+CLI_SKIP_PROBE=true
+eval "$(sed -n "/^mw_can_write()/,/^}/p" "$1")"
+dir="$2"
+rc=0
+mw_can_write "$dir" || rc=$?
+leftovers=$(find "$dir" -maxdepth 1 -name ".macwave-write-probe.*" 2>/dev/null | wc -l | tr -d " ")
+echo "rc=$rc leftovers=$leftovers"
+' _ "$INSTALL_SH" "$1"
+}
+
+SKIP_ROOT=$(new_root skip)
+mkdir -p "$SKIP_ROOT/writable"
+out=$(probe_run_flag "$SKIP_ROOT/writable")
+if [[ "$out" == "rc=0 leftovers=0" ]]; then
+    pass "--skip-probe：可写目录照常放行，且一个文件都不建"
+else
+    fail "--skip-probe 的可写目录结果不对：$out"
+fi
+
+mkdir -p "$SKIP_ROOT/locked"
+RO_DIRS+=("$SKIP_ROOT/locked")
+chmod 555 "$SKIP_ROOT/locked"
+out=$(probe_run_flag "$SKIP_ROOT/locked")
+if [[ "$out" == "rc=1 leftovers=0" ]]; then
+    pass "--skip-probe：不可写目录仍要靠权限位判定为需要提权"
+else
+    fail "--skip-probe 的不可写目录结果不对：$out"
+fi
+chmod 755 "$SKIP_ROOT/locked"
+
+# 帮助里必须列出来 —— 否则没人知道有这个开关
+out=$(/bin/bash "$INSTALL_SH" --help 2>&1)
+ok_contains() {
+    if [[ "$1" == *"$2"* ]]; then pass "$3"; else fail "$3"; fi
+}
+ok_contains "$out" "--skip-probe" "英文帮助里列出了 --skip-probe"
+out=$(/bin/bash "$INSTALL_SH" --help --zh 2>&1)
+ok_contains "$out" "--skip-probe" "中文帮助里列出了 --skip-probe"
+
 echo
 echo "=========================================="
 echo -e "🌊 Passed: $PASSED"
