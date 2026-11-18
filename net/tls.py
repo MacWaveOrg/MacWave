@@ -8,12 +8,13 @@
 # `@common`、版本记录、依赖元数据、info / search / latest 这些请求照样校验证书。
 # 而自签证书的镜像恰好在**第一个**请求上就失败 —— 旗标等于没写。
 #
-# 做法是把状态放在模块级，由 wave.py 在分发命令之前从原始命令行里设一次；
-# 所有发请求的地方都加 `**tls.request_kwargs()`。这样不会再有「漏了哪一处」。
+# 做法是把状态放在模块级，由 wave.py 在分发命令之前设一次（值来自
+# cli/common.py 的 parse()）；所有发请求的地方都加 `**tls.request_kwargs()`。
+# 这样不会再有「漏了哪一处」。
 #
 # 为什么分「请求」与「授权」两段：install / upgrade 会先弹一句安全询问，用户
 # 答否（或非交互读不到答复）时**不能**跳过校验。若在分发之前就直接打开，
-# 那个询问就形同虚设。所以先 configure_from() 记下「命令行里写了」，
+# 那个询问就形同虚设。所以先 configure() 记下「命令行里写了」，
 # 真正生效要等 grant()。
 
 # urllib3 是 requests 的依赖，正常安装一定在。但 lib/selfupdate.py 会被测试
@@ -31,10 +32,14 @@ _requested = False
 _enabled = False
 
 
-def configure_from(argv):
-    """从原始命令行记下是否要求跳过证书校验。返回是否要求。"""
+def configure(requested):
+    """记下是否要求跳过证书校验。返回是否要求。
+
+    结论由 cli/common.py 的 parse() 给出（--skip-ssl 是公共旗标），这里只收结果 ——
+    同一条命令行不该在两层里各解析一遍。
+    """
     global _requested
-    _requested = "--skip-ssl" in argv
+    _requested = bool(requested)
     return _requested
 
 

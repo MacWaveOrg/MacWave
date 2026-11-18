@@ -109,14 +109,12 @@ def get_deps(fields):
 # -------------------- 远程数据 --------------------
 
 def request_timeout(input_string):
-    # 超时从**原始命令行**里取，与软件包安装侧用同一套规则：
-    # net/timeouts.py 的 FLAG_FIELDS 是唯一来源，三档（连接 / 读数据 / 总时长）
-    # 都从那张表来。这里不接收调用方解析好的对象，保证「命令怎么写的，就怎么生效」，
-    # 也避免两处解析逻辑漂移。
+    # 超时从**原始命令行**里取，与软件包安装侧走同一个解析入口（cli/common.py）：
+    # 三档（连接 / 读数据 / 总时长）都由它读、由 net/timeouts.py 换算。
     #
     # 返回 requests 要的 (connect, read) 元组；fetch_text 直接透传。
-    from timeouts import from_command_line
-    return from_command_line(input_string or "").request_timeout
+    import common
+    return common.parse(input_string or "").timeouts.request_timeout
 
 
 def fetch_text(url, attempts=3, timeout=None):

@@ -160,9 +160,9 @@ def upgrade_everything(words, remove_old):
     后面的包白等 —— 逐个跑、逐个收结果，最后一次性报总账。单个包的成败本来就
     由 handle_upgrade 打在终端上，这里只补汇总与退出码。
     """
+    import common
     from latest import fetch_names, installed_bin_names, resolve_package_name
     from pkginstaller import confirm_skip_ssl, detect_arch
-    from timeouts import from_command_line
     from uninstaller import find_installed_versions
 
     # 下面这一次取名字清单也走 HTTPS，所以 `--skip-ssl` 必须先有结论 ——
@@ -177,9 +177,9 @@ def upgrade_everything(words, remove_old):
 
     # bin/ 里是 bin_name，索引里是包名，两者不一定相同（choma -> ChOma）。
     # 复用 latest 的对照逻辑，这样 `wave latest -a` 报的集合与这里逐个升级的集合一致。
-    # 三档超时也要作用在这一步：它同样是请求。规则只有 lib/timeouts.py 一份，
-    # 所以从剥掉 upgrade 专属旗标之后剩下的词里解析。
-    index_names = fetch_names(detect_arch(), from_command_line(" ".join(words)))
+    # 三档超时也要作用在这一步：它同样是请求。解析入口只有 cli/common.py 一个，
+    # 所以从剥掉 upgrade 专属旗标之后剩下的词里取。
+    index_names = fetch_names(detect_arch(), common.parse(words).timeouts)
     packages = [resolve_package_name(bin_name, index_names) for bin_name in targets]
 
     # 其余旗标原样带下去（--proxy / --max-time / -v…）。-X 被 split_input 剥掉了，
@@ -211,6 +211,7 @@ def upgrade_everything(words, remove_old):
 
 
 def handle_upgrade(input_string, assume_yes=False):
+    import common
     from depsinstaller import get_field
     from pkginstaller import (
         detect_arch,
@@ -219,7 +220,6 @@ def handle_upgrade(input_string, assume_yes=False):
         handle_install,
         package_index,
         parse_flags,
-        parse_timeout,
     )
     from versioncompare import safe_parse_pkg_version as version_key
     from uninstaller import find_installed_versions
@@ -262,7 +262,7 @@ def handle_upgrade(input_string, assume_yes=False):
             print(f"{YELLOW}🌊 {hint}.{RESET}")
             sys.exit(1)
 
-    budget = parse_timeout(probe, flags)
+    budget = common.parse(probe).timeouts
     budget.start()
 
     arch = detect_arch()

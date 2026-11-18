@@ -260,11 +260,13 @@ def reject_flag(flag):
 
 
 def split_arguments(input_string):
-    """返回 (是否 --all, [包名...], 超时原值或 None, 是否 --verbose)。"""
+    """返回 (是否 --all, [包名...], 是否 --verbose)。
+
+    超时不在这里取：它由 common.parse() 统一解析，见 resolve_timeout()。
+    """
     words = input_string.split()[2:]
     everything = False
     names = []
-    timeout_raw = None
     verbose = False
 
     position = 0
@@ -281,12 +283,10 @@ def split_arguments(input_string):
         if word.startswith("--"):
             flag = flags.flag_name(word)
             has_value = "=" in word
-            value = word.split("=", 1)[1] if has_value else ""
             if flag == "--max-time":
-                if not has_value:
-                    value = words[position] if position < len(words) else ""
+                # 值由 common.parse() 读；这里只是跳过它，别当成包名
+                if not has_value and position < len(words):
                     position += 1
-                timeout_raw = value
             elif flag == "--all":
                 everything = True
             elif flag == "--verbose":
@@ -304,15 +304,13 @@ def split_arguments(input_string):
             else:
                 reject_flag(f"-{letter}")
 
-    return everything, names, timeout_raw, verbose
+    return everything, names, verbose
 
 
-def resolve_timeout(input_string, timeout_raw):
-    """latest 也认三档超时；它自己只解析 --max-time 的值，其余交给 parse_timeout。"""
-    from pkginstaller import parse_timeout
-    from timeouts import FLAG_FIELDS
-    present = [flag for flag in FLAG_FIELDS if flag in input_string.split()]
-    budget = parse_timeout(input_string, present)
+def resolve_timeout(input_string):
+    """latest 也认三档超时 —— 与 install 同一个解析入口（cli/common.py）。"""
+    import common
+    budget = common.parse(input_string).timeouts
     budget.start()
     return budget
 
@@ -320,9 +318,9 @@ def resolve_timeout(input_string, timeout_raw):
 # -------------------- 入口 --------------------
 
 def handle_latest(input_string):
-    everything, names, timeout_raw, verbose = split_arguments(input_string)
+    everything, names, verbose = split_arguments(input_string)
     steplog.set_verbose(verbose)
-    timeout = resolve_timeout(input_string, timeout_raw)
+    timeout = resolve_timeout(input_string)
 
     from pkginstaller import detect_arch
     arch = detect_arch()

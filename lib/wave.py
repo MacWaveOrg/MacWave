@@ -120,18 +120,24 @@ def main():
 
     # 3. 命令分发
     if FirstWord in COMMANDS:
+        # 公共旗标（--proxy / --skip-ssl / 三档超时 / -v / -C …）只解析一次，
+        # 入口是 cli/common.py —— 各 handler 拿到的值、报错文案与退出码因此一致。
+        # 解析放在分发之前：取值不合法时，任何命令都是同一句错，而不是「install 报错、
+        # selfupdate 当作没写」。handler 里再 parse 一次是幂等的。
+        import common
+        options = common.parse(words)
+
         # `--proxy` 必须对这条命令的**所有**请求生效，不只是下载包体那一步。
         # 做法是把值写进进程环境（HTTPS_PROXY 等），因为 requests（trust_env 默认开）、
         # urllib 与 bash 子脚本里的 curl 都读环境变量 —— 一处生效，全部覆盖。
         # 这一步放在分发之前：任何 handler 及其子进程都继承这份环境。
-        from configpaths import apply_proxy_from_command_line
-        apply_proxy_from_command_line(words)
+        common.apply_proxy(options)
 
         # `--skip-ssl` 在这里只**记录**，真正生效要等确认之后（见 net/tls.py）。
         # install / upgrade 会先弹一句安全询问，用户答否时不能跳过校验；
         # 其余命令没有那道询问，直接授权。
         import tls
-        tls.configure_from(words)
+        tls.configure(options.skip_ssl)
         if FirstWord not in ("install", "upgrade"):
             tls.grant()
 

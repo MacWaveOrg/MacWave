@@ -117,27 +117,18 @@ FLAG_FIELDS = {
 }
 
 
-def flag_value(input_string, name):
-    """取旗标的值，`--name value` 与 `--name=value` 都支持；没有则返回 None。"""
-    tokens = input_string.split()
-    for index, token in enumerate(tokens):
-        if token == name:
-            return tokens[index + 1] if index + 1 < len(tokens) else ""
-        if token.startswith(name + "="):
-            return token[len(name) + 1:]
-    return None
+def from_values(raws, fail=None):
+    """把「旗标 → 原始文本」拼成 Budget；取值不合法时调用 fail(旗标, 原值)。
 
-
-def from_command_line(input_string, fail=None):
-    """从命令行拼出 Budget；取值不合法时调用 fail(旗标, 原值)。
-
+    文本从哪来不归这里管：命令行只有一条解析路径，就是 cli/common.py 的
+    parse()。它把值抠出来，这里只回答「这段文本是多少秒」。
     fail 由调用方给，因为 lib/ 不该依赖 pkg/ 的报错格式。
     """
     values = {}
     for flag, field in FLAG_FIELDS.items():
-        raw = flag_value(input_string, flag)
-        if raw is None:
+        if flag not in raws:
             continue
+        raw = raws[flag]
         parsed = _parse_duration(raw)
         if parsed is None:
             if fail is not None:

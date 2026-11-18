@@ -42,26 +42,17 @@ TIMEOUT_ENV = {
 }
 
 
-def timeouts_from(input_string):
-    """三档超时都从**原始命令行**里取，规则只有 net/timeouts.py 一份。
+def options_from(input_string):
+    """公共旗标走唯一的解析入口（cli/common.py）。
 
-    返回 (原始文本字典, Budget)。原始文本要原样交给 selfupdate.sh —— 那才是
-    真正发请求的一层，不能替它算好。
+    与 install 的差别只剩「拿了值怎么用」：这里把三档超时的**原始文本**原样交给
+    selfupdate.sh（它才是真正发请求的一层），预算则留给本层取版本数据时用。
+    --proxy 由 wave.py 在分发前写进环境变量，子脚本的 curl 直接继承。
+
+    返回 common.Options。
     """
-    from timeouts import FLAG_FIELDS, flag_value, from_command_line
-
-    def reject(flag, raw):
-        print(f"{RED_BOLD}🌊 Error: cannot parse {flag} value '{raw}'.{RESET}")
-        print(f"{RED_BOLD}🌊 Use a number of seconds or a suffix like 40s, 1min, 1min20s, 2h.{RESET}")
-        sys.exit(1)
-
-    budget = from_command_line(input_string or "", fail=reject)
-    raws = {}
-    for flag in FLAG_FIELDS:
-        raw = flag_value(input_string or "", flag)
-        if raw:
-            raws[flag] = raw
-    return raws, budget
+    import common
+    return common.parse(input_string or "")
 
 
 def curl_seconds(timeout):
@@ -372,8 +363,10 @@ def handle_selfupdate(input_string=""):
     if current and versioncompare.is_prerelease(current):
         refuse_on_prerelease(current)
 
-    timeout_raws, budget = timeouts_from(input_string)
-    install_python_from_source = "--install-python-from-source" in input_string.split()
+    options = options_from(input_string)
+    timeout_raws = options.timeout_raws
+    budget = options.timeouts
+    install_python_from_source = options.install_python_from_source
 
     print("🌊 Fetching the latest version...")
 

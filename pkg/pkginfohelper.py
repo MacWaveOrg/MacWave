@@ -420,18 +420,10 @@ def _fallback():
 
 
 def _budget(input_string):
-    import timeouts
-    from pkginstaller import _reject_bad_duration
+    import common
 
-    words = input_string.split()
-    for flag in timeouts.FLAG_FIELDS:
-        if flag in words:
-            raw = timeouts.flag_value(input_string, flag)
-            if raw is None or raw == "":
-                print(f"{RED_BOLD}🌊 Error: {flag} needs a value, "
-                      f"e.g. {flag}=1min.{RESET}")
-                sys.exit(1)
-    budget = timeouts.from_command_line(input_string, fail=_reject_bad_duration)
+    # 三档超时与 install 走同一个入口，所以「值不合法」的报错与退出码也一样
+    budget = common.parse(input_string).timeouts
     budget.start()
     return budget
 

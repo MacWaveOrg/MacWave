@@ -31,6 +31,7 @@ from configpaths import (
     require_safe_filename,
     require_safe_token,
 )
+import common
 import domains
 import tls
 import flags as flags_module
@@ -107,17 +108,6 @@ except ImportError as error:
 
 
 # -------------------- 辅助函数 --------------------
-
-def _parse_rate_limit(rate_str):
-    rate_str = rate_str.upper().strip()
-    multipliers = {'K': 1024, 'M': 1024**2, 'G': 1024**3}
-    try:
-        if rate_str[-1] in multipliers:
-            return float(rate_str[:-1]) * multipliers[rate_str[-1]]
-        return float(rate_str)
-    except ValueError:
-        return None
-
 
 DEFAULT_TIMEOUT = 30
 
@@ -376,8 +366,6 @@ def parse_flags(input_string, command="install", shown=None):
     return found
 
 
-from timeouts import flag_value  # noqa: E402,F401  —— 单一实现，见 lib/timeouts.py
-
 
 # 这些旗标后面跟的是一个「值」，那个值不是包名。
 # 少了 --max-time 时，`wave install --max-time 1min jq` 会把 `1min` 当成包名。
@@ -409,41 +397,27 @@ def first_package_token(input_string):
     return None if index is None else words[index]
 
 
-def _reject_bad_duration(flag, raw):
-    print(f"{RED_BOLD}🌊 Error: cannot parse {flag} value '{raw}'.{RESET}")
-    print(f"{RED_BOLD}🌊 Use a number of seconds or a suffix like 40s, 1min, 1min20s, 2h.{RESET}")
-    sys.exit(1)
-
-
-def parse_timeout(input_string, flags):
-    """三档超时（连接 / 读数据 / 总时长），见 lib/timeouts.py。
-
-    单独提出来，是因为 upgrade 要在「下载之前」先用它去取版本列表 ——
-    那时还没有 config 字典。
-    """
-    for flag in timeouts.FLAG_FIELDS:
-        if flag in flags:
-            value = flag_value(input_string, flag)
-            if value is None or value == "":
-                print(f"{RED_BOLD}🌊 Error: {flag} needs a value, e.g. {flag}=1min.{RESET}")
-                sys.exit(1)
-    return timeouts.from_command_line(input_string, fail=_reject_bad_duration)
-
-
 def handle_download_args(input_string):
     """
     处理下载相关的参数逻辑。
     返回配置字典。
+
+    公共旗标的值全部来自 cli/common.py 的 parse() —— 它已经校验过代理协议、限速与
+    三档超时，并在不合法时报错退出。这里只做它不管的两件事：白名单校验（哪些旗标
+    这条命令认）与 --skip-ssl 的安全询问。
     """
     flags = parse_flags(input_string)
+    options = common.parse(input_string)
 
     config = {
-        "skip_ssl_verify": False,
-        "verbose": False,
-        "resume": False,
-        "limit_rate": None,
-        "proxy": None,
-        "timeout": timeouts.Budget(),
+        # 命令行写了 --skip-ssl 不等于用户可以跳过校验，要问过才算数
+        "skip_ssl_verify": confirm_skip_ssl(flags),
+        "verbose": options.verbose,
+        "resume": options.resume,
+        "limit_rate": options.limit_rate,
+        # None 而不是空串：下游一律用 `if config["proxy"]` 判断
+        "proxy": options.proxy or None,
+        "timeout": options.timeouts,
         # 4.0 只从 Bottle 存储取二进制，url 字段平时不读。
         #
         # `--install-from-source` 暂时下线（旗标不再接受，见 ALLOWED_FLAGS）：
@@ -455,39 +429,6 @@ def handle_download_args(input_string):
         # 索引声明的最低系统版本高于本机时，跳过询问直接装。
         "force": "-F" in flags or "--force" in flags,
     }
-
-    # 1. --skip-ssl 安全询问
-    config["skip_ssl_verify"] = confirm_skip_ssl(flags)
-
-    # 2. verbose 判定
-    if "-v" in flags or "--verbose" in flags:
-        config["verbose"] = True
-
-    # 3. 断点续传开关
-    if "-C" in flags or "--continue" in flags:
-        config["resume"] = True
-
-    # 4. 限速
-    if "--limit-rate" in flags:
-        rate_str = flag_value(input_string, "--limit-rate")
-        if rate_str:
-            config["limit_rate"] = _parse_rate_limit(rate_str)
-
-    # 4.1 三档超时：--connect-timeout 管握手，--content-time 管等数据，
-    # --max-time 管整次操作。只给 --max-time 时，握手与读数据都退回默认的短值，
-    # 这样「防止卡在握手」不需要额外旗标也能生效。
-    config["timeout"] = parse_timeout(input_string, flags)
-
-    # 5. 代理
-    if "--proxy" in flags:
-        proxy_value = flag_value(input_string, "--proxy")
-        if proxy_value is not None:
-            if not (proxy_value.startswith("http://") or
-                    proxy_value.startswith("https://") or
-                    proxy_value.startswith("socks5://")):
-                print('🌊 Proxy error, please check your network proxy settings, whether the input is correct, or contact your ISP.')
-                sys.exit(1)
-            config["proxy"] = proxy_value
 
     return config
 
@@ -916,7 +857,7 @@ def handle_install(input_string):
 
     # 3. 解析版本号（只看包名 token，避免 --proxy 里的 user:pass@host 被误认）
     steplog.begin("fetch version list")
-    ver_flag = flag_value(input_string, "--ver")
+    ver_flag = common.value(input_string, "--ver")
     ParsePkgVersion = None
     if "@" in raw_pkg:
         if ver_flag is not None:

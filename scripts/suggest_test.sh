@@ -188,6 +188,7 @@ from pathlib import Path
 
 repo = Path(sys.argv[1])
 sys.path[:0] = os.environ["MACWAVE_COMPONENT_PATHS"].split(os.pathsep)
+import common
 import timeouts as T
 
 problems = []
@@ -210,23 +211,24 @@ cases = {
     "wave x --max-time=10s":                           (10, 30, 10),
     "wave x --connect-timeout=3 --content-time=50":    (3, 50, 50),
 }
+# 走的是命令行真正的入口：common.parse() 抠值 + timeouts 换算
 for cmd, (connect, content, total) in cases.items():
-    b = T.from_command_line(cmd)
+    b = common.parse(cmd).timeouts
     if (b.connect, b.content, b.total) != (connect, content, total):
         problems.append(f"{cmd!r} -> {(b.connect, b.content, b.total)}, "
                         f"应为 {(connect, content, total)}")
 
 # 没给 --max-time 时总时长不能被默认值压小于显式给的 content
-b = T.from_command_line("wave x --content-time=1min")
+b = common.parse("wave x --content-time=1min").timeouts
 if b.total < b.content:
     problems.append(f"--content-time=1min 被总时长 {b.total} 压回去了")
 
 # requests 拿到的元组；read 会被「剩余总时长」压住，所以只要落在合理区间
-b = T.from_command_line("wave x --connect-timeout=3 --content-time=50").start()
+b = common.parse("wave x --connect-timeout=3 --content-time=50").timeouts.start()
 connect, read = b.request_timeout
 if connect != 3.0 or not (49.0 < read <= 50.0):
     problems.append(f"request_timeout = {(connect, read)}, 连接应为 3.0、读应≈50")
-b = T.from_command_line("wave x --max-time=10s --content-time=50").start()
+b = common.parse("wave x --max-time=10s --content-time=50").timeouts.start()
 if b.request_timeout[1] > 10:
     problems.append("总时长 10s 时 read 仍给了 50s，等于总时长形同虚设")
 

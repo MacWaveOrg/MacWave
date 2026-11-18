@@ -43,7 +43,7 @@
 | 路径 | 是什么 | 维护建议 |
 | --- | --- | --- |
 | `lib/` | 入口、步骤追踪、`latest` / `mirror` 两个只读命令、安装与自更新脚本 | 核心，改动需测试 |
-| `cli/` | 命令行层：帮助文本、旗标清单与 argv 拆解、拼写建议、`-s`/`-S` | 纯逻辑为主，改动需跑 `flags_test` / `message_test` / `suggest_test` |
+| `cli/` | 命令行层：帮助文本、公共旗标解析、旗标清单与 argv 拆解、拼写建议、`-s`/`-S` | 纯逻辑为主，改动需跑 `flags_test` / `message_test` / `suggest_test` |
 | `config/` | 安装位置层：配置目录解析、启动自检 | 契约见 3.3；改它要同时想 `MACWAVE_TEST` 与系统级/用户级回落 |
 | `net/` | 传输层：地址表、TLS 策略、三档超时。**唯一允许发请求的层** | 契约由 `scripts/net_policy_test.sh` 盯着，新增请求点必须带策略 |
 | `pkg/` | 软件包安装、查询、卸载、链接、解压、版本比较 | 核心，改动需跑端到端 |
@@ -74,6 +74,7 @@
 | --- | --- | --- |
 | `help.py` | 三套文本：总帮助、版本信息、子命令帮助 | 子命令帮助只列该命令真正接受的旗标，不承诺做不到的事。新增旗标时必须同步这里，否则模糊测试会把它当「未知选项」而预测错 |
 | `silent.py` | `-s` / `-S` 的**全部实现**，分两段：A 段参数层（`SILENT_COMMANDS` / `strip()` / `apply()`），B 段运行期闸门（`say` / `ask` / `show` / `silence_everything` / `machine_readable`） | 两段共用同一份状态与同一张命令清单，所以合在一个文件里（原名 `quiet.py` 的那半已并入）。**A 段只被 `wave.py` 调用**，必须在分发前跑完：哪些命令能静默（只读命令给 `-s` 要报错而不是静默）、怎么剥掉旗标（`-sX`、`-CsX` 也认）、剥完落到状态。**B 段被 `pkg/` 与 `surfboard/` 调用**：`-s` 在 fd 层把 1、2 指向 `/dev/null`，子进程一起闭嘴；`-sS` 只剥行首 🌊；**错误不走这里**，静默只压噪音。`SILENT_COMMANDS` 是**权威**，`flags.COMMAND_FLAGS` 里那份只用来生成提示文案（`flags.describe("-s")`），两边由 `flags_test.sh` 比对 |
+| `common.py` | **公共旗标的唯一解析入口**：`parse()` 返回 `Options`（`verbose` / `resume` / `skip_ssl` / `install_python_from_source` / `proxy` / `limit_rate` / `timeout_raws` / `timeouts`），外加 `value()`（只有某条命令认识的取值旗标）与 `apply_proxy()`（把 `--proxy` 写进 `*_PROXY` 环境变量） | `cli/flags.py` 管词法、`net/timeouts.py` 管时长语义，**值抠出来与校验（协议前缀、限速、三档超时）只在这里**，报错文案与退出码因此全命令一致。以前 `--proxy` 在 `install` 里校验、在 `selfupdate` 里被静默忽略，同一个旗标两条命令行为不同；`pkginstaller.parse_timeout`、`pkginfohelper._budget`、`latest.resolve_timeout`、`selfupdate.timeouts_from`、`depsinstaller.request_timeout` 也都并到这里。白名单校验仍归各命令自己 |
 | `flags.py` | **argv 拆解的唯一实现**（`flag_name` / `split` / `tokens` / `short_cluster` / `remove_short`），外加「全部旗标」的诊断清单 | 下半部分全是纯函数：不打印、不退出、不读配置，所以 `pkg/` 与 `lib/` 都能直接用。`--name=value` 归一化、`-abc` 拆开、`-sX` 里拿掉 `s`、单独 `-` 终止，这四条规则以前在 `pkginstaller.parse_flags`、`silent.strip`、`upgrader.split_input`、`latest.split_arguments` 各写一遍。清单那一半**只用于诊断**，校验仍归各命令的白名单，`scripts/flags_test.sh` 盯着两边不走散 |
 | `suggest.py` | 两类「你是不是想敲……」：`command()`（命令名）、`closest_name()` / `name_examples()`（包名） | 命令名先查 `MISTYPED` 语义表再按拼写猜，两个阈值（0.7 / 0.83）是穷举 4670 种单字母错误测出来的；包名用编辑距离 + 相似度，install 与 latest **共用这一份**，别再各写一个 |
 
@@ -84,7 +85,7 @@
 
 | 文件 | 职责 | 关键点 |
 | --- | --- | --- |
-| `configpaths.py` | 配置目录解析的唯一来源 | 系统级优先、损坏则回落用户级。另提供「路径必须位于根目录内」的安全校验，防止配置被篡改后写到任意位置 |
+| `configpaths.py` | 配置目录解析的唯一来源 | 系统级优先、损坏则回落用户级。另提供「路径必须位于根目录内」的安全校验，防止配置被篡改后写到任意位置。`--proxy` 的解析与写环境变量在 `cli/common.py`，这里不再有第二条路径 |
 | `configerror.py` | 启动自检：机器上到底装没装 | 两处配置有一处有效就放行；都没装且当前在 git 仓库里时，报错并引导用安装脚本 |
 
 ### 2.4 `lib/` —— 入口层
@@ -96,7 +97,7 @@
 
 | 文件 | 职责 | 关键点 |
 | --- | --- | --- |
-| `wave.py` | 唯一入口。读配置、注入模块路径、按命令表分发 | 命令分发**之前**先拦下各命令的帮助请求，交给 `help.py`。否则各处理函数不认识帮助旗标，会出现「安装命令报错」「列表命令静默忽略」「自更新真的开始更新」三种坏结果。同样在分发之前把 `--proxy` 写进 `HTTPS_PROXY` 等环境变量 —— `requests`、`urllib` 与子脚本里的 `curl` 都读环境变量，一处生效、全部覆盖 |
+| `wave.py` | 唯一入口。读配置、注入模块路径、按命令表分发 | 命令分发**之前**先拦下各命令的帮助请求，交给 `help.py`。否则各处理函数不认识帮助旗标，会出现「安装命令报错」「列表命令静默忽略」「自更新真的开始更新」三种坏结果。同样在分发之前跑一次 `cli/common.py` 的 `parse()`：公共旗标在这里统一校验（不合法的 `--proxy` / 时长在任何命令下都是同一句错），`--proxy` 再由 `common.apply_proxy()` 写进 `HTTPS_PROXY` 等环境变量 —— `requests`、`urllib` 与子脚本里的 `curl` 都读环境变量，一处生效、全部覆盖 |
 | `wave`（生成） | **不在仓库里**：`install.sh` / `selfupdate.sh` 生成的最外层入口，是一个 sh 启动器 | 按「私有 venv → 安装时记录的解释器 → PATH 上的 python3」挑选**真正能 import 依赖**的解释器，再 exec `wave.py`。改入口逻辑要同时改两个脚本里的 `write_launcher` |
 | `mirrorinfo.py` | `wave mirror`：打印每类数据**实际**从哪个地址取，并标明来自环境变量还是内置默认值 | 未设置也打印默认值（空值分不清「没设」和「设成了空」）；密码一律打印固定 6 个星号，与真实长度无关，否则星号个数会泄露密码长度；`--show-password` 才给真实值，`--hide-user` 连用户名一起盖掉 |
 | `latest.py` | `wave latest`：只报告有没有新版，不下载任何东西 | 比较基准是**已安装的最高版本**，不是不带版本号的链接；链接指向更旧版本时附一行 `(linked: x.y.z)`。并发取清单（`MAX_WORKERS`），装了几十个包时串行会让「看一眼」变成等半分钟。拼错的包名从索引自己的名字表里给建议 |
@@ -134,7 +135,7 @@
 | 文件 | 职责 | 关键点 |
 | --- | --- | --- |
 | `domains.py` | **所有对外地址的唯一来源**。七个 `MACWAVE_*_DOMAIN` 环境变量、默认值、校验与归一化都在这里 | 边界归一化：`rstrip("/")` 去掉末尾斜杠，于是 13 处拼接点可以无条件写 `f"{domain}/…"`。默认值仍是 3.x 的地址，不设变量即行为不变。与两份 shell 脚本的同名块由 `scripts/check_domain_defaults.py` 比对，漂移会失败 |
-| `tls.py` | `--skip-ssl` 的唯一实现：模块级状态 + `request_kwargs()` / `urlopen_kwargs()` / `curl_flags()` | 分「请求」与「授权」两段：`install`/`upgrade` 先弹安全询问，答否时 `revoke()`，避免询问形同虚设。**任何发请求的地方都必须带它的返回值** |
+| `tls.py` | `--skip-ssl` 的唯一实现：模块级状态 + `configure()` / `request_kwargs()` / `urlopen_kwargs()` / `curl_flags()`（是否要求跳过校验由 `cli/common.py` 解析后传进来） | 分「请求」与「授权」两段：`install`/`upgrade` 先弹安全询问，答否时 `revoke()`，避免询问形同虚设。**任何发请求的地方都必须带它的返回值** |
 | `timeouts.py` | 三档超时（连接 / 读数据 / 总时长）的解析与折算 | 唯一来源是 `FLAG_FIELDS`；命令行文本原样下传到 shell 层，由 `curl` 自己再解析一次 —— 两层各自取值是为了让「Python 等得住、curl 也知道」 |
 
 **这一层的契约是可执行的**：`scripts/net_policy_test.sh` 用 AST 检查每个 `requests` /
