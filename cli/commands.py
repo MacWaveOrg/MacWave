@@ -198,10 +198,12 @@ COMMANDS = (
             ("--connect-timeout <string>", "Maximum time for the handshake"),
             ("--content-time <string>", "Maximum time to receive data"),
             ("--install-python-from-source", "Fetch the bundled Python from its upstream URL instead of MacWave's own repository"),
+            ("--dry-run", "Print what would be updated and change nothing (no download, no agreement prompt)"),
         ],
         examples=[
             "wave selfupdate",
             "wave selfupdate --max-time=2min",
+            "wave selfupdate --dry-run",
         ],
     ),
     Command(

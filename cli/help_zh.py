@@ -124,6 +124,7 @@ COMMANDS_ZH = {
             "--connect-timeout <string>": "握手最大时长",
             "--content-time <string>": "接收数据的最大时长",
             "--install-python-from-source": "从上游地址取自带的 Python，而不是 MacWave 自己的仓库",
+            "--dry-run": "只打印会更新到什么、会做什么，不做任何改动（不下载、不询问协议）",
         },
     },
     "link": {

@@ -19,11 +19,15 @@ wave-selfupdate-zh \- 把 MacWave 自身更新到自更新仓库里发布的版�
 .TP
 .B \-\-install\-python\-from\-source
 从上游地址取自带的 Python，而不是 MacWave 自己的仓库
+.TP
+.B \-\-dry\-run
+只打印会更新到什么、会做什么，不做任何改动（不下载、不询问协议）
 
 .SH 示例
 .nf
 wave selfupdate
 wave selfupdate --max-time=2min
+wave selfupdate --dry-run
 .fi
 .SH 另见
 wave-zh(1)

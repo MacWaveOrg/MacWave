@@ -316,6 +316,7 @@ wave upgrade --all, -a             把所有已装的软件包更新到最新版
 Self Update:
 wave selfupdate                    Update MacWave itself
 wave selfupdate --max-time=2min    Same, but give each request two minutes
+wave selfupdate --dry-run          Print what would be updated and change nothing
 
 Unversioned Links:
 wave link <name>                   Link a package to its highest installed version

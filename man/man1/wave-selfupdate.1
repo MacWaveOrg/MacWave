@@ -22,11 +22,16 @@ Maximum time to receive data
 .B \-\-install\-python\-from\-source
 Fetch the bundled Python from its upstream URL instead of MacWave's own
 repository
+.TP
+.B \-\-dry\-run
+Print what would be updated and change nothing (no download, no
+agreement prompt)
 
 .SH EXAMPLES
 .nf
 wave selfupdate
 wave selfupdate --max-time=2min
+wave selfupdate --dry-run
 .fi
 .SH SEE ALSO
 wave(1)

@@ -146,6 +146,7 @@ UPGRADE_ONLY_FLAGS = {
 OTHER_COMMAND_FLAGS = {
     "-a": ("wave upgrade --all", "wave link --all"),
     "--all": ("wave upgrade --all", "wave link --all"),
+    "--dry-run": ("wave selfupdate --dry-run",),
 }
 
 def _parse_dotted_version(text):

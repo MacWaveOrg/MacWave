@@ -70,9 +70,9 @@ upgrade = {"-X", "--remove-old-version", "--remove-old-versions", "--rov",
 link = {"-a", "--all"} | silent
 unlink = {"-a", "--all"} | silent
 linkquery = {"-a", "--all"}
-# selfupdate 没有专属旗标（时长走 GLOBAL 的 --max-time），但它是能静默的六条之一，
-# 缺了这一项 describe("-s") 会把 selfupdate 漏掉。
-selfupdate = set(silent)
+# selfupdate 只有 --dry-run 一个专属旗标（时长走 GLOBAL 的 --max-time），
+# 但它是能静默的六条之一，缺了这一项 describe("-s") 会把 selfupdate 漏掉。
+selfupdate = {"--dry-run"} | silent
 # 只有 -a/--all 是 latest 独有的；--json/--yaml/--toml/--raw 属于 info。
 # 这两组混在一起时，`wave install jq --json` 会被提示成「--json 也适用于 latest」，
 # 而 latest 其实会直接拒绝 --json。

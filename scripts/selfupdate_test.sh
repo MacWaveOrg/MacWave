@@ -201,6 +201,61 @@ fi
 rm -f "$LOG_FILE"
 
 # ==========================================
+# 2.5 --dry-run：只说会做什么，什么都不做
+# ==========================================
+
+echo "========== --dry-run changes nothing =========="
+
+# 装的是 4.0.0、上面那份版本数据是 4.0.1：同大版本、确实有得升。
+# 协议这一段也该被「问一次」——dry run 只许说，不许问（下面喂 /dev/null，
+# 一旦它真去 input() 就会拿到 EOF 并按拒绝退出，测试随之变红）。
+python3 - "$VERSION_FILE" << 'PYEOF'
+import json
+import sys
+
+with open(sys.argv[1], 'w') as handle:
+    json.dump({"version": "4.0.0", "components": {"installer": "4.0.0", "parser": "4.0.0"}},
+              handle, indent=2)
+PYEOF
+
+AGREEMENT_BEFORE=no
+[[ -f "$CONFIG_DIR/AGREEMENT.json" ]] && AGREEMENT_BEFORE=yes
+
+LOG_FILE="$(mktemp)"
+RC=0
+python3 "$WAVE_BIN" selfupdate --dry-run < /dev/null > "$LOG_FILE" 2>&1 || RC=$?
+cat "$LOG_FILE"
+
+DRY_OK=yes
+grep -q 'Dry run: MacWave would be updated from 4.0.0 to 4.0.1' "$LOG_FILE" || DRY_OK=no
+grep -q 'Nothing was downloaded and nothing was changed' "$LOG_FILE" || DRY_OK=no
+# 真更新才会打印这句（run_script 的第一行）
+grep -q 'Preparing the update script' "$LOG_FILE" && DRY_OK=no
+if [[ "$RC" -eq 0 && "$DRY_OK" == "yes" ]]; then
+    echo -e "${GREEN}🌊 OK: dry run reports the plan and exits 0${RESET}"
+else
+    echo -e "${RED_BOLD}🌊 FAIL: --dry-run did not behave (exit $RC)${RESET}"
+    FAILED=$((FAILED + 1))
+fi
+
+if [[ "$(python3 -c "import json; print(json.load(open('$VERSION_FILE'))['version'])")" == "4.0.0" ]]; then
+    echo -e "${GREEN}🌊 OK: VERSION.json untouched by --dry-run${RESET}"
+else
+    echo -e "${RED_BOLD}🌊 FAIL: --dry-run changed VERSION.json${RESET}"
+    FAILED=$((FAILED + 1))
+fi
+
+AGREEMENT_AFTER=no
+[[ -f "$CONFIG_DIR/AGREEMENT.json" ]] && AGREEMENT_AFTER=yes
+if [[ "$AGREEMENT_BEFORE" == "$AGREEMENT_AFTER" ]]; then
+    echo -e "${GREEN}🌊 OK: --dry-run wrote no AGREEMENT.json${RESET}"
+else
+    echo -e "${RED_BOLD}🌊 FAIL: --dry-run recorded the agreement${RESET}"
+    FAILED=$((FAILED + 1))
+fi
+rm -f "$LOG_FILE"
+
+# ==========================================
 # 3. 跨大版本必须被拒绝（3.0 起的新规则）
 # ==========================================
 

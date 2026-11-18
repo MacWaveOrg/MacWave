@@ -300,6 +300,54 @@ def _is_cross_major(current, latest):
     return bool(left) and bool(right) and left != right
 
 
+# -------------------- 试运行 --------------------
+
+DRY_RUN_FLAG = "--dry-run"
+
+
+def wants_dry_run(input_string):
+    return DRY_RUN_FLAG in (input_string or "").split()
+
+
+def report_dry_run(current, latest, data, options, overall_timeout):
+    """`--dry-run`：把「会做什么」打印出来，然后什么都不做。
+
+    只读：本地版本、刚取到的版本数据、命令行里的旗标。**不**问协议、**不**写
+    AGREEMENT.json、**不**建临时脚本、**不**跑 selfupdate.sh —— 所以它在任何机器上
+    都能安全地跑一遍（代价只有一次取 latest.toml 的 GET）。
+    """
+    budget = options.timeouts
+
+    def line(label, text):
+        print(f"🌊   {label:<12} {text}")
+
+    print(f"🌊 Dry run: MacWave would be updated from {current or 'unknown'} to {latest}.")
+
+    if data.get("branch"):
+        line("branch", data["branch"])
+    if _is_cross_major(current, latest):
+        # selfupdate.sh 不跨大版本；这里只是提前说清楚，免得用户以为 dry run 会装上去
+        line("version", "this is a cross-major update: lib/selfupdate.sh refuses those, "
+                        "reinstall from the release page instead")
+    if not agreement_needs_consent(current):
+        line("agreement", "not needed (already recorded, or this install already carries it)")
+    elif _is_cross_major(current, latest):
+        # 跨大版本本来就要重装，selfupdate 不会问协议 —— 说出来，别让人以为漏了一问
+        line("agreement", "not asked: a cross-major update needs a reinstall, not selfupdate")
+    else:
+        line("agreement", f"would be asked ({AGREEMENT_ID}); accepting would record it in "
+                          f"{AGREEMENT_FILE_NAME}")
+    line("skip-ssl", "on" if tls.enabled() else "off")
+    raws = ", ".join(f"{flag} {value}" for flag, value in options.timeout_raws.items())
+    line("timeouts", f"connect {budget.connect:g}s, content {budget.content:g}s, "
+                     f"total {budget.total:g}s" + (f" (from {raws})" if raws else " (defaults)"))
+    if options.install_python_from_source:
+        line("python", "fetched from its upstream URL")
+    line("script", f"a temporary copy of lib/selfupdate.sh, overall timeout {overall_timeout}s")
+
+    print(f"{GREEN}🌊 Nothing was downloaded and nothing was changed.{RESET}")
+
+
 def confirm_agreement(current):
     """协议更新后的同意询问。
 
@@ -367,6 +415,7 @@ def handle_selfupdate(input_string=""):
     timeout_raws = options.timeout_raws
     budget = options.timeouts
     install_python_from_source = options.install_python_from_source
+    dry_run = wants_dry_run(input_string)
 
     print("🌊 Fetching the latest version...")
 
@@ -386,6 +435,15 @@ def handle_selfupdate(input_string=""):
 
     if current and version_key(current) >= version_key(latest):
         print(f"{GREEN}🌊 MacWave is already up to date (current: {current}).{RESET}")
+        if dry_run:
+            print("🌊 Dry run: nothing would be downloaded or changed.")
+        sys.exit(0)
+
+    # 试运行在**问协议之前**结束：它既不该弹询问，也不该写 AGREEMENT.json。
+    # 这一段的判断全是只读的（版本比较、协议是否已记录）。
+    if dry_run:
+        report_dry_run(current, latest, data, options,
+                       max(UPDATE_TIMEOUT, int(budget.total) * 20))
         sys.exit(0)
 
     # 「确实要更新」之后才问协议：没东西可装的时候不打扰人。

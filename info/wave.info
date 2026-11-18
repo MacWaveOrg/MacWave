@@ -275,10 +275,15 @@ repository.
       Fetch the bundled Python from its upstream URL instead of
       MacWave's own repository
 
+  --dry-run
+      Print what would be updated and change nothing (no download, no
+      agreement prompt)
+
 Examples:
 
      wave selfupdate
      wave selfupdate --max-time=2min
+     wave selfupdate --dry-run
 
 
 File: wave.info, Node: link, Next: unlink, Prev: selfupdate, Up: Top
