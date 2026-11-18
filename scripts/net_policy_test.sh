@@ -35,7 +35,7 @@ fail() { echo -e "  ${RED_BOLD}❌ $1${RESET}"; FAILED=$((FAILED + 1)); }
 
 echo "========== 传输层契约 =========="
 
-REPORT="$(mktemp -t macwave-net-policy)"
+REPORT="$(mktemp "${TMPDIR:-/tmp}/macwave-net-policy.XXXXXX")"
 trap 'rm -f "$REPORT"' EXIT
 
 python3 - "$REPO_DIR" > "$REPORT" <<'PY'

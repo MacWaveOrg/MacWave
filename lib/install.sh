@@ -186,6 +186,15 @@ mw_check_say_hijack() {
 
 # 💀💀💀=====================================
 
+mw_mktemp() {
+    # mw_mktemp <名字前缀>：可移植的临时文件。
+    #
+    # macOS 的 `mktemp -t 前缀` 会自动补随机后缀，GNU mktemp 则要求模板里
+    # **至少三个 X** —— 同一句 `mktemp -t foo` 在 Linux 上直接报
+    # "too few X's in template"。统一写成「完整路径 + 六个 X」，两边都认。
+    mktemp "${TMPDIR:-/tmp}/$1.XXXXXX"
+}
+
 mw_say() {
     # mw_say "<English>" "<中文>"
     #
@@ -1369,7 +1378,7 @@ mw_can_write() {
         return 0
     fi
 
-    errfile="$(mktemp -t macwave-write-probe)"
+    errfile="$(mw_mktemp macwave-write-probe)"
     if probe="$(mktemp "$path/.macwave-write-probe.XXXXXX" 2>"$errfile")"; then
         rm -f "$probe" "$errfile"
         return 0
@@ -1854,7 +1863,7 @@ ensure_portable_python() {
     # 但**必须先问一次**，否则「本机已有 3.14.9」会让升级到「要求 3.15」的版本时
     # 永远发现不了自己落后 —— 这正是 per-version 目录存在的理由。
     mw_say_err "🌊 Checking the bundled Python version..." "🌊 正在检查自带 Python 版本……"
-    latest_file="$(mktemp -t macwave-pylatest)"
+    latest_file="$(mw_mktemp macwave-pylatest)"
     if mw_download "$PYTHON_DOMAIN_URL/pythondata/latest.toml" "$latest_file" 30 2>/dev/null; then
         version="$(read_toml_string "$(cat "$latest_file")" version)"
     fi
@@ -1885,7 +1894,7 @@ ensure_portable_python() {
 
     # ── 第二步：这个版本各架构的地址与校验值 ──
     mw_say_err "🌊 Fetching the bundled Python $version definition..." "🌊 正在获取自带 Python $version 的定义……"
-    url_file="$(mktemp -t macwave-pyurl)"
+    url_file="$(mw_mktemp macwave-pyurl)"
     if ! mw_download "$PYTHON_DOMAIN_URL/pythondata/$version/python_url.toml" "$url_file" 30 2>/dev/null; then
         rm -f "$url_file"
         return 1
@@ -2037,7 +2046,7 @@ write_launcher() {
         return 0
     fi
 
-    tmp="$(mktemp -t macwave-launcher)"
+    tmp="$(mw_mktemp macwave-launcher)"
 
     cat > "$tmp" <<'LAUNCHER'
 #!/bin/sh
@@ -2124,7 +2133,7 @@ LAUNCHER
     # 内容先在普通权限下生成，只有落地那几步才可能需要提权。
     # 调用本函数时**不能**写 run_cmd write_launcher：sudo 无法执行 shell 函数，
     # 会遇到 "sudo: write_launcher: command not found"。
-    rendered="$(mktemp -t macwave-launcher-out)"
+    rendered="$(mw_mktemp macwave-launcher-out)"
     sed "s|#__MACWAVE_PYTHON__|MACWAVE_PYTHON=\"$escaped\"|" "$tmp" > "$rendered"
     rm -f "$tmp"
 

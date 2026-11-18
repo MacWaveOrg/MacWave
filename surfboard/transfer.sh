@@ -52,8 +52,8 @@ done
 
 # -------------------- 库索引（名字 -> 绝对路径） --------------------
 
-MAP_FILE="$(mktemp -t macwave-transfer)"
-TREE_FILE="$(mktemp -t macwave-tree)"
+MAP_FILE="$(mktemp "${TMPDIR:-/tmp}/macwave-transfer.XXXXXX")"
+TREE_FILE="$(mktemp "${TMPDIR:-/tmp}/macwave-tree.XXXXXX")"
 # 共享兜底索引（可选）：调用方给了目录就指向那里的两个文件，由 build_fallback_index 建一次
 SHARED_MAP=""
 SHARED_TREE=""
@@ -61,11 +61,11 @@ if [[ -n "$SHARED_INDEX_DIR" ]]; then
     SHARED_MAP="$SHARED_INDEX_DIR/map"
     SHARED_TREE="$SHARED_INDEX_DIR/tree"
 fi
-UNRESOLVED_FILE="$(mktemp -t macwave-unresolved)"
-MISSING_FILE="$(mktemp -t macwave-missing)"
-EXTERNAL_FILE="$(mktemp -t macwave-external)"
-FAILED_FILE="$(mktemp -t macwave-failed)"
-ERROR_FILE="$(mktemp -t macwave-error)"
+UNRESOLVED_FILE="$(mktemp "${TMPDIR:-/tmp}/macwave-unresolved.XXXXXX")"
+MISSING_FILE="$(mktemp "${TMPDIR:-/tmp}/macwave-missing.XXXXXX")"
+EXTERNAL_FILE="$(mktemp "${TMPDIR:-/tmp}/macwave-external.XXXXXX")"
+FAILED_FILE="$(mktemp "${TMPDIR:-/tmp}/macwave-failed.XXXXXX")"
+ERROR_FILE="$(mktemp "${TMPDIR:-/tmp}/macwave-error.XXXXXX")"
 
 cleanup() {
     rm -f "$MAP_FILE" "$TREE_FILE" "$UNRESOLVED_FILE" "$MISSING_FILE" "$EXTERNAL_FILE" "$FAILED_FILE" "$ERROR_FILE"

@@ -248,6 +248,7 @@ probe_run() {
     # probe_run <目录> → 打印 "rc=<0|1|2> leftovers=<n>"
     /bin/bash -c '
 mw_dry_run() { return 1; }
+eval "$(sed -n "/^mw_mktemp()/,/^}/p" "$1")"
 eval "$(sed -n "/^mw_can_write()/,/^}/p" "$1")"
 dir="$2"
 rc=0
@@ -294,6 +295,7 @@ probe_run_flag() {
     /bin/bash -c '
 mw_dry_run() { return 1; }
 CLI_SKIP_PROBE=true
+eval "$(sed -n "/^mw_mktemp()/,/^}/p" "$1")"
 eval "$(sed -n "/^mw_can_write()/,/^}/p" "$1")"
 dir="$2"
 rc=0

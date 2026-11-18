@@ -28,7 +28,7 @@ fail() { echo -e "  ${RED_BOLD}❌ $1${RESET}"; FAILED=$((FAILED + 1)); }
 
 echo "========== 项目结构 =========="
 
-REPORT="$(mktemp -t macwave-structure)"
+REPORT="$(mktemp "${TMPDIR:-/tmp}/macwave-structure.XXXXXX")"
 trap 'rm -f "$REPORT"' EXIT
 
 python3 - "$REPO_DIR" > "$REPORT" <<'PY'

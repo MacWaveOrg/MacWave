@@ -499,7 +499,7 @@ fetch_to_file() {
     local partial="$destination.macwave-part"
     local attempt status code err
     local errfile
-    errfile="$(mktemp -t macwave-curl-err)"
+    errfile="$(mktemp "${TMPDIR:-/tmp}/macwave-curl-err.XXXXXX")"
 
     "$runner" mkdir -p "$(dirname "$destination")"
 
@@ -557,7 +557,7 @@ fetch_text() {
     local timeout="$2"
     local tmp status=1
 
-    tmp="$(mktemp -t macwave-fetch)"
+    tmp="$(mktemp "${TMPDIR:-/tmp}/macwave-fetch.XXXXXX")"
     if fetch_to_file "$url" "$tmp" "$timeout"; then
         cat "$tmp"
         status=0
@@ -790,7 +790,7 @@ ensure_portable_python() {
     # 但**必须先问一次**，否则「本机已有 3.14.9」会让升级到「要求 3.15」的版本时
     # 永远发现不了自己落后 —— 这正是 per-version 目录存在的理由。
     echo "🌊 Checking the bundled Python version..." >&2
-    latest_file="$(mktemp -t macwave-pylatest)"
+    latest_file="$(mktemp "${TMPDIR:-/tmp}/macwave-pylatest.XXXXXX")"
     if curl -fsSL --max-time 30 ${CURL_CACERT:+--cacert "$CURL_CACERT"} ${CURL_LIMITS:-} -o "$latest_file" \
          "$PYTHON_DOMAIN_URL/pythondata/latest.toml" 2>/dev/null; then
         version="$(read_toml_string "$(cat "$latest_file")" version)"
@@ -822,7 +822,7 @@ ensure_portable_python() {
 
     # ── 第二步：这个版本各架构的地址与校验值 ──
     echo "🌊 Fetching the bundled Python $version definition..." >&2
-    url_file="$(mktemp -t macwave-pyurl)"
+    url_file="$(mktemp "${TMPDIR:-/tmp}/macwave-pyurl.XXXXXX")"
     if ! curl -fsSL --max-time 30 ${CURL_CACERT:+--cacert "$CURL_CACERT"} ${CURL_LIMITS:-} -o "$url_file" \
          "$PYTHON_DOMAIN_URL/pythondata/$version/python_url.toml" 2>/dev/null; then
         rm -f "$url_file"
@@ -931,7 +931,7 @@ write_launcher() {
     local recorded="$2"
     local target="$base_dir/lib/wave"
     local tmp
-    tmp="$(mktemp -t macwave-launcher)"
+    tmp="$(mktemp "${TMPDIR:-/tmp}/macwave-launcher.XXXXXX")"
 
     cat > "$tmp" <<'LAUNCHER'
 #!/bin/sh
@@ -1018,7 +1018,7 @@ LAUNCHER
     # 内容先在普通权限下生成，只有落地那几步才可能需要提权。
     # 调用本函数时**不能**写 run_cmd write_launcher：sudo 无法执行 shell 函数，
     # 会遇到 "sudo: write_launcher: command not found"。
-    rendered="$(mktemp -t macwave-launcher-out)"
+    rendered="$(mktemp "${TMPDIR:-/tmp}/macwave-launcher-out.XXXXXX")"
     sed "s|#__MACWAVE_PYTHON__|MACWAVE_PYTHON=\"$escaped\"|" "$tmp" > "$rendered"
     rm -f "$tmp"
 

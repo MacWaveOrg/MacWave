@@ -25,6 +25,12 @@
 # “波浪执行下列命令将 MacWave 添加到 PATH，eval（还念成了 evil）…………（此处省略若干字）”
 # 以后谁也不许把函数命名为 say！
 #
+# 第四件事是 `mktemp -t 前缀`。macOS 的 mktemp 会自动补随机后缀，GNU mktemp
+# （Linux）要求模板里**至少三个 X**，同一句在那边直接报
+# `too few X's in template`。install.sh 的写探针就踩过这个：Linux 上探针永远失败，
+# 于是「可写目录」被判成「非权限问题」并中止安装。模板一律写成
+# `mktemp "${TMPDIR:-/tmp}/前缀.XXXXXX"`。
+#
 # 全程离线，秒级。
 
 set -u
@@ -202,6 +208,24 @@ if [[ -z "$BARE_BASH" ]]; then
 else
     echo "$BARE_BASH" | head -20 | sed 's/^/  /'
     fail "$(echo "$BARE_BASH" | grep -c .) 处调用了裸 bash；请写 /bin/bash（PATH 上的可能是 Homebrew 5.x）"
+fi
+
+echo
+echo "========== 6. mktemp 的模板要带 X =========="
+
+# GNU mktemp 只认带 X 的模板；`mktemp -t 前缀` 是 BSD 的习惯写法，Linux 上报
+# "too few X's in template"。这条只看命令位置，注释与文档不算。
+BAD_MKTEMP=$(cd "$REPO_DIR" && grep -rnE 'mktemp[[:space:]]+-t[[:space:]]' --include=*.sh . 2>/dev/null \
+    | grep -v '^\./\.git/' \
+    | grep -v 'shell_lint\.sh:' \
+    | grep -vE ':[0-9]+:[[:space:]]*#' \
+    || true)
+
+if [[ -z "$BAD_MKTEMP" ]]; then
+    pass "没有 mktemp -t（模板都带 X，BSD 与 GNU 都认）"
+else
+    echo "$BAD_MKTEMP" | head -20 | sed 's/^/  /'
+    fail "$(echo "$BAD_MKTEMP" | grep -c .) 处用了 mktemp -t；GNU mktemp 会报 too few X's，请写 mktemp \"\${TMPDIR:-/tmp}/前缀.XXXXXX\""
 fi
 
 echo
