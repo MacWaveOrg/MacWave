@@ -1259,17 +1259,73 @@ else
 fi
 
 mw_can_write() {
-    # 能写这个路径吗？**不存在的路径沿祖先往上找**第一个存在的目录再判 ——
-    # 直接对不存在的路径 test -w 恒为假，会让每一次新装都判定成需要提权。
-    local path="$1"
+    # 能写这个路径吗？返回 0 可写 / 1 需要提权 / 2 写不进去但不是权限问题。
+    #
+    # 两步，先「猜」再「问」：
+    #   1. `test -w` —— 权限位与 ACL 的静态判断，够快，也够挡住「/opt 属于 root」
+    #      这类绝大多数情形；
+    #   2. 真写一个空文件再删掉 —— `test -w` 只是读权限位，遇到目录上带 uchg 之类的
+    #      标志、或者 ACL 与位掩码不一致时，它说能写而实际写不进去。既然安装的第一件
+    #      事就是往里写，那就先写一次试试：探针失败与真安装失败是同一件事，只是早了几步。
+    #
+    # 探针失败要分两类，不能一律当成「需要提权」：
+    #   Permission denied   → 提权能解决，返回 1；
+    #   其它（只读文件系统、磁盘满、路径太深…）→ 提权也没用，返回 2 并留下原因，
+    #   由调用方当场报出来。否则用户会先被要一次密码，然后在同一条路上再失败一次。
+    #
+    # 不存在的路径沿祖先往上找第一个存在的目录 —— 直接对不存在的路径 test -w 恒为假，
+    # 会让每一次新装都判定成需要提权。
+    local path="$1" probe errfile reason
+    MW_WRITE_ERROR=""
+    MW_WRITE_ERROR_PATH=""
     [[ -n "$path" ]] || return 1
     while [[ ! -e "$path" && "$path" != "/" ]]; do
         path="$(dirname "$path")"
     done
-    [[ -w "$path" ]]
+    [[ -d "$path" ]] || return 1
+    [[ -w "$path" ]] || return 1
+
+    # --dry-run 的承诺是「不写文件」，所以试运行只用上面那步静态判断。
+    mw_dry_run && return 0
+
+    errfile="$(mktemp -t macwave-write-probe)"
+    if probe="$(mktemp "$path/.macwave-write-probe.XXXXXX" 2>"$errfile")"; then
+        rm -f "$probe" "$errfile"
+        return 0
+    fi
+    reason="$(cat "$errfile" 2>/dev/null)"
+    rm -f "$errfile"
+    case "$reason" in
+        *"Permission denied"*) return 1 ;;
+    esac
+    MW_WRITE_ERROR="$reason"
+    MW_WRITE_ERROR_PATH="$path"
+    return 2
 }
 
-if mw_can_write "$BASE_DIR" && mw_can_write "$CONFIG_DIR"; then
+mw_write_state() {
+    # 两个目标都要能写；任何一处返回 2 都直接报错退出（提权解决不了）。
+    local status=0
+    mw_can_write "$1" || status=$?
+    if [[ "$status" -eq 2 ]]; then
+        mw_say_err "${RED_BOLD}🌊 Error: cannot create files in '$MW_WRITE_ERROR_PATH'.${RESET}" \
+            "${RED_BOLD}🌊 错误：无法在 '$MW_WRITE_ERROR_PATH' 里创建文件。${RESET}"
+        mw_say_err "🌊 ${MW_WRITE_ERROR}" "🌊 ${MW_WRITE_ERROR}"
+        mw_say_err "🌊 This is not a privilege problem: sudo would fail the same way." \
+            "🌊 这不是权限问题：提权也会一样失败。"
+        mw_say_err "🌊 Fix the filesystem (read-only mount, full disk, …) or choose another directory." \
+            "🌊 请处理文件系统本身（只读挂载、磁盘已满等），或者换一个目录。"
+        exit 1
+    fi
+    return "$status"
+}
+
+# `|| var=$?` 而不是直接取 $?：set -e 下裸调一个返回非零的函数会当场退出。
+base_state=0
+mw_write_state "$BASE_DIR" || base_state=$?
+config_state=0
+mw_write_state "$CONFIG_DIR" || config_state=$?
+if [[ "$base_state" -eq 0 && "$config_state" -eq 0 ]]; then
     NEED_SUDO=false
 else
     NEED_SUDO=true

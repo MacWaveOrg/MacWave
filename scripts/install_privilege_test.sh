@@ -228,6 +228,54 @@ fi
 
 unset MACWAVE_CSRUTIL
 
+# -------------------- 7. 写探针本身 --------------------
+#
+# 上面的用例全走 --dry-run（承诺不写文件，因此只用 test -w）。
+# 这一节把 mw_can_write 抠出来单独跑：真的建一个空文件再删掉，并确认没留下东西。
+
+echo
+echo "========== 写探针 =========="
+
+probe_run() {
+    # probe_run <目录> → 打印 "rc=<0|1|2> leftovers=<n>"
+    /bin/bash -c '
+mw_dry_run() { return 1; }
+eval "$(sed -n "/^mw_can_write()/,/^}/p" "$1")"
+dir="$2"
+rc=0
+mw_can_write "$dir" || rc=$?
+leftovers=$(find "$dir" -maxdepth 1 -name ".macwave-write-probe.*" 2>/dev/null | wc -l | tr -d " ")
+echo "rc=$rc leftovers=$leftovers"
+' _ "$INSTALL_SH" "$1"
+}
+
+PROBE_ROOT=$(new_root probe)
+mkdir -p "$PROBE_ROOT/writable"
+out=$(probe_run "$PROBE_ROOT/writable")
+if [[ "$out" == "rc=0 leftovers=0" ]]; then
+    pass "可写目录：探针通过且不留下文件"
+else
+    fail "可写目录的探针结果不对：$out"
+fi
+
+out=$(probe_run "$PROBE_ROOT/writable/deep/nested")
+if [[ "$out" == "rc=0 leftovers=0" ]]; then
+    pass "不存在的路径：在最近的已存在祖先里探测"
+else
+    fail "不存在路径的探针结果不对：$out"
+fi
+
+mkdir -p "$PROBE_ROOT/locked"
+RO_DIRS+=("$PROBE_ROOT/locked")
+chmod 555 "$PROBE_ROOT/locked"
+out=$(probe_run "$PROBE_ROOT/locked")
+if [[ "$out" == "rc=1 leftovers=0" ]]; then
+    pass "不可写目录：判定需要提权"
+else
+    fail "不可写目录的探针结果不对：$out"
+fi
+chmod 755 "$PROBE_ROOT/locked"
+
 echo
 echo "=========================================="
 echo -e "🌊 Passed: $PASSED"
