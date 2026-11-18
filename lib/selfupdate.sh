@@ -669,7 +669,6 @@ fi
 # ==========================================
 
 export MACWAVE_INSTALL_DIR="$BASE_DIR"
-export MACWAVE_CONFIG_DIR="$CONFIG_DIR"
 export MACWAVE_CORE_URL="$CORE_URL"
 export MACWAVE_BRANCH="$BRANCH"
 export MACWAVE_CURRENT_VERSION="$CURRENT_VERSION"

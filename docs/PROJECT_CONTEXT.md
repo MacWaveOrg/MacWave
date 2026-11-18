@@ -157,7 +157,7 @@ updatedata/{版本号}/transfer_commands      Y/y 时执行这个脚本（bash -
 
 - `{版本号}`：`install.sh` 用从 configdata 读到的版本号；`selfupdate.sh` 用 `latest_version` 里的目标版本
 - 标记文件拉不到（不存在/网络失败）→ 按「没变」处理，静默跳过；标记为 Y/y 但**迁移脚本拉不到** → 报错退出（避免留下半迁移状态）
-- 执行迁移脚本前会 `export MACWAVE_INSTALL_DIR`（安装目录）/ `MACWAVE_CONFIG_DIR`（配置目录）/ `MACWAVE_TARGET_VERSION`，脚本据此**自己判断要不要搬**（例如只对用户级安装迁移）
+- 执行迁移脚本前会 `export MACWAVE_INSTALL_DIR`（安装目录）等，脚本据此**自己判断要不要搬**（例如只对用户级安装迁移）
 - **迁移会搬走配置目录，所以迁移后必须重新解析**：`selfupdate.sh` 会再解析一次（否则 `VERSION.json` 会被写回旧位置）；`selfupdate.py` 的升级后复核也用 `version_file()` 每次重新解析（否则会误报「更新没有完成」）。`configpaths.py` 的模块级常量只在**进程启动时**解析一次，跨迁移的复核不能用它
 - ⚠️ **从 2.5 之前的版本升级必须用 `install.sh`**：2.5 之前发布的 `selfupdate.py` 把 `VERSION_FILE` 写死在 `/opt/macwave_config/VERSION.json`，配置被搬走后升级完的复核会读不到、**误报失败**（其实升级成功了）。2.5 及以后没有这个问题，可以正常用 `wave selfupdate`
 - 以后目录结构再变，只需在 configdata 仓库加 `updatedata/{新版本}/` 这两个文件，**不用改任何代码**

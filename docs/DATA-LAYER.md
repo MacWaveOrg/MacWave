@@ -158,7 +158,6 @@ branch = "4.0"
 | 变量 | 含义 |
 | --- | --- |
 | `MACWAVE_INSTALL_DIR` | 安装根目录 |
-| `MACWAVE_CONFIG_DIR` | 配置目录 |
 | `MACWAVE_CORE_URL` | 代码地址前缀（不含分支） |
 | `MACWAVE_BRANCH` | 代码分支 |
 | `MACWAVE_CURRENT_VERSION` | 已装版本；**为空表示首次安装**，走全量清单 |

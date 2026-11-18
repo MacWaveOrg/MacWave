@@ -571,7 +571,7 @@ packages           →  解压到临时目录  →  检查链接  →  落盘  �
 被合并进更新脚本，因为两者本来就该原子地一起完成 —— 文件按新结构落盘、旧位置清理掉，
 分两步做就会出现「标记说改了但脚本拉不到」那种半迁移状态。
 
-更新脚本通过环境变量获知上下文（`MACWAVE_INSTALL_DIR`、`MACWAVE_CONFIG_DIR`、
+更新脚本通过环境变量获知上下文（`MACWAVE_INSTALL_DIR`、
 `MACWAVE_CURRENT_VERSION` 等，完整清单见 [DATA-LAYER.md](DATA-LAYER.md)），自行判断要不要
 动作。这比在脚本里写死判断条件灵活，也让同一份脚本能安全地在多个补丁版本目录下重复执行。
 

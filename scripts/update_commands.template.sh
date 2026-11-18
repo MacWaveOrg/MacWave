@@ -10,7 +10,6 @@
 # 客户端保证以下环境变量：
 #
 #   MACWAVE_INSTALL_DIR      安装根目录
-#   MACWAVE_CONFIG_DIR       配置目录
 #   MACWAVE_CORE_URL         MacWave 代码的地址前缀（不含分支）
 #   MACWAVE_BRANCH           代码分支
 #   MACWAVE_CURRENT_VERSION  当前已装版本；首次安装时为空
