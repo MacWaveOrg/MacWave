@@ -159,6 +159,13 @@ chmod 755 "$ROOT/opt"
 # 两道锁，顺序不能反：先看系统卷是否密封（SSV），再看 SIP 主开关。
 # 用替身 csrutil 摆出六种组合 —— 真机上没法为了测试去关 SIP。
 
+if [[ "$(uname -s)" != "Darwin" ]]; then
+    # SIP 只存在于 macOS：mw_sip_status() 在非 Darwin 上直接返回 unknown，
+    # 替身 csrutil 根本不会被调用。这一整套只在 macOS 上有意义。
+    echo ""
+    echo "========== SIP 保护范围 =========="
+    echo "SKIP: 非 macOS，SIP 判定不适用（mw_sip_status 返回 unknown）"
+else
 echo
 echo "========== SIP 保护范围 =========="
 
@@ -227,6 +234,7 @@ else
 fi
 
 unset MACWAVE_CSRUTIL
+fi
 
 # -------------------- 7. 写探针本身 --------------------
 #
