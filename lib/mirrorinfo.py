@@ -18,6 +18,7 @@ import os
 import sys
 
 import domains
+import envvar
 import steplog
 
 
@@ -32,8 +33,8 @@ RESET = '\033[0m'
 # 固定 6 个：不随密码长度变化，避免从星号个数推断长度
 MASK = "******"
 
-PIP_ENV = "MACWAVE_PIP_INDEX"
-PIP_DEFAULT = "https://pypi.org/simple"
+PIP_ENV = envvar.PIP_INDEX
+PIP_DEFAULT = envvar.PIP_DEFAULT
 PIP_NAME = "pip"
 
 NOT_CONFIGURED = "(not configured)"
@@ -76,7 +77,7 @@ def collect(show_password=False, hide_user=False):
     # 返回每一行的信息。value 已经是「该打印成什么」，调用方不必再判断脱敏。
     rows = []
 
-    for kind in domains.ENV_NAME:
+    for kind in envvar.kinds():
         value = domains.domain(kind)
         base, user, password = split_userinfo(value) if value else ("", None, None)
 
@@ -89,7 +90,7 @@ def collect(show_password=False, hide_user=False):
 
         rows.append({
             "name": kind,
-            "env": domains.ENV_NAME[kind],
+            "env": envvar.name(kind),
             "source": source,
             "requires_auth": user is not None,
             "user": (MASK if hide_user else user) if user is not None else None,

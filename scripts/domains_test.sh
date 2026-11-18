@@ -310,12 +310,12 @@ else
          <(extract_domain_block "$REPO_DIR/lib/selfupdate.sh") | head -20
 fi
 
-# 两边的默认值也必须与 lib/domains.py 对得上，
+# 两边的默认值也必须与 config/envvar.py 对得上（那是唯一来源），
 # 否则 shell 和 Python 会指向不同的地方。
 if python3 "$REPO_DIR/scripts/check_domain_defaults.py"; then
-    pass "shell 与 domains.py 的默认值一致"
+    pass "shell 与 config/envvar.py 的默认值一致"
 else
-    fail "shell 与 domains.py 的默认值不一致"
+    fail "shell 与 config/envvar.py 的默认值不一致"
 fi
 
 echo

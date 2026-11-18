@@ -12,18 +12,14 @@
 #   | MACWAVE_BOTTLE_DOMAIN         | 预编译二进制包（Bottle）                  |
 #   | MACWAVE_DEPS_DOMAIN           | 依赖的二进制包                            |
 #   | MACWAVE_CORE_DOMAIN           | MacWave 自身文件                          |
-#   | MACWAVE_PYTHON_DOMAIN           | 独立 CPython 解释器                       |
+#   | MACWAVE_PYTHON_DOMAIN         | 独立 CPython 解释器                       |
 #   | MACWAVE_SELFUPDATE_DOMAIN     | 自更新信息（版本号、文件清单、迁移脚本）   |
 #   | MACWAVE_PKG_SOURCECODE_DOMAIN | 软件包源码（预留，暂未使用）               |
 #
-# 刻意不提供 `wave mirror` 之类的命令：镜像就是一组环境变量（同 Homebrew 的
-# HOMEBREW_*_DOMAIN），放在 shell 配置或 CI 里即可，不需要 MacWave 参与。
-#
-# DEFAULTS 里仍是 3.x 在用的地址，所以一个都不设时行为与 3.x 完全一致。
-# 新仓库（Selfupdate / Bottle / Deps）建好以后，只需要改这张表。
+# 名字与默认值**不在这里**，在 config/envvar.py —— 那是唯一一处。
+# 默认值仍是 3.x 在用的地址，所以一个都不设时行为与 3.x 完全一致。
 
 import json
-import os
 import sys
 from urllib.parse import quote
 
@@ -37,40 +33,12 @@ RESET = '\033[0m'
 
 
 # -------------------- 变量与默认值 --------------------
+#
+# 名单、默认值与说明都在 config/envvar.py（那里的注释讲了为什么只有一处）。
+# 本文件只剩两件事：校验（协议、回环、危险字符）与拼 URL。
+# shell 侧的三份副本由 scripts/check_domain_defaults.py 比对。
 
-ENV_NAME = {
-    "api":        "MACWAVE_API_DOMAIN",
-    "bottle":     "MACWAVE_BOTTLE_DOMAIN",
-    "deps":       "MACWAVE_DEPS_DOMAIN",
-    "core":       "MACWAVE_CORE_DOMAIN",
-    "python":     "MACWAVE_PYTHON_DOMAIN",
-    "selfupdate": "MACWAVE_SELFUPDATE_DOMAIN",
-    "sourcecode": "MACWAVE_PKG_SOURCECODE_DOMAIN",
-}
-
-DESCRIPTION = {
-    "api":        "package and dependency index",
-    "bottle":     "prebuilt binary packages",
-    "deps":       "dependency binaries",
-    "core":       "MacWave's own files",
-    "python":     "the bundled CPython interpreter",
-    "selfupdate": "self-update data",
-    "sourcecode": "package source code (reserved)",
-}
-
-DEFAULTS = {
-    "api":        "https://raw.githubusercontent.com/MacWaveOrg/infosource/HEAD",
-    # 默认指向 GitHub Releases：它的下载路径 /<tag>/<资产> 与静态镜像的 /<包名>/<文件> 同形，
-    # 所以国内镜像站只要 rsync 出同一棵树即可。指向仓库文件会被 git 的 100 MiB 硬限拦住。
-    "bottle":     "https://github.com/MacWaveOrg/Bottle/releases/download",
-    "deps":       "https://github.com/MacWaveOrg/Deps/releases/download",
-    "core":       "https://raw.githubusercontent.com/MacWaveOrg/MacWave",
-      # 解释器单独一个仓库：体积（每架构约 26 MB）与发布节奏都和自更新数据不同
-    "python":     "https://raw.githubusercontent.com/MacWaveOrg/Python/HEAD",
-    "selfupdate": "https://raw.githubusercontent.com/MacWaveOrg/Selfupdate/HEAD",
-    # 预留：源码包的位置定了以后再接上
-    "sourcecode": "",
-}
+import envvar
 
 # 允许的协议：https 是常态；file 给离线安装与测试用；http 只接受回环地址
 ALLOWED_SCHEMES = ("https", "file")
@@ -81,9 +49,9 @@ LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1", "[::1]")
 
 def _fail(kind, message):
     # 这里的消息会进终端与工单，凭据必须脱敏 —— 原值只在 redact_url 之后才打印
-    print(f"{RED_BOLD}🌊 Error: {ENV_NAME[kind]}: {redact_url(message)}{RESET}")
+    print(f"{RED_BOLD}🌊 Error: {envvar.name(kind)}: {redact_url(message)}{RESET}")
     print(f"{RED_BOLD}🌊 It should look like https://mirror.example.com/macwave "
-          f"({DESCRIPTION[kind]}).{RESET}")
+          f"({envvar.description(kind)}).{RESET}")
     sys.exit(1)
 
 
@@ -118,12 +86,12 @@ def _validate(kind, value):
 def domain(kind):
     # 解析一个域名：环境变量优先，其次是 DEFAULTS；两处都为空时返回 ""，
     # 由调用方按「该内容还没有搬过来」处理（例如继续读索引里的 url 字段）。
-    if kind not in ENV_NAME:
+    if kind not in envvar.DOMAINS:
         raise KeyError(kind)
 
-    value = (os.environ.get(ENV_NAME[kind]) or "").strip()
+    value = envvar.raw(kind)
     if not value:
-        value = DEFAULTS[kind]
+        value = envvar.default(kind)
     if not value:
         return ""
 
@@ -134,7 +102,7 @@ def domain(kind):
 
 def is_custom(kind):
     # 用户是否显式设了这个变量。镜像站与默认站的能力不一定相同（见 index_list_url）。
-    return bool((os.environ.get(ENV_NAME[kind]) or "").strip())
+    return bool(envvar.raw(kind))
 
 
 # -------------------- 各域名 --------------------
@@ -257,9 +225,9 @@ def require_domain(kind):
     # 二进制没有「上游」可回落了，域名缺失就只能报错，并且说清怎么设。
     value = domain(kind)
     if not value:
-        print(f"{RED_BOLD}🌊 Error: {ENV_NAME[kind]} is not set.{RESET}")
-        print(f"{RED_BOLD}🌊 MacWave 4.0 downloads {DESCRIPTION[kind]} from its own mirror; "
-              f"set {ENV_NAME[kind]} to that address.{RESET}")
+        print(f"{RED_BOLD}🌊 Error: {envvar.name(kind)} is not set.{RESET}")
+        print(f"{RED_BOLD}🌊 MacWave 4.0 downloads {envvar.description(kind)} from its own mirror; "
+              f"set {envvar.name(kind)} to that address.{RESET}")
         sys.exit(1)
     return value
 

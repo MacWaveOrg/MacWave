@@ -18,6 +18,10 @@ import sys
 import unicodedata
 from pathlib import Path
 
+# 环境变量的名字只有一处（config/envvar.py）。本文件是它的同层邻居，
+# 也是「测试根」这条路径上唯一的读取者。
+import envvar
+
 
 # -------------------- 颜色定义 --------------------
 
@@ -31,7 +35,7 @@ def _resolve_test_root():
     # MACWAVE_TEST 指向一个目录时，程序把这个目录当作 /：所有绝对路径都挂到它
     # 下面，HOME 也搬进去，于是配置目录、安装目录、下载缓存全落在里面，完全不
     # 碰真实系统。没设置时（正常使用）一切照旧。
-    raw = os.environ.get("MACWAVE_TEST")
+    raw = os.environ.get(envvar.TEST_ROOT)
     if not raw:
         return None
 
@@ -57,7 +61,7 @@ if TEST_ROOT is not None:
     _test_home.mkdir(parents=True, exist_ok=True)
     os.environ["HOME"] = str(_test_home)
     # 给 shell 脚本用：它们拿不到 Python 的变量，只能走环境变量
-    os.environ["MACWAVE_TEST_ROOT"] = str(TEST_ROOT)
+    os.environ[envvar.TEST_ROOT_EXPORT] = str(TEST_ROOT)
 
 
 def rooted(path):

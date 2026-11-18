@@ -157,10 +157,11 @@ def trace_domains():
     if not _verbose:
         return
 
-    from domains import ENV_NAME, domain, is_custom, redact_url, _has_userinfo
+    import envvar
+    from domains import domain, is_custom, redact_url, _has_userinfo
 
     print(f"{TRACE}      --- data sources ---{RESET}")
-    for kind in ENV_NAME:
+    for kind in envvar.kinds():
         value = domain(kind)
         if not value:
             print(f"{TRACE}      - {kind:<12} not set{RESET}")
