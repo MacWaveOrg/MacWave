@@ -193,6 +193,11 @@ lib/innocent.dylib -> /Users/someone/.ssh/id_rsa
   `scripts/shell_lint.sh` 第 5 节会拦（只查命令位置，散文与 `~/.bashrc` 不算）。
   同理，**验证 shell 行为时也用 `/bin/bash` 跑**，别用 Homebrew 那个：2026-11-16 用
   `bash`（5.x）验过全绿，CI 上 `/bin/bash`（3.2）一跑就死，两条流水线各红一次。
+- **临时文件一律写 `mktemp "${TMPDIR:-/tmp}/前缀.XXXXXX"`**，不要用 `mktemp -t 前缀`：
+  后者是 BSD 写法，GNU mktemp（Linux / CI 容器）要求模板里至少三个 X，同一句直接报
+  `too few X's in template`。安装器的写探针就栽在这里 —— 探针拿不到临时文件，
+  安装器就把「可写目录」判成「非权限问题」并中止。`scripts/shell_lint.sh` 第 6 节会拦，
+  来龙去脉见 [`docs/CI-AND-PITFALLS.md`](./docs/CI-AND-PITFALLS.md) 第 11 条。
 
 ## 测试
 
@@ -200,17 +205,40 @@ lib/innocent.dylib -> /Users/someone/.ssh/id_rsa
 
 判断标准只有一条：**这条测试会不会改动「配置里那个安装目录」**。
 
-- **自带隔离的脚本，直接跑就好**：`message_test.sh`、`sandbox_test.sh` 用临时 `HOME`
-  与临时配置；`flags_test.sh`、`latest_test.sh`、`info_format_test.sh`、`upgrade_test.sh`
-  自己设 `MACWAVE_TEST`；`configpath_test.sh`、`domains_test.sh`、`depsync_test.sh`、
-  `markdown_test.sh`、`suggest_test.sh`、`update_commands_test.sh` 全程不碰安装目录。
+- **自带隔离的脚本，直接跑就好**：它们要么自己设 `MACWAVE_TEST`，要么用临时 `HOME` 与
+  临时配置，要么全程不碰安装目录。这里**刻意不列名单** —— 名单每加一个脚本就过期一次
+  （写过「清单」的那几版都留下过半个库的缺口）。要确认某一条，`grep -n 'MACWAVE_TEST\|mktemp'
+  scripts/<名字>_test.sh` 比读名单可靠；新加的脚本必须自带隔离，这是硬要求。
 - **不要从外面 `export MACWAVE_TEST` 再跑整套脚本**：它会盖住这些脚本自己的隔离，
   把本来能过的测试打成一串红。实测 `export MACWAVE_TEST=…` 后跑 `message_test.sh`，
   11 项全部失败，而报错完全看不出是环境问题。
-- **这四个会动真实安装**：`format_test.sh`、`deps_test.sh`、`link_test.sh`、
-  `selfupdate_test.sh`。它们读 `/opt/macwave_config` 或 `~/.config/macwave_config`
-  里的 `base_dir`，并在其中真装、真卸、真改。**跑之前先确认 `base_dir` 指向哪里**，
+- **目前只有这四个会动真实安装**：`format_test.sh`、`deps_test.sh`、`link_test.sh`、
+  `selfupdate_test.sh`（这是一份**短名单**，故意只写风险项；发现新的就补进来）。
+  它们读 `/opt/macwave_config` 或 `~/.config/macwave_config` 里的 `base_dir`，并在其中真装、真卸、真改。**跑之前先确认 `base_dir` 指向哪里**，
   或照 CI 的做法让 `/opt/macwave_config` 指向一个临时安装。
+
+### 只为 CI 加的旁路，必须用边界注释标出来
+
+**能在这台 macOS 上正常工作的行为，不要为了 CI 改。** 确实需要按平台分叉的（典型例子：
+SIP 只存在于 macOS，`mw_sip_status()` 在非 Darwin 上返回 `unknown`），按这个形状写：
+
+```bash
+# ==================== 以下至「CI-ONLY END」专为 CI 而加 ====================
+# 这层包装不改任何 macOS 上的行为：macOS 跑的是 else 里那份完整断言。
+if [[ "$(uname -s)" != "Darwin" ]]; then
+    echo "SKIP: 非 macOS，SIP 判定不适用"
+else
+# ==================== CI-ONLY END（下面这段是 macOS 上真正跑的断言）====================
+    ...原样的断言，一行都不改...
+fi
+```
+
+注释里要写明两件事：**macOS 上一条断言都没删**、**看到 SKIP 就代表这一节本次没有被验证**
+（别让「Linux 绿」被读成「跨平台都验过」）。样板见
+[`scripts/install_privilege_test.sh`](./scripts/install_privilege_test.sh) 的 SIP 一节。
+
+反过来，「为了可移植而统一写法」不算 CI 旁路 —— 例如 `mktemp` 的模板写成带 X 的完整路径，
+在 macOS 与 Linux 上语义相同，那是对的实现，不该包成条件分支。
 
 ### 手工验证一条命令时
 
@@ -290,7 +318,7 @@ CI 会预先写好那份文件，于是同一个脚本在 CI 上读到的是宿�
 
 | 命令 | 说明 |
 | --- | --- |
-| `bash scripts/<name>_test.sh` | 回归脚本，共 20 个；按上面分类判断要不要额外隔离 |
+| `bash scripts/<name>_test.sh` | 回归脚本（清单以 `ls scripts/*_test.sh` 为准，别把这里写成数字）；按上面的判据决定要不要额外隔离 |
 | `bash scripts/structure_test.sh` | 项目结构自检：组件清单与 `wave.py` / `install.sh` / CI 是否一致。纯离线、秒级 |
 | `bash scripts/net_policy_test.sh` | 传输层契约：每个请求点是否都带策略。纯离线、秒级 |
 | `bash scripts/linksafety_test.sh` | 产物里的符号链接不得跳出 base_dir（系统库位置除外）。纯离线、秒级 |
