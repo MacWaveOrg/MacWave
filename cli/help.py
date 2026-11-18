@@ -7,6 +7,7 @@ MacWave Help Module
 import json
 import re
 
+import commands as commands_module
 from configpaths import VERSION_FILE
 
 # 颜色定义
@@ -121,24 +122,13 @@ GLOBAL_FLAGS = [
 # 所以两边不可能出现「英文有一节、中文少一节」。scripts/docs_test.sh 逐项比对。
 OVERVIEW = [
     {
+        # 命令这一节**从 cli/commands.py 生成**，不再手写：手写的那份曾经把
+        # 一条 1.x 就删掉的命令一直列到 2.3.1。枚举 registry 就不会有僵尸条目 ——
+        # 删命令只删一处，帮助、手册、分发同时消失。
         "id": "commands",
         "title": "Commands",
-        "rows": [
-            ("command", "install", "Install a package (latest version)"),
-            ("command", "upgrade", "Install a package at the latest version"),
-            ("command", "uninstall", "Uninstall a package"),
-            ("command", "list", "List installed packages"),
-            ("command", "search", "Search for a package in the index"),
-            ("command", "info", "Display detailed information about a package"),
-            ("command", "selfupdate", "Update MacWave itself to the latest version"),
-            ("command", "link", "Link installed packages without a version number"),
-            ("command", "unlink", "Remove those unversioned links"),
-            ("command", "linkquery", "Show which version an unversioned link points to"),
-            ("command", "mirror", "Show which addresses packages are fetched from"),
-            ("command", "latest", "Show which packages have a newer version available"),
-            ("command", "shellenv", "Print the shell code that puts MacWave on your PATH"),
-            ("command", "manual", "Show the full manual (same text as man and info)"),
-        ],
+        "rows": [("command", command.name, command.summary)
+                 for command in commands_module.listed()],
     },
     {
         "id": "flags",
@@ -246,174 +236,16 @@ def print_custom_help(lang="en"):
 # （依据各 handler 的旗标白名单），避免承诺做不到的事。
 
 COMMAND_HELP = {
-    "install": {
-        "usage": "wave install <package>[@<version>] [flags]",
-        "desc": "Install a package, or one specific version of it.",
-        "flags": [
-            ("-C, --continue", "Resume an interrupted download"),
-            ("--proxy <string>", "HTTP/HTTPS proxy (e.g. http://127.0.0.1:8080)"),
-            ("--skip-ssl", "Skip SSL certificate verification (insecure)"),
-            ("--limit-rate <string>", "Limit download speed (e.g. 200K, 1M, 5M; a bare number means bytes)"),
-            ("--max-time <string>",
-             "Maximum total time for one request (40s, 1min, 1min20s, 2h; a bare number means seconds)"),
-            ("--connect-timeout <string>", "Maximum time for the handshake"),
-            ("--content-time <string>", "Maximum time to receive data"),
-            ("--unlink", "Cancel the unversioned link for this package"),
-            ("-F, --force", "Install anyway when the running macOS is older than the package declares"),
-            ("-v, --verbose", "Verbose mode"),
-        ],
-        "examples": ["wave install jq", "wave install ffmpeg@6.1", "wave install jq --limit-rate 1M",
-                     "wave install jq --max-time=1min"],
-    },
-    "upgrade": {
-        "usage": "wave upgrade <package> | wave upgrade --all",
-        "desc": "Upgrade a package to its latest version; with --all, every installed "
-                "package. Old versions are kept — -X, --remove-old-versions removes them "
-                "in the same run.",
-        "flags": [
-            ("-a, --all", "Upgrade every installed package that has a newer version"),
-            ("-X, --remove-old-versions", "Remove the older versions as part of the upgrade"),
-            ("-C, --continue", "Resume an interrupted download"),
-            ("--proxy <string>", "HTTP/HTTPS proxy (e.g. http://127.0.0.1:8080)"),
-            ("--skip-ssl", "Skip SSL certificate verification (insecure)"),
-            ("--limit-rate <string>", "Limit download speed (e.g. 200K, 1M, 5M; a bare number means bytes)"),
-            ("--max-time <string>",
-             "Maximum total time for one request (40s, 1min, 1min20s, 2h; a bare number means seconds)"),
-            ("--connect-timeout <string>", "Maximum time for the handshake"),
-            ("--content-time <string>", "Maximum time to receive data"),
-            ("-F, --force", "Install anyway when the running macOS is older than the package declares"),
-            ("-v, --verbose", "Verbose mode"),
-        ],
-        "examples": ["wave upgrade jq", "wave upgrade jq -X", "wave upgrade --all",
-                     "wave upgrade jq --remove-old-versions --max-time=2min"],
-    },
-    "shellenv": {
-        "usage": "wave shellenv",
-        "desc": "Print the shell code that prepends MacWave's directories to PATH. "
-                "You eval it once from your shell profile; it does nothing on its own.",
-        "flags": [],
-        "examples": [
-            "eval \"$(~/.local/macwave/lib/wave shellenv)\"",
-            "echo 'eval \"$(~/.local/macwave/lib/wave shellenv)\"' >> ~/.zprofile",
-        ],
-    },
-    "mirror": {
-        "usage": "wave mirror [flags]",
-        "desc": "Show the address each kind of data is fetched from, including the "
-                "built-in defaults for anything not overridden by an environment variable.",
-        "flags": [
-            ("--json", "Print the configuration as JSON"),
-            ("--yaml", "Print the configuration as YAML"),
-            ("--toml", "Print the configuration as TOML"),
-            ("--raw", "Print export lines"),
-            ("--only-set", "With --raw: export only the sources you overrode (the "
-                           "MACWAVE_*_DOMAIN variables), leaving the rest to the built-in defaults"),
-            ("--show-password", "Print the real password"),
-            ("--hide-user", "Hide the user name"),
-        ],
-        "examples": ["wave mirror", "wave mirror --raw",
-                     "wave mirror --json", "wave mirror --show-password"],
-    },
-    "latest": {
-        "usage": "wave latest <package> | wave latest --all",
-        "desc": "Compare what you have with the newest version in the index; nothing is "
-                "downloaded.",
-        "flags": [
-            ("-a, --all", "Check every installed package"),
-            ("--max-time <string>", "Maximum total time for one request (40s, 1min)"),
-            ("--connect-timeout <string>", "Maximum time for the handshake"),
-            ("--content-time <string>", "Maximum time to receive data"),
-            ("-v, --verbose", "Print each request as it is made"),
-        ],
-        "examples": ["wave latest jq", "wave latest --all", "wave latest -a --max-time=1min"],
-    },
-    "uninstall": {
-        "usage": "wave uninstall <package>[@<version>] [flags]",
-        "desc": "Uninstall a package version. The unversioned link falls back to the "
-                "highest remaining version, and goes away with the last one.",
-        "flags": [
-            ("--unlink", "Cancel the unversioned link for this package"),
-        ],
-        "examples": ["wave uninstall jq", "wave uninstall ffmpeg@6.1"],
-    },
-    "list": {
-        "usage": "wave list",
-        "desc": "List the packages you have installed, with their versions.",
-        "flags": [],
-        "examples": ["wave list"],
-    },
-    "search": {
-        "usage": "wave search <keyword>",
-        "desc": "Search the online package index.",
-        "flags": [],
-        "examples": ["wave search json"],
-    },
-    "info": {
-        "usage": "wave info <package> [--json|--yaml|--toml|--raw]",
-        "desc": "Show author, description, homepage and the installed / available versions.",
-        "flags": [
-            ("--json", "Print as JSON"),
-            ("--yaml", "Print as YAML"),
-            ("--toml", "Print as TOML"),
-            ("--raw", "Print as stored"),
-        ],
-        "examples": ["wave info jq", "wave info jq --json", "wave info jq --raw"],
-    },
-    "selfupdate": {
-        "usage": "wave selfupdate [flags]",
-        "desc": "Update MacWave itself to the version published in the self-update repository.",
-        "flags": [
-            ("--max-time <string>",
-             "Maximum total time for one request (40s, 1min, 1min20s, 2h; a bare number means seconds)"),
-            ("--connect-timeout <string>", "Maximum time for the handshake"),
-            ("--content-time <string>", "Maximum time to receive data"),
-            ("--install-python-from-source", "Fetch the bundled Python from its upstream URL "
-                                             "instead of MacWave's own repository"),
-        ],
-        "examples": ["wave selfupdate", "wave selfupdate --max-time=2min"],
-    },
-    "link": {
-        "usage": "wave link <package>[@<version>] | wave link --all",
-        "desc": "Create a versionless shortcut, or re-point it at another installed "
-                "version. Installs and uninstalls keep it up to date afterwards.",
-        "flags": [
-            ("--all, -a", "Apply to every installed package"),
-        ],
-        "examples": ["wave link jq", "wave link ffmpeg@6.1", "wave link --all"],
-    },
-    "unlink": {
-        "usage": "wave unlink <package> | wave unlink --all",
-        "desc": "Remove the versionless shortcut. A later uninstall will not re-create it.",
-        "flags": [
-            ("--all, -a", "Apply to every installed package"),
-        ],
-        "examples": ["wave unlink jq", "wave unlink --all"],
-    },
-    "linkquery": {
-        "usage": "wave linkquery <package> | wave linkquery --all",
-        "desc": "Show which version the versionless shortcut points at.",
-        "flags": [
-            ("--all, -a", "Apply to every installed package"),
-        ],
-        "examples": ["wave linkquery jq"],
-    },
-    "manual": {
-        "usage": "wave manual [<command>] [--zh] [--color]",
-        "desc": "Show the full manual — the same text that ships as man pages and info "
-                "files — or just one command's section.",
-        "flags": [
-            ("--zh", "Print the Chinese edition"),
-            ("--color", "Colour headings and flags (plain text by default)"),
-        ],
-        "examples": ["wave manual", "wave manual install", "wave manual --zh",
-                     "wave manual install --color"],
-    },
-    "version": {
-        "usage": "wave version",
-        "desc": "Print the installed MacWave version.",
-        "flags": [],
-        "examples": ["wave version"],
-    },
+    # 每条命令的用法 / 说明 / 旗标 / 示例都来自 cli/commands.py —— 那张表同时
+    # 决定这条命令能不能被分发。这里保留字典形状，是因为 manual.py 与
+    # scripts/build_docs.py 都按 {usage, desc, flags, examples} 取值。
+    command.name: {
+        "usage": command.usage,
+        "desc": command.desc,
+        "flags": list(command.flags),
+        "examples": list(command.examples),
+    }
+    for command in commands_module.all()
 }
 
 

@@ -2,6 +2,7 @@
 
 # wave.py
 
+import importlib
 import sys
 from pathlib import Path
 
@@ -61,23 +62,12 @@ import suggest as suggest_module
 
 # -------------------- 字典定义 --------------------
 
-COMMANDS = {
-    "install":    "pkginstaller",
-    "upgrade":    "upgrader",
-    "uninstall":  "uninstaller",
-    "list":       "pkginfohelper",
-    "search":     "pkginfohelper",
-    "info":       "pkginfohelper",
-    "version":    "help",
-    "selfupdate": "selfupdate",
-    "link":       "linker",
-    "unlink":     "linker",
-    "linkquery":  "linker",
-    "mirror":     "mirrorinfo",
-    "latest":     "latest",
-    "shellenv":   "shellenv",
-    "manual":     "manual",
-}
+# 命令表**不在这里**：唯一来源是 cli/commands.py。这里只拿它的一列（名字 → 模块）
+# 给下面的分发与拼写建议用。加/删命令只改那一张表，`wave -h`、`wave <cmd> --help`
+# 与手册都跟着变 —— 以前三处各写一遍，删掉命令后 `wave -h` 会一直挂着僵尸条目。
+import commands as commands_module
+
+COMMANDS = commands_module.dispatch_table()
 
 ARGUMENTS = {
     "-h":        "help",
@@ -153,59 +143,15 @@ def main():
             print_command_help(FirstWord, lang)
             sys.exit(0)
 
-        module_name = COMMANDS[FirstWord]
+        # 处理函数也来自元数据：命令表里写的是 `模块.函数`，这里只负责 import 与调用。
+        # 没有第二条 if/elif 链要维护，也就没有「表里有、链上没有」这种静默成功。
+        entry = commands_module.get(FirstWord)
         full_input = "wave " + " ".join(words)
-
-        if module_name == "pkginstaller":
-            from pkginstaller import handle_install
-            handle_install(full_input)
-
-        elif module_name == "upgrader":
-            from upgrader import handle_upgrade
-            handle_upgrade(full_input)
-
-        elif module_name == "uninstaller":
-            from uninstaller import handle_uninstall
-            handle_uninstall(full_input)
-
-        elif module_name == "pkginfohelper":
-            from pkginfohelper import handle_info_command
-            handle_info_command(full_input)
-
-        elif module_name == "help":
-            from help import print_version
-            print_version()
-
-        elif module_name == "selfupdate":
-            from selfupdate import handle_selfupdate
-            handle_selfupdate(full_input)
-
-        elif module_name == "mirrorinfo":
-            from mirrorinfo import handle_mirror
-            handle_mirror(full_input)
-
-        elif module_name == "latest":
-            from latest import handle_latest
-            handle_latest(full_input)
-
-        elif module_name == "shellenv":
-            from shellenv import handle_shellenv
-            sys.exit(handle_shellenv())
-
-        elif module_name == "manual":
-            from manual import handle_manual
-            sys.exit(handle_manual(full_input))
-
-        elif module_name == "linker":
-            from linker import handle_link_command, handle_linkquery_command, handle_unlink_command
-            if FirstWord == "link":
-                handle_link_command(full_input)
-            elif FirstWord == "linkquery":
-                handle_linkquery_command(full_input)
-            else:
-                handle_unlink_command(full_input)
-
-        sys.exit(0)
+        handler = getattr(importlib.import_module(entry.module), entry.handler)
+        result = handler(full_input) if entry.takes_input else handler()
+        # 处理函数自己的 sys.exit 照旧优先；走到这里说明它正常返回了，
+        # 返回值就是退出码（shellenv / manual 会用它）。
+        sys.exit(result)
 
     # 4. 未知输入
     #

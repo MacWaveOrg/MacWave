@@ -95,11 +95,13 @@ else
     done <<< "$PROBLEMS"
 fi
 
-echo "========== 3. 命令表与分发表一致 =========="
-# `wave -h` 里列的命令必须真的能跑。这一条是 4.4 期间踩过的：help.py 先加了
-# manual，wave.py 的 COMMANDS 还没加 —— 手册里写着的命令敲下去是 unknown command。
+echo "========== 3. 命令表、帮助、分发同一份数据 =========="
+# 4.4 起这三件事都从 cli/commands.py 生成（`wave -h`、`wave <cmd> --help`、
+# wave.py 的分发），所以这里验证的是「生成确实发生了」而不是两份手写清单对得上。
+# 历史教训：help.py 里一条 1.x 就删掉的命令一直列到 2.3.1；manual 进了 help
+# 却没进分发表，敲下去是 unknown command。前者靠生成不可能再发生，后者由
+# scripts/commands_test.sh 的「模块与处理函数存在」那条盯住。
 MISSING=$("$PYTHON" - "$REPO_DIR" <<'PYEOF'
-import re
 import sys
 from pathlib import Path
 
@@ -109,30 +111,32 @@ from components import paths as component_paths
 
 sys.path[:0] = [str(path) for path in component_paths(repo)]
 
+import commands
 import help as help_en
 
-source = (repo / "lib" / "wave.py").read_text(encoding="utf-8")
-block = source[source.index("COMMANDS = {"):]
-block = block[:block.index("}")]
-dispatched = set(re.findall(r'"([a-z]+)":\s*"', block))
+problems = []
 
-listed = set(help_en.COMMAND_HELP)
-for name in sorted(listed - dispatched):
-    print("%s 在 help.py 里有帮助页，但 wave.py 不会分发它" % name)
-for name in sorted(dispatched - listed):
-    print("%s 能被分发，但 help.py 里没有它的帮助页" % name)
+if set(help_en.COMMAND_HELP) != set(command.name for command in commands.all()):
+    problems.append("COMMAND_HELP 与 cli/commands.py 的命令集合不一致")
 
-# COMMANDS 的**值**（模块名）必须在 if/elif 链里有分支。4.4 期间踩过：
-# 命令加进了 COMMANDS 字典，链上却没有对应分支 —— 于是那条命令什么也不做、
-# 退出码还是 0，连报错都没有。命令表与分发链是两份手写的清单，只能靠比对钉住。
-chain = source[source.index("COMMANDS = {"):]
-for module in sorted({value for value in re.findall(r'"[a-z]+":\s*"([a-z]+)"', chain)}):
-    if f'module_name == "{module}"' not in source:
-        print("COMMANDS 里的 %s 没有对应的分发分支（命令会静默成功）" % module)
+rows = [(kind, spec) for section in help_en.OVERVIEW if section["id"] == "commands"
+        for kind, spec, _desc in section["rows"]]
+expected = [("command", command.name) for command in commands.listed()]
+if rows != expected:
+    problems.append("`wave -h` 的 Commands 一节与 cli/commands.py 不一致：%s"
+                    % [spec for _kind, spec in rows])
+
+for command in commands.all():
+    entry = help_en.COMMAND_HELP.get(command.name, {})
+    if entry.get("usage") != command.usage or entry.get("desc") != command.desc:
+        problems.append("%s: 帮助页不是从元数据生成的" % command.name)
+
+for problem in problems:
+    print(problem)
 PYEOF
 )
 if [ -z "$MISSING" ]; then
-    pass "每个有帮助页的命令都能被分发，反之亦然"
+    pass "命令表、帮助、分发同一份数据（cli/commands.py）"
 else
     while IFS= read -r line; do
         [ -n "$line" ] && fail "$line"
