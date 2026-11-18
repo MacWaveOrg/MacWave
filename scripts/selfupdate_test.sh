@@ -593,24 +593,33 @@ spec = importlib.util.spec_from_file_location('selfupdate_module', selfupdate_py
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 
+def timeouts_from(source):
+    """公共旗标只剩一个入口（cli/common.py），selfupdate 只是它的一层薄包装。
+
+    这里把返回值摆成旧有的 (raws, budget) 形状，好让下面的比对保持原样：
+    比的仍然是「Python 算出的秒数」与「shell 的 mw_seconds 算出的秒数」。
+    """
+    options = module.options_from(source)
+    return options.timeout_raws, options.timeouts
+
 # Python 侧：合法的原样留下，非法的当场拒绝。
 # 4.1.5 起是三档（连接 / 读数据 / 总额），不再只有 --max-time。
-raws, budget = module.timeouts_from("wave selfupdate --max-time=1min")
+raws, budget = timeouts_from("wave selfupdate --max-time=1min")
 assert raws == {"--max-time": "1min"}, raws
 assert budget.total == 60, budget
-raws, budget = module.timeouts_from("wave selfupdate --max-time 1min20s")
+raws, budget = timeouts_from("wave selfupdate --max-time 1min20s")
 assert raws == {"--max-time": "1min20s"}, raws
 assert budget.total == 80, budget
-assert module.timeouts_from("wave selfupdate")[0] == {}
+assert timeouts_from("wave selfupdate")[0] == {}
 # 三档各给一个，互不串档
-raws, budget = module.timeouts_from(
+raws, budget = timeouts_from(
     "wave selfupdate --connect-timeout=2s --content-time=3s --max-time=4s")
 assert raws == {"--connect-timeout": "2s", "--content-time": "3s", "--max-time": "4s"}, raws
 assert (budget.connect, budget.content, budget.total) == (2, 3, 4), budget
 for bad in ("abc", "1x", "-5"):
     for flag in ("--max-time", "--connect-timeout", "--content-time"):
         try:
-            module.timeouts_from(f"wave selfupdate {flag}={bad}")
+            timeouts_from(f"wave selfupdate {flag}={bad}")
         except SystemExit:
             pass
         else:
@@ -636,7 +645,7 @@ for value, shell_value in zip(cases, got):
     if value in invalid:
         assert shell_value == "REJECT", f"{value}: shell 本应拒绝，实际 {shell_value}"
         continue
-    raws, budget = module.timeouts_from(f"wave selfupdate --max-time={value}")
+    raws, budget = timeouts_from(f"wave selfupdate --max-time={value}")
     raw = raws.get("--max-time", "")
     assert raw == value, f"{value}: 原始文本应原样往下传，实际 {raw!r}"
     expected = str(module.curl_seconds(budget.total))
@@ -913,17 +922,23 @@ echo "========== every command resolves to a module =========="
 
 if python3 - "$BASE_DIR" << 'PYEOF'
 import os
-import re
 import sys
 
 base_dir = sys.argv[1]
-with open(os.path.join(base_dir, 'lib', 'wave.py'), encoding='utf-8') as handle:
-    source = handle.read()
 
-block = source.split('COMMANDS = {', 1)[1].split('}', 1)[0]
-commands = re.findall(r'"(\w+)"\s*:\s*"(\w+)"', block)
+# 子命令元数据住在 cli/commands.py（那一张表同时喂分发、帮助与手册）。
+# 直接按文件加载：命令行模块刻意不 import 任何东西，所以在没有安装树的
+# 解释器里也能读。
+import importlib.util
+
+path = os.path.join(base_dir, 'cli', 'commands.py')
+spec = importlib.util.spec_from_file_location('commands_module', path)
+commands_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(commands_module)
+
+commands = [(entry.name, entry.module) for entry in commands_module.COMMANDS]
 if not commands:
-    print('🌊 Error: could not read any entry from COMMANDS')
+    print('🌊 Error: could not read any entry from cli/commands.py')
     sys.exit(1)
 
 missing = []
