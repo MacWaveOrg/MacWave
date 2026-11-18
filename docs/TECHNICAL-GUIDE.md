@@ -595,7 +595,6 @@ packages           →  解压到临时目录  →  检查链接  →  落盘  �
 | `MACWAVE_CORE_DOMAIN` | MacWave 自身文件 | `MacWave` 的 raw 地址 |
 | `MACWAVE_PYTHON_DOMAIN` | 自带 CPython | `Python` 仓库的 raw 地址 |
 | `MACWAVE_SELFUPDATE_DOMAIN` | 自更新数据 | `Selfupdate` 仓库的 raw 地址 |
-| `MACWAVE_PKG_SOURCECODE_DOMAIN` | 软件包源码 | 无（预留，暂未使用） |
 
 三个要点：
 

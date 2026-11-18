@@ -14,7 +14,6 @@
 #   | MACWAVE_CORE_DOMAIN           | MacWave 自身文件                          |
 #   | MACWAVE_PYTHON_DOMAIN         | 独立 CPython 解释器                       |
 #   | MACWAVE_SELFUPDATE_DOMAIN     | 自更新信息（版本号、文件清单、迁移脚本）   |
-#   | MACWAVE_PKG_SOURCECODE_DOMAIN | 软件包源码（预留，暂未使用）               |
 #
 # 名字与默认值**不在这里**，在 config/envvar.py —— 那是唯一一处。
 # 默认值仍是 3.x 在用的地址，所以一个都不设时行为与 3.x 完全一致。
@@ -129,10 +128,6 @@ def python_domain():
 
 def selfupdate_domain():
     return domain("selfupdate")
-
-
-def sourcecode_domain():
-    return domain("sourcecode")
 
 
 # -------------------- 索引 --------------------

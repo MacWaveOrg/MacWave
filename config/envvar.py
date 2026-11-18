@@ -68,11 +68,6 @@ DOMAINS = {
         "MACWAVE_SELFUPDATE_DOMAIN",
         "https://raw.githubusercontent.com/MacWaveOrg/Selfupdate/HEAD",
         "self-update data"),
-    # 预留：源码包的位置定了以后再接上
-    "sourcecode": Domain(
-        "MACWAVE_PKG_SOURCECODE_DOMAIN",
-        "",
-        "package source code (reserved)"),
 }
 
 # pip 的索引。不在 DOMAINS 里：它不是「MacWave 的数据源」，没有协议校验，

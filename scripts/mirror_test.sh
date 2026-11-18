@@ -31,7 +31,7 @@ fail() { echo -e "${RED_BOLD}🌊 FAIL: $1${RESET}"; FAILED=$((FAILED + 1)); }
 CLEAN_ENV=(env
     -u MACWAVE_API_DOMAIN -u MACWAVE_BOTTLE_DOMAIN -u MACWAVE_DEPS_DOMAIN
     -u MACWAVE_CORE_DOMAIN -u MACWAVE_PYTHON_DOMAIN -u MACWAVE_SELFUPDATE_DOMAIN
-    -u MACWAVE_PKG_SOURCECODE_DOMAIN -u MACWAVE_PIP_INDEX)
+    -u MACWAVE_PIP_INDEX)
 
 run_mirror() {
     "${CLEAN_ENV[@]}" python3 "$WAVE_BIN" mirror "$@"
@@ -154,11 +154,9 @@ if [[ "$OUT" == *'$B'* ]]; then
 else
     pass "--raw writes every address out in full"
 fi
-if [[ "$OUT" == *'# MACWAVE_PKG_SOURCECODE_DOMAIN  (not configured)'* ]]; then
-    pass "--raw comments out the unset entry instead of exporting an empty value"
-else
-    fail "--raw did not comment the unset entry"
-fi
+# 「未配置的源用注释占位」这条曾经靠预留的 sourcecode 项来验证。那个预留项已删
+# （设了也没有任何代码读它），六个真实数据源都有内置默认值，所以现在构造不出
+# 「unset」这一行 —— 断言随之取消，渲染逻辑保留（将来若真有没默认值的源）。
 
 echo "========== --raw --only-set exports only the overridden sources =========="
 OUT="$(run_mirror_api "$MIRROR/infosource" --raw --only-set 2>/dev/null)"

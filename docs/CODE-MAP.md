@@ -95,7 +95,7 @@
 
 | 文件 | 职责 | 关键点 |
 | --- | --- | --- |
-| `envvar.py` | **环境变量名单、默认值与说明的唯一来源**：`DOMAINS`（七个 `MACWAVE_*_DOMAIN`）、`PIP_INDEX` / `PIP_DEFAULT`、`CACERT`、`TEST_ROOT` / `TEST_ROOT_EXPORT`，以及 `name()` / `default()` / `description()` / `raw()` | 只有数据，没有逻辑：校验与拼 URL 仍在 `net/domains.py`（那里是唯一调用方）。**只 import 标准库** —— `lib/selfupdate.py` 会在「什么都没装」的解释器下导入这条路径。两份 shell 脚本里的同名默认值（它们是 `curl \| bash`，没法 source）由 `scripts/check_domain_defaults.py` 与本表逐项比对 |
+| `envvar.py` | **环境变量名单、默认值与说明的唯一来源**：`DOMAINS`（六个 `MACWAVE_*_DOMAIN`）、`PIP_INDEX` / `PIP_DEFAULT`、`CACERT`、`TEST_ROOT` / `TEST_ROOT_EXPORT`，以及 `name()` / `default()` / `description()` / `raw()` | 只有数据，没有逻辑：校验与拼 URL 仍在 `net/domains.py`（那里是唯一调用方）。**只 import 标准库** —— `lib/selfupdate.py` 会在「什么都没装」的解释器下导入这条路径。两份 shell 脚本里的同名默认值（它们是 `curl \| bash`，没法 source）由 `scripts/check_domain_defaults.py` 与本表逐项比对 |
 | `configpaths.py` | 配置目录解析的唯一来源 | 系统级优先、损坏则回落用户级。另提供「路径必须位于根目录内」的安全校验，防止配置被篡改后写到任意位置。`--proxy` 的解析与写环境变量在 `cli/common.py`，这里不再有第二条路径 |
 | `configerror.py` | 启动自检：机器上到底装没装 | 两处配置有一处有效就放行；都没装且当前在 git 仓库里时，报错并引导用安装脚本 |
 

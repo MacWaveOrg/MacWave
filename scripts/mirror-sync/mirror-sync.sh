@@ -51,7 +51,7 @@ FAIL=0
 # 那就成了「从镜像同步镜像」。这里显式清掉。
 unset MACWAVE_API_DOMAIN MACWAVE_BOTTLE_DOMAIN MACWAVE_DEPS_DOMAIN \
       MACWAVE_CORE_DOMAIN MACWAVE_SELFUPDATE_DOMAIN MACWAVE_PYTHON_DOMAIN \
-      MACWAVE_SOURCECODE_DOMAIN MACWAVE_PIP_INDEX
+      MACWAVE_PIP_INDEX
 
 hr()   { printf '%s\n' "------------------------------------------------------------"; }
 ok()   { printf '  ✅ %-44s %s\n' "$1" "${2:-}"; }

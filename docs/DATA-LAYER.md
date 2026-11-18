@@ -15,9 +15,9 @@
 | 国内直连 `github.com` 经常 20 秒内建不起 TCP | 每个地址都必须能被环境变量整体换掉 |
 | 校验值要与上游一致 | 字节**原样搬运，不重打包**，所以能直接用官方 SHA256 |
 
-## 二、七个地址
+## 二、六个地址
 
-所有对外地址只有一个来源：[`net/domains.py`](../net/domains.py) 的 `ENV_NAME` / `DEFAULTS`。
+所有对外地址只有一个来源：[`config/envvar.py`](../config/envvar.py) 的 `DOMAINS`（校验与拼 URL 在 `net/domains.py`）。
 shell 侧（`install.sh`、`selfupdate.sh`）有一份逐字对应的副本，因为安装器是
 `curl | bash` 直接执行的，没有本地文件可以 `source`。
 
@@ -29,9 +29,8 @@ shell 侧（`install.sh`、`selfupdate.sh`）有一份逐字对应的副本，�
 | `MACWAVE_CORE_DOMAIN` | MacWave 自身代码（按分支） | `raw.githubusercontent.com/MacWaveOrg/MacWave` |
 | `MACWAVE_PYTHON_DOMAIN` | 自带 CPython | `raw.githubusercontent.com/MacWaveOrg/Python/HEAD` |
 | `MACWAVE_SELFUPDATE_DOMAIN` | 自更新数据 | `raw.githubusercontent.com/MacWaveOrg/Selfupdate/HEAD` |
-| `MACWAVE_PKG_SOURCECODE_DOMAIN` | 源码包（预留，当前为空） | 空 |
 
-另有第八个变量 `MACWAVE_PIP_INDEX`，不属于「七类数据」：它覆盖 `pip` 安装
+另有第七个变量 `MACWAVE_PIP_INDEX`，不属于「六类数据」：它覆盖 `pip` 安装
 `requests` / `packaging` / `rich` 时使用的索引，默认 `https://pypi.org/simple`。
 国内直连 pypi.org 常超时，换成本地镜像即可；它只影响那一次 `pip install`，不参与
 「MacWave 从哪取文件」的判断。
