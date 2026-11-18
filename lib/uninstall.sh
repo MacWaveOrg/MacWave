@@ -30,7 +30,6 @@ if [[ -n "${MACWAVE_TEST:-}" ]]; then
     mkdir -p "$_mw_root"
     SYS_ROOT="$(cd "$_mw_root" && pwd)"
     export HOME="$SYS_ROOT${HOME}"
-    export MACWAVE_TEST_ROOT="$SYS_ROOT"
     mkdir -p "$HOME"
     echo "🌊 Test root: $SYS_ROOT"
 fi

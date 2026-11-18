@@ -216,7 +216,7 @@ lib/innocent.dylib -> /Users/someone/.ssh/id_rsa
 
 `MACWAVE_TEST=<临时目录>` 是单条命令的隔离手段：程序把该目录当作 `/`，配置目录、
 安装目录、下载缓存与 `HOME` 全部挂进去（实现见 `config/configpaths.py` 的
-`_resolve_test_root`，shell 侧读 `MACWAVE_TEST_ROOT`）。不隔离就会读写本机真实的
+`_resolve_test_root`，三份 shell 脚本各自读同一个 `MACWAVE_TEST`）。不隔离就会读写本机真实的
 `~/.local/macwave`、`~/.config/macwave_config`，**包括真删掉你装着的包**。
 
 ```bash

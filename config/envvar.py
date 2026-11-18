@@ -7,7 +7,7 @@
 # 为什么要有这个文件：这些名字与默认值原先散在四处 ——
 #   net/domains.py       ENV_NAME / DEFAULTS / DESCRIPTION 三张表
 #   lib/mirrorinfo.py    PIP_ENV = "MACWAVE_PIP_INDEX" 与它自己的默认值
-#   config/configpaths.py 直接写 "MACWAVE_TEST" / "MACWAVE_TEST_ROOT"
+#   config/configpaths.py 直接写 "MACWAVE_TEST"
 #   两份 shell 脚本        再各抄一份域名默认值（它们被 curl 下来直接执行，
 #                         没有本地文件可以 source，只能内联）
 # 前三处走散的症状是「同一次请求在 Python 侧用一个地址、在错误信息里写另一个」，
@@ -86,9 +86,10 @@ PIP_DEFAULT = "https://pypi.org/simple"
 CACERT = "MACWAVE_CACERT"
 
 # 测试根：设了它，整个进程把那个目录当成 /。
+# 只有这一个名字：Python 侧在 configpaths 里解析，三份 shell 各自解析同一个变量
+# （它们可能被 curl 下来直接执行，拿不到 Python 的值）。曾经还有一个派生的
+# MACWAVE_TEST_ROOT 往下游传，但全仓没有读取者，已删。
 TEST_ROOT = "MACWAVE_TEST"
-# 派生给 shell 的同一个值（Python 与 shell 都要用，名字不共用一个变量）。
-TEST_ROOT_EXPORT = "MACWAVE_TEST_ROOT"
 
 
 def kinds():

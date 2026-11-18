@@ -240,7 +240,6 @@ if [[ -n "${MACWAVE_TEST:-}" ]]; then
         "$SYS_ROOT"|"$SYS_ROOT"/*) ;;
         *) export HOME="$SYS_ROOT${HOME}" ;;
     esac
-    export MACWAVE_TEST_ROOT="$SYS_ROOT"
     mkdir -p "$HOME"
     echo "🌊 Test root: $SYS_ROOT"
 fi

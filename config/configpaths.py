@@ -60,8 +60,8 @@ if TEST_ROOT is not None:
     _test_home = TEST_ROOT / (_real_home.relative_to("/") if _real_home.is_absolute() else "home")
     _test_home.mkdir(parents=True, exist_ok=True)
     os.environ["HOME"] = str(_test_home)
-    # 给 shell 脚本用：它们拿不到 Python 的变量，只能走环境变量
-    os.environ[envvar.TEST_ROOT_EXPORT] = str(TEST_ROOT)
+    # 子进程（含 shell 脚本）继承 HOME，也就继承了这份重定向 —— 不必再导出
+    # 任何「测试根在哪」的变量，那些脚本自己读 MACWAVE_TEST。
 
 
 def rooted(path):

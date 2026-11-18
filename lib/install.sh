@@ -40,7 +40,6 @@ if [[ -n "${MACWAVE_TEST:-}" ]]; then
         "$SYS_ROOT"|"$SYS_ROOT"/*) ;;
         *) export HOME="$SYS_ROOT${HOME}" ;;
     esac
-    export MACWAVE_TEST_ROOT="$SYS_ROOT"
     mkdir -p "$HOME"
     # mw_say 到这里还没定义（它与 MW_LANG 都在下面），所以直接 echo：
     # 以前这里调用 mw_say，隔离运行时第一行永远是 "mw_say: command not found"。

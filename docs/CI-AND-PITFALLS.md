@@ -61,7 +61,7 @@ python3 lib/wave.py install btop
   `"$SYS_ROOT/opt/..."` 就还是 `"/opt/..."`）。
 - Python 侧所有路径都从 `lib/configpaths.py` 的 `rooted()` 出，所以只改一处。
 - `install.sh` / `selfupdate.sh` / `uninstall.sh` 可能被 `curl` 直接执行，拿不到
-  Python 的变量，所以它们各自解析一遍，并导出 `MACWAVE_TEST_ROOT` 给下游。
+  Python 的变量，所以它们各自解析同一个 `MACWAVE_TEST`。
 - 被 Python 调用的那些 shell（`depsmanager.sh`、`transfer.sh`、`pkgunzip.sh`）不用改：
   它们的路径来自 `BASE_DIR`，且继承重定向后的 `HOME`。
 
