@@ -263,6 +263,8 @@ out=$(install_dry --raw)
 not_ok "install.sh --raw 输出里没有 🌊"          "$out" "🌊"
 not_ok "install.sh --raw 输出里没有 ESC 转义序列" "$out" "$(printf '\033')"
 ok     "install.sh --raw 仍在走流程（有 Dry run 行）" "$out" "Dry run"
+not_ok "install.sh --raw 去掉了 WAVE 艺术字"        "$out" "█"
+ok     "对照：不带 --raw 时有艺术字"                "$(install_dry)" "█"
 
 out=$(/bin/bash "$INSTALL_SH" --help --raw 2>&1)
 not_ok "--help --raw 也没有 🌊"          "$out" "🌊"

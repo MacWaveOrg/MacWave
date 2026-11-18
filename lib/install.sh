@@ -902,14 +902,19 @@ resolve_custom_dir() {
 # 显示欢迎信息
 # ==========================================
 # WAVE 艺术字。与语言无关，两种语言都打 —— 它只是装饰，不值得为它写两份。
-echo ""
-echo -e "${SKY_BLUE}██╗    ██╗ █████╗ ██╗   ██╗███████╗${RESET}"
-echo -e "${SKY_BLUE}██║    ██║██╔══██╗██║   ██║██╔════╝${RESET}"
-echo -e "${SKY_BLUE}██║ █╗ ██║███████║██║   ██║█████╗  ${RESET}"
-echo -e "${SKY_BLUE}██║███╗██║██╔══██║╚██╗ ██╔╝██╔══╝  ${RESET}"
-echo -e "${SKY_BLUE}╚███╔███╔╝██║  ██║ ╚████╔╝ ███████╗${RESET}"
-echo -e "${SKY_BLUE} ╚══╝╚══╝ ╚═╝  ╚═╝  ╚═══╝  ╚══════╝${RESET}"
-echo ""
+#
+# --raw 时整段跳过：那是给日志和 grep 看的输出，六行全是块字符，只会把真正的
+# 内容顶出屏幕、把日志撑满。装饰不参与「装得成不成」这件事，去掉它不影响任何断言。
+if ! mw_raw; then
+    echo ""
+    echo -e "${SKY_BLUE}██╗    ██╗ █████╗ ██╗   ██╗███████╗${RESET}"
+    echo -e "${SKY_BLUE}██║    ██║██╔══██╗██║   ██║██╔════╝${RESET}"
+    echo -e "${SKY_BLUE}██║ █╗ ██║███████║██║   ██║█████╗  ${RESET}"
+    echo -e "${SKY_BLUE}██║███╗██║██╔══██║╚██╗ ██╔╝██╔══╝  ${RESET}"
+    echo -e "${SKY_BLUE}╚███╔███╔╝██║  ██║ ╚████╔╝ ███████╗${RESET}"
+    echo -e "${SKY_BLUE} ╚══╝╚══╝ ╚═╝  ╚═╝  ╚═══╝  ╚══════╝${RESET}"
+    echo ""
+fi
 mw_say "🌊 Welcome to MacWave $MACWAVE_VERSION!" "🌊 欢迎使用 MacWave ${MACWAVE_VERSION}！"
 
 if mw_dry_run; then
