@@ -161,7 +161,6 @@ branch = "4.0"
 | `MACWAVE_CONFIG_DIR` | 配置目录 |
 | `MACWAVE_CORE_URL` | 代码地址前缀（不含分支） |
 | `MACWAVE_BRANCH` | 代码分支 |
-| `MACWAVE_TARGET_VERSION` | 目标版本 |
 | `MACWAVE_CURRENT_VERSION` | 已装版本；**为空表示首次安装**，走全量清单 |
 | `MACWAVE_FILE_TIMEOUT` | 单文件超时秒数 |
 | `MACWAVE_NEED_SUDO` | `1` 表示安装目录需要 sudo |

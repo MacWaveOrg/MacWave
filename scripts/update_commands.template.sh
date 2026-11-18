@@ -13,7 +13,6 @@
 #   MACWAVE_CONFIG_DIR       配置目录
 #   MACWAVE_CORE_URL         MacWave 代码的地址前缀（不含分支）
 #   MACWAVE_BRANCH           代码分支
-#   MACWAVE_TARGET_VERSION   目标版本（本脚本所属的版本）
 #   MACWAVE_CURRENT_VERSION  当前已装版本；首次安装时为空
 #   MACWAVE_FILE_TIMEOUT     单个文件的超时秒数
 #   MACWAVE_NEED_SUDO        1 = 安装目录需要 sudo 才能写
