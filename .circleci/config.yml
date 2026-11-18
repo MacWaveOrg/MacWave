@@ -130,6 +130,11 @@ jobs:
             /bin/bash scripts/minos_test.sh
 
       - run:
+          name: Installer flags
+          # --help 只打用法；--print-usage 打用法后继续；--help 只能配 --dry-run
+          command: bash scripts/install_flags_test.sh
+
+      - run:
           name: Install privilege decision
           # 提权只看写权限，不看是否在家目录下；--dry-run，离线
           command: bash scripts/install_privilege_test.sh

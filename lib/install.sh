@@ -222,8 +222,14 @@ mw_check_say_hijack() {
 
 mw_say() {
     # mw_say "<English>" "<中文>"
+    #
+    # 只给一句时两种语言都用它（`${2-$1}`）—— 空行、纯符号行、以及中英同文的
+    # 命令行都属于这种。注意是 `-` 不是 `:-`：显式传了空串（英文有下半句、中文
+    # 已经说完了）必须打空行，不能回退到英文。
+    # 不给默认值时，`set -u` 下中文模式会以 "$2: unbound variable" 崩掉 —— 而那只
+    # 发生在 --zh，属于「本地英文一切正常、用户用中文就炸」的典型。
     if [[ "$MW_LANG" == "zh" ]]; then
-        printf '%b\n' "$2"
+        printf '%b\n' "${2-$1}"
     else
         printf '%b\n' "$1"
     fi
@@ -690,120 +696,109 @@ CLI_CUSTOM_DIR=""
 # --skip-probe：不真写那个探针文件，提权判定只用 test -w 的静态结论。
 # 见「是否需要 sudo」那一节里 mw_can_write 的说明。
 CLI_SKIP_PROBE=false
+# --help：打用法后**停**在这里；--print-usage：打用法后继续安装（或继续试运行）。
+CLI_HELP=false
+CLI_PRINT_USAGE=false
 # 默认从我们自己的 Python 仓库取解释器；这个开关让它回上游取
 INSTALL_PYTHON_FROM_SOURCE=""
 
 usage() {
-    if [[ "$MW_LANG" == "zh" ]]; then
-        usage_zh
-    else
-        usage_en
-    fi
+    # 用法一律走 mw_say —— 语言由它挑（--zh），呈现规则与其它输出一致：
+    # --raw 时调色板已清空、🌊 也会被 fd 过滤器剥掉，所以这里不必再判断一次。
+    #
+    # 每一项是**一段**（段内用 \n 分行），而不是一行一次调用：中英两种语言的
+    # 折行位置本来就不同，逐行成对会逼着一边凑行数，凑出来的空行在中文里就是
+    # 多出来的空白。按段落给，各自折各自的。
+    mw_say "MacWave installer" "MacWave 安装程序"
+    mw_say ""
+    mw_say "Usage:" "用法："
+    mw_say "  install.sh [options]" "  install.sh [选项]"
+    mw_say ""
+    mw_say "Options:" "选项："
+    mw_say "      --ci, --CI          No interaction at all: the directory menu and the\n\
+                          agreement are answered automatically. Without\n\
+                          --dir-option the default (option 1) is used.\n\
+                          Requires passwordless sudo when privilege is needed." \
+           "      --ci, --CI          完全不交互：目录菜单与用户协议都自动应答。不带\n\
+                          --dir-option 时使用默认项（第 1 项）。\n\
+                          需要提权时要求 sudo 免密。"
+    mw_say "      --dry-run           Print what the installer would do and change\n\
+                          nothing: no download, no sudo, no directory\n\
+                          created, no file written. When the latest version\n\
+                          cannot be fetched it continues with a placeholder,\n\
+                          so the output can be reviewed offline." \
+           "      --dry-run           只打印安装器会做什么，不做任何改动：不下载、不提权、\n\
+                          不建目录、不写文件。取不到最新版本号时用占位值继续，\n\
+                          因此在断网的机器上也能看完整个输出。"
+    mw_say "      --raw               Plain output for logs and scripts: no emoji, no\n\
+                          colours, ASCII progress bars. Interaction is\n\
+                          unchanged; combine with --ci for unattended runs." \
+           "      --raw               给日志和脚本用的输出：不带 🌊、不带颜色、进度条用\n\
+                          井号刻度。交互不变；无人值守请再配 --ci。"
+    mw_say "      --skip-probe        Do not create the temporary probe file used to decide\n\
+                          whether privilege is needed; rely on the permission\n\
+                          bits alone. Use it when the target must stay\n\
+                          untouched -- a wrong guess only moves the failure to\n\
+                          the first real write." \
+           "      --skip-probe        判定是否需要提权时不在目标里建那个临时探针文件，只用\n\
+                          权限位判断。适合「目标必须一点痕迹都不留」的场合 ——\n\
+                          判断错了只是把失败推迟到第一次真正写入。"
+    mw_say "      --dir-option=N      Pick menu entry N without prompting (1-$CUSTOM_OPTION)." \
+           "      --dir-option=N      不提问，直接选菜单第 N 项（1-${CUSTOM_OPTION}）。"
+    mw_say "      --dir-option=DIR    Use DIR as the installation directory (shorthand for\n\
+                          --dir-option=$CUSTOM_OPTION=DIR)." \
+           "      --dir-option=DIR    用 DIR 作为安装目录（等价于\n\
+                          --dir-option=$CUSTOM_OPTION=DIR）。"
+    mw_say "      --dir-option=N=DIR  Pick entry N and, for the custom entry ($CUSTOM_OPTION), use DIR\n\
+                          as the installation directory." \
+           "      --dir-option=N=DIR  选第 N 项，并在自定义项（${CUSTOM_OPTION}）时用 DIR\n\
+                          作为安装目录。"
+    mw_say "        --install-python-from-source\n\
+                            Download the bundled CPython from its upstream URL\n\
+                            (recorded in pythondata/<version>/python_url.toml)\n\
+                            instead of from MacWave's own Python repository." \
+           "        --install-python-from-source\n\
+                            自带 CPython 改从上游 URL 下载（记录在\n\
+                            pythondata/<version>/python_url.toml），\n\
+                            而不是从 MacWave 自己的 Python 仓库取。"
+    mw_say "        --no-noise          Also check that mw_say has not been hijacked by\n\
+                            /usr/bin/say (the macOS spoken-text command).\n\
+                            Off by default; --NO-NOISE and --No-Noise work too." \
+           "        --no-noise          额外检查 mw_say 有没有被 /usr/bin/say（macOS 的朗读\n\
+                            命令）劫持。默认不查；--NO-NOISE、--No-Noise 也认。"
+    mw_say "      --zh                Print in Chinese (English by default)." \
+           "      --zh                用中文输出（默认英文）。"
+    mw_say "  -h, --help              Show this help and stop. May only be combined with\n\
+                          --dry-run (print the usage, then walk the install)." \
+           "  -h, --help              显示本帮助后停止。只能单独用，或与 --dry-run 连用\n\
+                          （先打用法，再走一遍流程）。"
+    mw_say "      --print-usage       Show this help, then continue (install or dry run)." \
+           "      --print-usage       显示本帮助后继续（真的安装，或继续试运行）。"
+    mw_say ""
+    mw_say "Directory menu:" "目录菜单："
+    # 菜单自己按语言输出、也不带 🌊 与颜色；这里只补缩进。
+    print_dir_menu | sed 's/^/  /'
+    mw_say ""
+    mw_say "Examples:" "示例："
+    mw_say "  install.sh --ci --dir-option=1" "  install.sh --ci --dir-option=1"
+    mw_say "  install.sh --CI --dir-option=2" "  install.sh --CI --dir-option=2"
+    mw_say "  install.sh --ci --dir-option=$CUSTOM_OPTION=/opt/my-macwave" \
+           "  install.sh --ci --dir-option=$CUSTOM_OPTION=/opt/my-macwave"
+    mw_say "  install.sh --ci --dir-option=/opt/my-macwave" \
+           "  install.sh --ci --dir-option=/opt/my-macwave"
+    mw_say ""
+    mw_say "Running it straight from the repository (options go after '--'):" \
+           "直接从仓库运行（选项放在 '--' 之后）："
+    mw_say '  /bin/bash -c "$(curl -fsSL <url>)" -- --ci --dir-option=1' \
+           '  /bin/bash -c "$(curl -fsSL <url>)" -- --ci --dir-option=1'
 }
 
-usage_en() {
-    cat <<USAGE_EOF
-MacWave installer
-
-Usage:
-  install.sh [options]
-
-Options:
-      --ci, --CI          No interaction at all: the directory menu and the
-                          agreement are answered automatically. Without
-                          --dir-option the default (option 1) is used.
-                          Requires passwordless sudo when privilege is needed.
-      --dry-run           Print what the installer would do and change
-                          nothing: no download, no sudo, no directory
-                          created, no file written. When the latest version
-                          cannot be fetched it continues with a placeholder,
-                          so the output can be reviewed offline.
-      --raw               Plain output for logs and scripts: no emoji, no
-                          colours, ASCII progress bars. Interaction is
-                          unchanged; combine with --ci for unattended runs.
-      --skip-probe        Do not create the temporary probe file used to decide
-                          whether privilege is needed; rely on the permission
-                          bits alone. Use it when the target must stay
-                          untouched -- a wrong guess only moves the failure to
-                          the first real write.
-      --dir-option=N      Pick menu entry N without prompting (1-$CUSTOM_OPTION).
-      --dir-option=DIR    Use DIR as the installation directory (shorthand for
-                          --dir-option=$CUSTOM_OPTION=DIR).
-      --dir-option=N=DIR  Pick entry N and, for the custom entry ($CUSTOM_OPTION), use DIR
-                          as the installation directory.
-        --install-python-from-source
-                            Download the bundled CPython from its upstream URL
-                            (recorded in pythondata/<version>/python_url.toml)
-                            instead of from MacWave's own Python repository.
-        --no-noise          Also check that mw_say has not been hijacked by
-                            /usr/bin/say (the macOS spoken-text command).
-                            Off by default; --NO-NOISE and --No-Noise work too.
-      --zh                Print in Chinese (English by default).
-  -h, --help              Show this help.
-
-Directory menu:
-$(print_dir_menu | sed 's/^/  /')
-
-Examples:
-  install.sh --ci --dir-option=1
-  install.sh --CI --dir-option=2
-  install.sh --ci --dir-option=$CUSTOM_OPTION=/opt/my-macwave
-  install.sh --ci --dir-option=/opt/my-macwave
-
-Running it straight from the repository (options go after '--'):
-  /bin/bash -c "\$(curl -fsSL <url>)" -- --ci --dir-option=1
-USAGE_EOF
-}
-
-usage_zh() {
-    cat <<USAGE_EOF
-MacWave 安装程序
-
-用法：
-  install.sh [选项]
-
-选项：
-      --ci, --CI          完全不交互：目录菜单与用户协议都自动应答。不带
-                          --dir-option 时使用默认项（第 1 项）。
-                          需要提权时要求 sudo 免密。
-      --dry-run           只打印安装器会做什么，不做任何改动：不下载、不提权、
-                          不建目录、不写文件。取不到最新版本号时用占位值继续，
-                          因此在断网的机器上也能看完整个输出。
-      --raw               给日志和脚本用的输出：不带 🌊、不带颜色、进度条用
-                          井号刻度。交互不变；无人值守请再配 --ci。
-      --skip-probe        判定是否需要提权时不在目标里建那个临时探针文件，只用
-                          权限位判断。适合「目标必须一点痕迹都不留」的场合 ——
-                          判断错了只是把失败推迟到第一次真正写入。
-      --dir-option=N      不提问，直接选菜单第 N 项（1-${CUSTOM_OPTION}）。
-      --dir-option=DIR    用 DIR 作为安装目录（等价于
-                          --dir-option=$CUSTOM_OPTION=DIR）。
-      --dir-option=N=DIR  选第 N 项，并在自定义项（${CUSTOM_OPTION}）时用 DIR
-                          作为安装目录。
-        --install-python-from-source
-                            自带 CPython 改从上游 URL 下载（记录在
-                            pythondata/<version>/python_url.toml），
-                            而不是从 MacWave 自己的 Python 仓库取。
-        --no-noise          额外检查 mw_say 有没有被 /usr/bin/say（macOS 的朗读
-                            命令）劫持。默认不查；--NO-NOISE、--No-Noise 也认。
-      --zh                用中文输出（默认英文）。
-  -h, --help              显示本帮助。
-
-目录菜单：
-$(print_dir_menu | sed 's/^/  /')
-
-示例：
-  install.sh --ci --dir-option=1
-  install.sh --CI --dir-option=2
-  install.sh --ci --dir-option=$CUSTOM_OPTION=/opt/my-macwave
-  install.sh --ci --dir-option=/opt/my-macwave
-
-直接从仓库运行（选项放在 '--' 之后）：
-  /bin/bash -c "\$(curl -fsSL <url>)" -- --ci --dir-option=1
-USAGE_EOF
-}
-
-# 语言与 --dry-run 的预扫已在文件上方完成（版本号要在解析之前就用到），
+# 语言与 --dry-run / --raw 的预扫已在文件上方完成（版本号要在解析之前就用到），
 # 这里只做真正的参数解析。
+#
+# 留一份原始参数：下面的 while 会一路 shift 把 "$@" 掏空，而 --help 的连用规则
+# 要在解析之后回头检查「用户到底还给了什么」。
+CLI_ARGV=("$@")
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -842,8 +837,10 @@ while [[ $# -gt 0 ]]; do
             MW_LANG="zh"
             ;;
         -h|--help)
-            usage
-            exit 0
+            CLI_HELP=true
+            ;;
+        --print-usage|--PRINT-USAGE)
+            CLI_PRINT_USAGE=true
             ;;
         *)
             mw_say_err "${RED_BOLD}🌊 Error: unknown option '$1'. Try --help.${RESET}" "${RED_BOLD}🌊 错误：未知选项 '$1'。可试 --help。${RESET}"
@@ -852,6 +849,51 @@ while [[ $# -gt 0 ]]; do
     esac
     shift
 done
+
+# ==========================================
+# --help 的连用规则
+# ==========================================
+#
+# --help 只回答「怎么用」，不安装。所以它只允许两种出现方式：
+#
+#   install.sh --help                 打用法，停
+#   install.sh --help --dry-run       打用法，然后照 --dry-run 走一遍流程（不安装）
+#
+# 与其它安装参数连用一律报错：`--help --ci --dir-option=2` 读起来像是「按这些
+# 参数装」，实际却只打帮助 —— 把它拦下来，比让用户以为装过了强。
+# --zh / --raw 例外：它们只改呈现（语言、输出格式），不是安装参数。
+#
+# --print-usage 才是「打用法然后继续安装」的那个开关。
+if [[ "$CLI_HELP" == "true" ]]; then
+    _bad=""
+    for _arg in ${CLI_ARGV[@]+"${CLI_ARGV[@]}"}; do
+        case "$_arg" in
+            -h|--help|--dry-run|--DRY-RUN|--zh|--ZH|--raw|--RAW) ;;
+            *) _bad="$_arg"; break ;;
+        esac
+    done
+    if [[ -n "$_bad" ]]; then
+        mw_say_err "${RED_BOLD}🌊 Error: --help cannot be combined with '$_bad'.${RESET}" \
+            "${RED_BOLD}🌊 错误：--help 不能和 '$_bad' 连用。${RESET}"
+        mw_say_err "🌊 --help only prints the usage and stops. Two ways to go further:" \
+            "🌊 --help 只打用法、不安装。想再往下走有两条路："
+        mw_say_err "🌊   install.sh --help --dry-run    print the usage, then walk the install" \
+            "🌊   install.sh --help --dry-run    先打用法，再走一遍流程（不安装）"
+        mw_say_err "🌊   install.sh --print-usage       print the usage, then install for real" \
+            "🌊   install.sh --print-usage       先打用法，再真的安装"
+        exit 1
+    fi
+fi
+
+if [[ "$CLI_PRINT_USAGE" == "true" ]]; then
+    usage
+fi
+
+if [[ "$CLI_HELP" == "true" ]]; then
+    usage
+    # 与 --dry-run 连用时继续往下走；单独出现时到此为止。
+    [[ "$CLI_DRY_RUN" == "true" ]] || exit 0
+fi
 
 # --no-noise 的正事。必须放在解析之后 —— 放前面的话 NO_NOISE 还是默认值 false，
 # 旗标永远不会生效（第一版就是这么错的，实测三种写法全都没触发）。

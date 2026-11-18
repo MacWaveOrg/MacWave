@@ -162,6 +162,11 @@ jobs:
         run: |
           /bin/bash scripts/install_privilege_test.sh
 
+      # --help / --print-usage 的分工与连用规则；离线，file:// 版本数据。
+      - name: Check installer flags
+        run: |
+          /bin/bash scripts/install_flags_test.sh
+
       - name: Audit dependency data
         run: |
           python3 scripts/audit_deps.py data --data-dir infosource-data
