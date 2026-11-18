@@ -136,6 +136,10 @@ Install a package, or one specific version of it.
       Install anyway when the running macOS is older than the package
       declares
 
+  --raw
+      Plain output for logs and scripts: no emoji, no colours, ASCII
+      progress bar
+
   -v, --verbose
       Verbose mode
 
@@ -186,6 +190,10 @@ in the same run.
   -F, --force
       Install anyway when the running macOS is older than the package
       declares
+
+  --raw
+      Plain output for logs and scripts: no emoji, no colours, ASCII
+      progress bar
 
   -v, --verbose
       Verbose mode

@@ -151,6 +151,12 @@ jobs:
         run: |
           /bin/bash scripts/versioncompare_test.sh
 
+      # --raw 的输出要能直接进日志：不带 🌊、不带 ANSI、进度条是井号刻度。
+      # 假索引与假产物起在 localhost，离线。
+      - name: Check --raw output
+        run: |
+          /bin/bash scripts/raw_test.sh
+
       - name: Audit dependency data
         run: |
           python3 scripts/audit_deps.py data --data-dir infosource-data

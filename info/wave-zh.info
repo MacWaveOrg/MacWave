@@ -115,6 +115,9 @@ File: wave-zh.info, Node: install, Next: upgrade, Up: Top
   -F, --force
       当前 macOS 版本低于软件包声明要求时仍继续安装
 
+  --raw
+      给日志和脚本用的输出：不带 🌊、不带颜色、进度条用井号刻度
+
   -v, --verbose
       详细模式
 
@@ -161,6 +164,9 @@ File: wave-zh.info, Node: upgrade, Next: uninstall, Prev: install, Up: Top
 
   -F, --force
       当前 macOS 版本低于软件包声明要求时仍继续安装
+
+  --raw
+      给日志和脚本用的输出：不带 🌊、不带颜色、进度条用井号刻度
 
   -v, --verbose
       详细模式

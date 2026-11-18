@@ -436,6 +436,77 @@ def handle_download_args(input_string):
 
 # -------------------- 下载核心（含真正断点续传） -------------------
 
+
+def _iter_chunks(response, limit_bps):
+    """按块迭代响应体，并施加限速。
+
+    三种呈现方式（rich 进度条 / 井号进度条 / 点号）共用这一个循环：限速那十几行
+    以前在两条分支里各抄了一份，加第三条分支时再抄一遍就是三份约定要同时改。
+    """
+    token_bucket = 0.0
+    last_time = time.monotonic()
+    for chunk in response.iter_content(chunk_size=8192):
+        if not chunk:
+            continue
+        if limit_bps:
+            now = time.monotonic()
+            token_bucket = min(token_bucket + (now - last_time) * limit_bps, 8192)
+            last_time = now
+            if token_bucket < len(chunk):
+                time.sleep((len(chunk) - token_bucket) / limit_bps)
+                now = time.monotonic()
+                token_bucket += (now - last_time) * limit_bps
+                last_time = now
+            token_bucket -= len(chunk)
+        yield chunk
+
+
+class _RawProgress:
+    """`--raw` 的下载进度：纯 ASCII，每 10% 一行，没有颜色也没有光标移动。
+
+    为什么不用 rich：rich 靠 ANSI 光标控制原地重绘，输出重定向到文件时是一串
+    控制字符 —— 而这正是 `--raw` 要服务的场合（日志、diff、grep）。这里每行
+    自带完整状态，日志里逐行可读。
+    """
+
+    STEP = 10
+    WIDTH = 20
+
+    def __init__(self, label, total, done=0):
+        self._label = label
+        self._total = total
+        self._written = done
+        self._shown = 0
+        if not total:
+            # 服务器没给 content-length：只能报字节数，不能报百分比
+            print(f"{label}: downloading")
+            return
+        # 续传：已经落在盘上的那部分也算进度，否则从 0% 重新开始读着像重下了
+        percent = min(100, self._written * 100 // self._total)
+        self._shown = percent // self.STEP * self.STEP
+        if self._shown:
+            self._emit(self._shown)
+
+    def advance(self, size):
+        self._written += size
+        if not self._total:
+            return
+        percent = min(100, self._written * 100 // self._total)
+        while self._shown + self.STEP <= percent:
+            self._shown += self.STEP
+            self._emit(self._shown)
+
+    def finish(self):
+        if self._total and self._shown < 100:
+            self._shown = 100
+            self._emit(100)
+
+    def _emit(self, percent):
+        filled = percent * self.WIDTH // 100
+        bar = "#" * filled + "." * (self.WIDTH - filled)
+        print(f"{self._label}: {bar} {percent:3d}%")
+
+
 def download_file(url, temp_path, config, input_string, display_name):
     request_kwargs = {"stream": True}
 
@@ -507,7 +578,18 @@ def download_file(url, temp_path, config, input_string, display_name):
 
             limit_bps = config["limit_rate"]
 
-            if RICH_AVAILABLE:
+            chunks = _iter_chunks(response, limit_bps)
+
+            if silent.is_raw():
+                # --raw：井号刻度。放在最前面，因为 rich 与「点号」两路都带
+                # 人类阅读的呈现（重绘 / 无进度），都不适合进日志。
+                bar = _RawProgress(display_name, total_size, done=existing_size)
+                with open(temp_path, mode) as f:
+                    for chunk in chunks:
+                        f.write(chunk)
+                        bar.advance(len(chunk))
+                bar.finish()
+            elif RICH_AVAILABLE:
                 console = Console()
                 progress_columns = [
                     TextColumn("[progress.description]{task.description}"),
@@ -528,36 +610,16 @@ def download_file(url, temp_path, config, input_string, display_name):
                     if existing_size > 0:
                         progress.update(task_id, advance=existing_size)
 
-                    token_bucket = 0.0
-                    last_time = time.monotonic()
-
                     with open(temp_path, mode) as f:
-                        for chunk in response.iter_content(chunk_size=8192):
-                            if chunk:
-                                if limit_bps:
-                                    now = time.monotonic()
-                                    delta = now - last_time
-                                    token_bucket += delta * limit_bps
-                                    last_time = now
-                                    if token_bucket > 8192:
-                                        token_bucket = 8192
-                                    if token_bucket < len(chunk):
-                                        time.sleep((len(chunk) - token_bucket) / limit_bps)
-                                        now = time.monotonic()
-                                        delta = now - last_time
-                                        token_bucket += delta * limit_bps
-                                        last_time = now
-                                    token_bucket -= len(chunk)
-
-                                f.write(chunk)
-                                progress.update(task_id, advance=len(chunk))
+                        for chunk in chunks:
+                            f.write(chunk)
+                            progress.update(task_id, advance=len(chunk))
             else:
                 with open(temp_path, mode) as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        if chunk:
-                            f.write(chunk)
-                            if config["verbose"] and not silent.is_silent():
-                                print(".", end="", flush=True)
+                    for chunk in chunks:
+                        f.write(chunk)
+                        if config["verbose"] and not silent.is_silent():
+                            print(".", end="", flush=True)
                 if config["verbose"] and not silent.is_silent():
                     print(" ")
 

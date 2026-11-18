@@ -130,6 +130,11 @@ jobs:
             /bin/bash scripts/minos_test.sh
 
       - run:
+          name: --raw output
+          # 不带 🌊、不带 ANSI、进度条是井号刻度（假索引起在 localhost）
+          command: bash scripts/raw_test.sh
+
+      - run:
           name: Version comparison
           # 版本逻辑只有 lib/versioncompare.py 一份：预发布排在正式版之下、两段与三段
           # 等价、社区后缀归一化，以及「仓库里不再有另外两份实现」。

@@ -317,6 +317,8 @@ wave upgrade --all, -a             Take every installed package to the latest ve
     --remove-old-versions          Same as --remove-old-version
     --rov                          Same as --remove-old-version
     -X                             Same as --remove-old-version
+    --raw                          Plain output for logs and scripts (install / upgrade):
+                                   no emoji, no colours, ASCII progress bar
     --no-link                      Leave the unversioned link alone (install / uninstall;
                                    the old name --unlink works too)
     --all, -a                      Apply to every installed package (upgrade / link / unlink / linkquery)

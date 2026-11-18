@@ -1,17 +1,24 @@
 #!/usr/bin/env python3
 
 # silent.py
-# `-s / --silent` 与 `-S / --show-error` 的全部实现。
+# `-s / --silent`、`-S / --show-error` 与 `--raw` 的全部实现。
 #
-# 两段，共用同一份状态（_silent / _show_error）与同一张命令清单
-# （SILENT_COMMANDS）：
+# 两段，共用同一份状态（_silent / _show_error / _raw）与同一类命令清单
+# （SILENT_COMMANDS / RAW_COMMANDS）：
 #
 #   A. 参数层   strip() / apply()
 #               拿到用户敲的那串词之后要做的判断：哪些命令能静默、怎么把旗标
 #               从 argv 里剥掉、剥完怎么落到运行期开关。**只被 wave.py 调用**，
 #               而且必须在分发之前跑完。
 #   B. 运行期   say() / ask() / show() / silence_everything() / machine_readable()
-#               全仓唯一的输出闸门。pkg/、surfboard/ 里的模块都用它。
+#               / raw_output()，全仓唯一的输出闸门。pkg/、surfboard/ 里的模块都用它。
+#
+# 三种「不是给人看的输出」各管一件事，别混：
+#
+#   -s     什么都不打印（fd 层吞掉，退出码是唯一信号）
+#   -sS    -s 加上保留错误，并且剥掉行首 🌊（脚本要能一眼解析）
+#   --raw  该说的照说，只换呈现：不带 🌊、不带 ANSI 颜色、进度条用井号刻度
+#          而不是 rich 的光标重绘（rich 落到文件里是一串控制字符）
 #
 # 为什么合成一个模块：这两半本来就共享状态与命令清单，拆成 quiet.py + silent.py
 # 时「哪些命令能静默」要跨两个文件保持一致，读 `-s` 的完整行为得来回跳。合起来
@@ -44,6 +51,14 @@ import flags
 # **这份名单是权威**，flags.COMMAND_FLAGS 里那份是给它做提示文案用的副本；
 # scripts/flags_test.sh 比对两边。加一条能静默的命令时，两处都要改。
 SILENT_COMMANDS = {"install", "upgrade", "uninstall", "link", "unlink", "selfupdate"}
+
+# `--raw` 由本模块接管的命令（`--raw` 在别的命令上含义完全不同，见下面
+# RAW_OWNED_ELSEWHERE）。它只对「有下载进度、输出要进日志」的命令有意义。
+RAW_COMMANDS = {"install", "upgrade"}
+
+# 这几个命令自己也接受 --raw，但含义不是「机器可读的安装日志」：info 是「按存储
+# 原样打印」，mirror 是「只打值」。它们的解析在各自模块里，这里碰都不碰。
+RAW_OWNED_ELSEWHERE = {"info", "mirror"}
 
 
 def strip(words):
@@ -85,15 +100,31 @@ def strip(words):
 
 
 def apply(words, command):
-    """剥掉静默旗标、把结论落到下面的运行期开关，返回剩下该交给 handler 的 words。
+    """剥掉静默/raw 旗标、把结论落到下面的运行期开关，返回剩下该交给 handler 的 words。
 
-    位置必须在分发之前，而且必须**从 argv 里拿掉**这两个旗标：各 handler 的旗标
+    位置必须在分发之前，而且必须**从 argv 里拿掉**这些旗标：各 handler 的旗标
     白名单里没有它们（按命令各自校验，加进去要改十几处），留着的话
     `wave install jq -s` 会报「illegal option -s」。
 
     静默优先于啰嗦：同时给了 -v，-v 会被各模块的 verbose 判定挡掉。
+    静默也优先于 --raw：什么都不打的时候，怎么打已经无所谓了。
     """
+    raw = False
+    if "--raw" in words:
+        if command in RAW_COMMANDS:
+            words = [word for word in words if word != "--raw"]
+            raw = True
+        elif command not in RAW_OWNED_ELSEWHERE:
+            # 与 -s 同理：--raw 真实存在，只是不适用于这条命令。说成 unknown 会
+            # 把人送去查拼写。
+            misplaced("--raw", flags.describe("--raw") or "--raw is not available here")
+            sys.exit(1)
+
     words, is_silent, show_error = strip(words)
+    if raw and not is_silent:
+        # 顺序：先开开关再换流，pkginstaller 里靠 is_raw() 选进度条实现。
+        set_raw(True)
+        raw_output()
     if not is_silent:
         return words
 
@@ -124,6 +155,7 @@ def apply(words, command):
 
 _silent = False
 _show_error = False
+_raw = False
 
 
 def set_silent(enabled, show_error=False):
@@ -141,6 +173,20 @@ def is_show_error():
     return _show_error
 
 
+def set_raw(enabled):
+    global _raw
+    _raw = bool(enabled)
+
+
+def is_raw():
+    """`--raw`：输出要能直接进日志 / 进 grep，进度条也不能用 rich。
+
+    与 is_silent() 是两个独立开关：`--raw` 照常打印，只是换呈现方式；
+    `-s` 什么都不打。同时给时静默胜出（见 apply()）。
+    """
+    return _raw
+
+
 # -------------------- 静默时的机器可读输出 --------------------
 #
 # `-sS` 的输出去给脚本读（人只在失败时才看）。`🌊 ` 对脚本是噪音：每行都得多剥
@@ -152,6 +198,7 @@ def is_show_error():
 # 换一层流是唯一能保证「一律」的地方。
 
 _ANSI_AT_START = re.compile(r"^(?:\x1b\[[0-9;]*m)*")
+_ANSI_ANYWHERE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 _ITEM = "\U0001F30A"          # 🌊
 
 
@@ -167,29 +214,37 @@ def _strip_item(line):
 
 
 class _MachineStream:
-    """包一层输出流，按行剥掉行首 🌊。
+    """包一层输出流，按行剥掉行首 🌊（`--raw` 时连颜色码一起去掉）。
 
     行缓冲：攒到换行才写出，这样一次 write 的碎片不会把一行切两半。
     flush() 会把残留的半个行也写出去 —— 进度条那种不换行的写法靠它。
     """
 
-    def __init__(self, stream):
+    def __init__(self, stream, strip_colors=False):
         self._stream = stream
         self._pending = ""
+        self._strip_colors = strip_colors
+
+    def _clean(self, line):
+        if self._strip_colors:
+            # 颜色码不止 \x1b[…m：rich 还会发光标移动与清行（\x1b[2K、\x1b[1A），
+            # 落到日志里都是乱码。整类 CSI 序列一起剥。
+            line = _ANSI_ANYWHERE.sub("", line)
+        return _strip_item(line)
 
     def write(self, text):
         self._pending += text
         out = []
         while "\n" in self._pending:
             line, self._pending = self._pending.split("\n", 1)
-            out.append(_strip_item(line) + "\n")
+            out.append(self._clean(line) + "\n")
         if out:
             self._stream.write("".join(out))
         return len(text)
 
     def flush(self):
         if self._pending:
-            self._stream.write(_strip_item(self._pending))
+            self._stream.write(self._clean(self._pending))
             self._pending = ""
         self._stream.flush()
 
@@ -198,11 +253,23 @@ class _MachineStream:
 
 
 def machine_readable():
-    """`-sS` 时把 stdout/stderr 换成不带 🌊 的版本。"""
+    """`-sS` 时把 stdout/stderr 换成不带 🌊 的版本（颜色保留）。"""
     if not _show_error:
         return
     sys.stdout = _MachineStream(sys.stdout)
     sys.stderr = _MachineStream(sys.stderr)
+
+
+def raw_output():
+    """`--raw` 时把 stdout/stderr 换成不带 🌊、也不带颜色码的版本。
+
+    在流上做，理由与 machine_readable() 相同：带 🌊 与带颜色的 print 散在
+    lib/ pkg/ surfboard/ 三个目录几十处，逐个改必然漏。换一层流是唯一能保证
+    「一律」的地方。rich 的进度条例外 —— 它自己写终端，不经过这里，所以
+    pkginstaller 里另有一个 is_raw() 分支（见 _RawProgress）。
+    """
+    sys.stdout = _MachineStream(sys.stdout, strip_colors=True)
+    sys.stderr = _MachineStream(sys.stderr, strip_colors=True)
 
 
 def silence_everything():

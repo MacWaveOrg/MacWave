@@ -77,6 +77,7 @@ COMMANDS = (
             ("--no-link", "Do not touch the unversioned link (the old name --unlink "
                           "still works)"),
             ("-F, --force", "Install anyway when the running macOS is older than the package declares"),
+            ("--raw", "Plain output for logs and scripts: no emoji, no colours, ASCII progress bar"),
             ("-v, --verbose", "Verbose mode"),
         ],
         examples=[
@@ -106,6 +107,7 @@ COMMANDS = (
             ("--connect-timeout <string>", "Maximum time for the handshake"),
             ("--content-time <string>", "Maximum time to receive data"),
             ("-F, --force", "Install anyway when the running macOS is older than the package declares"),
+            ("--raw", "Plain output for logs and scripts: no emoji, no colours, ASCII progress bar"),
             ("-v, --verbose", "Verbose mode"),
         ],
         examples=[

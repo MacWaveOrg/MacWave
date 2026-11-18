@@ -63,10 +63,15 @@ silent = {"-s", "--silent", "-S", "--show-error"}
 # 单条命令独有的
 # -F/--force：索引声明的最低系统版本高于本机时，跳过询问直接装。upgrade 复用
 # install 那份白名单，所以两组都要列，describe() 才能把用错命令指到正确的地方。
-install = {"-F", "--force"} | set(NO_LINK) | silent
+#
+# --raw：install / upgrade 上是「机器可读的输出」（无 🌊、无颜色、井号进度条，
+# 由 cli/silent.py 接管）；info / mirror 上另有含义（原样打印 / 只打值），
+# 各自由自己的模块解析。同一个名字出现在两组里不是笔误，是同一个旗标在不同命令
+# 下做不同的事 —— 就像 -a 在 upgrade 与 link 上都是「所有」。
+install = {"-F", "--force", "--raw"} | set(NO_LINK) | silent
 uninstall = set(NO_LINK) | silent
 upgrade = {"-X", "--remove-old-version", "--remove-old-versions", "--rov",
-           "-a", "--all", "-F", "--force"} | silent
+           "-a", "--all", "-F", "--force", "--raw"} | silent
 link = {"-a", "--all"} | silent
 unlink = {"-a", "--all"} | silent
 linkquery = {"-a", "--all"}
