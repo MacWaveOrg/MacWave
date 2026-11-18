@@ -38,10 +38,10 @@ TAGGER_SCRIPT = Path(__file__).resolve().parent.parent / "surfboard" / "tagger.s
 # -------------------- 依赖库检查 --------------------
 
 try:
-    from pkgversionparser import get_max_version, sort_versions
+    from versioncmp import get_max_version, sort_versions
 except ModuleNotFoundError as error:
-    if error.name == "pkgversionparser":
-        print(f"{RED_BOLD}🌊 Error: 'pkgversionparser' module is not available.{RESET}")
+    if error.name == "versioncmp":
+        print(f"{RED_BOLD}🌊 Error: 'versioncmp' module is not available.{RESET}")
     else:
         print(f"{RED_BOLD}🌊 Error: Missing Python dependency '{error.name}'.{RESET}")
         print(f"{RED_BOLD}🌊 Install the required packages and try again:{RESET}")
@@ -50,8 +50,7 @@ except ModuleNotFoundError as error:
     sys.exit(1)
 
 try:
-    from depsversionparser import parse_dep_ref
-    from querier import dep_dir
+    from querier import dep_dir, parse_dep_ref
 except ImportError as error:
     print(f"{RED_BOLD}🌊 Error: 'surfboard' module is not available ({error}).{RESET}")
     sys.exit(1)

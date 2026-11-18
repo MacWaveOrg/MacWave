@@ -249,6 +249,17 @@ main() {
         fi
     done
 
+    # 4.4.0：版本逻辑三份合成一份（lib/versioncmp.py）。pkg/pkgversionparser.py 与
+    # surfboard/depsversionparser.py 已并进去，旧树里留着的那两份没有任何代码 import，
+    # 所以删不删都跑得动 —— 但留着就是两套「差不多」的比较器躺在安装树里，下次改
+    # 版本规则时很容易改到没人用的那一份。quiet.py 漏过一次，这里不重复。
+    for stale in "$MACWAVE_INSTALL_DIR/pkg/pkgversionparser.py" \
+                 "$MACWAVE_INSTALL_DIR/surfboard/depsversionparser.py"; do
+        if [ -f "$stale" ]; then
+            run rm -f "$stale" || exit 1
+        fi
+    done
+
     return 0
 }
 

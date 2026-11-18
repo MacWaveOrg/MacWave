@@ -77,7 +77,7 @@ except ImportError:
     sys.exit(1)
 
 try:
-    # 这里只为了确认 packaging 可用：真正用到它的是 pkgversionparser，
+    # 这里只为了确认 packaging 可用：真正用到它的是 versioncmp，
     # 但那条路要等到比较版本号时才会走到，而缺依赖应当在启动时就说清楚。
     # 导入后的名字不参与计算，所以显式标 F401。
     from packaging.version import parse as parse_version, InvalidVersion  # noqa: F401
@@ -815,7 +815,7 @@ def fetch_max_version(package_name, arch, timeout=DEFAULT_TIMEOUT):
             if "@" in fname:
                 versions.append(fname.split("@")[1])
 
-        from pkgversionparser import get_max_version
+        from versioncmp import get_max_version
         chosen = get_max_version(versions)
         steplog.detail(f"{len(versions)} version(s) listed, highest is {chosen}")
         return chosen

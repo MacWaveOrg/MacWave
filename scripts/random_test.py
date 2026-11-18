@@ -474,7 +474,7 @@ def max_version(versions):
     added = [str(REPO_DIR / name) for name in COMPONENTS]
     sys.path[:0] = added
     try:
-        from pkgversionparser import get_max_version
+        from versioncmp import get_max_version
         return get_max_version(list(versions))
     finally:
         del sys.path[:len(added)]
