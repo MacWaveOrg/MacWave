@@ -470,6 +470,64 @@ else
     fail "家目录被拒的理由不对（实际：${HOME_OUT:0:200}）"
 fi
 
+# ---- 退出码语义：0 / 2 / 3 ----
+#
+# 卸载是「尽量多删、最后汇总」：任何一个目标删不掉，都不该让后面的目标失去机会，
+# 但要按退出码把结果说清楚（0 完成、1 用法错误、2 权限不足、3 部分失败）。
+# 以前 `rm -rf` 裸放在循环里，`set -e` 会把第一次失败变成 exit 1 并就此收工。
+run_uninstall_rc() {   # run_uninstall_rc <测试根>：输出进 ${OUT_RC}，返回退出码
+    local copy="$WORK/uninstall-copy.sh"
+    cp "$UNINSTALL_SH" "$copy"
+    OUT_RC=$(PATH="$WORK/bin:$PATH" SUDO_LOG="$SUDO_LOG" MACWAVE_TEST="$1" \
+        /bin/bash "$copy" --force 2>&1)
+    return $?
+}
+
+# 坏 config.json 不能中断卸载：读不到就按候选目录卸，退出码应当是 0。
+# 回归自 `fix: Add set in install.sh` —— 那时 `READ_DIR=$(python3 ...)` 的
+# 非零退出码会被 `set -e` 当成致命错误，脚本在打印完 Test root 后就没了下文。
+EBOX="$WORK/uninstall-exit"
+BROKEN_TREE="$EBOX$HOME/.local/macwave"
+mkdir -p "$BROKEN_TREE/lib" && echo x > "$BROKEN_TREE/lib/wave.py"
+mkdir -p "$EBOX/opt/macwave_config"
+printf '{{{ not json' > "$EBOX/opt/macwave_config/config.json"
+run_uninstall_rc "$EBOX"; RC=$?
+if [[ "$RC" -eq 0 ]]; then
+    pass "坏 config.json 不中断卸载（退出码 0）"
+else
+    fail "坏 config.json 让卸载器退出了（退出码 ${RC}）"
+fi
+if [[ ! -e "$BROKEN_TREE" ]]; then
+    pass "坏 config.json 时仍按候选目录卸载"
+else
+    fail "坏 config.json 时什么都没删"
+fi
+
+# 权限不足 → 2，且配置目录与 rc 清理照常执行（清单里点名没删掉的那个）。
+PBOX="$WORK/uninstall-perm"
+PTREE="$PBOX$HOME/.local/macwave"
+mkdir -p "$PTREE/lib" && echo x > "$PTREE/lib/wave.py"
+mkdir -p "$PBOX/opt/macwave_config"
+printf '{"base_dir": "%s"}\n' "$PTREE" > "$PBOX/opt/macwave_config/config.json"
+chmod 500 "$PBOX$HOME/.local"
+run_uninstall_rc "$PBOX"; RC=$?
+chmod 700 "$PBOX$HOME/.local"
+if [[ "$RC" -eq 2 ]]; then
+    pass "权限不足时退出码 2"
+else
+    fail "权限不足时退出码是 ${RC}，不是 2"
+fi
+if [[ "$OUT_RC" == *"$PTREE"* && "$OUT_RC" == *"could not be removed"* ]]; then
+    pass "权限不足时把没删掉的路径写进了清单"
+else
+    fail "权限不足时没给清单（实际：${OUT_RC:0:200}）"
+fi
+if [[ ! -e "$PBOX/opt/macwave_config" ]]; then
+    pass "一次删除失败后仍继续删配置目录"
+else
+    fail "一次删除失败后流程就断了（配置目录还在）"
+fi
+
 echo
 echo "=========================================="
 echo -e "🌊 Passed: $PASSED"

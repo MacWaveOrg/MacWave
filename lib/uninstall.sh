@@ -12,7 +12,7 @@ set -o pipefail
 
 # 退出码要有语义
 # 0 = 卸载完成（包括“本来就没装”）
-# 1 = 用法错误
+# 1 = 用法错误（未知参数、没有终端可确认）
 # 2 = 权限不足
 # 3 = 部分失败（有明确清单写 stderr）
 
@@ -63,6 +63,12 @@ Options:
 Without options the uninstaller asks once before deleting; it needs a terminal
 for that, so use --force when there is none (CI, scripts).
 
+Exit codes:
+  0  Uninstalled (also when MacWave was not installed).
+  1  Usage error, or no terminal available to confirm on.
+  2  Permission denied: sudo could not run.
+  3  Partially removed; the items left behind are listed on stderr.
+
 Running it straight from the repository (options go after '--'):
   /bin/bash -c "$(curl -fsSL <url>)" -- --force
 USAGE_EOF
@@ -106,7 +112,17 @@ BASE_DIRS=()
 # 1. 如果配置文件存在，优先读取（系统级与用户级都读，两边都卸干净）
 for CONFIG_DIR in "$SYSTEM_CONFIG_DIR" "$USER_CONFIG_DIR"; do
     if [ -f "$CONFIG_DIR/config.json" ]; then
-        READ_DIR=$(python3 -c "import json; print(json.load(open('$CONFIG_DIR/config.json')).get('base_dir', ''))" 2>/dev/null)
+        # `|| true` 不能省：赋值语句的退出码就是命令替换的退出码，在 `set -e` 下
+        # 一次坏 JSON（或没有 python3）就会让整个卸载器静默退出、一个字节都不删。
+        # 路径走 argv 而不是拼进源码：目录名里的引号不会把这段 Python 弄坏。
+        READ_DIR="$(python3 -c '
+import json, sys
+try:
+    with open(sys.argv[1]) as handle:
+        print(json.load(handle).get("base_dir", "") or "")
+except Exception:
+    pass
+' "$CONFIG_DIR/config.json" 2>/dev/null || true)"
         if [ -n "$READ_DIR" ]; then
             BASE_DIRS+=("$READ_DIR")
         fi
@@ -175,6 +191,60 @@ skip_reason() {
     fi
 }
 
+# ==========================================
+# 失败记账：删除要「尽量多删、最后汇总」
+# ==========================================
+#
+# 任何一个目标删不掉，都不该让后面的目标失去机会 —— 但也不能因此假装成功：
+# 没删掉的记进清单，收尾时按「2 = 权限不足 / 3 = 部分失败」退出，清单写 stderr。
+# 直接在循环里裸放 `rm -rf` 时，`set -e` 会让第一次失败就此退出，退出码是 rm
+# 自己的 1，配置目录与 rc 清理根本轮不到。
+FAILURE_LIST=()
+PERMISSION_FAILURES=0
+OTHER_FAILURES=0
+
+mw_remove() {
+    # mw_remove <path> [sudo]
+    # 失败不中断流程，只记账；返回值恒为 0，调用点不必判断。
+    local target="$1" how="${2:-}" err=""
+
+    if [[ "$how" == "sudo" ]]; then
+        echo "🌊 Removing $target (with sudo)..."
+        # 只收 rm 的 stderr，sudo 的密码提示走 /dev/tty，交互不受影响。
+        if LC_ALL=C sudo rm -rf -- "$target" 2>&1; then
+            return 0
+        fi
+        # 走到这里基本都是提权失败（拿不到密码、没有终端、sudo 不可用）。
+        PERMISSION_FAILURES=$((PERMISSION_FAILURES + 1))
+        FAILURE_LIST+=("$target (sudo failed)")
+        echo -e "\033[1;31m🌊 Error: could not remove $target (sudo failed).\033[0m" >&2
+        echo "🌊   Run this in a terminal with a password available: sudo rm -rf $target" >&2
+        return 0
+    fi
+
+    echo "🌊 Removing $target..."
+    # 错误文本收进变量再判断：权限问题与其它失败要给不同的退出码与下一步，
+    # 而判断必须落在 C locale 的英文报错上，否则换个语言就认不出来。
+    if ! err="$(LC_ALL=C rm -rf -- "$target" 2>&1)"; then
+        case "$err" in
+            *"Permission denied"*|*"Operation not permitted"*)
+                PERMISSION_FAILURES=$((PERMISSION_FAILURES + 1))
+                FAILURE_LIST+=("$target (permission denied)")
+                echo -e "\033[1;31m🌊 Error: permission denied while removing $target.\033[0m" >&2
+                echo "🌊   Remove it yourself with: sudo rm -rf $target" >&2
+                ;;
+            *)
+                OTHER_FAILURES=$((OTHER_FAILURES + 1))
+                FAILURE_LIST+=("$target (could not be removed)")
+                echo -e "\033[1;31m🌊 Error: could not remove $target.\033[0m" >&2
+                echo "🌊   $err" >&2
+                echo "🌊   Remove it yourself with: sudo rm -rf $target" >&2
+                ;;
+        esac
+    fi
+    return 0
+}
+
 for DIR in "${BASE_DIRS[@]}"; do
     if [ ! -d "$DIR" ]; then
         continue
@@ -186,24 +256,20 @@ for DIR in "${BASE_DIRS[@]}"; do
         continue
     fi
     # 如果是系统级目录，需要 sudo
-    if [[ "$DIR" == "$HOME"* ]]; then
-        echo "🌊 Removing $DIR..."
-        rm -rf "$DIR"
+    if [[ "$DIR" == "$HOME" || "$DIR" == "$HOME"/* ]]; then
+        mw_remove "$DIR"
     else
-        echo "🌊 Removing $DIR (with sudo)..."
-        sudo rm -rf "$DIR"
+        mw_remove "$DIR" sudo
     fi
 done
 
 # 删除配置目录（系统级与用户级都可能存在）
 for CONFIG_DIR in "$SYSTEM_CONFIG_DIR" "$USER_CONFIG_DIR"; do
     if [ -d "$CONFIG_DIR" ]; then
-        if [[ "$CONFIG_DIR" == "$HOME"* ]]; then
-            echo "🌊 Removing $CONFIG_DIR..."
-            rm -rf "$CONFIG_DIR"
+        if [[ "$CONFIG_DIR" == "$HOME" || "$CONFIG_DIR" == "$HOME"/* ]]; then
+            mw_remove "$CONFIG_DIR"
         else
-            echo "🌊 Removing $CONFIG_DIR (with sudo)..."
-            sudo rm -rf "$CONFIG_DIR"
+            mw_remove "$CONFIG_DIR" sudo
         fi
     fi
 done
@@ -219,7 +285,7 @@ for RC_FILE in "$HOME/.zshrc" "$HOME/.zprofile" \
                "$HOME/.profile" \
                "$HOME/.tcshrc" "$HOME/.cshrc" "$HOME/.login"; do
     if [ -f "$RC_FILE" ]; then
-        python3 - "$RC_FILE" "${BASE_DIRS[@]}" << 'PYEOF'
+        if ! python3 - "$RC_FILE" "${BASE_DIRS[@]}" << 'PYEOF'
 import sys
 from pathlib import Path
 
@@ -244,6 +310,12 @@ for line in rc_file.read_text().splitlines():
     kept.append(line)
 rc_file.write_text("\n".join(kept) + ("\n" if kept else ""))
 PYEOF
+        then
+            # PATH 清理是尽力而为：python3 不可用（自带解释器刚被删掉时可能如此）
+            # 或文件写不进去，都还有下面的 sed 兜底。不能让它把整次卸载变成
+            # exit 1 —— 那既不符合退出码契约，也会盖掉前面已经记下的结果。
+            echo "🌊 Warning: could not clean $RC_FILE with python3; trying the pattern fallback." >&2
+        fi
         # 兜底：注释行缺失时，仍按旧版写法删掉 macwave 的 PATH 行
         sed -i '' -e '/export PATH=".*macwave\//d' \
                   -e '/setenv PATH .*macwave\//d' "$RC_FILE" 2>/dev/null || true
@@ -252,8 +324,18 @@ PYEOF
 done
 
 echo ""
-echo "🌊 MacWave has been uninstalled."
-echo "🌊 Please restart your terminal to apply changes."
+if [[ ${#FAILURE_LIST[@]} -eq 0 ]]; then
+    echo "🌊 MacWave has been uninstalled."
+    echo "🌊 Please restart your terminal to apply changes."
+else
+    echo -e "\033[1;31m🌊 MacWave is only partially removed.\033[0m" >&2
+    echo "🌊 The following items could not be removed:" >&2
+    for _item in "${FAILURE_LIST[@]}"; do
+        echo "🌊   $_item" >&2
+    done
+    echo "🌊 Everything else was removed. Restart your terminal to apply the PATH change." >&2
+    echo "🌊 Fix the cause above, then run the uninstaller again." >&2
+fi
 
 # ========== 删除自身脚本 ==========
 # 只有「脚本确实来自一个文件」时才有自己可删。用文档推荐的
@@ -261,6 +343,16 @@ echo "🌊 Please restart your terminal to apply changes."
 # 直接 rm 会把 /bin/bash 删掉，所以这里逐条排除后再按内容确认一次。
 if [[ -f "$0" && "$0" != "$BASH" && "$0" != --* ]] \
    && grep -q "MacWave Uninstaller" "$0" 2>/dev/null; then
-    rm -f "$0"
+    # 删自己失败不影响「有没有卸干净」，不能让它盖掉下面的退出码。
+    rm -f "$0" || true
+fi
+
+# 0 = 卸载完成（包括「本来就没装」）；2 = 权限不足；3 = 部分失败（清单已在上面）。
+# 3 优先于 2：一旦有非权限类失败，光提权也解决不了，用户需要看完整清单。
+if [[ "$OTHER_FAILURES" -gt 0 ]]; then
+    exit 3
+fi
+if [[ "$PERMISSION_FAILURES" -gt 0 ]]; then
+    exit 2
 fi
 exit 0
