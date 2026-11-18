@@ -64,6 +64,16 @@ dry_run() {
         /bin/bash "$INSTALL_SH" --dry-run "$@" 2>&1
 }
 
+# 菜单里「其他（自定义）」是第几项**随架构变化**：Intel 机器多一个
+# /usr/local/macwave，自定义就挪到第 4 项。写死 3 在 Apple 芯片上恰好对，
+# 到 CircleCI 的 x86_64 runner 上就会被 install.sh 拒掉
+# （"only --dir-option=4 takes a directory"），而那三条断言的失败信息
+# 完全指不到原因。这里跟着 install.sh 的算法算一遍。
+case "$(uname -m)" in
+    x86_64|amd64) CUSTOM_OPTION=4 ;;
+    *) CUSTOM_OPTION=3 ;;
+esac
+
 needs_admin() {
     case "$1" in
         *"needs administrator access"*) return 0 ;;
@@ -94,7 +104,7 @@ esac
 
 ROOT=$(new_root writable)
 TARGET="$ROOT/custom/macwave"
-out=$(dry_run "$ROOT" --dir-option="3=$TARGET")
+out=$(dry_run "$ROOT" --dir-option="$CUSTOM_OPTION=$TARGET")
 if needs_admin "$out"; then
     fail "自己可写的外部目录不该要求提权（旧逻辑按「不在家目录」误判）"
 else
@@ -130,7 +140,7 @@ ROOT=$(new_root unwritable)
 mkdir -p "$ROOT/locked"
 RO_DIRS+=("$ROOT/locked")
 chmod 555 "$ROOT/locked"
-out=$(dry_run "$ROOT" --dir-option="3=$ROOT/locked/macwave")
+out=$(dry_run "$ROOT" --dir-option="$CUSTOM_OPTION=$ROOT/locked/macwave")
 if needs_admin "$out"; then
     pass "只读的外部目录要求提权"
 else
@@ -146,7 +156,7 @@ ROOT=$(new_root config-ro)
 RO_DIRS+=("$ROOT/opt")
 mkdir -p "$ROOT/opt"
 chmod 555 "$ROOT/opt"
-out=$(dry_run "$ROOT" --dir-option="3=$ROOT/custom/macwave")
+out=$(dry_run "$ROOT" --dir-option="$CUSTOM_OPTION=$ROOT/custom/macwave")
 if needs_admin "$out"; then
     pass "目标可写但系统配置目录不可写 → 要求提权"
 else
