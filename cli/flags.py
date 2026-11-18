@@ -70,6 +70,8 @@ selfupdate = set(silent)
 latest = {"--all", "-a"}
 info = {"--json", "--yaml", "--toml", "--raw"}
 mirror = {"--show-password", "--hide-user", "--only-set", "--raw"}
+# manual 的 --color 只给手册上色；--zh 在 EARLY 里（它不参与分发）。
+manual = {"--color"}
 
 COMMAND_FLAGS = {
     "install": install,
@@ -82,6 +84,7 @@ COMMAND_FLAGS = {
     "latest": latest,
     "info": info,
     "mirror": mirror,
+    "manual": manual,
 }
 
 # 分发之前就处理掉的

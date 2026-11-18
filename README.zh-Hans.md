@@ -276,6 +276,8 @@ Commands:
   linkquery   Show which version an unversioned link points to
   mirror      Show which address each kind of data is fetched from
   latest      Show which packages have a newer version available
+  shellenv    Print the shell code that puts MacWave on your PATH
+  manual      Show the full manual (same text as man and info)
 
 Flags:
   -h, --help              Show help for any command
