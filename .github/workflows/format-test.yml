@@ -157,6 +157,11 @@ jobs:
         run: |
           /bin/bash scripts/raw_test.sh
 
+      # 提权判定：按写权限，不按「是不是在家目录下」。全程 --dry-run，离线。
+      - name: Check install privilege decision
+        run: |
+          /bin/bash scripts/install_privilege_test.sh
+
       - name: Audit dependency data
         run: |
           python3 scripts/audit_deps.py data --data-dir infosource-data

@@ -948,18 +948,78 @@ hand_over_system_install() {
     fi
     [[ -d "$dir" ]] || return 0
     group="$(admin_group)"
-    sudo chown -R "root:$group" "$dir" || return 1
-    sudo chmod -R u+rwX,g+rwX,o+rX,o-w "$dir" || return 1
+    # 调用方（NEED_HANDOVER）已经确保「要么需要提权、要么本来就是 root」。
+    as_privileged chown -R "root:$group" "$dir" || return 1
+    as_privileged chmod -R u+rwX,g+rwX,o+rX,o-w "$dir" || return 1
     # 只给目录加 setgid：文件上的 setgid 是另一种含义（强制锁），不该乱设。
-    sudo find "$dir" -type d -exec chmod g+s {} + || return 1
+    as_privileged find "$dir" -type d -exec chmod g+s {} + || return 1
     return 0
 }
 
-if [[ "$BASE_DIR" == "$HOME"* ]]; then
+# 「系统级安装」与「这次要不要提权」是**两件事**，这里分开存。
+#
+#   SYSTEM_INSTALL  语义：目标在 $HOME 之外 → 共享安装。决定配置目录放哪
+#                   （系统级用 /opt/macwave_config）、要不要把树收尾成
+#                   root:<管理员组> 775、结尾那段「其他用户可运行」的提示。
+#   NEED_SUDO       本次能不能直接写：目标树与配置目录**都**可写时不用提权。
+#
+# 合成一个变量的症状（4.4 之前就是这样）：
+#   * 装到 /Volumes/SSD/macwave 这种自己可写的外置卷，明明不需要密码却要密码；
+#   * 反过来，~/.local/macwave 被上一次 `sudo` 装成了 root 所有，安装器认为
+#     用户目录无需提权，然后一路 Permission denied，报错还指不到原因。
+#
+# 判据只有一条：**写不了才提权**。不用「是不是在家目录下」猜。
+if [[ "$BASE_DIR" == "$HOME"/* ]]; then
+    SYSTEM_INSTALL=false
+else
+    SYSTEM_INSTALL=true
+fi
+
+# 配置目录跟着语义走：读取时系统级优先，所以系统级 MacWave 总是盖过用户级的。
+if [[ "$SYSTEM_INSTALL" == "true" ]]; then
+    CONFIG_DIR="$SYS_ROOT/opt/macwave_config"
+else
+    CONFIG_DIR="$HOME/.config/macwave_config"
+fi
+
+mw_can_write() {
+    # 能写这个路径吗？**不存在的路径沿祖先往上找**第一个存在的目录再判 ——
+    # 直接对不存在的路径 test -w 恒为假，会让每一次新装都判定成需要提权。
+    local path="$1"
+    [[ -n "$path" ]] || return 1
+    while [[ ! -e "$path" && "$path" != "/" ]]; do
+        path="$(dirname "$path")"
+    done
+    [[ -w "$path" ]]
+}
+
+if mw_can_write "$BASE_DIR" && mw_can_write "$CONFIG_DIR"; then
     NEED_SUDO=false
 else
     NEED_SUDO=true
 fi
+
+# 以 root 身份跑（`sudo bash install.sh`、容器里的 `--ci`）时 NEED_SUDO 为假 ——
+# 但系统级安装仍要把属主/权限收尾成 root:<管理员组> 775，否则别的管理员就不能
+# `wave install` 了（那正是 4.3.2 起采用的共享安装模型）。
+IS_ROOT=false
+[[ "$(id -u)" == "0" ]] && IS_ROOT=true
+
+NEED_HANDOVER=false
+if [[ "$SYSTEM_INSTALL" == "true" ]] \
+   && { [[ "$NEED_SUDO" == "true" ]] || [[ "$IS_ROOT" == "true" ]]; }; then
+    NEED_HANDOVER=true
+fi
+
+# 需要动属主/权限时用它：普通用户走 sudo，本来就以 root 跑就直接执行
+# （容器里未必装了 sudo）。**不要**在别处硬写 sudo —— 那会让 root 场景也依赖它。
+as_privileged() {
+    if [[ "$NEED_SUDO" == "true" ]]; then
+        sudo "$@"
+    else
+        "$@"
+    fi
+}
 
 run_cmd() {
     # 试运行只把命令打出来：建目录、写配置、删旧文件都经由这里。
@@ -1080,14 +1140,9 @@ INFO_DIR="$BASE_DIR/info"
 DEPS_DIR="$BASE_DIR/deps"
 DOWNLOAD_DIR="$BASE_DIR/downloads/tmp"
 
-# 配置文件目录：装到系统目录（需要 sudo）时用 /opt/macwave_config，
-# 装到用户目录（无需 sudo）时用 ~/.config/macwave_config。
-# 读取时系统级优先，所以系统级 MacWave 总是盖过用户级的。
-if [[ "$NEED_SUDO" == "true" ]]; then
-    CONFIG_DIR="$SYS_ROOT/opt/macwave_config"
-else
-    CONFIG_DIR="$HOME/.config/macwave_config"
-fi
+# CONFIG_DIR 在「判断是否需要 sudo」那一节就算好了：它跟着 SYSTEM_INSTALL 走
+# （系统级 → /opt/macwave_config，用户级 → ~/.config/macwave_config），而不是
+# 跟着「这次要不要提权」—— 后者的判据是**写权限**，与目录语义无关。
 CONFIG_FILE="$CONFIG_DIR/config.json"
 VERSION_FILE="$CONFIG_DIR/VERSION.json"
 # 同意记录。selfupdate.py 读的就是这个文件（AGREEMENT_FILE_NAME）；
@@ -1187,7 +1242,7 @@ if [[ "$NEED_SUDO" == "true" ]]; then
     lend_tree_to_user "$BASE_DIR"
 fi
 
-if [[ "$NEED_SUDO" == "true" ]]; then
+if [[ "$NEED_HANDOVER" == "true" ]]; then
     hand_over_system_install "$CONFIG_DIR"
 fi
 run_cmd chmod 755 "$CONFIG_DIR"
@@ -1670,7 +1725,7 @@ write_launcher "$BASE_DIR" "$PYTHON_BIN"
 # 把所有权交还给用户（下载后再次确保）
 # ==========================================
 
-if [[ "$NEED_SUDO" == "true" ]]; then
+if [[ "$NEED_HANDOVER" == "true" ]]; then
     hand_over_system_install "$BASE_DIR"
 fi
 
@@ -1957,7 +2012,10 @@ echo ""
 # 系统级安装是共享的：管理员（admin 组）直接管理，其他用户只能运行。
 # PATH 那行现在由用户自己加 —— 别人不加就找不到 wave，只能靠绝对路径执行。
 # 这里说清楚，否则「其他人可运行」只对了一半。
-if [[ "$NEED_SUDO" == "true" ]]; then
+#
+# 判据是 SYSTEM_INSTALL（装的是一棵共享的树），不是 NEED_SUDO（这次有没有提权）：
+# 目标可写时不需要 sudo，但它依然是一棵共享的树。
+if [[ "$SYSTEM_INSTALL" == "true" ]]; then
     mw_say "🌊 Other users on this machine can run the installed packages," \
         "🌊 本机的其他用户可运行已装的软件包，"
     mw_say "🌊 but each of them needs to run this once:" \

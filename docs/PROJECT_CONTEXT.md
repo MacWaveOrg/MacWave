@@ -101,7 +101,9 @@ MacWave 的配置只有这一处：**用哪些环境变量、默认值是什么�
 
 `BASE_DIR` 取自生效的 `config.json` 的 `base_dir`（系统级 `/opt/macwave_config` 优先，其次用户级 `~/.config/macwave_config`；默认安装 `~/.local/macwave`）。
 
-配置目录的归属由安装位置决定：装到需要 `sudo` 的目录（`/opt/macwave`、`/usr/local/macwave`、自定义的系统路径）→ `/opt/macwave_config`；装到无需 `sudo` 的目录（`~/.local/macwave`、家目录下的自定义路径）→ `~/.config/macwave_config`。两处都存在时程序一律先用系统级。
+配置目录的归属由安装位置决定：装到 **`$HOME` 之外**（`/opt/macwave`、`/usr/local/macwave`、外置卷上的自定义路径）→ `/opt/macwave_config`；装到 `$HOME` 之内（`~/.local/macwave`、家目录下的自定义路径）→ `~/.config/macwave_config`。两处都存在时程序一律先用系统级。
+
+**要不要提权与这件事无关**：`install.sh` 用「写权限」判断（目标树与配置目录都 `-w` 就不提权），不再看「是不是在家目录下」。于是装到 `/Volumes/SSD/macwave` 这种自己可写的外部卷不需要密码，而 `~/.local/macwave` 若被上一次 `sudo` 装成了 root 所有，反而会正确地要求提权。
 
 **迁移**：2.5 之前不分系统级/用户级，配置一律写在 `/opt/macwave_config`。所以用户级安装时，`install.sh` 会读 `/opt/macwave_config/VERSION.json`，只要版本低于 `2.5`（读不到也视为旧版）就把它删掉，配置重新落到 `~/.config/macwave_config`；`2.5` 及以后的系统级配置不动。
 
