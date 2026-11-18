@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # bash 3.2 (macOS)
-# 最近一次更新于：
+# 本文件最近一次更新于：2026-11-19
 
 # MacWave 🌊 Official Installer
 # This script downloads wave.py, installs dependencies, and configures PATH.
