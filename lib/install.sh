@@ -1067,6 +1067,9 @@ else
 fi
 CONFIG_FILE="$CONFIG_DIR/config.json"
 VERSION_FILE="$CONFIG_DIR/VERSION.json"
+# 同意记录。selfupdate.py 读的就是这个文件（AGREEMENT_FILE_NAME）；
+# 这里不写的话，「已记录你的同意」是句假话，而且下次自更新会再问一遍。
+AGREEMENT_FILE="$CONFIG_DIR/AGREEMENT.json"
 
 MW_OPTIONAL_RESULT=""
 
@@ -1768,6 +1771,33 @@ done
 # ==========================================
 # 许可协议确认
 # ==========================================
+
+# 协议标识的唯一来源是装好的 lib/selfupdate.py（AGREEMENT_ID），这里不再抄一份日期：
+# 两边走散的后果是「问的是新协议、记下的是旧标识」，于是下次再问一遍。
+agreement_id() {
+    local source="$LIB_DIR/selfupdate.py"
+    [[ -f "$source" ]] || return 1
+    sed -n 's/^AGREEMENT_ID = "\([^"]*\)"$/\1/p' "$source" | head -n 1
+}
+
+# 把同意记进配置目录。记不下来不算安装失败 —— 代价只是下次自更新再问一遍，
+# 比「装到一半退出」轻得多。
+record_agreement() {
+    local id
+    id="$(agreement_id || true)"
+    if [[ -z "$id" ]]; then
+        mw_say "${YELLOW}🌊 Note: cannot read AGREEMENT_ID from $LIB_DIR/selfupdate.py; the acceptance was not recorded.${RESET}" \
+            "${YELLOW}🌊 注意：读不到 ${LIB_DIR}/selfupdate.py 里的 AGREEMENT_ID，本次同意未被记录。${RESET}"
+        return 0
+    fi
+    if ! printf '{\n  "agreement": "%s"\n}\n' "$id" | run_cmd tee "$AGREEMENT_FILE" > /dev/null 2>&1; then
+        mw_say "${YELLOW}🌊 Note: could not record the agreement in $AGREEMENT_FILE.${RESET}" \
+            "${YELLOW}🌊 注意：未能把同意写进 ${AGREEMENT_FILE}。${RESET}"
+    fi
+    run_cmd chmod 644 "$AGREEMENT_FILE" > /dev/null 2>&1 || true
+    return 0
+}
+
 # 必须放在「安装完成」之前：否则先告诉用户已经装好，随后又因为不同意而全部删除。
 
 echo ""
@@ -1815,6 +1845,8 @@ else
 fi
 if [[ "$agreement" == "yes" ]]; then
     if ! mw_dry_run; then
+        # --ci 的自动同意也记下来：否则 CI 装完再跑 selfupdate 会卡在协议询问上
+        record_agreement
         mw_say "${GREEN}You have agreed to the agreement.${RESET}" "${GREEN}已记录你的同意。${RESET}"
     fi
 else

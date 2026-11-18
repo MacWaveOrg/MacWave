@@ -408,7 +408,9 @@ git push origin 4.1
   那节的落款日期就是协议标识。改协议要**同时**改官网正文与 `lib/selfupdate.py` 的
   `AGREEMENT_ID`，两边日期不一致的后果是「问的是新协议、记下的却是旧标识」，下次再问一遍。
   `AGREEMENT_INTRODUCED_IN` 是「第一版带上这份协议的版本」（4.4.0）：装得比它早、或正是
-  它的，自更新时问一次；同意与否记在配置目录的 `AGREEMENT.json`，不同意就中止
+  它的，自更新时问一次；同意与否记在配置目录的 `AGREEMENT.json`，不同意就中止。
+  **`install.sh` 问完也要写这个文件**（标识从装好的 `lib/selfupdate.py` 里读，不另抄一份
+  日期）：不写的话「已记录你的同意」是假话，而且下一次 `wave selfupdate` 会再问一遍
 - beta：`latest.toml` 永不写 beta；装 beta 只能带
   `MACWAVE_VERSION=<版本> MACWAVE_BRANCH=<分支>` 跑对应 tag 的 `install.sh`
   （不带变量装到的是正式版）；beta 上 `wave selfupdate` 一律拒绝，回稳定线也是重装
