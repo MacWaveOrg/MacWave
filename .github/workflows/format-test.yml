@@ -145,6 +145,12 @@ jobs:
         run: |
           /bin/bash scripts/minos_test.sh
 
+      # 版本比较只有一份实现（lib/versioncmp.py）。预发布排在正式版之下、
+      # 两段与三段等价、社区后缀归一化 —— 这几条错在别处都看不出来。
+      - name: Check version comparison
+        run: |
+          /bin/bash scripts/versioncmp_test.sh
+
       - name: Audit dependency data
         run: |
           python3 scripts/audit_deps.py data --data-dir infosource-data
