@@ -317,7 +317,8 @@ PYEOF
             echo "🌊 Warning: could not clean $RC_FILE with python3; trying the pattern fallback." >&2
         fi
         # 兜底：注释行缺失时，仍按旧版写法删掉 macwave 的 PATH 行
-        sed -i '' -e '/export PATH=".*macwave\//d' \
+        sed -i '' -e '/^# MacWave$/d' \
+                  -e '/export PATH=".*macwave\//d' \
                   -e '/setenv PATH .*macwave\//d' "$RC_FILE" 2>/dev/null || true
         echo "🌊 Removed MacWave PATH entries from $RC_FILE"
     fi
