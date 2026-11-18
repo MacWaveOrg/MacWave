@@ -1818,8 +1818,6 @@ if [[ "$agreement" == "yes" ]]; then
         mw_say "${GREEN}You have agreed to the agreement.${RESET}" "${GREEN}已记录你的同意。${RESET}"
     fi
 else
-    # 回滚要连 rc 里的 PATH 一起清掉，否则会留下指向已删除目录的一行。
-    # 这里不写死 sudo：用户级安装全程无需提权，回滚也不该突然要密码。
     mw_say "${RED_BOLD}You do not agree to the agreement. Installation stopped.${RESET}" "${RED_BOLD}你未同意该协议，安装已停止。${RESET}"
     # 回滚只清本次安装建出来的东西。升级覆盖时 BASE_DIR 早就存在，
     # 删掉它就是毁掉用户已有的安装。
