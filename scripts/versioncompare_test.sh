@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# versioncmp_test.sh
-# 版本比较只有一份实现：lib/versioncmp.py。这个脚本钉住它的语义，以及「确实只有一份」。
+# versioncompare_test.sh
+# 版本比较只有一份实现：lib/versioncompare.py。这个脚本钉住它的语义，以及「确实只有一份」。
 #
 # 为什么需要它：版本号不是数字串，错法又只在特定串上显形 ——
 #   * 预发布必须排在正式版**之下**（4.4.0-beta1 < 4.4.0）。按数字段比会得到相反
@@ -13,7 +13,7 @@
 #   * 读不出来的串不许抛异常：上层要给的是「版本无效」这种能看懂的提示。
 #
 # 另外钉住合并本身：pkg/pkgversionparser.py 与 surfboard/depsversionparser.py 已经
-# 并进来，仓库里不该再有它们；两者的公开名字仍要能从 versioncmp 取到，依赖引用
+# 并进来，仓库里不该再有它们；两者的公开名字仍要能从 versioncompare 取到，依赖引用
 # 解析搬到 querier.py 后行为不变。
 #
 # 全程离线，不碰安装目录。
@@ -45,7 +45,7 @@ components = [line.split("#", 1)[0].strip()
               for line in open(f"{repo}/scripts/components.txt", encoding="utf-8")]
 sys.path[:0] = [f"{repo}/{name}" for name in components if name]
 
-import versioncmp as vc
+import versioncompare as vc
 
 passed = 0
 failed = 0
@@ -130,7 +130,7 @@ for name in ("version", "sort_key", "compare", "is_prerelease", "is_newer",
              "sort_versions", "get_max_version", "safe_parse_pkg_version",
              "is_special_version", "handle_pre_release", "extract_special_info",
              "safe_parse_special_version"):
-    check(f"versioncmp.{name} 存在", callable(getattr(vc, name, None)), True)
+    check(f"versioncompare.{name} 存在", callable(getattr(vc, name, None)), True)
 
 print(f"# summary {passed} {failed}")
 PYEOF
@@ -145,24 +145,24 @@ echo "$OUTPUT" | grep '^FAIL: '
 echo "$OUTPUT" | grep '^NOTE: '
 
 # -------------------- 2. 只剩一份实现 --------------------
-for stale in pkg/pkgversionparser.py surfboard/depsversionparser.py; do
+for stale in pkg/pkgversionparser.py surfboard/depsversionparser.py lib/versioncmp.py; do
     if [[ -e "$REPO_DIR/$stale" ]]; then
         FAILED=$((FAILED + 1))
-        echo "FAIL: $stale 仍在仓库里（版本逻辑应当只有 lib/versioncmp.py 一份）"
+        echo "FAIL: $stale 仍在仓库里（版本逻辑应当只有 lib/versioncompare.py 一份）"
     else
         PASSED=$((PASSED + 1))
         echo "PASS: $stale 已移除"
     fi
 done
 
-# 出货代码里不许再出现这两个模块名（注释里提到历史不算：只查 import 与字符串字面量）
+# 出货代码里不许再 import 这几个模块名（注释里提到历史不算：只查 import 语句）
 COMPONENT_DIRS=()
 while read -r dir; do
     [[ -n "$dir" ]] && COMPONENT_DIRS+=("$REPO_DIR/$dir")
 done < <(sed -e 's/#.*//' "$REPO_DIR/scripts/components.txt" | tr -d ' ' | grep -v '^$')
 COMPONENT_DIRS+=("$REPO_DIR/scripts")
 
-STALE_HITS=$(grep -rn "^[[:space:]]*\(import\|from\) \(pkgversionparser\|depsversionparser\)" \
+STALE_HITS=$(grep -rn "^[[:space:]]*\(import\|from\) \(pkgversionparser\|depsversionparser\|versioncmp\)" \
     "${COMPONENT_DIRS[@]}" 2>/dev/null)
 if [[ -n "$STALE_HITS" ]]; then
     FAILED=$((FAILED + 1))

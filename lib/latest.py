@@ -91,7 +91,7 @@ def fetch_versions(package_name, arch, timeout):
 
 
 def highest(versions):
-    from versioncmp import sort_versions
+    from versioncompare import sort_versions
     if not versions:
         return None
     return sort_versions(versions)[0]
@@ -108,7 +108,7 @@ def installed_versions(bin_name):
             version = entry.name[len(prefix):]
             if version:
                 found.append(version)
-    from versioncmp import sort_versions
+    from versioncompare import sort_versions
     return sort_versions(found)
 
 
@@ -163,7 +163,7 @@ def build_row(display_name, latest, problem):
     # 两者不一致时单独附注 —— 常见情况一致，输出不该为此长出噪音。
     current = installed[0] if installed else None
 
-    from versioncmp import safe_parse_pkg_version as version_key
+    from versioncompare import safe_parse_pkg_version as version_key
 
     # 「名字不在索引里」和「名字在、但没给它出清单」是两件事，提示完全不同。
     # 这里先按 404 一律记成 UNKNOWN，由调用方在手上有名字清单时改判成 NO_LIST。

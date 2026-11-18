@@ -83,7 +83,7 @@ printf '%s%s%s\n' "$(date +%j)" "$(date +%u | tr '1-7' 'ABCDEFG')" "$(date +%H%M
   这条规则以前没被实现过。**历史号不回改**：它只是个标识，改了反而让旧发布说明、
   `Selfupdate/<版本>/` 目录与 tag 对不上。
 - **`HHMM` 只用于区分同一天内的多次发布**，不参与任何版本比较。客户端比的是
-  `version`（PEP 440，4.4 起由 `lib/versioncmp.py` 统一实现），构建号只显示给人看。
+  `version`（PEP 440，4.4 起由 `lib/versioncompare.py` 统一实现），构建号只显示给人看。
 - **三处必须写同一个值**：`configdata/versiondata/latest_version`、
   `Selfupdate/macwavedata/latest.toml`、发布说明头部「发布日期 · 构建号」那一行。
 
@@ -447,7 +447,7 @@ MACWAVE_VERSION=4.4.0-beta2 MACWAVE_BRANCH=4.4 \
 
 - **`latest.toml` 永远不写 beta。** 写进去所有人的常规更新都会跳上 beta。
 - **beta 上 `wave selfupdate` 一律拒绝**（`lib/selfupdate.py` 与 `lib/selfupdate.sh`
-  各一处，共用 `lib/versioncmp.py` 的判定）。理由是 beta 与正式版在不同分支上，
+  各一处，共用 `lib/versioncompare.py` 的判定）。理由是 beta 与正式版在不同分支上，
   而 selfupdate 的增量按 `latest.toml` 的分支算 —— 盖到一棵 beta 树上就是两条线
   混在一起（2026-11-15 那次 `wave` 启动即崩，就是这么来的）。
 - **回稳定线也是重装**：`/bin/bash -c "$(curl -fsSL .../releases/latest/download/install.sh)"`。

@@ -101,7 +101,7 @@ def remove_old_versions(bin_name, keep_version, assume_yes=False):
     对每个包都说了，再逐个包弹一次问题既啰嗦又容易答错对象；所以批量模式下
     直接按用户写下的意图执行。
     """
-    from versioncmp import safe_parse_pkg_version as version_key
+    from versioncompare import safe_parse_pkg_version as version_key
     from uninstaller import find_installed_versions, select_versions, uninstall_versions
 
     old = [version for version in find_installed_versions(bin_name)
@@ -221,7 +221,7 @@ def handle_upgrade(input_string, assume_yes=False):
         parse_flags,
         parse_timeout,
     )
-    from versioncmp import safe_parse_pkg_version as version_key
+    from versioncompare import safe_parse_pkg_version as version_key
     from uninstaller import find_installed_versions
 
     words, remove_old, upgrade_all = split_input(input_string)

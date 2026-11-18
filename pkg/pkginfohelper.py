@@ -47,10 +47,10 @@ except ImportError:
     sys.exit(1)
 
 try:
-    from versioncmp import sort_versions
+    from versioncompare import sort_versions
 except ModuleNotFoundError as error:
-    if error.name == "versioncmp":
-        print(f"{RED_BOLD}🌊 Error: 'versioncmp' module is not available.{RESET}")
+    if error.name == "versioncompare":
+        print(f"{RED_BOLD}🌊 Error: 'versioncompare' module is not available.{RESET}")
     else:
         print(f"{RED_BOLD}🌊 Error: Missing Python dependency '{error.name}'.{RESET}")
         print(f"{RED_BOLD}🌊 Install the required packages and try again:{RESET}")

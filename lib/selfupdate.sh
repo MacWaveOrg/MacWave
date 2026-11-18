@@ -294,7 +294,7 @@ PY
 is_prerelease() {
     # 是不是预发布版（4.4.0-beta2 / 4.4.0rc1 / 4.4.0.dev1 …）。
     #
-    # 唯一权威是 lib/versioncmp.py 的 is_prerelease()（PEP 440，用 packaging）。
+    # 唯一权威是 lib/versioncompare.py 的 is_prerelease()（PEP 440，用 packaging）。
     # 这里是同一判定的 shell 版，写窄一点：MacWave 自己的预发布一律写成
     # X.Y.Z-betaN，再加上 PEP 440 允许的紧凑写法（4.4.0b2 / 4.4.0rc1 / .dev1）。
     # scripts/selfupdate_test.sh 会逐串断言两边结论一致，漂移会红。

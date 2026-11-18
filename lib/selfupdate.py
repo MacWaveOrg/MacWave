@@ -24,7 +24,7 @@ RESET = '\033[0m'
 
 from configpaths import VERSION_FILE_NAME, config_dir_candidates, find_config_dir
 import domains
-import versioncmp
+import versioncompare
 import tls
 
 FETCH_TIMEOUT = 30
@@ -151,9 +151,9 @@ def version_data(text):
         sys.exit(1)
 
 
-# 版本比较只看一处（lib/versioncmp.py）。以前这里是「只比数字段」的实现，于是
+# 版本比较只看一处（lib/versioncompare.py）。以前这里是「只比数字段」的实现，于是
 # 4.4.0-beta1 被判成比 4.4.0 大 —— 装过 beta 的人永远等不到正式版。
-version_key = versioncmp.sort_key
+version_key = versioncompare.sort_key
 
 
 # 官方安装入口。beta 用户被拦下来之后要照着这条命令重装，所以写在这里而不是
@@ -236,7 +236,7 @@ def agreement_needs_consent(current):
         return False
     if not current:
         return False
-    return versioncmp.version(current) <= versioncmp.version(AGREEMENT_INTRODUCED_IN)
+    return versioncompare.version(current) <= versioncompare.version(AGREEMENT_INTRODUCED_IN)
 
 
 def record_agreement():
@@ -369,7 +369,7 @@ def handle_selfupdate(input_string=""):
     # 先看本机装的是什么，再决定要不要联网 —— 判断 beta 不需要网络，
     # 早退一步就少一次「Fetching the latest version...」之后的失败。
     current = installed_version()
-    if current and versioncmp.is_prerelease(current):
+    if current and versioncompare.is_prerelease(current):
         refuse_on_prerelease(current)
 
     timeout_raws, budget = timeouts_from(input_string)

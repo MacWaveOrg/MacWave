@@ -125,9 +125,9 @@ jobs:
 
       - run:
           name: Version comparison
-          # 版本逻辑只有 lib/versioncmp.py 一份：预发布排在正式版之下、两段与三段
+          # 版本逻辑只有 lib/versioncompare.py 一份：预发布排在正式版之下、两段与三段
           # 等价、社区后缀归一化，以及「仓库里不再有另外两份实现」。
-          command: bash scripts/versioncmp_test.sh
+          command: bash scripts/versioncompare_test.sh
 
       - run:
           name: Output format and update-command tests

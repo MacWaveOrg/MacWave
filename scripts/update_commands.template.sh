@@ -249,12 +249,17 @@ main() {
         fi
     done
 
-    # 4.4.0：版本逻辑三份合成一份（lib/versioncmp.py）。pkg/pkgversionparser.py 与
+    # 4.4.0：版本逻辑三份合成一份（lib/versioncompare.py）。pkg/pkgversionparser.py 与
     # surfboard/depsversionparser.py 已并进去，旧树里留着的那两份没有任何代码 import，
     # 所以删不删都跑得动 —— 但留着就是两套「差不多」的比较器躺在安装树里，下次改
     # 版本规则时很容易改到没人用的那一份。quiet.py 漏过一次，这里不重复。
+    #
+    # lib/versioncmp.py 是同一个模块的旧名字（4.4.0-beta1 起叫这个）。改成
+    # versioncompare 之后旧文件没人 import 了，但留在 lib/ 里就是「同一个模块有两个
+    # 名字」—— 与 help.py 那条同理，路径顺序一变就会悄悄跑旧代码。
     for stale in "$MACWAVE_INSTALL_DIR/pkg/pkgversionparser.py" \
-                 "$MACWAVE_INSTALL_DIR/surfboard/depsversionparser.py"; do
+                 "$MACWAVE_INSTALL_DIR/surfboard/depsversionparser.py" \
+                 "$MACWAVE_INSTALL_DIR/lib/versioncmp.py"; do
         if [ -f "$stale" ]; then
             run rm -f "$stale" || exit 1
         fi

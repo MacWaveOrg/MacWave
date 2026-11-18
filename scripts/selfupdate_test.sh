@@ -145,7 +145,7 @@ lenient = module.version_data('version "1.0"\nversion = "2.0"\nunknown-key = "x"
 assert lenient['version'] == '2.0', lenient
 assert lenient['unknown-key'] == 'x', lenient
 
-# 版本比较：PEP 440（packaging），见 lib/versioncmp.py
+# 版本比较：PEP 440（packaging），见 lib/versioncompare.py
 assert module.version_key('2.3') == module.version_key('2.3.0')
 assert module.version_key('2.2.0') < module.version_key('2.3')
 assert module.version_key('2.10.0') > module.version_key('2.9.0')

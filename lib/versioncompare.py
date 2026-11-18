@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 
-# versioncmp.py
+# versioncompare.py
 # MacWave 全项目版本号解析、比较、排序的**唯一实现**。
 #
-# 以前这里有三份：lib/versioncmp.py（MacWave 自身版本）、
+# 以前这里有三份：lib/versioncompare.py（MacWave 自身版本）、
 # pkg/pkgversionparser.py（软件包版本）、surfboard/depsversionparser.py（依赖版本）。
 # 三份的规则各写各的，同一个版本串在「自身版本」与「包版本」两条路上可能给出相反
 # 的结论 —— 那种分歧最后表现为「指针说已最新、客户端说该升级」这种最难查的状态。
