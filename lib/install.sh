@@ -18,6 +18,51 @@ set -eE
 set -u
 set -o pipefail
 
+# ==========================================
+# --raw：无 🌊、无颜色、井号进度条
+# ==========================================
+#
+# 与 `wave install --raw` 同一条规则：输出可以直接进日志、进 grep、进 diff。
+#
+#   * 不带行首的 🌊
+#   * 不带任何 ANSI 颜色（调色板在下面定义后立刻清空）
+#   * 下载进度用井号刻度，而不是光标重绘出来的东西
+#
+# 为什么在 fd 层做、而不是改每个调用点：这个脚本有 180 多处 🌊 字符串，散在
+# echo、mw_say、mw_say_err 三种写法里，逐个改必然漏一处 —— 而漏一处就是
+# 「--raw 的输出里还有 emoji」。换掉 1、2 号 fd 是唯一能保证「一律」的地方，
+# 与 cli/silent.py 里 raw_output() 的做法同一条理由。
+#
+# **位置必须比第一条输出还早**：测试根那一行、颜色定义、横幅都排在下面，
+# 装晚了就会出现「前几行有 emoji、后面没有」这种半吊子输出。
+# 同样地，--raw 的初值也必须在这里定，别在预扫之后再赋一次 false。
+CLI_RAW=false
+for _mw_arg in "$@"; do
+    case "$_mw_arg" in
+        --raw|--RAW) CLI_RAW=true ;;
+    esac
+done
+
+mw_raw() { [[ "${CLI_RAW:-false}" == "true" ]]; }
+
+mw_raw_filter() {
+    # 逐行读 stdin，去掉行首的 🌊 与紧跟的一个空格。
+    # 🌊 用 printf 的字节写：$'\U0001F30A' 这种写法 bash 3.2 不支持。
+    local line item
+    item="$(printf '\xf0\x9f\x8c\x8a')"
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        case "$line" in
+            "$item "*) line="${line#"$item "}" ;;
+            "$item"*) line="${line#"$item"}" ;;
+        esac
+        printf '%s\n' "$line"
+    done
+}
+
+if mw_raw; then
+    exec > >(mw_raw_filter) 2>&1
+fi
+
 # -------------------- 测试根（隔离） --------------------
 # MACWAVE_TEST 指向一个目录时，把它当作 /：HOME 和所有系统路径都挂到它下面，
 # 整条链路都落在那个目录里，完全不碰真实系统。
@@ -56,6 +101,12 @@ YELLOW='\033[33m'
 RESET='\033[0m'
 SKY_BLUE='\033[38;5;74m'
 RED='\033[1;31m'
+
+# --raw：调色板整体清空。脚本里几十处 ${RED_BOLD}… 因此自然没有颜色，
+# 不必逐个调用点判断 —— 与上面那个 fd 过滤器一起构成「一律」。
+if mw_raw; then
+    RED_BOLD=""; RED=""; GREEN=""; YELLOW=""; SKY_BLUE=""; RESET=""
+fi
 
 # ==========================================
 # 语言
@@ -220,8 +271,10 @@ for _mw_arg in "$@"; do
     case "$_mw_arg" in
         --zh|--ZH) MW_LANG="zh" ;;
         --dry-run|--DRY-RUN) CLI_DRY_RUN=true ;;
+        --raw|--RAW) CLI_RAW=true ;;
     esac
 done
+
 
 
 # ==========================================
@@ -569,6 +622,62 @@ print_dir_menu() {
 }
 
 # ==========================================
+# 下载（--raw 时带井号刻度）
+# ==========================================
+
+mw_download() {
+    # mw_download <url> <out> <max-time>
+    #
+    # 非 --raw 时就是原来那句 `curl -fsSL … -o <out>` —— 行为、返回值完全不变。
+    # --raw 时多打一行井号刻度：**总长已知就每 10% 一个 #**（与 Python 侧
+    # _RawProgress 同一条规则），未知就每 MiB 一个。不换行重绘、不带颜色，
+    # 所以落进日志是一行完整的进度，而不是一串控制字符。
+    local url="$1" out="$2" cap="$3" total pid rc=0 size shown=0 step
+    if ! mw_raw; then
+        curl -fsSL --max-time "$cap" ${CURL_CACERT:+--cacert "$CURL_CACERT"} -o "$out" "$url"
+        return $?
+    fi
+
+    # 先问一次长度。HEAD 失败不算错：拿不到就按 MiB 打刻度。
+    total="$(curl -fsSI --max-time "$cap" ${CURL_CACERT:+--cacert "$CURL_CACERT"} "$url" 2>/dev/null \
+        | tr -d '\r' | tr 'A-Z' 'a-z' | awk -F': *' '$1=="content-length"{print $2}' | tail -n 1)"
+    case "$total" in
+        ''|*[!0-9]*) total=0 ;;
+    esac
+    if (( total > 0 )); then
+        step=$(( total / 10 ))
+        (( step > 0 )) || step=1
+    else
+        step=1048576
+    fi
+
+    rm -f "$out" 2>/dev/null || true
+    curl -fsSL --max-time "$cap" ${CURL_CACERT:+--cacert "$CURL_CACERT"} -o "$out" "$url" & pid=$!
+    while kill -0 "$pid" 2>/dev/null; do
+        size=$(wc -c < "$out" 2>/dev/null | tr -d ' ')
+        size=${size:-0}
+        while (( (shown + 1) * step <= size )); do
+            printf '#'
+            shown=$(( shown + 1 ))
+        done
+        sleep 0.2
+    done
+    wait "$pid" || rc=$?
+
+    if (( rc == 0 )); then
+        # 小文件可能一格都没打；补满十个 #，让每一行下载都是同一个形状
+        while (( shown < 10 )); do
+            printf '#'
+            shown=$(( shown + 1 ))
+        done
+        printf '  %s\n' "$(wc -c < "$out" 2>/dev/null | tr -d ' ')"
+    else
+        printf '\n'
+    fi
+    return $rc
+}
+
+# ==========================================
 # 命令行参数（批量 / 脚本化安装）
 # ==========================================
 
@@ -606,6 +715,9 @@ Options:
                           created, no file written. When the latest version
                           cannot be fetched it continues with a placeholder,
                           so the output can be reviewed offline.
+      --raw               Plain output for logs and scripts: no emoji, no
+                          colours, ASCII progress bars. Interaction is
+                          unchanged; combine with --ci for unattended runs.
       --dir-option=N      Pick menu entry N without prompting (1-$CUSTOM_OPTION).
       --dir-option=DIR    Use DIR as the installation directory (shorthand for
                           --dir-option=$CUSTOM_OPTION=DIR).
@@ -649,6 +761,8 @@ MacWave 安装程序
       --dry-run           只打印安装器会做什么，不做任何改动：不下载、不提权、
                           不建目录、不写文件。取不到最新版本号时用占位值继续，
                           因此在断网的机器上也能看完整个输出。
+      --raw               给日志和脚本用的输出：不带 🌊、不带颜色、进度条用
+                          井号刻度。交互不变；无人值守请再配 --ci。
       --dir-option=N      不提问，直接选菜单第 N 项（1-${CUSTOM_OPTION}）。
       --dir-option=DIR    用 DIR 作为安装目录（等价于
                           --dir-option=$CUSTOM_OPTION=DIR）。
@@ -687,6 +801,9 @@ while [[ $# -gt 0 ]]; do
             ;;
         --dry-run|--DRY-RUN)
             CLI_DRY_RUN=true
+            ;;
+        --raw|--RAW)
+            CLI_RAW=true
             ;;
         --dir-option=*)
             _value="${1#--dir-option=}"
@@ -858,6 +975,160 @@ DISPLAY_DIR=$(home_to_tilde "$BASE_DIR")
 # ==========================================
 
 CURRENT_USER=$(whoami)
+
+# ==========================================
+# SIP（系统完整性保护）
+# ==========================================
+#
+# 提权之前先看 SIP：它决定「sudo 到底能不能写这里」，而「要不要 sudo」是下一问。
+# 顺序反了会把用户送去输密码，然后在写文件时才失败 —— 报错还只是 permission denied。
+#
+# 光看 `csrutil status` 不够，它只回答「SIP 主开关」：
+#
+#   enabled                        正常 macOS
+#   disabled                       SIP 完全关闭
+#   enabled (Custom Configuration) SIP 被降级（自定义配置，部分保护关掉）
+#
+# 后两种多见于 **OCLP（OpenCore Legacy Patcher）** 打过补丁的老 Mac：为了让新系统
+# 在旧硬件上能跑，OCLP 会关闭或削弱 SIP。**但「SIP 关了」不等于「系统盘能写」** ——
+# macOS 11 起系统卷是密封的（Signed System Volume/SSV），它是另一道独立的锁：
+# 即使 `csrutil disable`，往 /System、/usr、/bin 写文件照样失败，还必须
+# `csrutil authenticated-root disable` 再重启（OCLP 打根补丁正是两步都做）。
+#
+# 所以判定分两层，顺序不能反：
+#
+#   1. 目标在不在 SIP 保护范围（/System、/usr（/usr/local 除外）、/bin、/sbin、
+#      /Library/Apple）；
+#   2. 在范围内时，**先看 SSV**：密封着就写不进去，与 SIP 主开关无关；
+#      SSV 未密封（老系统没有这个命令）再看 SIP 主开关：
+#        enabled  → 同样写不进去，拒绝；
+#        disabled / reduced → 这次写入可行，警告后继续 —— 但「写得进去」不等于
+#        「应该装进去」：写进系统位置的东西会随一次系统更新消失，也可能直接把
+#        机器弄到起不来。这里只警告，不替用户拿主意。
+#
+# 非 macOS、或读不到 csrutil 时状态是 unknown，此时**不做**判断：不能因为
+# 「读不到」就拒绝安装，那会把正常的 Linux 与容器环境挡在门外。
+#
+# MACWAVE_CSRUTIL 只是测试钩子（把替身脚本指进来），生产路径永远是 /usr/bin/csrutil。
+mw_sip_status() {
+    local out csrutil
+    if [[ "$(uname -s)" != "Darwin" ]]; then
+        echo unknown
+        return 0
+    fi
+    csrutil="${MACWAVE_CSRUTIL:-/usr/bin/csrutil}"
+    out="$("$csrutil" status 2>/dev/null || true)"
+    case "$out" in
+        *"status: disabled"*) echo disabled ;;
+        *"Custom Configuration"*) echo reduced ;;
+        *"status: enabled"*) echo enabled ;;
+        *) echo unknown ;;
+    esac
+}
+
+mw_ssv_status() {
+    # Signed System Volume（macOS 11+）：系统卷是密封的快照，写入会被内核拒绝，
+    # 与 SIP 主开关是两个独立的锁。`csrutil authenticated-root status` 的
+    # enabled 表示密封着；老系统（10.x）没有这条命令，返回 unknown。
+    local out csrutil
+    if [[ "$(uname -s)" != "Darwin" ]]; then
+        echo unknown
+        return 0
+    fi
+    csrutil="${MACWAVE_CSRUTIL:-/usr/bin/csrutil}"
+    out="$("$csrutil" authenticated-root status 2>/dev/null || true)"
+    case "$out" in
+        *"status: enabled"*) echo enabled ;;
+        *"status: disabled"*) echo disabled ;;
+        *) echo unknown ;;
+    esac
+}
+
+mw_sip_protected() {
+    # 这个**逻辑**路径在不在 SIP 保护范围？/usr/local 是明确的例外（Homebrew 就在
+    # 那里，SIP 不保护它），其余 /usr 都在范围内。
+    #
+    # 与 config/configpaths.py 的 SYSTEM_LINK_PREFIXES 是同一批位置：那份用于
+    # 「符号链接不得跳出 base_dir」的豁免，这份用于「能不能把安装根放这里」。
+    # 两边都改时一起看 —— 否则会出现「这里允许装、产物里的链接却被判越界」。
+    case "$1" in
+        /usr/local|/usr/local/*) return 1 ;;
+        /usr|/usr/*|/bin|/bin/*|/sbin|/sbin/*|/System|/System/*|/Library/Apple|/Library/Apple/*)
+            return 0 ;;
+    esac
+    return 1
+}
+
+mw_logical_path() {
+    # 去掉测试根的映射：SIP 判断看的是「真实系统里会落在哪」，而 MACWAVE_TEST
+    # 把整棵树挂到了临时目录下，那个前缀不属于任何受保护位置。
+    local path="$1"
+    if [[ -n "$SYS_ROOT" && "$path" == "$SYS_ROOT"/* ]]; then
+        path="${path#"$SYS_ROOT"}"
+    fi
+    echo "$path"
+}
+
+SIP_STATUS="$(mw_sip_status)"
+SSV_STATUS="$(mw_ssv_status)"
+SIP_TARGET="$(mw_logical_path "$BASE_DIR")"
+if mw_sip_protected "$SIP_TARGET"; then
+    case "$SSV_STATUS" in
+        enabled)
+            # 密封的系统卷：与 SIP 主开关无关，写不进去就是写不进去。
+            # 常见于「SIP 已关闭/降级、但没关 authenticated-root」的机器 ——
+            # 那些机器的用户会在写文件那一步收到一句 permission denied，
+            # 而真正的原因是密封，不是权限。
+            mw_say_err "${RED_BOLD}🌊 Error: '$SIP_TARGET' is on the sealed system volume, so it cannot be an installation directory.${RESET}" \
+                "${RED_BOLD}🌊 错误：'$SIP_TARGET' 在密封的系统卷上，不能作为安装目录。${RESET}"
+            mw_say_err "🌊 The Signed System Volume is a separate lock from SIP: even with SIP" \
+                "🌊 系统卷密封（Signed System Volume）与 SIP 是两道独立的锁：即使 SIP 关了，"
+            mw_say_err "🌊 disabled, writing there fails until 'csrutil authenticated-root disable'" \
+                "🌊 往那里写仍会失败，要另外关掉它（csrutil authenticated-root disable）并重启。"
+            mw_say_err "🌊 is applied and the Mac reboots. That is not something an installer" \
+                "🌊 那不是安装器该替你做的事。"
+            mw_say_err "🌊 should do for you. Choose a directory outside the protected set:" \
+                "🌊 请换一个不在保护范围内的目录，例如："
+            echo -e "${YELLOW}    /usr/local/macwave   /opt/macwave   ~/.local/macwave${RESET}"
+            exit 1
+            ;;
+        *)
+            case "$SIP_STATUS" in
+                enabled)
+                    mw_say_err "${RED_BOLD}🌊 Error: '$SIP_TARGET' is inside SIP-protected scope, so it cannot be an installation directory.${RESET}" \
+                        "${RED_BOLD}🌊 错误：'$SIP_TARGET' 在 SIP 保护范围内，不能作为安装目录。${RESET}"
+                    mw_say_err "🌊 While SIP is enabled, even sudo cannot write there." \
+                        "🌊 SIP 开启时，sudo 也写不进去。"
+                    mw_say_err "🌊 Choose a directory outside the protected set, for example:" \
+                        "🌊 请换一个不在保护范围内的目录，例如："
+                    echo -e "${YELLOW}    /usr/local/macwave   /opt/macwave   ~/.local/macwave${RESET}"
+                    exit 1
+                    ;;
+                disabled|reduced)
+                    # 走到这里说明 SSV 已查明「未密封」（或老系统没有这道锁），
+                    # 于是 SIP 主开关是唯一剩下的保护 —— 而它是关着的。
+                    if [[ "$SIP_STATUS" == "disabled" ]]; then
+                        mw_say "${YELLOW}🌊 Warning: SIP is disabled and the system volume is not sealed,${RESET}" \
+                            "${YELLOW}🌊 警告：本机 SIP 已关闭，且系统卷未密封，"
+                        mw_say "${YELLOW}🌊 so sudo really can write into '$SIP_TARGET'.${RESET}" \
+                            "${YELLOW}🌊 所以 sudo 确实能写进 '$SIP_TARGET'。"
+                    else
+                        mw_say "${YELLOW}🌊 Warning: SIP is reduced (custom configuration) and the system${RESET}" \
+                            "${YELLOW}🌊 警告：本机 SIP 已降级（自定义配置），且系统卷未密封，"
+                        mw_say "${YELLOW}🌊 volume is not sealed, so sudo really can write into '$SIP_TARGET'.${RESET}" \
+                            "${YELLOW}🌊 所以 sudo 确实能写进 '$SIP_TARGET'。"
+                    fi
+                    mw_say "🌊 That is common on machines patched by OCLP. Installing there touches" \
+                        "🌊 这在 OCLP 打过补丁的机器上很常见。装到那里会改动系统自带的位置："
+                    mw_say "🌊 system territory: it may vanish after a macOS update, and it is not" \
+                        "🌊 升级 macOS 后可能被清除，而且这不是 MacWave 推荐的安装位置。"
+                    mw_say "${YELLOW}🌊 Continuing because you chose this directory explicitly.${RESET}" \
+                        "${YELLOW}🌊 因为这是你显式选择的目录，继续。${RESET}"
+                    ;;
+            esac
+            ;;
+    esac
+fi
 
 # ==========================================
 # 系统级安装的所有权
@@ -1087,7 +1358,7 @@ fetch_update_commands() {
     mw_say "🌊 Fetching the update commands..." "🌊 正在获取更新命令……"
 
     for attempt in 1 2 3; do
-        if curl -fsSL --max-time 60 ${CURL_CACERT:+--cacert "$CURL_CACERT"} -o "$UPDATE_COMMANDS_TMP" "$UPDATE_COMMANDS_URL"; then
+        if mw_download "$UPDATE_COMMANDS_URL" "$UPDATE_COMMANDS_TMP" 60; then
             ok=true
             break
         fi
@@ -1320,7 +1591,10 @@ export MACWAVE_CURRENT_VERSION=""
 export MACWAVE_FILE_TIMEOUT=60
 MACWAVE_NEED_SUDO="$([ "$NEED_SUDO" = "true" ] && echo 1 || echo "")"
 MACWAVE_SILENT="$([ "$CLI_CI" = "true" ] && echo 1 || echo "")"
-export MACWAVE_NEED_SUDO MACWAVE_SILENT
+# 更新脚本（update_commands.sh）自己也在打印，靠这个变量把 --raw 传下去。
+# 老版本的更新脚本不认识它 —— 那时只是更新脚本自己带 🌊，不影响安装结果。
+MACWAVE_RAW="$([ "$CLI_RAW" = "true" ] && echo 1 || echo "")"
+export MACWAVE_NEED_SUDO MACWAVE_SILENT MACWAVE_RAW
 
 if mw_dry_run; then
     mw_plan "🌊 Dry run: the update commands would run now and download the program files." \
@@ -1439,7 +1713,7 @@ ensure_portable_python() {
     # 永远发现不了自己落后 —— 这正是 per-version 目录存在的理由。
     mw_say_err "🌊 Checking the bundled Python version..." "🌊 正在检查自带 Python 版本……"
     latest_file="$(mktemp -t macwave-pylatest)"
-    if curl -fsSL --max-time 30 ${CURL_CACERT:+--cacert "$CURL_CACERT"} -o "$latest_file" "$PYTHON_DOMAIN_URL/pythondata/latest.toml" 2>/dev/null; then
+    if mw_download "$PYTHON_DOMAIN_URL/pythondata/latest.toml" "$latest_file" 30 2>/dev/null; then
         version="$(read_toml_string "$(cat "$latest_file")" version)"
     fi
     rm -f "$latest_file"
@@ -1470,8 +1744,7 @@ ensure_portable_python() {
     # ── 第二步：这个版本各架构的地址与校验值 ──
     mw_say_err "🌊 Fetching the bundled Python $version definition..." "🌊 正在获取自带 Python $version 的定义……"
     url_file="$(mktemp -t macwave-pyurl)"
-    if ! curl -fsSL --max-time 30 ${CURL_CACERT:+--cacert "$CURL_CACERT"} -o "$url_file" \
-         "$PYTHON_DOMAIN_URL/pythondata/$version/python_url.toml" 2>/dev/null; then
+    if ! mw_download "$PYTHON_DOMAIN_URL/pythondata/$version/python_url.toml" "$url_file" 30 2>/dev/null; then
         rm -f "$url_file"
         return 1
     fi
@@ -1496,7 +1769,7 @@ ensure_portable_python() {
     mw_say_err "🌊 Downloading the bundled Python $version (about 26 MB)..." "🌊 正在下载自带 Python ${version}（约 26 MB）……"
     archive="$base_dir/downloads/tmp/portable-python-$version.tar.gz"
     mkdir -p "$base_dir/downloads/tmp" 2>/dev/null || true
-    if ! curl -fsSL --max-time 900 ${CURL_CACERT:+--cacert "$CURL_CACERT"} -o "$archive" "$archive_url" 2>/dev/null; then
+    if ! mw_download "$archive_url" "$archive" 900 2>/dev/null; then
         rm -f "$archive"
         echo -e "${YELLOW}🌊 Could not download the bundled Python from $(mw_redact "$archive_url")${RESET}" >&2
         return 1

@@ -237,6 +237,53 @@ out=$(wave upgrade "$NAME" --raw 2>&1)
 not_ok "upgrade 接受 --raw（没有 illegal option）" "$out" "illegal option"
 not_ok "upgrade --raw 的输出里没有 🌊"             "$out" "🌊"
 
+# -------------------- 6. install.sh --raw --------------------
+#
+# 与 `wave install --raw` 同一条规则：不带 🌊、不带颜色。安装器自己有 180 多处
+# 🌊 字符串，所以它是在 fd 层过滤的 —— 这一节就是在钉住「一律」这两个字。
+
+echo
+echo "========== 6. install.sh --raw =========="
+
+INSTALL_SH="$REPO_DIR/lib/install.sh"
+
+# 版本数据指向一个必然失败的地址，干跑会回落到占位版本号 —— 于是不联网。
+install_dry() {
+    local root
+    root=$(mktemp -d "$WORK/inst.XXXXXX")
+    MACWAVE_TEST="$root" \
+        MACWAVE_SELFUPDATE_DOMAIN="http://127.0.0.1:1" \
+        /bin/bash "$INSTALL_SH" --dry-run --dir-option=1 "$@" 2>&1
+}
+
+out=$(install_dry)
+ok     "不带 --raw 时有 🌊（对照）"    "$out" "🌊"
+
+out=$(install_dry --raw)
+not_ok "install.sh --raw 输出里没有 🌊"          "$out" "🌊"
+not_ok "install.sh --raw 输出里没有 ESC 转义序列" "$out" "$(printf '\033')"
+ok     "install.sh --raw 仍在走流程（有 Dry run 行）" "$out" "Dry run"
+
+out=$(/bin/bash "$INSTALL_SH" --help --raw 2>&1)
+not_ok "--help --raw 也没有 🌊"          "$out" "🌊"
+not_ok "--help --raw 也没有 ESC 转义序列" "$out" "$(printf '\033')"
+ok     "--help --raw 列出了 --raw"        "$out" "--raw"
+
+# 下载进度：从 install.sh 里把 mw_download 抠出来单测（与 selfupdate_test 抽
+# mw_seconds 同一手法）。镜像里那个产物是真的文件，所以走的是真实 curl。
+out=$(/bin/bash -c '
+mw_raw() { return 0; }
+CURL_CACERT=""
+eval "$(sed -n "/^mw_download()/,/^}/p" "$1")"
+mw_download "$2" "$3" 30
+' _ "$INSTALL_SH" "http://127.0.0.1:$PORT/$NAME/${NAME}@1.0.${ARCH}.tar.gz" "$WORK/bar.out" 2>&1)
+if printf '%s' "$out" | grep -qE '^#{10}  [0-9]+$'; then
+    pass "mw_download 的 --raw 刻度是十个井号加字节数"
+else
+    fail "mw_download 的 --raw 刻度形状不对：$out"
+fi
+not_ok "mw_download 的刻度不带 ESC" "$out" "$(printf '\033')"
+
 echo
 echo "=========================================="
 echo -e "🌊 Passed: $PASSED"

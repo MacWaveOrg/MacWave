@@ -154,6 +154,80 @@ else
 fi
 chmod 755 "$ROOT/opt"
 
+# -------------------- 6. SIP 保护范围 --------------------
+#
+# 两道锁，顺序不能反：先看系统卷是否密封（SSV），再看 SIP 主开关。
+# 用替身 csrutil 摆出六种组合 —— 真机上没法为了测试去关 SIP。
+
+echo
+echo "========== SIP 保护范围 =========="
+
+STUB_CSRUTIL="$WORK/bin/csrutil"
+mkdir -p "$WORK/bin"
+cat > "$STUB_CSRUTIL" <<'STUB'
+#!/bin/sh
+case "$1" in
+    status) echo "System Integrity Protection status: ${STUB_SIP:-enabled}." ;;
+    authenticated-root) echo "Authenticated Root status: ${STUB_SSV:-enabled}." ;;
+esac
+STUB
+chmod +x "$STUB_CSRUTIL"
+export MACWAVE_CSRUTIL="$STUB_CSRUTIL"
+
+sip_run() {
+    # sip_run <SIP 状态> <SSV 状态> <目标目录>
+    local sip="$1" ssv="$2" target="$3" root out rc
+    root=$(new_root "sip-$RANDOM$RANDOM")
+    out=$(STUB_SIP="$sip" STUB_SSV="$ssv" dry_run "$root" --dir-option="3=$target")
+    rc=$?
+    printf '%s' "$out"
+    return "$rc"
+}
+
+out=$(sip_run enabled enabled /System/macwave); rc=$?
+if [[ "$rc" -ne 0 && "$out" == *"sealed system volume"* ]]; then
+    pass "SIP 正常 + 系统卷密封 → 拒绝（密封这道锁与 SIP 无关）"
+else
+    fail "SIP 正常 + 系统卷密封时没有拒绝（exit ${rc}）"
+fi
+
+out=$(sip_run disabled enabled /System/macwave); rc=$?
+if [[ "$rc" -ne 0 && "$out" == *"sealed system volume"* ]]; then
+    pass "SIP 已关闭但系统卷仍密封 → 仍拒绝（这正是会漏判的一种）"
+else
+    fail "SIP 已关闭、系统卷密封时没有拒绝（exit ${rc}）"
+fi
+
+out=$(sip_run "enabled (Custom Configuration)" disabled /System/macwave); rc=$?
+if [[ "$rc" -eq 0 && "$out" == *"SIP is reduced"* && "$out" == *"not sealed"* ]]; then
+    pass "SIP 降级 + 系统卷未密封 → 警告后继续"
+else
+    fail "SIP 降级且未密封时的行为不对（exit ${rc}）"
+fi
+
+out=$(sip_run disabled disabled /usr/bin/macwave); rc=$?
+if [[ "$rc" -eq 0 && "$out" == *"SIP is disabled"* ]]; then
+    pass "SIP 关闭 + 未密封 → 警告后继续（讲清是 sudo 真能写）"
+else
+    fail "SIP 关闭且未密封时的行为不对（exit ${rc}）"
+fi
+
+out=$(sip_run enabled enabled /usr/local/macwave); rc=$?
+if [[ "$rc" -eq 0 && "$out" != *"sealed"* && "$out" != *"SIP is"* ]]; then
+    pass "/usr/local 是明确豁免（Homebrew 在那里）"
+else
+    fail "/usr/local 被误判成受保护位置（exit ${rc}）"
+fi
+
+out=$(sip_run unknown unknown /System/macwave); rc=$?
+if [[ "$rc" -eq 0 && "$out" != *"sealed"* ]]; then
+    pass "读不到 SIP 状态时不做判断（非 macOS / 老系统不该被挡住）"
+else
+    fail "读不到状态时不该拒绝，实际 exit ${rc}"
+fi
+
+unset MACWAVE_CSRUTIL
+
 echo
 echo "=========================================="
 echo -e "🌊 Passed: $PASSED"

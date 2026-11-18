@@ -29,11 +29,24 @@ set -u
 # 语言：install.sh 通过 MACWAVE_LANG 传进来。老版本客户端不会传，所以默认英文。
 # 与 lib/install.sh 用同一套约定（mw_say "<English>" "<中文>"），不引 gettext。
 MW_LANG="${MACWAVE_LANG:-en}"
+mw_strip_item() {
+    # --raw（install.sh 传下来的 MACWAVE_RAW=1）：去掉行首的 🌊 与紧跟的一个空格。
+    # 与 `wave install --raw` 同一条规则；本脚本的几条提示都带 🌊，落进日志会脏。
+    # 🌊 用 printf 的字节写：$'\U0001F30A' 在 bash 3.2 上不支持。
+    local line="$1" item
+    [[ "${MACWAVE_RAW:-}" == "1" ]] || { printf '%s' "$line"; return 0; }
+    item="$(printf '\xf0\x9f\x8c\x8a')"
+    case "$line" in
+        "$item "*) line="${line#"$item "}" ;;
+        "$item"*) line="${line#"$item"}" ;;
+    esac
+    printf '%s' "$line"
+}
 mw_say() {
-    if [[ "$MW_LANG" == "zh" ]]; then printf '%b\n' "$2"; else printf '%b\n' "$1"; fi
+    if [[ "$MW_LANG" == "zh" ]]; then printf '%b\n' "$(mw_strip_item "$2")"; else printf '%b\n' "$(mw_strip_item "$1")"; fi
 }
 mw_say_err() {
-    if [[ "$MW_LANG" == "zh" ]]; then printf '%b\n' "$2" >&2; else printf '%b\n' "$1" >&2; fi
+    if [[ "$MW_LANG" == "zh" ]]; then printf '%b\n' "$(mw_strip_item "$2")" >&2; else printf '%b\n' "$(mw_strip_item "$1")" >&2; fi
 }
 : "${MACWAVE_BRANCH:?MACWAVE_BRANCH is required}"
 
