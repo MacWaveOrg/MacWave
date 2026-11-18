@@ -47,6 +47,11 @@ import importlib.util
 import sys
 from pathlib import Path
 
+# configpaths 现在会 import 同目录的 envvar，所以它所在目录要在 sys.path 上 ——
+# 生产环境里这一步由 lib/wave.py 做（它把 config/ 加进 sys.path），测试直接按
+# 文件加载模块，得自己补上。
+sys.path.insert(0, str(Path(sys.argv[1]).parent))
+
 spec = importlib.util.spec_from_file_location('configpaths_module', sys.argv[1])
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
