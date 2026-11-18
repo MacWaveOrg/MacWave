@@ -446,11 +446,24 @@ else
 fi
 rm -f "$LOG_FILE"
 
-# 端到端 · 同意：答 y 就记下来，并且继续往下走（这里让后面的更新失败也无妨 ——
-# 同意记录与更新成功与否无关，失败时也不该再问第二遍）
+# 端到端 · 同意：答 y 就记下来，并且继续往下走。
+#
+# 这一步**故意让更新失败**：把自更新数据指到一份没有 update_commands.sh 的副本，
+# 于是同意之后必然卡在「取更新脚本」那一步。两个理由 ——
+#   1. 同意记录与更新是否成功无关，失败时也不该再问第二遍，这正好把这一点钉住；
+#   2. 真让它更新完的话，CI 里 selfupdate.sh 会用 sudo 改写
+#      /opt/macwave_config/VERSION.json，文件变成 root 所有，本段后面的写入就
+#      EACCES 了（2026-11-17 CI 上就是这么红的）。
+BROKEN_DATA="$SU_WORK/agree-broken"
+rm -rf "$BROKEN_DATA"
+mkdir -p "$BROKEN_DATA/macwavedata"
+cp "$SU_WORK/selfupdate/macwavedata/latest.toml" "$BROKEN_DATA/macwavedata/latest.toml"
+
 LOG_FILE="$(mktemp)"
 RC=0
-printf 'y\n' | python3 "$WAVE_BIN" selfupdate > "$LOG_FILE" 2>&1 || RC=$?
+printf 'y\n' > "$SU_WORK/answer-y"
+MACWAVE_SELFUPDATE_DOMAIN="file://$BROKEN_DATA" \
+    python3 "$WAVE_BIN" selfupdate < "$SU_WORK/answer-y" > "$LOG_FILE" 2>&1 || RC=$?
 cat "$LOG_FILE"
 
 if grep -q 'Agreement accepted' "$LOG_FILE"; then
