@@ -18,7 +18,6 @@
 #   MACWAVE_FILE_TIMEOUT     单个文件的超时秒数
 #   MACWAVE_NEED_SUDO        1 = 安装目录需要 sudo 才能写
 #   MACWAVE_LANG             zh = 中文输出；未设置或其它值 = 英文
-#   MACWAVE_DRY_RUN          1 = 只报告将要做什么，不落盘
 #
 # 约定：
 #   - 任何一步失败都要 exit 非零；客户端据此判定「什么都没更新」，不写 VERSION.json
@@ -129,11 +128,6 @@ want() {
     local repo_path="$1" exec_flag="${2:-0}"
     local destination="$MACWAVE_INSTALL_DIR/$repo_path"
     local url="$MACWAVE_CORE_URL/$MACWAVE_BRANCH/$repo_path"
-
-    if [ "${MACWAVE_DRY_RUN:-}" = "1" ]; then
-        mw_say "would fetch $repo_path" "将获取 $repo_path"
-        return 0
-    fi
 
     if [ "${MACWAVE_SILENT:-}" != "1" ]; then
         mw_say "🌊 Downloading $repo_path..." "🌊 正在下载 ${repo_path}……"

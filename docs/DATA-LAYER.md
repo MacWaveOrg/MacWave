@@ -166,7 +166,6 @@ branch = "4.0"
 | `MACWAVE_FILE_TIMEOUT` | 单文件超时秒数 |
 | `MACWAVE_NEED_SUDO` | `1` 表示安装目录需要 sudo |
 | `MACWAVE_SILENT` | `1` 表示少打印 |
-| `MACWAVE_DRY_RUN` | `1` 表示只报告不落盘 |
 
 `MACWAVE_CURRENT_VERSION` 是区分「首次安装」与「增量升级」的唯一开关，这就是为什么一个
 脚本能同时服务 `install.sh` 与 `wave selfupdate`。
