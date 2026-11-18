@@ -112,7 +112,7 @@ if python3 "$WAVE_BIN" install "test_bin_zip@1.0" --no-link </dev/null >/dev/nul
     fi
     python3 "$WAVE_BIN" uninstall "test_bin_zip@1.0" >/dev/null 2>&1 || true
 else
-    echo -e "${RED_BOLD}🌊 FAIL: install test_bin_zip@1.0 --unlink${RESET}"
+    echo -e "${RED_BOLD}🌊 FAIL: install test_bin_zip@1.0 --no-link${RESET}"
     FAILED=$((FAILED + 1))
 fi
 
