@@ -117,6 +117,11 @@ def request_timeout(input_string):
     return common.parse(input_string or "").timeouts.request_timeout
 
 
+# 最近一次请求失败的原因（诊断用）。fetch_text 的返回值只有状态码，
+# 而「为什么失败」正是要分类的东西，所以留在这里给报错处取用。
+LAST_ERROR = ""
+
+
 def fetch_text(url, attempts=3, timeout=None):
 
     # 返回 (状态码, 文本)。网络异常与 5xx 会重试（GitHub raw 会间歇性地
@@ -126,15 +131,20 @@ def fetch_text(url, attempts=3, timeout=None):
     # timeout 由调用方从三档超时旗标（--connect-timeout / --content-time /
     # --max-time）转成 (connect, read) 元组后传下来；缺省沿用内置默认值。
 
+    global LAST_ERROR
+
     last_status = 0
     request_timeout = timeout if timeout else 30
+    LAST_ERROR = ""
 
     for _ in range(attempts):
         try:
             response = requests.get(url, timeout=request_timeout,
                                     **tls.request_kwargs())
-        except Exception:
+        except Exception as error:
             last_status = 0
+            # 留给下面那句报错做分诊：证书过期与纯网络故障的下一步完全不同
+            LAST_ERROR = str(error)
             continue
 
         if response.status_code in (200, 404):
@@ -174,7 +184,15 @@ def report_service_unavailable(url, status=0):
     else:
         print(f"{RED_BOLD}🌊 Error: Cannot reach GitHub for the dependency data.{RESET}")
     print(f"{RED_BOLD}🌊   {domains.redact_url(url)}{RESET}")
-    print(f"{RED_BOLD}🌊 This is usually a network hiccup. Check your network or proxy, then run the command again.{RESET}")
+    # 证书问题要分类说清楚，别让用户去「重试」一件他改不了的事
+    explained = tls.explain(LAST_ERROR, url) if not status else None
+    if explained is None:
+        print(f"{RED_BOLD}🌊 This is usually a network hiccup. Check your network or proxy, "
+              f"then run the command again.{RESET}")
+    else:
+        for index, line in enumerate(explained[1]):
+            prefix = "🌊 Next      " if index == 0 else "🌊           "
+            print(f"{RED_BOLD}{prefix}{line}{RESET}")
     sys.exit(1)
 
 

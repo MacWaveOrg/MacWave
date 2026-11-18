@@ -593,12 +593,15 @@ def download_file(url, temp_path, config, input_string, display_name):
                 hint="check the network, the proxy (--proxy) and the mirror, then retry")
 
         except Exception as e:
+            # 证书问题要分类说：过期 / 自签 / 链不完整 / 主机名不匹配 / 纯网络，
+            # 五种的下一步完全不同（见 net/tls.py）。认不出才退回泛泛的建议。
             steplog.fail(
                 f"download error: {display_name}",
                 request=url,
                 response=str(e),
-                hint=["check the network and the proxy (--proxy)",
-                      "for certificate problems, --skip-ssl bypasses verification (insecure)"])
+                hint=tls.hints(e, url, fallback=[
+                    "check the network and the proxy (--proxy)",
+                    "for certificate problems, --skip-ssl bypasses verification (insecure)"]))
 
     return temp_path
 
@@ -646,7 +649,8 @@ def fetch_common_fields(package_name, arch, timeout=DEFAULT_TIMEOUT):
     except Exception as e:
         steplog.fail("error while reading the @common metadata",
                      request=url, response=str(e),
-                     hint="check the network and any --proxy setting, then retry")
+                     hint=tls.hints(e, url,
+                                    fallback="check the network and any --proxy setting, then retry"))
 
     return parse_common_fields(response.text)
 
@@ -765,7 +769,8 @@ def fetch_max_version(package_name, arch, timeout=DEFAULT_TIMEOUT):
         raise
     except Exception as e:
         steplog.fail("error while reading the version list", request=api_url, response=str(e),
-                     hint="check the network and any --proxy setting, then retry")
+                     hint=tls.hints(e, api_url,
+                                    fallback="check the network and any --proxy setting, then retry"))
 
 
 # -------------------- 核心安装流程 --------------------
@@ -929,7 +934,8 @@ def handle_install(input_string):
         steplog.fail("error while reading the version record",
                      request=pkg_version_url,
                      response=str(e),
-                     hint="check the network and any --proxy setting, then retry")
+                     hint=tls.hints(e, pkg_version_url,
+                                    fallback="check the network and any --proxy setting, then retry"))
 
     sha_match = re.search(r'sha256:\s*"([^"]+)"', resp.text)
     file_match = re.search(r'file:\s*"([^"]+)"', resp.text)

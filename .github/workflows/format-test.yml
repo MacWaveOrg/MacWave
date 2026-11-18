@@ -209,6 +209,12 @@ jobs:
         run: |
           /bin/bash scripts/suggest_test.sh
 
+      # 证书失败的分诊：同一句 "SSL error" 不许对应同一条建议（过期 / 自签 /
+      # 链不完整 / 主机名 / 纯网络，五种下一步完全不同）。只做字符串分类，离线。
+      - name: Run certificate diagnostics test
+        run: |
+          /bin/bash scripts/tls_test.sh
+
       # 依赖清单曾散在六处，改一处漏五处。这条断言它们与 pyproject.toml 一致。
       - name: Run dependency declaration test
         run: |

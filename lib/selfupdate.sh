@@ -429,6 +429,51 @@ hand_over_system_install() {
 FETCH_ATTEMPTS=3
 RETRY_DELAY=2
 
+# -------------------- TLS 失败的分诊 --------------------
+#
+# 与 net/tls.py 的 explain() 同一套分类，两种语言各写一份、措辞保持一致：
+#
+#   过期            服务端的事，重试或找镜像维护者，别用 --skip-ssl 当解决办法
+#   自签 / 私有 CA  企业网络里正常，找网管要根证书，或换官方镜像
+#   链不完整        镜像少发了中间证书，让维护者修
+#   主机名不匹配    地址指错了 —— 这时最不该做的就是绕过校验
+#   连不上 / 解析   根本不是 TLS 问题，别去折腾证书
+#
+# curl 的 stderr 里带着真正的证书原因，所以先认文本、再认退出码。
+
+curl_hint() {
+    # curl_hint <退出码> <stderr 文本>：认得出就打印一句下一步，认不出返回 1。
+    local status="$1" err="${2:-}" text
+    text="$(printf '%s' "$err" | tr '[:upper:]' '[:lower:]')"
+
+    case "$text" in
+        *"certificate has expired"*)
+            echo -e "${RED_BOLD}🌊 The server's certificate has expired. This is the server's problem: retry later, or contact the mirror maintainer. --skip-ssl does not fix it.${RESET}"
+            return 0 ;;
+        *"self-signed"*)
+            echo -e "${RED_BOLD}🌊 The server uses a self-signed certificate or a private CA (typical inside a corporate network). Ask your network team for the root certificate, or switch to an official mirror.${RESET}"
+            return 0 ;;
+        *"unable to get local issuer"*|*"unable to verify the first certificate"*|*"certificate chain is incomplete"*)
+            echo -e "${RED_BOLD}🌊 The server's certificate chain is incomplete (a required intermediate CA is missing). Ask the mirror maintainer to serve the full chain.${RESET}"
+            return 0 ;;
+        *"hostname mismatch"*|*"doesn't match"*|*"does not match"*|*"not valid for"*)
+            echo -e "${RED_BOLD}🌊 The certificate is not valid for this host. Check the domain and the mirror configuration; do not work around this by skipping verification.${RESET}"
+            return 0 ;;
+    esac
+
+    case "$status" in
+        6)
+            echo -e "${RED_BOLD}🌊 Cannot resolve the host name. This is a network problem, not a TLS or certificate one.${RESET}" ;;
+        7|28)
+            echo -e "${RED_BOLD}🌊 Cannot connect. This is a network problem, not a TLS or certificate one.${RESET}" ;;
+        35|51|58|60|77)
+            echo -e "${RED_BOLD}🌊 TLS certificate verification failed. Check the mirror's certificate, or use an official mirror (wave mirror shows the addresses in use).${RESET}" ;;
+        *)
+            return 1 ;;
+    esac
+    return 0
+}
+
 fetch_to_file() {
     # fetch_to_file <url> <目标文件> <超时秒> [runner] [尝试次数]
     # runner 为 run_cmd 时按安装目录的权限决定要不要 sudo。
@@ -438,7 +483,9 @@ fetch_to_file() {
     local runner="${4:-direct}"
     local attempts="${5:-$FETCH_ATTEMPTS}"
     local partial="$destination.macwave-part"
-    local attempt status code
+    local attempt status code err
+    local errfile
+    errfile="$(mktemp -t macwave-curl-err)"
 
     "$runner" mkdir -p "$(dirname "$destination")"
 
@@ -447,17 +494,23 @@ fetch_to_file() {
         # 同时取 HTTP 状态码：curl 的退出码并不总能反映「404」。
         # raw.githubusercontent 在 404 时常常报 (56) 收数据失败而不是 (22)，
         # 只看退出码会把「这个文件不存在」当成网络抖动重试三次。
+        #
+        # stderr 单独留一份：证书失败的原因只在那里（curl 只给一个退出码 60），
+        # 而「过期 / 自签 / 链不完整 / 主机名不匹配」的下一步完全不同。
         code="$("$runner" curl -fsSL --max-time "$timeout" ${CURL_LIMITS:-} \
-            -w '%{http_code}' -o "$partial" "$url" 2>/dev/null)" || status=$?
+            -w '%{http_code}' -o "$partial" "$url" 2>"$errfile")" || status=$?
         if [[ "$status" -eq 0 ]]; then
             "$runner" mv -f "$partial" "$destination"
+            rm -f "$errfile"
             return 0
         fi
         "$runner" rm -f "$partial" 2>/dev/null || true
+        err="$(cat "$errfile" 2>/dev/null || true)"
 
         case "$code" in
             4??)
                 # 4xx 是「请求本身不对」，重试不会变好：404 就是没有这个文件。
+                rm -f "$errfile"
                 return 1
                 ;;
         esac
@@ -465,6 +518,7 @@ fetch_to_file() {
         case "$status" in
             22|23|1|2|3)
                 # 22=HTTP 错误、23=写盘失败、1~3=用法错误。同样不值得重试。
+                rm -f "$errfile"
                 return 1
                 ;;
         esac
@@ -475,6 +529,10 @@ fetch_to_file() {
         fi
     done
 
+    # 全部尝试都失败：把最后一次的原因翻译成一句能照做的下一步。
+    # 认不出时什么都不加，让调用方原来那句「取不到」继续负责。
+    curl_hint "$status" "$err" >&2 || true
+    rm -f "$errfile"
     return 1
 }
 

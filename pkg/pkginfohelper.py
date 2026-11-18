@@ -198,7 +198,15 @@ def handle_search(query, budget=None):
             print(f"{RED_BOLD}🌊 URL: {domains.redact_url(api_url)}{RESET}")
             sys.exit(1)
     except Exception as e:
-        print(f"{RED_BOLD}🌊 Error: {e}{RESET}")
+        # 证书失败要分类说，别只甩一句 SSL error；认不出才原样打印
+        explained = tls.explain(e, api_url)
+        if explained is None:
+            print(f"{RED_BOLD}🌊 Error: {e}{RESET}")
+        else:
+            print(f"{RED_BOLD}🌊 Error: {explained[0]}{RESET}")
+            for index, line in enumerate(explained[1]):
+                prefix = "🌊 Next      " if index == 0 else "🌊           "
+                print(f"{RED_BOLD}{prefix}{line}{RESET}")
         sys.exit(1)
 
     all_packages = [name for name in domains.listing_names(resp.text, dirs_only=True) if name]

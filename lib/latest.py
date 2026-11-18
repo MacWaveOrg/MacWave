@@ -77,9 +77,14 @@ def fetch_versions(package_name, arch, timeout):
         response = requests.get(url, timeout=timeout.request_timeout,
                                 headers=headers(url), **tls.request_kwargs())
     except Exception as error:
-        return [], str(error)[:120]
+        # 分类结论放在 problem 里、下一步单独带回去：调用方印的是
+        # 「证书过期（notAfter: …）」或「这是网络问题」，而不是一句 SSL error。
+        explained = tls.explain(error, url)
+        if explained is None:
+            return [], str(error)[:120], None
+        return [], explained[0], explained[1]
     if response.status_code != 200:
-        return [], f"HTTP {response.status_code}"
+        return [], f"HTTP {response.status_code}", None
 
     versions = []
     for name in domains.listing_names(response.text):
@@ -87,7 +92,7 @@ def fetch_versions(package_name, arch, timeout):
             continue
         if "@" in name:
             versions.append(name.split("@")[1])
-    return versions, None
+    return versions, None, None
 
 
 def highest(versions):
@@ -354,21 +359,25 @@ def handle_latest(input_string):
 
     def task(pair):
         display_name, package_name = pair
-        versions, problem = fetch_versions(package_name, arch, timeout)
-        return build_row(display_name, highest(versions), problem)
+        versions, problem, advice = fetch_versions(package_name, arch, timeout)
+        return build_row(display_name, highest(versions), problem), advice
 
     pairs = list(zip(targets, packages))
+    advice = None
     if len(pairs) == 1:
-        rows = [task(pairs[0])]
+        results = [task(pairs[0])]
     else:
         with futures.ThreadPoolExecutor(max_workers=min(MAX_WORKERS, len(pairs))) as pool:
-            rows = list(pool.map(task, pairs))
+            results = list(pool.map(task, pairs))
+    rows = [row for row, _advice in results]
+    if len(results) == 1:
+        advice = results[0][1]
 
     if not everything:
         # 单个包：查不到就是错，先把话说清楚，不必先打一行全是破折号的表
         row = rows[0]
         if row["status"] in (UNKNOWN, NO_LIST, READ_FAIL):
-            report_failure(row, arch, timeout)
+            report_failure(row, arch, timeout, advice)
         render(rows, arch)
         return 0
 
@@ -384,7 +393,7 @@ def handle_latest(input_string):
     return 0
 
 
-def report_failure(row, arch, timeout):
+def report_failure(row, arch, timeout, advice=None):
     """单个包查不到时，把原因说到能直接动手的程度。"""
     name = row["name"]
     index_names = fetch_names(arch, timeout)
@@ -404,10 +413,11 @@ def report_failure(row, arch, timeout):
                      hint=["if every package is like this, the mirror has no versions "
                            "lists yet (see docs/MIRROR-SETUP.md)"])
 
-    # 连名字清单都拿不到：只能是网络或地址问题，别再猜包名
+    # 连名字清单都拿不到：只能是网络 / 证书 / 地址问题，别再猜包名。
+    # 证书问题的那几行（过期、自签、链不完整、主机名）由 fetch_versions 带回来。
     steplog.fail(f"cannot read the version list for {name}",
                  response=row["problem"] or "empty list",
-                 hint="check the network and any --proxy setting, then retry")
+                 hint=advice or "check the network and any --proxy setting, then retry")
 
 
 def main():

@@ -74,6 +74,10 @@ def curl_limit_args(budget):
 
 # -------------------- 版本数据 --------------------
 
+# 最近一次取数失败的原因（诊断用）：返回值是 None，而「为什么」正是要分诊的东西。
+LAST_ERROR = ""
+
+
 def fetch_text(url, budget, raws=()):
     # 优先用标准库；本地 Python 缺根证书（macOS 常见）时改走 curl。
     # 带凭据的 URL 直走 curl：urllib 不认 user:pass@，会把它当主机名，白失败一次。
@@ -81,18 +85,24 @@ def fetch_text(url, budget, raws=()):
     # 但 urllib 只有一个 socket 超时（连接与每次读共用），分不出三档。所以**只要
     # 命令行里给了任意一档超时就走 curl** —— 只有它能把三档分别表达出来。
     # 没给任何一档时照旧优先标准库，默认行为与以前一致。
+    global LAST_ERROR
+
+    LAST_ERROR = ""
     if not raws and not domains._has_userinfo(url):
         try:
             with urllib.request.urlopen(url, timeout=budget.total,
                                         **tls.urlopen_kwargs()) as response:
                 return response.read().decode()
-        except (urllib.error.URLError, UnicodeDecodeError, OSError):
-            pass
+        except (urllib.error.URLError, UnicodeDecodeError, OSError) as error:
+            LAST_ERROR = str(error)
 
     argv = ['curl', '-fsSL', '--retry', '2', '--retry-delay', '2',
             '--retry-connrefused', *curl_limit_args(budget), *tls.curl_flags(), url]
     result = subprocess.run(argv, capture_output=True, text=True)
     if result.returncode != 0:
+        # curl 的 stderr 里带着真正的证书原因（"certificate has expired" 之类），
+        # 比 urllib 那句 "CERTIFICATE_VERIFY_FAILED" 更好分诊；有就用它。
+        LAST_ERROR = (result.stderr or "").strip() or LAST_ERROR
         return None
     return result.stdout
 
@@ -423,6 +433,12 @@ def handle_selfupdate(input_string=""):
     if text is None:
         print(f"{RED_BOLD}🌊 Error: Cannot reach the MacWave version data.{RESET}")
         print(f"{RED_BOLD}🌊 {domains.redact_url(domains.selfupdate_latest_url())}{RESET}")
+        # 证书过期 / 自签 / 链不完整 / 主机名不匹配 / 纯网络：五种的下一步不同
+        explained = tls.explain(LAST_ERROR, domains.selfupdate_latest_url())
+        if explained is not None:
+            for index, line in enumerate([explained[0]] + explained[1]):
+                prefix = "🌊 Next      " if index == 0 else "🌊           "
+                print(f"{RED_BOLD}{prefix}{line}{RESET}")
         sys.exit(1)
 
     data = version_data(text)

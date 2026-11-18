@@ -95,6 +95,12 @@ jobs:
             /bin/bash scripts/suggest_test.sh
 
       - run:
+          name: Certificate failure diagnostics
+          # 证书失败要按类型给下一步：过期 / 自签 / 链不完整 / 主机名 / 纯网络。
+          # 分诊靠错误文本，措辞一改就会走散，而这类路径平时根本跑不到。
+          command: /bin/bash scripts/tls_test.sh
+
+      - run:
           name: Dependency declarations agree
           # pyproject.toml 与六处安装/CI 配置必须说同一件事
           command: bash scripts/depsync_test.sh
