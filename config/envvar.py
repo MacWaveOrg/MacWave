@@ -80,6 +80,11 @@ DOMAINS = {
 PIP_INDEX = "MACWAVE_PIP_INDEX"
 PIP_DEFAULT = "https://pypi.org/simple"
 
+# 额外的根证书（PEM）。企业网络里 TLS 被中间设备重签、或自建镜像用私有 CA 时，
+# 把它指向那家 CA 的根证书，校验就能通过 —— 不用 --skip-ssl 把校验整个关掉。
+# 没设时行为不变（用系统自带的证书库）。
+CACERT = "MACWAVE_CACERT"
+
 # 测试根：设了它，整个进程把那个目录当成 /。
 TEST_ROOT = "MACWAVE_TEST"
 # 派生给 shell 的同一个值（Python 与 shell 都要用，名字不共用一个变量）。

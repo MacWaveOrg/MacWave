@@ -29,6 +29,8 @@ GLOBAL_FLAGS_ZH = {
     "-F, --force": "当前 macOS 版本低于软件包声明要求时仍继续安装",
     "--install-python-from-source": "从上游地址取自带的 Python，而不是 MacWave 自己的仓库",
     "MACWAVE_PIP_INDEX": "环境变量。Python 依赖的 pip 源，默认 pypi.org/simple",
+    "MACWAVE_CACERT": "环境变量。额外的根证书（PEM），用于企业网络重签或私有 CA 的镜像；"
+                      "不设则用系统证书库",
 }
 
 # 与 help.COMMAND_HELP 一一对应：命令 → {desc, flags:{旗标写法: 说明}}

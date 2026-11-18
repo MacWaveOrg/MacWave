@@ -2,7 +2,13 @@
 
 # tls.py
 
-# `--skip-ssl` 的唯一实现：设一次，全进程生效。
+# TLS 的两件事的唯一实现：
+#
+#   1. `--skip-ssl`：设一次，全进程生效（下面）
+#   2. `MACWAVE_CACERT`：额外的根证书（文件最后一节「证书失败的分诊」也有它的建议）
+#
+# 后者是前者之外的另一种选择：企业网络里 TLS 被中间设备重签、或自建镜像用私有
+# CA 时，把根证书交给我们就够了，不该让人为了连上而把校验整个关掉。
 #
 # 为什么要有这个模块：这个旗标原先只在 download_file 里读，于是「版本清单」
 # `@common`、版本记录、依赖元数据、info / search / latest 这些请求照样校验证书。
@@ -17,6 +23,16 @@
 # 那个询问就形同虚设。所以先 configure() 记下「命令行里写了」，
 # 真正生效要等 grant()。
 
+import os
+import sys
+
+# 名字的唯一来源是 config/envvar.py（同层邻居，只依赖标准库）。
+import envvar
+
+
+RED_BOLD = '\033[1;31m'
+RESET = '\033[0m'
+
 # urllib3 是 requests 的依赖，正常安装一定在。但 lib/selfupdate.py 会被测试
 # 用「什么都没装」的解释器直接导入，顶层硬导入会让那种调用一并失败；
 # 缺了它只是少抑制一条警告，不影响把 verify 关掉。
@@ -30,6 +46,58 @@ except ImportError:
 
 _requested = False
 _enabled = False
+_cacert_seen = None     # 上次解析时的原值；None = 还没解析过
+_cacert = ""            # 展开后的路径；"" = 没设（用系统证书库）
+_cacert_reported = False
+
+
+CACERT_NAME = envvar.CACERT
+
+
+def cacert_path():
+    """`MACWAVE_CACERT` 的值：展开 ~ 后的绝对路径；没设时返回空字符串。
+
+    设了却不可用（不存在、不是文件、读不了）就**报错退出**，而不是悄悄忽略 ——
+    静默忽略的后果是用户以为自己已经信任了那家 CA，实际还在失败，于是他会去
+    怀疑 --skip-ssl 没用、怀疑镜像、怀疑网络，唯独不会想到是路径写错了。
+    """
+    global _cacert_seen, _cacert, _cacert_reported
+
+    raw = (os.environ.get(CACERT_NAME) or "").strip()
+    if raw == _cacert_seen:
+        return _cacert
+    # 原值变了就重新解析（测试会改环境变量；真实进程里只解析一次）
+    _cacert_seen = raw
+    _cacert_reported = False
+
+    if not raw:
+        _cacert = ""
+        return _cacert
+
+    path = os.path.abspath(os.path.expanduser(raw))
+    problem = None
+    if not os.path.exists(path):
+        problem = "does not exist"
+    elif os.path.isdir(path):
+        problem = "is a directory, not a PEM file"
+    elif not os.access(path, os.R_OK):
+        problem = "is not readable"
+    elif os.path.getsize(path) == 0:
+        problem = "is empty"
+
+    if problem:
+        if not _cacert_reported:
+            _cacert_reported = True
+            print(f"{RED_BOLD}🌊 Error: {CACERT_NAME} {problem}: {path}{RESET}",
+                  file=sys.stderr)
+            print(f"{RED_BOLD}🌊 Next      point it at the CA's root certificate in PEM form, "
+                  f"e.g. export {CACERT_NAME}=/etc/ssl/corp-root.pem{RESET}", file=sys.stderr)
+            print(f"{RED_BOLD}🌊           unset it to go back to the system trust store{RESET}",
+                  file=sys.stderr)
+        raise SystemExit(1)
+
+    _cacert = path
+    return _cacert
 
 
 def configure(requested):
@@ -40,6 +108,10 @@ def configure(requested):
     """
     global _requested
     _requested = bool(requested)
+    if not _requested:
+        # 坏路径要在任何请求之前就报错；被 --skip-ssl 覆盖时不校验 ——
+        # 两者同时给时 skip-ssl 优先，此时那个文件根本不会被读到。
+        cacert_path()
     return _requested
 
 
@@ -71,25 +143,40 @@ def enabled():
 
 
 def request_kwargs():
-    """给 requests 的额外关键字；没开时是空字典，调用处不需要分支。"""
-    return {"verify": False} if _enabled else {}
+    """给 requests 的额外关键字；什么都不用改时是空字典，调用处不需要分支。
+
+    优先级：`--skip-ssl`（不校验）> `MACWAVE_CACERT`（用这家的根证书）>
+    系统证书库。三者互斥，都是「这次请求怎么判定对端可信」的同一件事。
+    """
+    if _enabled:
+        return {"verify": False}
+    cacert = cacert_path()
+    return {"verify": cacert} if cacert else {}
 
 
 def curl_flags():
-    """给 curl 的等价旗标：curl 是 `-k`，与 requests 的 verify=False 同义。"""
-    return ["-k"] if _enabled else []
+    """给 curl 的等价旗标：`-k` 对应 verify=False，`--cacert` 对应 verify=<pem>。"""
+    if _enabled:
+        return ["-k"]
+    cacert = cacert_path()
+    return ["--cacert", cacert] if cacert else []
 
 
 def urlopen_kwargs():
-    """给 urllib 的额外关键字：它不认 verify，只能换一个不校验证书的 SSLContext。"""
-    if not _enabled:
-        return {}
+    """给 urllib 的额外关键字：它不认 verify，只能换一个 SSLContext。"""
     import ssl
 
-    context = ssl.create_default_context()
-    context.check_hostname = False
-    context.verify_mode = ssl.CERT_NONE
-    return {"context": context}
+    if _enabled:
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        return {"context": context}
+
+    cacert = cacert_path()
+    if cacert:
+        # 给了 cafile 之后仍会校验证书链与主机名，只是信任根换成这一份
+        return {"context": ssl.create_default_context(cafile=cacert)}
+    return {}
 
 
 # -------------------- 证书失败的分诊 --------------------
@@ -114,9 +201,6 @@ HOSTNAME = "hostname"
 CERT_OTHER = "certificate"
 NETWORK = "network"
 
-# `--cacert` 还没实现。实现之后把它翻成 True，下面两类建议就会给出可以直接
-# 照抄的命令；在那之前不印一条跑不起来的命令 —— 那比不给建议更让人火大。
-CA_ROOT_READY = False
 
 _EXPIRED_MARKERS = ("certificate has expired", "certificate_expired", "cert has expired",
                     "expired certificate")
@@ -172,6 +256,20 @@ def classify(error):
     if any(marker in text for marker in _NETWORK_MARKERS):
         return NETWORK
     return None
+
+
+def _cacert_advice():
+    """「自签 / 链不完整」时那句关于自定义根证书的建议。
+
+    已经设了就提醒核对（这时再叫他设一遍只会让人以为旗标没生效），
+    没设才给一条可以直接照抄的 export。
+    """
+    current = cacert_path()
+    if current:
+        return [f"{CACERT_NAME} is already set to {current} — check that this file contains "
+                f"the root this server chains to"]
+    return [f"trust that root instead of disabling checks: "
+            f"export {CACERT_NAME}=/path/to/root.pem"]
 
 
 def _is_certificate(kind):
@@ -303,8 +401,7 @@ def explain(error, url=""):
         advice = ["this is normal inside a corporate network that inspects TLS, "
                   "or on a self-hosted mirror with its own CA",
                   "ask your network team for the root certificate"]
-        if CA_ROOT_READY:
-            advice.append("point MacWave at it: wave --cacert /path/to/root.pem install jq")
+        advice += _cacert_advice()
         advice += ["otherwise switch to an official mirror (`wave mirror` shows the addresses in use)",
                    "--skip-ssl bypasses verification (insecure); it does not make the connection safe"]
         return ("the server uses a self-signed certificate or a private CA", advice)
@@ -313,8 +410,7 @@ def explain(error, url=""):
         advice = ["the root is usually fine — what is missing is the intermediate certificate "
                   "the server should send along",
                   "ask the mirror maintainer to serve the full chain"]
-        if CA_ROOT_READY:
-            advice.append("a custom root also works: wave --cacert /path/to/root.pem install jq")
+        advice += _cacert_advice()
         advice += ["or switch to an official mirror; --skip-ssl bypasses verification (insecure)"]
         return ("the server's certificate chain is incomplete (a required intermediate CA is missing)",
                 advice)

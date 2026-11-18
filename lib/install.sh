@@ -301,6 +301,30 @@ SELFUPDATE_URL="$(mw_domain MACWAVE_SELFUPDATE_DOMAIN "${MACWAVE_SELFUPDATE_DOMA
 PYTHON_DOMAIN_URL="$(mw_domain MACWAVE_PYTHON_DOMAIN "${MACWAVE_PYTHON_DOMAIN:-https://raw.githubusercontent.com/MacWaveOrg/Python/HEAD}")"
 
 # ==========================================
+# 额外根证书（MACWAVE_CACERT）
+# ==========================================
+#
+# 企业网络里 TLS 会被中间设备重签，自建镜像也可能用私有 CA。把根证书交给我们就
+# 够了，不必让人为了连上而关掉校验（本脚本没有 --skip-ssl）。
+#
+# 设了就必须可用：静默忽略的后果是用户以为自己已经信任了那家 CA，实际还在失败，
+# 于是他会去怀疑镜像、怀疑网络，唯独不会想到是路径写错了。
+#
+# 用 ${CURL_CACERT:+--cacert "$CURL_CACERT"} 展开，而不是把它拼进一段无引号的
+# 参数串 —— 路径里带空格是常事（"~/Library/Application Support/..."）。
+CURL_CACERT=""
+if [[ -n "${MACWAVE_CACERT:-}" ]]; then
+    _cacert="${MACWAVE_CACERT/#\~/$HOME}"
+    if [[ ! -f "$_cacert" || ! -r "$_cacert" ]]; then
+        echo -e "${RED_BOLD}🌊 Error: MACWAVE_CACERT is not a readable file: ${_cacert}${RESET}" >&2
+        echo -e "${RED_BOLD}🌊 Next      point it at the CA's root certificate in PEM form, e.g. export MACWAVE_CACERT=/etc/ssl/corp-root.pem${RESET}" >&2
+        echo -e "${RED_BOLD}🌊           unset it to go back to the system trust store${RESET}" >&2
+        exit 1
+    fi
+    CURL_CACERT="$_cacert"
+fi
+
+# ==========================================
 # 版本号与代码分支（从自更新数据读取，不写死在脚本里）
 # ==========================================
 #
@@ -313,7 +337,7 @@ PYTHON_DOMAIN_URL="$(mw_domain MACWAVE_PYTHON_DOMAIN "${MACWAVE_PYTHON_DOMAIN:-h
 LATEST_DATA_URL="$SELFUPDATE_URL/macwavedata/latest.toml"
 # `|| true` 不能省：赋值语句的退出码就是 curl 的退出码，在 `set -e` 下取不到
 # 版本会直接静默退出（实测 exit 7，下面那段「读不到版本」的提示一个字都打不出来）。
-LATEST_VERSION_DATA="$(curl -fsSL --max-time 30 "$LATEST_DATA_URL" 2>/dev/null || true)"
+LATEST_VERSION_DATA="$(curl -fsSL --max-time 30 ${CURL_CACERT:+--cacert "$CURL_CACERT"} "$LATEST_DATA_URL" 2>/dev/null || true)"
 
 read_toml_string() {
     # read_toml_string <文本> <键> —— 取平铺的字符串值，去掉引号与行尾注释
@@ -1004,7 +1028,7 @@ fetch_update_commands() {
     mw_say "🌊 Fetching the update commands..." "🌊 正在获取更新命令……"
 
     for attempt in 1 2 3; do
-        if curl -fsSL --max-time 60 -o "$UPDATE_COMMANDS_TMP" "$UPDATE_COMMANDS_URL"; then
+        if curl -fsSL --max-time 60 ${CURL_CACERT:+--cacert "$CURL_CACERT"} -o "$UPDATE_COMMANDS_TMP" "$UPDATE_COMMANDS_URL"; then
             ok=true
             break
         fi
@@ -1363,7 +1387,7 @@ ensure_portable_python() {
     # 永远发现不了自己落后 —— 这正是 per-version 目录存在的理由。
     mw_say_err "🌊 Checking the bundled Python version..." "🌊 正在检查自带 Python 版本……"
     latest_file="$(mktemp -t macwave-pylatest)"
-    if curl -fsSL --max-time 30 -o "$latest_file" "$PYTHON_DOMAIN_URL/pythondata/latest.toml" 2>/dev/null; then
+    if curl -fsSL --max-time 30 ${CURL_CACERT:+--cacert "$CURL_CACERT"} -o "$latest_file" "$PYTHON_DOMAIN_URL/pythondata/latest.toml" 2>/dev/null; then
         version="$(read_toml_string "$(cat "$latest_file")" version)"
     fi
     rm -f "$latest_file"
@@ -1394,7 +1418,7 @@ ensure_portable_python() {
     # ── 第二步：这个版本各架构的地址与校验值 ──
     mw_say_err "🌊 Fetching the bundled Python $version definition..." "🌊 正在获取自带 Python $version 的定义……"
     url_file="$(mktemp -t macwave-pyurl)"
-    if ! curl -fsSL --max-time 30 -o "$url_file" \
+    if ! curl -fsSL --max-time 30 ${CURL_CACERT:+--cacert "$CURL_CACERT"} -o "$url_file" \
          "$PYTHON_DOMAIN_URL/pythondata/$version/python_url.toml" 2>/dev/null; then
         rm -f "$url_file"
         return 1
@@ -1420,7 +1444,7 @@ ensure_portable_python() {
     mw_say_err "🌊 Downloading the bundled Python $version (about 26 MB)..." "🌊 正在下载自带 Python ${version}（约 26 MB）……"
     archive="$base_dir/downloads/tmp/portable-python-$version.tar.gz"
     mkdir -p "$base_dir/downloads/tmp" 2>/dev/null || true
-    if ! curl -fsSL --max-time 900 -o "$archive" "$archive_url" 2>/dev/null; then
+    if ! curl -fsSL --max-time 900 ${CURL_CACERT:+--cacert "$CURL_CACERT"} -o "$archive" "$archive_url" 2>/dev/null; then
         rm -f "$archive"
         echo -e "${YELLOW}🌊 Could not download the bundled Python from $(mw_redact "$archive_url")${RESET}" >&2
         return 1

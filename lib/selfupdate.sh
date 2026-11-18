@@ -175,6 +175,21 @@ if [[ -n "${MACWAVE_CONTENT_TIME:-}" ]]; then
     fi
 fi
 
+# 额外根证书（MACWAVE_CACERT）。单独一个变量、不并进 CURL_LIMITS：
+# 那里全是整数与 -k，可以按空格拆开用；路径会有空格，必须整体加引号展开。
+# 设了就必须可用 —— 静默忽略会让人以为已经信任了那家 CA。
+CURL_CACERT=""
+if [[ -n "${MACWAVE_CACERT:-}" ]]; then
+    _cacert="${MACWAVE_CACERT/#\~/$HOME}"
+    if [[ ! -f "$_cacert" || ! -r "$_cacert" ]]; then
+        echo -e "${RED_BOLD}🌊 Error: MACWAVE_CACERT is not a readable file: ${_cacert}${RESET}" >&2
+        echo -e "${RED_BOLD}🌊 Next      point it at the CA's root certificate in PEM form, e.g. export MACWAVE_CACERT=/etc/ssl/corp-root.pem${RESET}" >&2
+        echo -e "${RED_BOLD}🌊           unset it to go back to the system trust store${RESET}" >&2
+        exit 1
+    fi
+    CURL_CACERT="$_cacert"
+fi
+
 # 除 --max-time 之外的限制，拼成一段附加参数给每个 curl 用。
 #   --connect-timeout          握手多久算失败
 #   --speed-limit 1 --speed-time N   连上之后 N 秒收不到数据算失败
@@ -451,10 +466,10 @@ curl_hint() {
             echo -e "${RED_BOLD}🌊 The server's certificate has expired. This is the server's problem: retry later, or contact the mirror maintainer. --skip-ssl does not fix it.${RESET}"
             return 0 ;;
         *"self-signed"*)
-            echo -e "${RED_BOLD}🌊 The server uses a self-signed certificate or a private CA (typical inside a corporate network). Ask your network team for the root certificate, or switch to an official mirror.${RESET}"
+            echo -e "${RED_BOLD}🌊 The server uses a self-signed certificate or a private CA (typical inside a corporate network). Ask your network team for the root certificate, then trust it with MACWAVE_CACERT=/path/to/root.pem — or switch to an official mirror.${RESET}"
             return 0 ;;
         *"unable to get local issuer"*|*"unable to verify the first certificate"*|*"certificate chain is incomplete"*)
-            echo -e "${RED_BOLD}🌊 The server's certificate chain is incomplete (a required intermediate CA is missing). Ask the mirror maintainer to serve the full chain.${RESET}"
+            echo -e "${RED_BOLD}🌊 The server's certificate chain is incomplete (a required intermediate CA is missing). Ask the mirror maintainer to serve the full chain, or trust that root with MACWAVE_CACERT=/path/to/root.pem.${RESET}"
             return 0 ;;
         *"hostname mismatch"*|*"doesn't match"*|*"does not match"*|*"not valid for"*)
             echo -e "${RED_BOLD}🌊 The certificate is not valid for this host. Check the domain and the mirror configuration; do not work around this by skipping verification.${RESET}"
@@ -497,7 +512,7 @@ fetch_to_file() {
         #
         # stderr 单独留一份：证书失败的原因只在那里（curl 只给一个退出码 60），
         # 而「过期 / 自签 / 链不完整 / 主机名不匹配」的下一步完全不同。
-        code="$("$runner" curl -fsSL --max-time "$timeout" ${CURL_LIMITS:-} \
+        code="$("$runner" curl -fsSL --max-time "$timeout" ${CURL_CACERT:+--cacert "$CURL_CACERT"} ${CURL_LIMITS:-} \
             -w '%{http_code}' -o "$partial" "$url" 2>"$errfile")" || status=$?
         if [[ "$status" -eq 0 ]]; then
             "$runner" mv -f "$partial" "$destination"
@@ -779,7 +794,7 @@ ensure_portable_python() {
     # 永远发现不了自己落后 —— 这正是 per-version 目录存在的理由。
     echo "🌊 Checking the bundled Python version..." >&2
     latest_file="$(mktemp -t macwave-pylatest)"
-    if curl -fsSL --max-time 30 ${CURL_LIMITS:-} -o "$latest_file" \
+    if curl -fsSL --max-time 30 ${CURL_CACERT:+--cacert "$CURL_CACERT"} ${CURL_LIMITS:-} -o "$latest_file" \
          "$PYTHON_DOMAIN_URL/pythondata/latest.toml" 2>/dev/null; then
         version="$(read_toml_string "$(cat "$latest_file")" version)"
     fi
@@ -811,7 +826,7 @@ ensure_portable_python() {
     # ── 第二步：这个版本各架构的地址与校验值 ──
     echo "🌊 Fetching the bundled Python $version definition..." >&2
     url_file="$(mktemp -t macwave-pyurl)"
-    if ! curl -fsSL --max-time 30 ${CURL_LIMITS:-} -o "$url_file" \
+    if ! curl -fsSL --max-time 30 ${CURL_CACERT:+--cacert "$CURL_CACERT"} ${CURL_LIMITS:-} -o "$url_file" \
          "$PYTHON_DOMAIN_URL/pythondata/$version/python_url.toml" 2>/dev/null; then
         rm -f "$url_file"
         return 1
@@ -837,7 +852,7 @@ ensure_portable_python() {
     echo "🌊 Downloading the bundled Python $version (about 26 MB)..." >&2
     archive="$base_dir/downloads/tmp/portable-python-$version.tar.gz"
     mkdir -p "$base_dir/downloads/tmp" 2>/dev/null || true
-    if ! curl -fsSL --max-time 900 ${CURL_LIMITS:-} -o "$archive" "$archive_url" 2>/dev/null; then
+    if ! curl -fsSL --max-time 900 ${CURL_CACERT:+--cacert "$CURL_CACERT"} ${CURL_LIMITS:-} -o "$archive" "$archive_url" 2>/dev/null; then
         rm -f "$archive"
         echo -e "${YELLOW}🌊 Could not download the bundled Python from $(mw_redact "$archive_url")${RESET}" >&2
         return 1

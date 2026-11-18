@@ -95,7 +95,7 @@
 
 | 文件 | 职责 | 关键点 |
 | --- | --- | --- |
-| `envvar.py` | **环境变量名单、默认值与说明的唯一来源**：`DOMAINS`（七个 `MACWAVE_*_DOMAIN`）、`PIP_INDEX` / `PIP_DEFAULT`、`TEST_ROOT` / `TEST_ROOT_EXPORT`，以及 `name()` / `default()` / `description()` / `raw()` | 只有数据，没有逻辑：校验与拼 URL 仍在 `net/domains.py`（那里是唯一调用方）。**只 import 标准库** —— `lib/selfupdate.py` 会在「什么都没装」的解释器下导入这条路径。两份 shell 脚本里的同名默认值（它们是 `curl \| bash`，没法 source）由 `scripts/check_domain_defaults.py` 与本表逐项比对 |
+| `envvar.py` | **环境变量名单、默认值与说明的唯一来源**：`DOMAINS`（七个 `MACWAVE_*_DOMAIN`）、`PIP_INDEX` / `PIP_DEFAULT`、`CACERT`、`TEST_ROOT` / `TEST_ROOT_EXPORT`，以及 `name()` / `default()` / `description()` / `raw()` | 只有数据，没有逻辑：校验与拼 URL 仍在 `net/domains.py`（那里是唯一调用方）。**只 import 标准库** —— `lib/selfupdate.py` 会在「什么都没装」的解释器下导入这条路径。两份 shell 脚本里的同名默认值（它们是 `curl \| bash`，没法 source）由 `scripts/check_domain_defaults.py` 与本表逐项比对 |
 | `configpaths.py` | 配置目录解析的唯一来源 | 系统级优先、损坏则回落用户级。另提供「路径必须位于根目录内」的安全校验，防止配置被篡改后写到任意位置。`--proxy` 的解析与写环境变量在 `cli/common.py`，这里不再有第二条路径 |
 | `configerror.py` | 启动自检：机器上到底装没装 | 两处配置有一处有效就放行；都没装且当前在 git 仓库里时，报错并引导用安装脚本 |
 
@@ -146,7 +146,7 @@
 | 文件 | 职责 | 关键点 |
 | --- | --- | --- |
 | `domains.py` | **所有对外地址的校验与拼装**。名字与默认值在 `config/envvar.py`，这里只做协议校验、边界归一化与拼 URL | 边界归一化：`rstrip("/")` 去掉末尾斜杠，于是 13 处拼接点可以无条件写 `f"{domain}/…"`。默认值仍是 3.x 的地址，不设变量即行为不变。与两份 shell 脚本的同名块由 `scripts/check_domain_defaults.py` 比对（表驱动，也查名字与 pip 索引），漂移会失败 |
-| `tls.py` | `--skip-ssl` 与**证书失败分诊**的唯一实现：模块级状态 + `configure()` / `request_kwargs()` / `urlopen_kwargs()` / `curl_flags()`（是否要求跳过校验由 `cli/common.py` 解析后传进来） | 分「请求」与「授权」两段：`install`/`upgrade` 先弹安全询问，答否时 `revoke()`，避免询问形同虚设。**任何发请求的地方都必须带它的返回值**。另提供 `explain()` / `hints()`：把 requests / urllib3 / curl 的失败文本归成「过期 / 自签或私有 CA / 链不完整 / 主机名不匹配 / 纯网络问题」五类，各给各的下一步（过期找镜像维护者、自签找网管要根证书、主机名不匹配**不许**用 `--skip-ssl` 绕过、连不上根本不是 TLS 问题）。分诊只在确定是证书问题时做一次不校验的握手，读对端证书的 notAfter 与 SAN（同一主机只做一次），读不到就跳过 |
+| `tls.py` | `--skip-ssl`、`MACWAVE_CACERT` 与**证书失败分诊**的唯一实现：模块级状态 + `configure()` / `request_kwargs()` / `urlopen_kwargs()` / `curl_flags()`（是否要求跳过校验由 `cli/common.py` 解析后传进来） | 分「请求」与「授权」两段：`install`/`upgrade` 先弹安全询问，答否时 `revoke()`，避免询问形同虚设。**任何发请求的地方都必须带它的返回值**。`MACWAVE_CACERT` 是另一种选择：设了就把它当额外的信任根（requests 走 `verify=<pem>`、urllib 走 `cafile=`、curl 走 `--cacert`），**仍然校验证书链与主机名**；设了却不可读就报错退 1，不静默忽略。优先级 `--skip-ssl` > `MACWAVE_CACERT` > 系统证书库。另提供 `explain()` / `hints()`：把 requests / urllib3 / curl 的失败文本归成「过期 / 自签或私有 CA / 链不完整 / 主机名不匹配 / 纯网络问题」五类，各给各的下一步（过期找镜像维护者、自签找网管要根证书、主机名不匹配**不许**用 `--skip-ssl` 绕过、连不上根本不是 TLS 问题）。分诊只在确定是证书问题时做一次不校验的握手，读对端证书的 notAfter 与 SAN（同一主机只做一次），读不到就跳过 |
 | `timeouts.py` | 三档超时（连接 / 读数据 / 总时长）的解析与折算 | 唯一来源是 `FLAG_FIELDS`；命令行文本原样下传到 shell 层，由 `curl` 自己再解析一次 —— 两层各自取值是为了让「Python 等得住、curl 也知道」 |
 
 **这一层的契约是可执行的**：`scripts/net_policy_test.sh` 用 AST 检查每个 `requests` /

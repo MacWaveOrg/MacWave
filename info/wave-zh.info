@@ -77,6 +77,10 @@ File: wave-zh.info, Node: 全局旗标, Up: Top
   MACWAVE_PIP_INDEX
       环境变量。Python 依赖的 pip 源，默认 pypi.org/simple
 
+  MACWAVE_CACERT
+      环境变量。额外的根证书（PEM），用于企业网络重签或私有 CA 的镜像；
+      不设则用系统证书库
+
 
 
 File: wave-zh.info, Node: install, Next: upgrade, Up: Top

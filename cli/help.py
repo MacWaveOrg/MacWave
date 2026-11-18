@@ -108,6 +108,8 @@ GLOBAL_FLAGS = [
     ("--install-python-from-source",
                 "Fetch the bundled Python from its upstream URL instead of MacWave's own repository"),
     ("MACWAVE_PIP_INDEX", "Env var. pip index for the Python deps; default pypi.org/simple"),
+    ("MACWAVE_CACERT", "Env var. PEM file with extra root certificates for corporate TLS "
+                       "inspection or a private-CA mirror (unset = system trust store)"),
 ]
 
 

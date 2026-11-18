@@ -45,6 +45,20 @@ BRANCH="@@BRANCH@@"
 FILE_TIMEOUT="${MACWAVE_FILE_TIMEOUT:-60}"
 ATTEMPTS=3
 
+# 额外根证书（MACWAVE_CACERT）：企业网络里 TLS 会被重签，自建镜像也可能用私有 CA。
+# 这个脚本是客户端调起来的，环境变量直接继承；没设时行为不变。
+# 设了却读不到就报错退出 —— 静默忽略会让人以为已经信任了那家 CA。
+CURL_CACERT=""
+if [[ -n "${MACWAVE_CACERT:-}" ]]; then
+    _cacert="${MACWAVE_CACERT/#\~/$HOME}"
+    if [[ ! -f "$_cacert" || ! -r "$_cacert" ]]; then
+        mw_say_err "🌊 Error: MACWAVE_CACERT is not a readable file: $_cacert" "🌊 错误：MACWAVE_CACERT 不是一个可读的文件：$_cacert"
+        mw_say_err "🌊 Next      export MACWAVE_CACERT=/path/to/root.pem (or unset it)" "🌊 下一步     export MACWAVE_CACERT=/path/to/root.pem（或取消这个变量）"
+        exit 1
+    fi
+    CURL_CACERT="$_cacert"
+fi
+
 run() {
     if [ "${MACWAVE_NEED_SUDO:-}" = "1" ]; then
         sudo "$@"
@@ -90,7 +104,7 @@ fetch() {
     run mkdir -p "$(dirname "$destination")"
     for ((attempt = 1; attempt <= ATTEMPTS; attempt++)); do
         status=0
-        run curl -fsSL --max-time "$FILE_TIMEOUT" -o "$partial" "$url" || status=$?
+        run curl -fsSL --max-time "$FILE_TIMEOUT" ${CURL_CACERT:+--cacert "$CURL_CACERT"} -o "$partial" "$url" || status=$?
         if [ "$status" -eq 0 ]; then
             # mv 失败也要报：权限不足（sudo 没拿到）时文件还在 .macwave-part 里，
             # 目标位置是旧的甚至不存在。以前这里不看返回值，于是「下载成功但没就位」
