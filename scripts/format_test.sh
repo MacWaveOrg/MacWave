@@ -101,13 +101,13 @@ for entry in "${PKGS[@]}"; do
 done
 
 echo ""
-echo "========== install --unlink =========="
-if python3 "$WAVE_BIN" install "test_bin_zip@1.0" --unlink </dev/null >/dev/null 2>&1; then
+echo "========== install --no-link =========="
+if python3 "$WAVE_BIN" install "test_bin_zip@1.0" --no-link </dev/null >/dev/null 2>&1; then
     if [[ -L "$LINKS_DIR/test_bin_zip" ]]; then
-        echo -e "${RED_BOLD}🌊 FAIL: install --unlink created links/test_bin_zip${RESET}"
+        echo -e "${RED_BOLD}🌊 FAIL: install --no-link created links/test_bin_zip${RESET}"
         FAILED=$((FAILED + 1))
     else
-        echo -e "${GREEN}🌊 PASS: install --unlink skipped the unversioned link${RESET}"
+        echo -e "${GREEN}🌊 PASS: install --no-link skipped the unversioned link${RESET}"
         PASSED=$((PASSED + 1))
     fi
     python3 "$WAVE_BIN" uninstall "test_bin_zip@1.0" >/dev/null 2>&1 || true
