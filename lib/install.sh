@@ -1,9 +1,18 @@
 #!/bin/bash
 
+# bash 3.2 (macOS)
+# 最近一次更新于：
+
 # MacWave 🌊 Official Installer
 # This script downloads wave.py, installs dependencies, and configures PATH.
 # Usage: /bin/bash -c "$(curl -fsSL https://github.com/MacWaveOrg/MacWave/releases/latest/download/install.sh)"
 # Unattended (CI): /bin/bash -c "$(curl -fsSL .../releases/latest/download/install.sh)" -- --ci --dir-option=1
+
+# 退出码要有语义
+# 0 = 成功
+# 1 = 用法错误
+# 2 = 环境不满足（如 bash 太旧）
+# 3 = 网络/下载失败
 
 # -------------------- 测试根（隔离） --------------------
 # MACWAVE_TEST 指向一个目录时，把它当作 /：HOME 和所有系统路径都挂到它下面，
