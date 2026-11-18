@@ -258,7 +258,7 @@ The unversioned link always points at the highest installed version, and is re-p
 Since MacWave 2.4, once a versionless link exists, MacWave keeps it pointing at the right version on its own:
 
 1. If the highest version is uninstalled, the versionless link moves to the highest version that remains, and the uninstalled version's own link goes with it.
-2. An install re-points the versionless link at the version it just installed; add `--unlink` to that install to skip this.
+2. An install re-points the versionless link at the version it just installed; add `--no-link` to that install to skip this.
 3. If a package has no versions left at all, the versionless link is removed.
 4. A versioned name is always callable, whether or not a versionless link exists.
 
@@ -317,7 +317,8 @@ wave upgrade --all, -a             Take every installed package to the latest ve
     --remove-old-versions          Same as --remove-old-version
     --rov                          Same as --remove-old-version
     -X                             Same as --remove-old-version
-    --unlink                       Leave the unversioned link alone (install / uninstall)
+    --no-link                      Leave the unversioned link alone (install / uninstall;
+                                   the old name --unlink works too)
     --all, -a                      Apply to every installed package (upgrade / link / unlink / linkquery)
 
 Self Update:
@@ -352,7 +353,7 @@ wave latest --all                  Same, for every installed package
 ```
 
 Uninstalling a version re-points the link to the next highest one, and removes the link
-when no version is left. `uninstall --unlink` keeps the link as-is, and **refuses to run**
+when no version is left. `uninstall --no-link` keeps the link as-is, and **refuses to run**
 when that would leave the link pointing at the version you are removing.
 ## 🌊 Demo Pictures
 

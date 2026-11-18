@@ -149,7 +149,8 @@ OVERVIEW = [
         "title": "Special Flags",
         "rows": [
             ("command", "wave install <pkgname>@<version>", "Download certain version(s) of a package"),
-            ("flag", "--unlink", "Leave the unversioned link alone (install / uninstall)"),
+            ("flag", "--no-link",
+             "Leave the unversioned link alone (install / uninstall; the old name --unlink works too)"),
             # 只列规范写法；单数的 --remove-old-version 与 --rov 仍然接受，但不再宣传
             ("flag", "-X, --remove-old-versions", "Remove the older versions as part of the upgrade"),
             ("flag", "--all, -a", "Apply to every installed package (upgrade / link / unlink / linkquery)"),
@@ -168,7 +169,7 @@ OVERVIEW = [
 
 OVERVIEW_NOTES = {
     "links": "Links are created on install and re-pointed on uninstall; "
-             "--unlink never leaves one broken.",
+             "--no-link never leaves one broken.",
 }
 
 OVERVIEW_FOOTER = {"en": "For more details, visit: https://macwave.org",

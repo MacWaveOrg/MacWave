@@ -3,7 +3,7 @@
 # link_test.sh
 # 不带版本号软链接的回归测试：
 #   装完自动链接 → 不带版本号能跑 → link / unlink / linkquery → link -a / unlink -a
-#   → 卸载最高版自动降级 → uninstall --unlink 不降级 → install --unlink 不建链接
+#   → 卸载最高版自动降级 → uninstall --no-link 不降级 → install --no-link 不建链接
 #   → 卸掉最后一个版本时删掉链接
 
 set -e
@@ -130,13 +130,13 @@ python3 "$WAVE_BIN" uninstall "$PKG@2.0" >/dev/null
 check "卸载 2.0 后降到 $VER" "$(python3 "$WAVE_BIN" linkquery "$PKG")" "🌊 $PKG@$VER"
 
 echo ""
-echo "========== 5. uninstall --unlink 不会留下坏链接 =========="
+echo "========== 5. uninstall --no-link 不会留下坏链接 =========="
 make_v2
 python3 "$WAVE_BIN" link "$PKG@2.0" >/dev/null
 
 # 5.1 要删的正是链接指向的版本 → 必须报错拒绝，且什么都不删
 set +e
-python3 "$WAVE_BIN" uninstall "$PKG@2.0" --unlink >/dev/null 2>&1
+python3 "$WAVE_BIN" uninstall "$PKG@2.0" --no-link >/dev/null 2>&1
 UNLINK_EXIT=$?
 set -e
 check "删链接指向的版本时拒绝执行" "$UNLINK_EXIT" "1"
@@ -144,22 +144,25 @@ check "被拒绝后版本仍在" "$([[ -d "$BIN_DIR/$PKG@2.0" ]] && echo yes || 
 check "被拒绝后链接未被破坏" "$(python3 "$WAVE_BIN" linkquery "$PKG")" "🌊 $PKG@2.0"
 
 # 5.2 要删的不是链接指向的版本 → 允许，链接继续指向 2.0
-python3 "$WAVE_BIN" uninstall "$PKG@$VER" --unlink >/dev/null
-check "--unlink 后仍指向 2.0" "$(python3 "$WAVE_BIN" linkquery "$PKG")" "🌊 $PKG@2.0"
+python3 "$WAVE_BIN" uninstall "$PKG@$VER" --no-link >/dev/null
+check "--no-link 后仍指向 2.0" "$(python3 "$WAVE_BIN" linkquery "$PKG")" "🌊 $PKG@2.0"
 
 echo ""
-echo "========== 6. 安装器接受 --unlink（离线）=========="
+echo "========== 6. 安装器接受 --no-link（离线）=========="
 FLAG_CHECK=$(cd "$BASE_DIR" && MACWAVE_COMPONENT_NAMES="$(components)" python3 -c "
 import os
 import sys
 sys.path[:0] = os.environ['MACWAVE_COMPONENT_NAMES'].split()
 import pkginstaller as p
-ok = '--unlink' in p.ALLOWED_FLAGS and '--unlink' in p.parse_flags('wave install test_bin_zip@1.0 --unlink')
+# 规范写法与新名字都认；旧名 --unlink 只是别名
+ok = all(f in p.ALLOWED_FLAGS for f in ("--no-link", "--unlink"))
+ok = ok and '--no-link' in p.parse_flags('wave install test_bin_zip@1.0 --no-link')
+ok = ok and '--unlink' in p.parse_flags('wave install test_bin_zip@1.0 --unlink')
 print('yes' if ok else 'no')
 ")
-check "6.1 --unlink 是合法安装参数" "$FLAG_CHECK" "yes"
+check "6.1 --no-link 是合法安装参数（旧名 --unlink 也认）" "$FLAG_CHECK" "yes"
 
-# 「install 后自动建链接 / install --unlink 不建链接」需要真实下载，
+# 「install 后自动建链接 / install --no-link 不建链接」需要真实下载，
 # 这两条断言放在同样跑真实安装的 scripts/format_test.sh 里。
 
 # 重建一个“装好”的 2.0，供第 7 步验证

@@ -343,11 +343,21 @@ else
     fail "wave upgrade --ver 应当被拒绝"
 fi
 
+# --no-link 与它的旧名 --unlink 都拒绝；旧名的报错要顺带说出新名字
+for flag in --no-link --unlink; do
+    if printf '' | STUB_LATEST=1.7.1 MACWAVE_TEST="$ROOT" \
+        python3 "$WORK/harness.py" jq "$flag" 2>&1 | grep -q 'is not accepted by upgrade'; then
+        pass "wave upgrade $flag 被拒绝"
+    else
+        fail "wave upgrade $flag 应当被拒绝"
+    fi
+done
+
 if printf '' | STUB_LATEST=1.7.1 MACWAVE_TEST="$ROOT" \
-    python3 "$WORK/harness.py" jq --unlink 2>&1 | grep -q 'is not accepted by upgrade'; then
-    pass "wave upgrade --unlink 被拒绝"
+    python3 "$WORK/harness.py" jq --unlink 2>&1 | grep -q 'now called --no-link'; then
+    pass "wave upgrade --unlink 的报错点出新名字"
 else
-    fail "wave upgrade --unlink 应当被拒绝"
+    fail "wave upgrade --unlink 的报错没说 --no-link"
 fi
 
 # 索引落后于本机时不能降级

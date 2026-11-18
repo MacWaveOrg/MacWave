@@ -91,15 +91,19 @@ extra = flags.COMMAND_FLAGS["latest"] - {"--all", "-a"}
 if extra:
     add(f"flags.COMMAND_FLAGS['latest'] 多了 latest 不接受的旗标: {sorted(extra)}")
 
-# 4) upgrade / link / unlink 的 -a --all、uninstall 的 --unlink
+# 4) upgrade / link / unlink 的 -a --all、install / uninstall 的 --no-link
 for flag in ("-a", "--all"):
     if flag not in flags.ALL:
         add(f"link 系命令接受的 {flag} 不在 flags.ALL")
     # upgrade 也认 -a（批量升级），漏了会让「-a 用错命令」的提示把 upgrade 漏掉
     if flag not in flags.COMMAND_FLAGS["upgrade"]:
         add(f"upgrade 接受的 {flag} 不在 flags.COMMAND_FLAGS['upgrade']")
-if "--unlink" not in flags.ALL:
-    add("uninstall 接受的 --unlink 不在 flags.ALL")
+for flag in flags.NO_LINK:
+    if flag not in flags.ALL:
+        add(f"install / uninstall 接受的 {flag} 不在 flags.ALL")
+# 别名必须指向自己人：--unlink 是 --no-link 的旧写法，映射丢了就没人再认得它
+if flags.ALIASES.get("--unlink") != "--no-link":
+    add("flags.ALIASES 里 --unlink 应当映射到 --no-link")
 
 # 5) 分发前处理的四条
 for flag in ("-h", "--help", "-V", "--version"):

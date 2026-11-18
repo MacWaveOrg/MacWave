@@ -251,7 +251,7 @@ wave install jq --proxy http://proxy.corp:3128
 从 MacWave 2.4 起，建立不含版本号的软链接后，MacWave 会自动维护它指向的版本：
 
 1. 最高版本被卸载后，不含版本号的软链接会改指向剩余版本中的最高版本，被卸载版本自己的软链接一并撤销。
-2. 安装会把不含版本号的软链接指向本次安装的版本；本次安装加上 `--unlink` 可跳过这一步。
+2. 安装会把不含版本号的软链接指向本次安装的版本；本次安装加上 `--no-link` 可跳过这一步。
 3. 某软件包不再有任何版本时，不含版本号的软链接会被撤销。
 4. 无论何种情况，含版本号的名称始终可以调用，即使存在不含版本号的软链接。
 
@@ -309,7 +309,8 @@ wave upgrade --all, -a             把所有已装的软件包更新到最新版
     --remove-old-versions          同 --remove-old-version
     --rov                          同 --remove-old-version
     -X                             同 --remove-old-version
-    --unlink                       Leave the unversioned link alone (install / uninstall)
+    --no-link                      Leave the unversioned link alone (install / uninstall;
+                                   the old name --unlink works too)
     --all, -a                      Apply to every installed package (upgrade / link / unlink / linkquery)
 
 Self Update:
@@ -343,7 +344,7 @@ wave latest --all                  Same, for every installed package
 
 ```
 
-卸载某个版本会把链接改指向次高版本，没有版本剩余时则删除该链接。`uninstall --unlink`
+卸载某个版本会把链接改指向次高版本，没有版本剩余时则删除该链接。`uninstall --no-link`
 保持链接原样，但**拒绝执行**会让链接指向“你正在卸载的那个版本”的操作。
 ## 🌊 演示图片
 

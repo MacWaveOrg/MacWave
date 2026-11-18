@@ -129,10 +129,10 @@ def _check_disk_space(path: Path, required_bytes: int = 10 * 1024 * 1024) -> boo
 ALLOWED_FLAGS = {
     "-v", "-C",
     "--verbose", "--skip-ssl", "--continue",
-    "--limit-rate", "--proxy", "--unlink", "--ver", "--max-time",
+    "--limit-rate", "--proxy", "--ver", "--max-time",
     "--connect-timeout", "--content-time",
     "-F", "--force",
-}
+} | set(flags_module.NO_LINK)
 
 # 只对 upgrade 有意义的参数。单列出来是为了在 install 里用错时能说清原因，
 # 而不是丢一句「illegal fields」让人自己猜。
@@ -391,7 +391,7 @@ def package_index(words):
 
 def first_package_token(input_string):
     # 取第一个真正的包名（跳过 flag 和带值的旗标后面的值），
-    # 这样 `wave install --unlink wget@1.25.0` 与 `wave install wget@1.25.0 --unlink` 等价
+    # 这样 `wave install --no-link wget@1.25.0` 与 `wave install wget@1.25.0 --no-link` 等价
     words = input_string.split()[2:]
     index = package_index(words)
     return None if index is None else words[index]
@@ -1053,8 +1053,8 @@ def handle_install(input_string):
     steplog.begin("relocate and link")
     transfer_installed_artifacts(target_dir)
 
-    # 12. 把不带版本号的软链接指到刚装好的版本（--unlink 可跳过）
-    if "--unlink" not in input_string:
+    # 12. 把不带版本号的软链接指到刚装好的版本（--no-link 可跳过）
+    if not (set(flags_module.NO_LINK) & set(input_string.split())):
         try:
             from linker import link_package
             if link_package(bin_name, ParsePkgVersion):

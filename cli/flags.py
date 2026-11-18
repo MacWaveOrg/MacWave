@@ -27,6 +27,15 @@
 # 付出代价。代价是这份清单可能与真白名单走散，所以
 # scripts/flags_test.sh 会逐项比对，少一项就红。
 
+# 「不动不带版本号的链接」的两种写法。规范写法是 --no-link；--unlink 是 4.0 的旧名，
+# 仍然接受（脚本里可能写着），但**帮助、报错、建议只说 --no-link** ——
+# 一条命令同时有 link/unlink，再让旗标叫 --unlink，读起来像是「顺便卸载点什么」。
+NO_LINK = ("--no-link", "--unlink")
+NO_LINK_CANONICAL = NO_LINK[0]
+
+# 旧写法 → 规范写法。报错与建议里一律换成规范写法，避免教人写旧名。
+ALIASES = {NO_LINK[1]: NO_LINK_CANONICAL}
+
 # 任何命令都接受（与 cli/help.py 的 Global Flags 一节对应）
 GLOBAL = {
     "-v", "--verbose",
@@ -54,8 +63,8 @@ silent = {"-s", "--silent", "-S", "--show-error"}
 # 单条命令独有的
 # -F/--force：索引声明的最低系统版本高于本机时，跳过询问直接装。upgrade 复用
 # install 那份白名单，所以两组都要列，describe() 才能把用错命令指到正确的地方。
-install = {"-F", "--force"} | silent
-uninstall = {"--unlink"} | silent
+install = {"-F", "--force"} | set(NO_LINK) | silent
+uninstall = set(NO_LINK) | silent
 upgrade = {"-X", "--remove-old-version", "--remove-old-versions", "--rov",
            "-a", "--all", "-F", "--force"} | silent
 link = {"-a", "--all"} | silent
@@ -179,6 +188,8 @@ def describe(flag):
     `-X` 不是拼错，而是升级专属。一律说成「unknown flag」会把人送去查拼写，
     真正的原因（用错了命令）反而看不到。
     """
+    if flag in ALIASES:
+        return f"{flag} is the old name of {ALIASES[flag]}"
     owners = owner_commands(flag)
     if not owners:
         return None

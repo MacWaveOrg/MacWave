@@ -25,7 +25,7 @@ RESET = '\033[0m'
 
 
 # upgrade 只做「装到最新」，这两个旗标与它的语义冲突，直接拒绝而不是静默忽略：
-# --ver 会让「升级」变成「装某个指定版本」；--unlink 会让链接留在旧版本上，
+# --ver 会让「升级」变成「装某个指定版本」；--no-link 会让链接留在旧版本上，
 # 而随后清理旧版本正好会把那个链接指坏。两条都请用户改用对应的命令。
 # 「同时移除旧版本」的四种写法完全等价。长参数之所以给了三个，是因为
 # -version 与 -versions 单复数都记不牢，索性都认；--rov 是它们的缩写。
@@ -42,6 +42,8 @@ ALL_SHORT = "a"
 # 需要记下来、但不属于「删除旧版本」的写法，留着给将来扩展
 REJECTED_FLAGS = {
     "--ver": "Use 'wave install <package>@<version>' to install a specific version",
+    "--no-link": "Run 'wave link <package>@<version>' afterwards to choose the linked version",
+    # 4.0 的旧名，同样拒绝；提示里给的是规范写法
     "--unlink": "Run 'wave link <package>@<version>' afterwards to choose the linked version",
 }
 
@@ -255,10 +257,13 @@ def handle_upgrade(input_string, assume_yes=False):
     # probe 只用于解析（复用 install 的白名单），不该出现在报错文案里：
     # 用户敲的是 `wave upgrade jq --bad`，回显的必须就是这一条。
     probe = "wave install placeholder " + " ".join(words[:index] + words[index + 1:])
-    flags = parse_flags(probe, command="upgrade", shown=input_string)
+    # 变量名不能叫 flags：那会盖住模块 flags（下面要用它的 ALIASES）
+    accepted_flags = parse_flags(probe, command="upgrade", shown=input_string)
     for flag, hint in REJECTED_FLAGS.items():
-        if flag in flags:
-            print(f"{RED_BOLD}🌊 Error: {flag} is not accepted by upgrade.{RESET}")
+        if flag in accepted_flags:
+            renamed = (f" (now called {flags.ALIASES[flag]})"
+                       if flag in flags.ALIASES else "")
+            print(f"{RED_BOLD}🌊 Error: {flag}{renamed} is not accepted by upgrade.{RESET}")
             print(f"{YELLOW}🌊 {hint}.{RESET}")
             sys.exit(1)
 

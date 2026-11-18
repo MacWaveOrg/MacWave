@@ -25,7 +25,7 @@ import silent
 
 # 只取「任何命令都接受」的那一组；模块名不用 flags ——
 # 这个函数里已经有个局部变量叫 flags（argv 里剥出来的旗标集合）。
-from flags import GLOBAL as GLOBAL_FLAGS, describe as describe_flag
+from flags import GLOBAL as GLOBAL_FLAGS, NO_LINK, NO_LINK_CANONICAL, describe as describe_flag
 
 
 BASE_DIR = load_base_dir()
@@ -284,7 +284,7 @@ def refresh_link(pkg_name):
 
 
 def broken_link_target(pkg_name, versions):
-    # --unlink 会把不带版本号的链接留在「指向已卸载版本」的坏状态上吗？
+    # --no-link 会把不带版本号的链接留在「指向已卸载版本」的坏状态上吗？
     # 是则返回那个版本号。链接只能指向存在的版本，否则宁可报错让用户自己决定。
     linker = _import_linker()
     if linker is None:
@@ -301,8 +301,8 @@ def uninstall_versions(pkg_name, versions, keep_link=False):
         broken = broken_link_target(pkg_name, versions)
         if broken:
             print(f"{RED_BOLD}🌊 Error: links/{pkg_name} points to {pkg_name}@{broken}, which is being uninstalled.{RESET}")
-            print(f"{RED_BOLD}🌊 --unlink would leave that link broken, so nothing was uninstalled.{RESET}")
-            print(f"{RED_BOLD}🌊 Drop --unlink (the link then falls back to the next installed version), or run 'wave unlink {pkg_name}' first.{RESET}")
+            print(f"{RED_BOLD}🌊 {NO_LINK_CANONICAL} would leave that link broken, so nothing was uninstalled.{RESET}")
+            print(f"{RED_BOLD}🌊 Drop {NO_LINK_CANONICAL} (the link then falls back to the next installed version), or run 'wave unlink {pkg_name}' first.{RESET}")
             sys.exit(1)
 
     installed = load_installed()
@@ -361,15 +361,15 @@ def select_versions(pkg_name, versions):
 def handle_uninstall(input_string):
     parts = input_string.split()
 
-    # 先剥出 flag：--unlink 表示“不动这个包不带版本号的链接”
+    # 先剥出 flag：--no-link（旧名 --unlink）表示“不动这个包不带版本号的链接”
     flags = {word for word in parts[2:] if word.startswith("-")}
     operands = [word for word in parts[2:] if not word.startswith("-")]
-    keep_link = "--unlink" in flags
+    keep_link = bool(set(NO_LINK) & flags)
 
     # `-C` / `-v` / `--proxy` 这些在帮助里写着「can be used with any command」，
     # 却在这里被当成未知旗标告警 —— 于是 `wave uninstall x -sv` 在静默模式下
     # 也会漏出一行，而那句话本身还是错的。帮助是承诺，这里按承诺放行。
-    tolerated = {"--unlink"} | GLOBAL_FLAGS
+    tolerated = set(NO_LINK) | GLOBAL_FLAGS
     for unknown in sorted(flags - tolerated):
         # 「属于别的命令」与「拼错了」是两种错，说法要分开：
         # 前者提示去用对命令，后者才提示拼写。

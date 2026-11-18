@@ -124,8 +124,9 @@ Install a package, or one specific version of it.
   --content-time <string>
       Maximum time to receive data
 
-  --unlink
-      Cancel the unversioned link for this package
+  --no-link
+      Do not touch the unversioned link (the old name --unlink still
+      works)
 
   -F, --force
       Install anyway when the running macOS is older than the package
@@ -199,8 +200,9 @@ File: wave.info, Node: uninstall, Next: list, Prev: upgrade, Up: Top
 Uninstall a package version. The unversioned link falls back to the
 highest remaining version, and goes away with the last one.
 
-  --unlink
-      Cancel the unversioned link for this package
+  --no-link
+      Do not touch the unversioned link (the old name --unlink still
+      works)
 
 Examples:
 

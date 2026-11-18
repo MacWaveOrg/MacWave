@@ -74,7 +74,8 @@ COMMANDS = (
             ("--max-time <string>", "Maximum total time for one request (40s, 1min, 1min20s, 2h; a bare number means seconds)"),
             ("--connect-timeout <string>", "Maximum time for the handshake"),
             ("--content-time <string>", "Maximum time to receive data"),
-            ("--unlink", "Cancel the unversioned link for this package"),
+            ("--no-link", "Do not touch the unversioned link (the old name --unlink "
+                          "still works)"),
             ("-F, --force", "Install anyway when the running macOS is older than the package declares"),
             ("-v, --verbose", "Verbose mode"),
         ],
@@ -124,7 +125,8 @@ COMMANDS = (
         usage="wave uninstall <package>[@<version>] [flags]",
         desc="Uninstall a package version. The unversioned link falls back to the highest remaining version, and goes away with the last one.",
         flags=[
-            ("--unlink", "Cancel the unversioned link for this package"),
+            ("--no-link", "Do not touch the unversioned link (the old name --unlink "
+                          "still works)"),
         ],
         examples=[
             "wave uninstall jq",

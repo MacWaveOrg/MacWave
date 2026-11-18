@@ -105,8 +105,8 @@ File: wave-zh.info, Node: install, Next: upgrade, Up: Top
   --content-time <string>
       接收数据的最大时长
 
-  --unlink
-      取消此软件包不带版本号的软链接
+  --no-link
+      不动此软件包不带版本号的软链接（旧写法 --unlink 仍然可用）
 
   -F, --force
       当前 macOS 版本低于软件包声明要求时仍继续安装
@@ -175,8 +175,8 @@ File: wave-zh.info, Node: uninstall, Next: list, Prev: upgrade, Up: Top
 卸载某个包的一个版本。不带版本号的链接会自动退到剩下的最高版本，并在最后
 一个版本被卸载时一起消失。
 
-  --unlink
-      取消此软件包不带版本号的软链接
+  --no-link
+      不动此软件包不带版本号的软链接（旧写法 --unlink 仍然可用）
 
 Examples:
 

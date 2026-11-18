@@ -43,7 +43,7 @@ COMMANDS_ZH = {
             "--max-time <string>": "单次请求最大时长（40s、1min、1min20s、2h；不输入单位默认 s）",
             "--connect-timeout <string>": "握手最大时长",
             "--content-time <string>": "接收数据的最大时长",
-            "--unlink": "取消此软件包不带版本号的软链接",
+            "--no-link": "不动此软件包不带版本号的软链接（旧写法 --unlink 仍然可用）",
             "-F, --force": "当前 macOS 版本低于软件包声明要求时仍继续安装",
             "-v, --verbose": "详细模式",
         },
@@ -97,7 +97,7 @@ COMMANDS_ZH = {
         "desc": "卸载某个包的一个版本。不带版本号的链接会自动退到剩下的最高版本，"
                 "并在最后一个版本被卸载时一起消失。",
         "flags": {
-            "--unlink": "取消此软件包不带版本号的软链接",
+            "--no-link": "不动此软件包不带版本号的软链接（旧写法 --unlink 仍然可用）",
         },
     },
     "list": {
@@ -196,7 +196,7 @@ OVERVIEW_DESC = {
     },
     "special": {
         "wave install <pkgname>@<version>": "下载某个指定版本的软件包",
-        "--unlink": "取消此软件包不带版本号的软链接",
+        "--no-link": "不动此软件包不带版本号的软链接（旧写法 --unlink 仍然可用）",
         "-X, --remove-old-versions": "升级同时移除旧版",
         "--all, -a": "对所有已装包生效（upgrade / link / unlink / linkquery）",
     },
@@ -209,7 +209,7 @@ OVERVIEW_DESC = {
 OVERVIEW_DESC["global"] = GLOBAL_FLAGS_ZH
 
 OVERVIEW_NOTES = {
-    "links": "链接在安装时创建、卸载时重新指向；--unlink 不会留下指向空的链接。",
+    "links": "链接在安装时创建、卸载时重新指向；--no-link 不会留下指向空的链接。",
 }
 
 
