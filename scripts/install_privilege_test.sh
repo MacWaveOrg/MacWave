@@ -159,13 +159,22 @@ chmod 755 "$ROOT/opt"
 # 两道锁，顺序不能反：先看系统卷是否密封（SSV），再看 SIP 主开关。
 # 用替身 csrutil 摆出六种组合 —— 真机上没法为了测试去关 SIP。
 
+# ==================== 以下至「CI-ONLY END」专为 CI 而加 ====================
+#
+# 这一层包装不改任何 macOS 上的行为：GitHub 的 macOS runner 照旧跑 else 里
+# 那份完整断言，一条没删、一句没改。
+#
+# 它只为 CircleCI 的 Linux 容器存在 —— 那里没有 SIP 这个概念：mw_sip_status()
+# 在非 Darwin 上直接返回 unknown，替身 csrutil 根本不会被调用。让这几条断言在
+# 容器里「红」只会暴露平台差异，而不是代码问题；但也不能因此假装「Linux 上也验
+# 过 SIP 判定」—— 一旦看到下面那行 SKIP，就说明这一节在本次运行里**没有被验证**。
 if [[ "$(uname -s)" != "Darwin" ]]; then
-    # SIP 只存在于 macOS：mw_sip_status() 在非 Darwin 上直接返回 unknown，
-    # 替身 csrutil 根本不会被调用。这一整套只在 macOS 上有意义。
     echo ""
     echo "========== SIP 保护范围 =========="
     echo "SKIP: 非 macOS，SIP 判定不适用（mw_sip_status 返回 unknown）"
 else
+# ==================== CI-ONLY END（下面这段是 macOS 上真正跑的断言）====================
+
 echo
 echo "========== SIP 保护范围 =========="
 
@@ -234,6 +243,7 @@ else
 fi
 
 unset MACWAVE_CSRUTIL
+# 收尾的就是上面那个 CI 专用 if/else 的 else 分支。
 fi
 
 # -------------------- 7. 写探针本身 --------------------
