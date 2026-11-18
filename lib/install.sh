@@ -14,6 +14,10 @@
 # 2 = 环境不满足（如 bash 太旧）
 # 3 = 网络/下载失败
 
+set -eE
+set -u
+set -o pipefail
+
 # -------------------- 测试根（隔离） --------------------
 # MACWAVE_TEST 指向一个目录时，把它当作 /：HOME 和所有系统路径都挂到它下面，
 # 整条链路都落在那个目录里，完全不碰真实系统。
@@ -42,10 +46,6 @@ if [[ -n "${MACWAVE_TEST:-}" ]]; then
     # 以前这里调用 mw_say，隔离运行时第一行永远是 "mw_say: command not found"。
     echo "🌊 Test root: $SYS_ROOT"
 fi
-
-set -eE
-set -u
-set -o pipefail
 
 # ==========================================
 # 颜色定义
