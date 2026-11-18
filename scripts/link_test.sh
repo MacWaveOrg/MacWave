@@ -149,7 +149,11 @@ check "--no-link 后仍指向 2.0" "$(python3 "$WAVE_BIN" linkquery "$PKG")" "�
 
 echo ""
 echo "========== 6. 安装器接受 --no-link（离线）=========="
-FLAG_CHECK=$(cd "$BASE_DIR" && MACWAVE_COMPONENT_NAMES="$(components)" python3 -c "
+# 用带引号的 heredoc，不要用 `-c "…"`：Python 里的 ("--no-link", "--unlink")
+# 会被 shell 当成「A"B"C"」，引号在传给 Python 之前就被吃掉了 —— 实际跑出来是
+# (--no-link, --unlink)，Python 报 NameError，断言永远是空的。
+# 这类写法会被 shellcheck 的 SC2140 抓住（CI 用 -S warning，直接算失败）。
+FLAG_CHECK=$(cd "$BASE_DIR" && MACWAVE_COMPONENT_NAMES="$(components)" python3 - <<'PYCODE'
 import os
 import sys
 sys.path[:0] = os.environ['MACWAVE_COMPONENT_NAMES'].split()
@@ -159,7 +163,8 @@ ok = all(f in p.ALLOWED_FLAGS for f in ("--no-link", "--unlink"))
 ok = ok and '--no-link' in p.parse_flags('wave install test_bin_zip@1.0 --no-link')
 ok = ok and '--unlink' in p.parse_flags('wave install test_bin_zip@1.0 --unlink')
 print('yes' if ok else 'no')
-")
+PYCODE
+)
 check "6.1 --no-link 是合法安装参数（旧名 --unlink 也认）" "$FLAG_CHECK" "yes"
 
 # 「install 后自动建链接 / install --no-link 不建链接」需要真实下载，
