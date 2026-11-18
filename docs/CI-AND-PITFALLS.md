@@ -294,7 +294,51 @@ run chmod +x "$destination"             # 装好了但命令跑不起来 → com
 钉死上面每一条。其中「`mv` 覆盖失败」用 `chflags uchg` 把目标文件设为不可变
 来制造 —— 这个场景平时几乎不可能自然复现，但一旦发生后果就是静默半成品。
 
-### 11. 其它零碎但很费时间的
+### 11. `mktemp -t 前缀` 在 Linux 上直接失败（BSD 与 GNU 的模板规则不同）
+
+**现象**：CircleCI 上 `install_privilege_test.sh` 里写探针三条全红，另外三条提权断言跟着红，
+而报错只有一行、且看上去与断言毫无关系：
+
+```
+mktemp: too few X's in template 'macwave-write-probe'
+```
+
+**根因**：`mktemp -t 前缀` 是 **BSD** 的习惯写法，macOS 会自动补随机后缀；GNU mktemp
+要求模板里**至少三个 X**，同一句在 Linux 上是硬失败。写探针拿不到临时文件，`mw_can_write`
+就返回「非权限问题」，安装器随即中止 —— 于是任何在 Linux 上跑的 `lib/install.sh` 都会挂，
+测试里那些「应该要求提权」的断言则根本没机会执行。
+
+**修法**：模板一律写成完整路径 + 六个 X，两边都认：
+
+```bash
+mktemp "${TMPDIR:-/tmp}/macwave-write-probe.XXXXXX"
+```
+
+`install.sh` 里收进 `mw_mktemp`，`selfupdate.sh` / `transfer.sh` 与几个测试脚本里同类的
+14 处一并换掉；`scripts/shell_lint.sh` 第 6 节禁止再出现 `mktemp -t`。
+
+**教训**：凡是「本地绿、CI 红」而且红得莫名其妙的，先怀疑**外部命令的参数差异**，
+再怀疑自己的断言 —— 断言往往没错，是它压根没跑到。
+
+### 12. 菜单项编号随架构变化，测试里写死数字会假绿
+
+**现象**：`install_privilege_test.sh` 在 Apple 芯片上全绿，在 x86_64 的 runner 上三条红，
+其中「自己可写的外部目录不提权」还是**假绿** —— 它只检查输出里没有
+`needs administrator access`，而进程在校验参数时就退出了，当然没有。
+
+**根因**：目录菜单的自定义项是第几项**随架构变化**（Intel 多一个 `/usr/local/macwave`，
+自定义就从第 3 项挪到第 4 项）。测试里写死 `--dir-option=3=DIR`，在 x86_64 上意思是
+「选 `/usr/local/macwave`，并给它一个目录」，`install.sh` 直接拒掉：
+
+```
+🌊 Error: only --dir-option=4 takes a directory (this architecture has 4 entries).
+```
+
+**修法**：测试像 `install.sh` 那样按 `uname -m` 算 `CUSTOM_OPTION` 再用它拼参数。
+**教训**：断言「输出里没有某个词」时，必须同时断言「输出里**有**某个词」——
+否则进程早退也能算通过。
+
+### 13. 其它零碎但很费时间的
 
 - **Python 输出块缓冲**：管道下 stdout 是块缓冲的，CI 日志会"二十分钟没有输出"，
   看起来像卡死。用 `-u` / `PYTHONUNBUFFERED=1`，回归脚本额外做了 flush + 心跳。
