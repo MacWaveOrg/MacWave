@@ -60,15 +60,15 @@ done
 
 # 探针内容：三个参数分别是 RC 版本/构建号、正式版版本/构建号
 probe() {
-    printf 'version = "%s"\nbuild = "%s"\nbranch = "4.4-261119"\n' "$1" "$2" \
+    printf 'version = "%s"\nbuild_number = "%s"\nbranch = "4.4-261119"\n' "$1" "$2" \
         > "$SITE/rcdata/latest.toml"
-    printf 'version = "%s"\nbuild = "%s"\nbranch = "main"\n' "$3" "$4" \
+    printf 'version = "%s"\nbuild_number = "%s"\nbranch = "main"\n' "$3" "$4" \
         > "$SITE/macwavedata/latest.toml"
 }
 
 # 本机装的是什么
 installed() {
-    printf '{"version": "%s", "build": "%s"}\n' "$1" "$2" \
+    printf '{"version": "%s", "build_number": "%s"}\n' "$1" "$2" \
         > "$HOME_DIR/.config/macwave_config/VERSION.json"
 }
 
@@ -138,7 +138,7 @@ echo "========== 5. 没有 RC 探针时不炸 =========="
 
 installed "4.4.1-rc" "323R1200"
 rm -f "$SITE/rcdata/latest.toml"
-printf 'version = "4.4.1"\nbuild = "324D0900"\nbranch = "main"\n' > "$SITE/macwavedata/latest.toml"
+printf 'version = "4.4.1"\nbuild_number = "324D0900"\nbranch = "main"\n' > "$SITE/macwavedata/latest.toml"
 OUT=$(wave)
 if grep -q "full install" <<< "$OUT" && grep -q "4.4.1" <<< "$OUT"; then
     pass "RC 探针 404 时退到正式版，并仍按全量切换"

@@ -111,9 +111,23 @@ def fetch_version_data(budget, raws=(), url=None):
     return fetch_text(url or domains.selfupdate_latest_url(), budget, raws)
 
 
+# 探针里的构建号字段名与已发布的 macwavedata/latest.toml 一致（`build_number`）。
+# `build` 只作为读入时的兜底，不再写进任何文档或数据。
+BUILD_KEYS = ("build_number", "build")
+
+
+def data_build(data):
+    """探针里的构建号；两个键都认，是为了不因为一次改名把已有数据读丢。"""
+    for key in BUILD_KEYS:
+        value = data.get(key, "")
+        if value:
+            return value
+    return ""
+
+
 def probe_is_newer(data, current, current_build):
     """这份探针里的版本比本机新吗（版本优先，版本相同看构建号）。"""
-    return versioncompare.newer_release(data.get("version", ""), data.get("build", ""),
+    return versioncompare.newer_release(data.get("version", ""), data_build(data),
                                         current, current_build)
 
 
@@ -344,8 +358,8 @@ def report_dry_run(current, latest, data, options, overall_timeout,
         line("channel", "rc (testing builds, follows rcdata/latest.toml)")
     else:
         line("channel", "stable")
-    if data.get("build"):
-        line("build", data["build"])
+    if data_build(data):
+        line("build", data_build(data))
     if crossed:
         line("switch", "RC → stable as a *full* install (every file replaced)")
     if data.get("branch"):
@@ -429,7 +443,8 @@ def installed_build():
     if not path.exists():
         return None
     try:
-        return json.loads(path.read_text()).get("build")
+        record = json.loads(path.read_text())
+        return record.get("build_number") or record.get("build")
     except (ValueError, OSError):
         return None
 
@@ -490,7 +505,7 @@ def handle_selfupdate(input_string=""):
         crossed_from_rc = (channel == versioncompare.CHANNEL_RC
                            and probe_is_newer(data, current, current_build))
     latest = data.get("version", "")
-    latest_build = data.get("build", "")
+    latest_build = data_build(data)
     if not latest:
         print(f"{RED_BOLD}🌊 Error: The version data has no 'version' field.{RESET}")
         sys.exit(1)

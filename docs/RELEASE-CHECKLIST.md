@@ -245,7 +245,7 @@ Selfupdate/macwavedata/<版本>/update_commands.sh   ← 两渠道共用，按�
 ```toml
 # Selfupdate/rcdata/latest.toml
 version = "4.4.1-rc"
-build = "323R1250"
+build_number = "323R1250"
 branch = "4.4-261119"          # RC 自己的分支，绝不能写 main
 update_commands_sha256 = "<第 4 步生成器打印的那一行>"
 ```

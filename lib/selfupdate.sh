@@ -706,7 +706,7 @@ VERSION_DATA="$(fetch_text "$VERSION_DATA_URL" "$METADATA_TIMEOUT")" || true
 if [[ -z "$VERSION" ]]; then
     VERSION="$(read_toml_string "$VERSION_DATA" version)"
 fi
-BUILD="${MACWAVE_UPDATE_BUILD:-$(read_toml_string "$VERSION_DATA" build)}"
+BUILD="${MACWAVE_UPDATE_BUILD:-$(read_toml_string "$VERSION_DATA" build_number)}"
 
 # 4.4 实验性签名：钉住即将被 bash 执行的那个脚本（空 = 这一版没带哈希）
 EXPECTED_UPDATE_COMMANDS_SHA256="$(read_toml_string "$VERSION_DATA" update_commands_sha256)"
@@ -1187,7 +1187,7 @@ config_cmd mkdir -p "$CONFIG_DIR"
 config_cmd tee "$VERSION_FILE" > /dev/null << EOF
 {
   "version": "$VERSION",
-$([[ -n "$BUILD" ]] && printf '  "build": "%s",\n' "$BUILD")  "components": {
+$([[ -n "$BUILD" ]] && printf '  "build_number": "%s",\n' "$BUILD")  "components": {
     "installer": "$VERSION",
     "parser": "$VERSION"
   }

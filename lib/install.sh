@@ -1310,7 +1310,7 @@ LATEST_BRANCH="$(read_toml_string "$LATEST_VERSION_DATA" branch)"
 # 4.4 实验性签名：钉住即将被 bash 执行的那个脚本（空 = 这一版没带哈希）
 EXPECTED_UPDATE_COMMANDS_SHA256="$(read_toml_string "$LATEST_VERSION_DATA" update_commands_sha256)"
 # 构建号（`323R1250`）：RC 渠道靠它区分「同一版本的第几次构建」，必须落进 VERSION.json
-BUILD_NUMBER="$(read_toml_string "$LATEST_VERSION_DATA" build)"
+BUILD_NUMBER="$(read_toml_string "$LATEST_VERSION_DATA" build_number)"
 # 验 latest.toml 自己的签名（没有公钥 / 没有 .sig 时静默跳过）
 mw_verify_latest_signature "$LATEST_VERSION_DATA" "$LATEST_DATA_URL"
 
@@ -2020,7 +2020,7 @@ EOF
 run_cmd tee "$VERSION_FILE" > /dev/null << EOF
 {
   "version": "$MACWAVE_VERSION",
-$( [[ -n "$BUILD_NUMBER" ]] && printf '  "build": "%s",\n' "$BUILD_NUMBER" )  "components": {
+$( [[ -n "$BUILD_NUMBER" ]] && printf '  "build_number": "%s",\n' "$BUILD_NUMBER" )  "components": {
     "installer": "$MACWAVE_VERSION",
     "parser": "$MACWAVE_VERSION"
   }
