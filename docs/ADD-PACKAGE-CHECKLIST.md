@@ -89,6 +89,22 @@ curl 上游 Release 的 `digest` 字段或 `sha256sums.txt`：
 **本地不要下载产物算哈希。** 本机连不上 `raw.githubusercontent.com`，而且
 26 MB × 几十个包的流量没必要。
 
+#### 已经下载了的产物：别浪费
+
+有两种情况本机会真的把产物拉下来：上游没有 `digest`（只能自己算），或者要补
+`min_os`（它只存在于 Mach-O 的 `LC_BUILD_VERSION` 里，见
+`scripts/backfill_min_os_from_bottle.py`）。这些文件不要丢在临时目录里等系统清理，
+装成命令，顺手就能用：
+
+| 本机 | 放到 | 为什么 |
+| --- | --- | --- |
+| Apple Silicon | `/usr/local/bin` | Homebrew 的前缀是 `/opt/homebrew`，这里不冲突，而且本来就在 `PATH` 里 |
+| **Intel Mac** | `~/opt/mw-source/` | Intel 版 Homebrew 的前缀**就是** `/usr/local`，放进去会和 brew 的包同名顶掉（Mac 开发机基本都装了 Homebrew），所以一律避开 |
+
+- 只搬本机架构的**最新稳定版**；归档文件留着给 Bottle 用，**一个都不要删**。
+- `~/opt/mw-source/` 需要自己加进 `PATH`；**不要**在 Intel Mac 上往 `/usr/local/bin`
+  里放任何东西 —— 那是 Homebrew 的地盘。
+
 ### 3. 这个包有没有依赖
 
 需要动态库的包要在 `deps` 字段登记，否则装完跑不起来。`deps` 写在**版本记录**里
