@@ -134,9 +134,42 @@ fetch() {
     return 1
 }
 
+file_sha256() {
+    # 用 openssl 而不是 shasum：install.sh / selfupdate.sh 里验签名已经要用它，
+    # 少一个依赖就少一种「某台机器上没有那个命令」的失败。
+    openssl dgst -sha256 -r "$1" 2>/dev/null | awk '{print $1}'
+}
+
+verify_hash() {
+    # verify_hash <仓库内路径> <已下载的文件> <期望哈希>
+    #
+    # 4.4 是**实验期**：默认只警告，装还是照装。理由是老客户端拿不到这份判断
+    # （它们跑的是自己那份老脚本），真正的强制要等客户端版本铺开。开关：
+    #   MACWAVE_WANT_HASHES=1   客户端要求校验（由 install.sh / selfupdate.sh 置）
+    #   MACWAVE_STRICT_HASHES=1 不符即失败（未来的默认，现在不设）
+    local repo_path="$1" file="$2" expect="$3" got
+    got="$(file_sha256 "$file")"
+    [ -n "$expect" ] || return 0
+    [ "$got" = "$expect" ] && return 0
+
+    if [ "${MACWAVE_STRICT_HASHES:-}" = "1" ]; then
+        mw_say_err "🌊 Error: $repo_path does not match the signed manifest" \
+                   "🌊 错误：$repo_path 与已签名清单不符"
+        mw_say_err "🌊   expected $expect" "🌊   期望 $expect"
+        mw_say_err "🌊   got      ${got:-<unreadable>}" "🌊   实际 ${got:-读不到}"
+        exit 1
+    fi
+
+    mw_say_err "🌊 Warning: $repo_path does not match the signed manifest (continuing)" \
+               "🌊 警告：$repo_path 与已签名清单不符（继续安装）"
+    mw_say_err "🌊   expected $expect" "🌊   期望 $expect"
+    mw_say_err "🌊   got      ${got:-<unreadable>}" "🌊   实际 ${got:-读不到}"
+    return 0
+}
+
 want() {
-    # want <仓库内路径> <是否 +x>
-    local repo_path="$1" exec_flag="${2:-0}"
+    # want <仓库内路径> <是否 +x> [期望的 sha256]
+    local repo_path="$1" exec_flag="${2:-0}" expect_sha="${3:-}"
     local destination="$MACWAVE_INSTALL_DIR/$repo_path"
     local url="$MACWAVE_CORE_URL/$MACWAVE_BRANCH/$repo_path"
 
@@ -153,6 +186,10 @@ want() {
         # 2026-10-30 的 4.1.1 就是这样：两个 __pycache__ 路径 404 之后，
         # 那一步仍然打印了 "MacWave has been updated to 4.1.1!"。
         exit 1
+    fi
+    # 校验放在 chmod 之前：先确认字节对不对，再决定要不要给它执行位
+    if [ "${MACWAVE_WANT_HASHES:-}" = "1" ] && [ -n "$expect_sha" ]; then
+        verify_hash "$repo_path" "$destination" "$expect_sha"
     fi
     if [ "$exec_flag" = "1" ]; then
         # 加不上 +x 的后果是「命令找不到」，比下载失败更难懂，所以这里也要拦住

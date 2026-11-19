@@ -346,6 +346,86 @@ if [[ -n "${MACWAVE_CACERT:-}" ]]; then
 fi
 
 
+# -------------------- 实验性签名校验（4.4） --------------------
+#
+# 4.4 只**警告**，不拦安装：验签能力要客户端版本铺开之后才能真正强制
+# （老客户端跑的是自己那份老脚本，逼它验签等于让它装不上）。
+#
+# 三样东西各管一段：
+#   latest.toml.sig              签「版本、分支、update_commands 的哈希」（暂时留空）
+#   update_commands_sha256       钉住即将被 bash 执行的那个脚本
+#   want <路径> <0|1> <sha256>   钉住脚本往下要的每个文件
+#
+# 公钥从哪来：MACWAVE_RSA_PUB 为空时**整段跳过**——4.4 还没有可用的钥，
+# 这里先把管道铺好；填上 PEM（或让它指向 Keys/ 里的文件）之后就开始验。
+
+mw_sha256() {
+    # 用 openssl：macOS 自带，不必依赖 shasum 的 perl
+    openssl dgst -sha256 -r "$1" 2>/dev/null | awk '{print $1}'
+}
+
+mw_signature_note() {
+    # mw_signature_note <一行英文> <一行中文>
+    echo -e "${YELLOW}$1${RESET}" >&2
+    echo -e "${YELLOW}$2${RESET}" >&2
+}
+
+mw_check_integrity() {
+    # mw_check_integrity <说明> <文件> <期望 sha256>
+    # 空期望值 = 这一版没带哈希（实验期的常态），直接放行。
+    local what="$1" file="$2" expect="$3" got
+    [[ -n "$expect" ]] || return 0
+    got="$(mw_sha256 "$file")"
+    [[ "$got" == "$expect" ]] && return 0
+    if [[ "${MACWAVE_STRICT_HASHES:-}" == "1" ]]; then
+        echo -e "${RED_BOLD}🌊 Error: $what does not match the signed data.${RESET}" >&2
+        echo -e "${RED_BOLD}🌊   expected $expect${RESET}" >&2
+        echo -e "${RED_BOLD}🌊   got      ${got:-<unreadable>}${RESET}" >&2
+        exit 1
+    fi
+    mw_signature_note "🌊 Warning: $what does not match the signed data (continuing)" \
+        "🌊 警告：$what 与已签名数据不符（继续）"
+    echo -e "${YELLOW}🌊   expected $expect${RESET}" >&2
+    echo -e "${YELLOW}🌊   got      ${got:-<unreadable>}${RESET}" >&2
+    return 0
+}
+
+mw_verify_latest_signature() {
+    # mw_verify_latest_signature <latest.toml 的内容> <它的 URL>
+    #
+    # 没有公钥就整段跳过；有公钥但下载不到 .sig（404）也算「这一版没签名」——
+    # 实验期这是常态，不能当错误。
+    local data="$1" url="$2"
+    [[ -n "${MACWAVE_RSA_PUB:-}" ]] || return 0
+
+    local tmp sig status=0
+    tmp="$(mktemp)"
+    sig="$(mktemp)"
+    printf '%s\n' "$data" > "$tmp"
+    curl -fsSL --max-time 30 ${CURL_CACERT:+--cacert "$CURL_CACERT"} \
+        -o "$sig" "$url.sig" 2>/dev/null || status=$?
+    if [[ "$status" -ne 0 ]]; then
+        mw_signature_note "🌊 No signature for the self-update data (this release predates signing)." \
+            "🌊 这份自更新数据没有签名（早于签名制度，属正常情况）。"
+        rm -f "$tmp" "$sig"
+        return 0
+    fi
+
+    if openssl dgst -sha256 -verify "$MACWAVE_RSA_PUB" -signature "$sig" "$tmp" > /dev/null 2>&1; then
+        mw_signature_note "🌊 Self-update data: signature OK." "🌊 自更新数据：签名校验通过。"
+    elif [[ "${MACWAVE_STRICT_HASHES:-}" == "1" ]]; then
+        echo -e "${RED_BOLD}🌊 Error: the self-update data is not signed by the trusted key.${RESET}" >&2
+        rm -f "$tmp" "$sig"
+        exit 1
+    else
+        mw_signature_note "🌊 Warning: the self-update data is not signed by the trusted key (continuing)" \
+            "🌊 警告：自更新数据的签名不对（继续）"
+    fi
+    rm -f "$tmp" "$sig"
+    return 0
+}
+
+
 # ==========================================
 # 辅助函数：将路径中的 $HOME 替换为 ~
 # ==========================================
@@ -1177,6 +1257,10 @@ ENV_BRANCH="${MACWAVE_BRANCH:-}"
 
 MACWAVE_VERSION="$(read_toml_string "$LATEST_VERSION_DATA" version)"
 LATEST_BRANCH="$(read_toml_string "$LATEST_VERSION_DATA" branch)"
+# 4.4 实验性签名：钉住即将被 bash 执行的那个脚本（空 = 这一版没带哈希）
+EXPECTED_UPDATE_COMMANDS_SHA256="$(read_toml_string "$LATEST_VERSION_DATA" update_commands_sha256)"
+# 验 latest.toml 自己的签名（没有公钥 / 没有 .sig 时静默跳过）
+mw_verify_latest_signature "$LATEST_VERSION_DATA" "$LATEST_DATA_URL"
 
 if [[ -n "$ENV_VERSION" && -n "$ENV_BRANCH" ]]; then
     # 版本号会进 URL 与 JSON，只接受安全的字符 —— 不给「拼个奇怪的值让后面的
@@ -1754,6 +1838,10 @@ fetch_update_commands() {
         exit 1
     fi
 
+    # 哈希对不上说明「即将被 bash 执行的东西」不是发布时那一份。
+    # 4.4 只警告；MACWAVE_STRICT_HASHES=1 时才失败。
+    mw_check_integrity "update_commands.sh" "$UPDATE_COMMANDS_TMP" "$EXPECTED_UPDATE_COMMANDS_SHA256"
+
     if ! /bin/bash -n "$UPDATE_COMMANDS_TMP" 2>/dev/null; then
         echo -e "${RED_BOLD}🌊 Error: the update commands for $MACWAVE_VERSION are not valid shell.${RESET}"
         echo -e "${RED_BOLD}🌊 Nothing was installed. Please report this to the administrator.${RESET}"
@@ -1978,6 +2066,10 @@ MACWAVE_SILENT="$([ "$CLI_CI" = "true" ] && echo 1 || echo "")"
 # 更新脚本（update_commands.sh）自己也在打印，靠这个变量把 --raw 传下去。
 # 老版本的更新脚本不认识它 —— 那时只是更新脚本自己带 🌊，不影响安装结果。
 MACWAVE_RAW="$([ "$CLI_RAW" = "true" ] && echo 1 || echo "")"
+# 这一版带了逐文件哈希才开校验；没带就不开，让更新脚本保持旧行为。
+if [[ -n "$EXPECTED_UPDATE_COMMANDS_SHA256" ]]; then
+    export MACWAVE_WANT_HASHES=1
+fi
 export MACWAVE_NEED_SUDO MACWAVE_SILENT MACWAVE_RAW
 
 if mw_dry_run; then

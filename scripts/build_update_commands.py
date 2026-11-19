@@ -28,6 +28,7 @@
 #   老逻辑继续跑，重试即可。
 
 import argparse
+import hashlib
 import subprocess
 import sys
 from pathlib import Path
@@ -121,12 +122,43 @@ def sanitize(paths, source):
     return sorted(kept), dropped
 
 
-def want_lines(paths):
+def want_lines(paths, digests=None):
+    """生成 `want <路径> <0|1> <sha256>` 三列。
+
+    第三列是 4.4 起的实验性签名：哈希写进清单，客户端据此判断「下到的字节是不是
+    发布时那一份」。列缺失或为空时客户端退回旧行为（只靠 TLS），所以老版本客户端
+    看到三列也只是忽略第三列 —— 这一列是**纯加法**。
+    """
     lines = []
     for path in paths:
         executable = "1" if path.endswith(".sh") else "0"
-        lines.append(f"    want {path} {executable}")
+        digest = (digests or {}).get(path, "")
+        lines.append(f"    want {path} {executable} {digest}".rstrip())
     return "\n".join(lines)
+
+
+def file_digests(paths, repo, ref=None):
+    """每个文件的 sha256；读不到就留空（那一行退回「不校验」）。
+
+    ref 给定时读 git 对象里的字节（发布产物必须来自 tag / 分支，而不是工作区），
+    否则读工作区 —— `--files` 模式就是这么用的，它本来就允许带未提交的内容。
+    """
+    digests = {}
+    for path in paths:
+        data = None
+        if ref:
+            result = subprocess.run(["git", "-C", str(repo), "cat-file", "blob", f"{ref}:{path}"],
+                                    capture_output=True)
+            if result.returncode == 0:
+                data = result.stdout
+        else:
+            try:
+                data = (repo / path).read_bytes()
+            except OSError:
+                data = None
+        if data is not None:
+            digests[path] = hashlib.sha256(data).hexdigest()
+    return digests
 
 
 def list_lines(paths):
@@ -209,18 +241,27 @@ def main():
         for path, why in dropped:
             print(f"     - {path}  ({why})", file=sys.stderr)
 
+    digests = file_digests(files, REPO_DIR, None if source == "--files" else args.ref)
+    missing = [path for path in files if path not in digests]
+    if missing:
+        # 没有哈希 = 这一行不校验。发布时静默漏掉几个，等于签名只覆盖一半。
+        print(f"🌊 Warning: no sha256 for {len(missing)} file(s): {missing}", file=sys.stderr)
+
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(TEMPLATE
                         .replace("@@VERSION@@", args.version)
                         .replace("@@BRANCH@@", branch)
-                        .replace("@@FULL@@", want_lines(files))
+                        .replace("@@FULL@@", want_lines(files, digests))
                         .replace("@@FULL_FILES@@", list_lines(files))
-                        .replace("@@DELTA@@", want_lines(delta)))
+                        .replace("@@DELTA@@", want_lines(delta, digests)))
     args.out.chmod(0o755)
 
     print(f"🌊 {args.out}")
     print(f"   version {args.version}  branch {branch}")
     print(f"   full {len(files)} file(s), delta {len(delta)} file(s)")
+    # 这一行是给 latest.toml 用的：客户端先验 latest.toml 的签名，再用这里记下的
+    # 哈希确认「即将被 bash 执行的那个脚本」没被换过。
+    print(f"   update_commands_sha256 = {hashlib.sha256(args.out.read_bytes()).hexdigest()}")
     return 0
 
 

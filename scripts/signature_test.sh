@@ -121,6 +121,10 @@ sys.path[:0] = [str(repo / name) for name in os.environ.get("PYTHONPATH", "").sp
 sys.path.insert(0, str(repo / "net"))
 import signature
 
+# 仓库里的 Keys/ 现在有真公钥、白名单里也有真指纹；这几节测的是「验签语义」，
+# 用的是临时钥，所以先把白名单清空。白名单本身的行为由下面的 PIN_CHECK 单独测。
+signature.PINNED_FINGERPRINTS = ()
+
 work = os.environ["WORK"]
 base = os.path.join(work, "base")
 expr = sys.argv[2]
@@ -161,6 +165,9 @@ import signature
 
 work = os.environ["WORK"]
 base = os.path.join(work, "base")
+
+saved = signature.PINNED_FINGERPRINTS
+signature.PINNED_FINGERPRINTS = ()      # 先用空名单把临时钥读出来
 keys = signature.public_keys(base)
 fprs = set()
 for key in keys:
@@ -190,6 +197,7 @@ if fprs:
         problems.append("白名单指向真实指纹时，反而把钥匙筛掉了")
     signature.PINNED_FINGERPRINTS = original
 
+signature.PINNED_FINGERPRINTS = saved
 print("; ".join(problems))
 PY
 )
@@ -210,6 +218,7 @@ repo = Path(sys.argv[1])
 sys.path.insert(0, str(repo / "net"))
 import signature
 
+signature.PINNED_FINGERPRINTS = ()
 work = os.environ["WORK"]
 result, lines = signature.verify_detached(
     os.path.join(work, "SHA256SUMS"), os.path.join(work, "SHA256SUMS.asc"),

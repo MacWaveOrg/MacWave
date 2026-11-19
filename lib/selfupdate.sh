@@ -206,6 +206,67 @@ if [[ -n "${MACWAVE_SKIP_SSL:-}" ]]; then
     CURL_LIMITS="${CURL_LIMITS:-} -k"
 fi
 
+# -------------------- 实验性签名校验（4.4） --------------------
+#
+# 与 lib/install.sh 里那一段完全相同（两份脚本都是 curl | bash 执行的，没法
+# source，只能各带一份）；scripts/tls_test.sh 那种「两份实现措辞必须一致」的做法
+# 在这里同样适用：改一处就要改另一处。
+#
+# 4.4 只**警告**：验签能力要客户端版本铺开之后才能真正强制。
+
+mw_sha256() {
+    openssl dgst -sha256 -r "$1" 2>/dev/null | awk '{print $1}'
+}
+
+mw_check_integrity() {
+    # mw_check_integrity <说明> <文件> <期望 sha256>（空期望值 = 这一版没带哈希）
+    local what="$1" file="$2" expect="$3" got
+    [[ -n "$expect" ]] || return 0
+    got="$(mw_sha256 "$file")"
+    [[ "$got" == "$expect" ]] && return 0
+    if [[ "${MACWAVE_STRICT_HASHES:-}" == "1" ]]; then
+        echo -e "${RED_BOLD}🌊 Error: $what does not match the signed data.${RESET}" >&2
+        echo -e "${RED_BOLD}🌊   expected $expect${RESET}" >&2
+        echo -e "${RED_BOLD}🌊   got      ${got:-<unreadable>}${RESET}" >&2
+        exit 1
+    fi
+    echo -e "${YELLOW}🌊 Warning: $what does not match the signed data (continuing)${RESET}" >&2
+    echo -e "${YELLOW}🌊   expected $expect${RESET}" >&2
+    echo -e "${YELLOW}🌊   got      ${got:-<unreadable>}${RESET}" >&2
+    return 0
+}
+
+mw_verify_latest_signature() {
+    # mw_verify_latest_signature <latest.toml 的内容> <它的 URL>
+    # 没有公钥就跳过；有公钥但 .sig 404 也算「这一版没签名」（实验期常态）。
+    local data="$1" url="$2"
+    [[ -n "${MACWAVE_RSA_PUB:-}" ]] || return 0
+
+    local tmp sig status=0
+    tmp="$(mktemp)"
+    sig="$(mktemp)"
+    printf '%s\n' "$data" > "$tmp"
+    curl -fsSL --max-time "$METADATA_TIMEOUT" ${CURL_CACERT:+--cacert "$CURL_CACERT"} \
+        -o "$sig" "$url.sig" 2>/dev/null || status=$?
+    if [[ "$status" -ne 0 ]]; then
+        echo -e "${YELLOW}🌊 No signature for the self-update data (release predates signing).${RESET}" >&2
+        rm -f "$tmp" "$sig"
+        return 0
+    fi
+    if openssl dgst -sha256 -verify "$MACWAVE_RSA_PUB" -signature "$sig" "$tmp" > /dev/null 2>&1; then
+        echo "🌊 Self-update data: signature OK"
+    elif [[ "${MACWAVE_STRICT_HASHES:-}" == "1" ]]; then
+        echo -e "${RED_BOLD}🌊 Error: the self-update data is not signed by the trusted key.${RESET}" >&2
+        rm -f "$tmp" "$sig"
+        exit 1
+    else
+        echo -e "${YELLOW}🌊 Warning: the self-update data is not signed by the trusted key (continuing)${RESET}" >&2
+    fi
+    rm -f "$tmp" "$sig"
+    return 0
+}
+
+
 # ==========================================
 # 目标仓库、分支与版本
 # ==========================================
@@ -592,6 +653,10 @@ if [[ -z "$VERSION" ]]; then
     VERSION="$(read_toml_string "$VERSION_DATA" version)"
 fi
 
+# 4.4 实验性签名：钉住即将被 bash 执行的那个脚本（空 = 这一版没带哈希）
+EXPECTED_UPDATE_COMMANDS_SHA256="$(read_toml_string "$VERSION_DATA" update_commands_sha256)"
+mw_verify_latest_signature "$VERSION_DATA" "$VERSION_DATA_URL"
+
 if [[ -z "$VERSION" ]]; then
     echo -e "${RED_BOLD}🌊 Error: Cannot determine the target version.${RESET}"
     exit 1
@@ -657,6 +722,9 @@ if ! fetch_to_file "$UPDATE_COMMANDS_URL" "$UPDATE_COMMANDS_TMP" "$FILE_TIMEOUT"
     exit 1
 fi
 
+# 哈希对不上说明「即将被 bash 执行的东西」不是发布时那一份。
+mw_check_integrity "update_commands.sh" "$UPDATE_COMMANDS_TMP" "$EXPECTED_UPDATE_COMMANDS_SHA256"
+
 if ! /bin/bash -n "$UPDATE_COMMANDS_TMP" 2>/dev/null; then
     echo -e "${RED_BOLD}🌊 Error: the update commands for $VERSION are not valid shell.${RESET}"
     echo -e "${RED_BOLD}🌊 Nothing was updated. Please report this to the administrator.${RESET}"
@@ -675,6 +743,10 @@ export MACWAVE_FILE_TIMEOUT="$FILE_TIMEOUT"
 MACWAVE_NEED_SUDO="$([ "$NEED_SUDO" = "true" ] && echo 1 || echo "")"
 export MACWAVE_NEED_SUDO
 export MACWAVE_SILENT=""
+# 这一版带了逐文件哈希才开校验；没带就不开，让更新脚本保持旧行为。
+if [[ -n "$EXPECTED_UPDATE_COMMANDS_SHA256" ]]; then
+    export MACWAVE_WANT_HASHES=1
+fi
 
 if ! /bin/bash "$UPDATE_COMMANDS_TMP"; then
     echo -e "${RED_BOLD}🌊 Error: the update commands for $VERSION failed.${RESET}" >&2
