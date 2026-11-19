@@ -374,6 +374,35 @@ rsync -a -e "ssh -o ControlPath=$HOME/.ssh/cm-lw" \
 
 cron 定在 **03:23**，排在巡检（04:17）之前 —— 先同步再体检，体检看到的就是同步后的状态。
 
+### 发版之后主动触发一次
+
+cron 一天只跑一次（03:23），所以**发完版要自己踢一脚**，别等第二天：
+
+```bash
+# Mac 上一条命令：复用已有的 ssh 连接（ControlPath），跑完把结论打出来
+ssh -o ControlPath=$HOME/.ssh/cm-lw root@<服务器> \
+  '/bin/bash /root/mirror-sync/sync-run.sh; tail -3 /root/mirror-sync/history.log'
+
+# 先看一眼会动哪些树、不写文件
+ssh -o ControlPath=$HOME/.ssh/cm-lw root@<服务器> \
+  '/bin/bash /root/mirror-sync/mirror-sync.sh --dry-run'
+```
+
+`sync-run.sh` 是 cron 用的那个包装：跑 `mirror-sync.sh` → 往 `history.log` 记一行 →
+失败建 `ALERT`、成功删 `ALERT`。直接调 `mirror-sync.sh` 也可以，只是不留 `history.log`。
+
+同步完的三行自检（把 `<镜像域>` 换掉）：
+
+```bash
+curl -fsSL https://<镜像域>/MacWave/selfupdate/macwavedata/latest.toml | grep ^version
+curl -fsSL https://<镜像域>/MacWave/selfupdate/rcdata/latest.toml | grep ^version
+curl -fsS -o /dev/null -w "%{http_code}\n" https://<镜像域>/MacWave/core/4.4/lib/selfupdate.sh
+```
+
+第一步先验「指针到了」，第二步验「RC 指针也到了」（RC 与正式版是两个文件，最容易
+只同步一半），第三步验「代码树到了」—— 前两步 200、第三步 404 是典型症状：探针同步
+了、发布分支还没进分支表。
+
 ### 三种跑法
 
 ```bash
