@@ -258,8 +258,9 @@ write_uname() {
     chmod +x "$STUB_BIN/uname"
 }
 write_sw_vers() {
-    printf '#!/bin/sh\ncase "$1" in\n  -productName) echo "%s" ;;\n  *) exit 1 ;;\nesac\n' "$1" \
-        > "$STUB_BIN/sw_vers"
+    # write_sw_vers <productName> [productVersion]；版本默认给一个够新的值
+    printf '#!/bin/sh\ncase "$1" in\n  -productName) echo "%s" ;;\n  -productVersion) echo "%s" ;;\n  *) exit 1 ;;\nesac\n' \
+        "$1" "${2:-14.4}" > "$STUB_BIN/sw_vers"
     chmod +x "$STUB_BIN/sw_vers"
 }
 run_bare() {
@@ -302,6 +303,44 @@ for device in iPhone15,3 iPad13,4; do
         fail "hw.model=$device 没认成 iOS（rc=${RC}）"
     fi
 done
+
+# -------------------- 7d. macOS 版本下限：10.15 Catalina --------------------
+#
+# 低于 10.15 连捆绑的便携 Python 都起不来（那棵树里 Mach-O 的 minos 就是 10.15）。
+# 12（Monterey）才是端到端实测过的下限，但这里只拦硬地板。
+
+write_sysctl "Mac16,13"
+for old_version in 10.13.6 10.14.6; do
+    write_sw_vers macOS "$old_version"
+    run_bare --dry-run --dir-option=1
+    if [[ "$RC" -eq 2 ]] && has "$OUT" "$old_version" && has "$OUT" "10.15" && has "$OUT" "Catalina"; then
+        pass "macOS ${old_version}：拒绝，并说明需要 10.15 Catalina 或更高"
+    else
+        fail "macOS ${old_version} 没有被拒绝（rc=${RC}）"
+    fi
+done
+
+for ok_version in 10.15 10.15.7 11.2 14.4; do
+    write_sw_vers macOS "$ok_version"
+    run_bare --dry-run --dir-option=1
+    if [[ "$RC" -eq 0 ]] && has "$OUT" "Dry run" && hasnt "$OUT" "too old"; then
+        pass "macOS ${ok_version}：放行"
+    else
+        fail "macOS ${ok_version} 被误拦（rc=${RC}）"
+    fi
+done
+
+# 读不到版本号时不判：宁可放行，也不要在读不出信息时把正常机器挡在门外
+printf '#!/bin/sh\ncase "$1" in\n  -productName) echo "macOS" ;;\n  *) exit 1 ;;\nesac\n' \
+    > "$STUB_BIN/sw_vers"
+chmod +x "$STUB_BIN/sw_vers"
+run_bare --dry-run --dir-option=1
+if [[ "$RC" -eq 0 ]] && hasnt "$OUT" "too old"; then
+    pass "读不到 macOS 版本号：不判、放行"
+else
+    fail "读不到版本号时把机器拦掉了（rc=${RC}）"
+fi
+write_sw_vers macOS
 
 # hw.machine 只当补充：报出 iPhone*/iPad* 才算数，报 arm64 不足以证明是 Mac。
 printf '#!/bin/sh\ncase "$*" in\n  *hw.machine*) echo "iPhone14,2" ;;\n  *) exit 1 ;;\nesac\n' \

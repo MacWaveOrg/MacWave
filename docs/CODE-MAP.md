@@ -124,7 +124,8 @@
 0. 平台守卫（`mw_platform`）：`macos` / `ios` / `android` / `chromeos` / `linux` / `unknown` 六种，
    非 macOS 一律拒绝并指路 —— Linux 去 LinuxWave，越狱的 iPhone/iPad 单独说一段，
    Android 明说两个项目都不装那里，ChromeOS 指出容器不算桌面 Linux，认不出的平台报出
-   `uname -s` 原值。`MACWAVE_TEST` 下不判（沙箱里宿主是 Linux 很正常）
+   `uname -s` 原值。认成 macOS 后还要过版本下限（< 10.15 Catalina 拒绝）。
+   `MACWAVE_TEST` 下不判（沙箱里宿主是 Linux 很正常）
 1. 命令行参数解析（**只解析一遍**，纯计算、无副作用、无网络）
 2. 呈现层：装上 `--raw` 过滤器、定语言（必须早于第一条输出）
 3. `--help` 的连用规则（只打用法、不安装）

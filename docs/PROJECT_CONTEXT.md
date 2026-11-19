@@ -51,7 +51,8 @@ MacWave 的配置只有这一处：**用哪些环境变量、默认值是什么�
 隐藏它们工作的，而老式有根越狱根本没有 `/var/jb`。认出 iOS 时单独说一段为什么不该在这台
 设备上装，并明确「什么都没改」，Linux 之上再分 Android（`ANDROID_ROOT`/`getprop`，两个项目都不装那里）与 ChromeOS
 （`/etc/lsb-release` 里的 `CHROMEOS_*`，指向 LinuxWave）；其余平台报出 `uname -s` 原值。
-都以退出码 2 收场。
+都以退出码 2 收场。认成 macOS 之后再看版本：`sw_vers -productVersion` 低于 **10.15 Catalina**
+直接拒绝并说明下限（再往下连捆绑的便携 Python 都起不来），读不到版本号时不判。
 `MACWAVE_TEST` 下不判平台 —— 沙箱里宿主是 Linux 是常态。目录菜单按架构分叉（Intel 多一个 `/usr/local/macwave`），自定义项编号也随之变化。`MACWAVE_VERSION` 与代码来源分支都从 configdata 的 `versiondata/latest_version`（`version` / `branch`）读取，不写死在脚本里，保证「下载的代码」与「写进 VERSION.json 的版本号」对应同一版本 |
 | `uninstall.sh` | 卸载 MacWave 本体：读两处配置定位 `BASE_DIR`（都读不到则遍历候选路径，Intel 才把 `/usr/local/macwave` 算进候选）、确认后删除安装目录与两处配置目录、清掉 rc 文件里的 PATH 行、最后自删。确认从 **`/dev/tty`** 读，读不到就**中止并退 1**（删除不可逆，stdin 是 EOF 时不能当同意；无人值守请显式 `--force`）。自删有守卫：只有 `$0` 是**含本脚本标记的普通文件**时才删 —— 文档推荐的 `/bin/bash -c "$(curl ...)"` 下 `$0` 是解释器路径或 `--`，旧写法会把 `/bin/bash` 删掉。支持批量/脚本化卸载：`--force` 跳过确认、`--remove-user`（仅为与 LinuxWave 的参数兼容 —— MacWave 没有专用账号，实际不做任何事）、`-h/--help`。退出码有语义：`0` 完成（含「本来就没装」）、`1` 用法错误或无终端可确认、`2` 权限不足（sudo 跑不起来）、`3` 部分失败 —— 删除是「尽量多删、最后汇总」，单个目标删不掉不会中断后面的配置目录与 rc 清理，没删掉的清单写到 stderr |
 | `selfupdate.py` | `wave selfupdate`：拉 `configdata` 分支的 `versiondata/latest_version`，取其 `version` 与当前生效的 `VERSION.json` 比较（PEP 440，见 `lib/versioncompare.py`：`2.3` == `2.3.0`，而 `4.4.0-beta1` 低于 `4.4.0`）；已是最新则直接返回（`--dry-run` 在**问协议之前**就打印「会从哪个版本更新到哪个版本、分支、协议会不会问、超时」然后退 0，不下载、不写 `AGREEMENT.json`、不跑脚本），否则把 `update_command` 中 `<<<` / `>>>` 之间的内容交给 `/bin/bash -c` 执行（用环境变量 `MACWAVE_UPDATE_VERSION` / `MACWAVE_UPDATE_BRANCH` 把目标版本与分支传下去）。因为 `bash -c "$(curl …)"` 在 curl 失败时仍返回 0，执行完会**回读 `VERSION.json` 复核**，没变就报错 |

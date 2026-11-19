@@ -1002,6 +1002,39 @@ mw_platform() {
     esac
 }
 
+# 版本下限：10.15 Catalina。再往下连捆绑的便携 Python 都起不来 —— 那棵树里
+# 每个 Mach-O 的 minos 就是 10.15；更别说 Xcode 命令行工具与 SIP 判定那套。
+#
+# 只拦真正的硬地板。12（Monterey）才是端到端实测过的下限，但 10.15 / 11 上装
+# 得成不成让用户自己试，不替他们决定；这条判断的标准是「一定装不上」。
+#
+# 读不到版本号时不判：宁可放行，也不要在读不出信息时把一台正常机器挡在门外。
+MACWAVE_OLD_MACOS=""
+mw_macos_version_ok() {
+    local raw major minor
+    raw="$("${MACWAVE_SW_VERS:-/usr/bin/sw_vers}" -productVersion 2>/dev/null || true)"
+    if [[ -z "$raw" ]]; then
+        return 0
+    fi
+    major="${raw%%.*}"
+    minor="${raw#*.}"
+    minor="${minor%%.*}"
+    if [[ ! "$major" =~ ^[0-9]+$ ]]; then
+        return 0
+    fi
+    if [[ ! "$minor" =~ ^[0-9]+$ ]]; then
+        minor=0
+    fi
+    if [[ "$major" -gt 10 ]]; then
+        return 0
+    fi
+    if [[ "$major" -eq 10 && "$minor" -ge 15 ]]; then
+        return 0
+    fi
+    MACWAVE_OLD_MACOS="$raw"
+    return 1
+}
+
 mw_require_macos() {
     local platform linuxwave_cmd
     # 指路用的命令只写一份。超时也一起带上：这条是打印给用户抄去执行的，
@@ -1013,6 +1046,13 @@ mw_require_macos() {
     fi
     platform="$(mw_platform)"
     if [[ "$platform" == "macos" ]]; then
+        if ! mw_macos_version_ok; then
+            mw_say "🌊 macOS ${MACWAVE_OLD_MACOS} is too old — MacWave needs macOS 10.15 (Catalina) or later." \
+                   "🌊 macOS ${MACWAVE_OLD_MACOS} 版本过低 —— MacWave 需要 macOS 10.15（Catalina）或更高。"
+            mw_say "🌊 Nothing was changed. Upgrade macOS, then run this installer again." \
+                   "🌊 什么都没改。升级 macOS 之后再跑一次这个安装脚本。"
+            exit 2
+        fi
         return 0
     fi
 
