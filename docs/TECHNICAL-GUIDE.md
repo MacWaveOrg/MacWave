@@ -420,6 +420,29 @@ https://github.com/MacWaveOrg/Bottle/releases/download/jq/jq%401.8.2.arm64
 `-F`/`--force` 的优先级高于 `-s`，无人值守场景靠它放行。字段缺失时静默放行，
 因为索引里绝大多数记录还没有它。完整行为矩阵见 [`AGENTS.md`](../AGENTS.md)。
 
+### 7.1.1 `@` 后面空着 = 忘了写版本号
+
+`wave install jq@` 里的 `@` 不是「版本号为空」，而是「这里本该有版本号，漏了」。
+这个区别决定了它该怎么处理：
+
+- **不能当成「没指定版本」退回最新版。** 写下 `@` 就是想钉一个具体版本，把 `@`
+  悄悄丢掉等于换掉了用户的意图。
+- **也不该走到版本号白名单那里报 `Unsafe package version: ''`。** 那三行「允许哪些
+  字符」是给「塞了非法字符」准备的，对一个漏写毫无帮助 —— 用户只会以为 MacWave
+  不喜欢他的包名。
+
+所以判断放在解析 `name@version` 的那一步，早于任何网络请求（连版本列表都不取）：
+
+```
+🌊 Error   version missing after "@"
+           wave install jq@
+                          ^
+🌊 Next    wave install jq@1.8.2
+```
+
+插入符的位置是按 `wave install <输入的包名 token>` 的长度算出来的，所以
+`wave install wget@` 也会指在它自己的 `@` 上。
+
 ### 7.2 两种安装形态
 
 同一套安装核心被两种形态复用。

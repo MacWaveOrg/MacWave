@@ -1,6 +1,6 @@
 # MacWave 4.4.1
 
-Released: 2026-11-19 · build `323D1524` · branch `4.4` ·
+Released: 2026-11-19 · build `323D1547` · branch `4.4` ·
 previous release [4.4.0](RELEASE-4.4.0.md)
 
 A one-bug release. 4.4.0 could record a version it had not actually installed, and once it
@@ -43,6 +43,15 @@ is why the file had to be written early — both moved together).
   repository; nothing in the installed tree reads it, but a 404 on it aborted the whole
   install. The install list drops from 73 files to 72 (`Keys/` keeps its public keys).
 
+- **`wave install jq@` says what is actually wrong.** It used to fall through to the
+  version whitelist and be reported as `Unsafe package version: ''`, followed by three
+  lines about which characters are allowed — useless for a missing version, and it made
+  people think their package name was rejected. `@` with nothing after it means "the version
+  was forgotten", not "an empty version": it is refused where it is parsed, with the caret
+  pointing at the gap and one copy-pasteable example. It does **not** quietly fall back to
+  the newest version — typing `@` is how you pin a version, so dropping it would change what
+  the user asked for.
+
 ## Upgrading
 
 | From | How |
@@ -70,7 +79,7 @@ Signing key fingerprint: `7220E218395DE865AACC339167F14E52D0E229FB`
 
 # MacWave 4.4.1
 
-发布：2026-11-19 · 构建号 `323D1524` · 分支 `4.4` ·
+发布：2026-11-19 · 构建号 `323D1547` · 分支 `4.4` ·
 上一版 [4.4.0](RELEASE-4.4.0.md)
 
 一个 bug 的补丁版。4.4.0 有可能把「没装上的版本」记下来，而一旦记下，任何东西都不会
@@ -105,6 +114,12 @@ wave selfupdate 拿 4.4.0 和 4.4.0 比较，回答「已是最新」
   长得一模一样。
 - **`README.md` 不再下载。** 它是写给仓库读者看的说明，安装树里没人读，但它一 404
   就会中止整个安装。清单从 73 个文件降到 72 个（`Keys/` 里只留公钥）。
+
+- **`wave install jq@` 现在说的是真问题。** 以前它会一路走到版本号白名单，被报成
+  `Unsafe package version: ''`，再附三行「允许哪些字符」—— 对一个漏写毫无帮助，还让人
+  以为包的**名字**被拒了。`@` 后面空着意味着「忘了写版本」，不是「空版本号」：就地拒绝，
+  插入符指在漏写的位置，并给一行能直接照抄的示例。**不会**悄悄退回最新版 —— 写下 `@`
+  就是在钉版本，把 `@` 丢掉等于换掉用户的意图。
 
 ## 升级
 

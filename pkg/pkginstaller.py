@@ -934,6 +934,20 @@ def handle_install(input_string):
                 extra=f"package {raw_pkg}, --ver {ver_flag}",
                 hint="keep only one, e.g. wave install jq@1.8.2 or wave install jq --ver 1.8.2")
         ParsePkgVersion = raw_pkg.split("@", 1)[1].strip()
+        if not ParsePkgVersion:
+            # `@` 后面空着**不是**「输入了空版本号」，而是「忘了写版本号」——
+            # 这个区别决定了怎么处理：
+            #   · 不能当成「没指定版本」就退回最新版：用户写下 `@` 就是想钉一个
+            #     具体版本，把 `@` 丢掉等于悄悄换掉他的意图；
+            #   · 也不该继续走到版本号白名单那里被报成 `Unsafe package version: ''`，
+            #     那三行「允许哪些字符」对一个漏写毫无帮助。
+            # 所以在这里就地停下：说清是什么毛病，插入符指到漏写的位置，再给一行
+            # 能直接照抄的示例。早于任何网络请求 —— 连版本列表都不去取。
+            shown = f"wave install {raw_pkg}"
+            steplog.fail(
+                'version missing after "@"',
+                extra=f"{shown}\n{' ' * (len(shown) - 1)}^",
+                hint="wave install jq@1.8.2")
         steplog.detail(f"version from the package name: {ParsePkgVersion}")
     elif ver_flag is not None:
         if not ver_flag:
