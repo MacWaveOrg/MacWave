@@ -391,15 +391,18 @@ ssh -o ControlPath=$HOME/.ssh/cm-lw root@<服务器> \
 `sync-run.sh` 是 cron 用的那个包装：跑 `mirror-sync.sh` → 往 `history.log` 记一行 →
 失败建 `ALERT`、成功删 `ALERT`。直接调 `mirror-sync.sh` 也可以，只是不留 `history.log`。
 
-**同步完怎么自检**（镜像开了 `auth_basic`，所以裸 `curl` 只会拿到 401，别拿它当失败）
+**同步完怎么自检**（镜像开了 `auth_basic`，裸 `curl` 一律 401，别拿它当失败 ——
+2026-11-19 实测 `mirror.repohub.top` 上六条客户端路径匿名全是 401）
 
 最省事的是在服务器上直接看文件 —— 不经过认证层：
 
 ```bash
-ssh -o ControlPath=$HOME/.ssh/cm-lw root@<服务器> 'M=/www/wwwroot/mirror.repohub.top/MacWave
-  grep ^version $M/selfupdate/macwavedata/latest.toml
-  grep ^version $M/selfupdate/rcdata/latest.toml
-  ls -l $M/core/4.4/lib/selfupdate.sh' 2>/dev/null
+ssh -o ControlPath=$HOME/.ssh/cm-lw root@mirror.repohub.top \
+  'M=/www/wwwroot/mirror.repohub.top/MacWave
+   grep ^version $M/selfupdate/macwavedata/latest.toml
+   grep ^version $M/selfupdate/rcdata/latest.toml
+   grep ^build_number $M/selfupdate/macwavedata/latest.toml
+   ls -l $M/core/4.4/lib/selfupdate.sh $M/selfupdate/macwavedata/latest.toml.sig'
 ```
 
 要验「外面能不能取到」，就带凭据（`curl -u 用户名` 会**交互式问口令**，别把口令写进命令行，
@@ -409,7 +412,7 @@ ssh -o ControlPath=$HOME/.ssh/cm-lw root@<服务器> 'M=/www/wwwroot/mirror.repo
 for u in selfupdate/macwavedata/latest.toml selfupdate/rcdata/latest.toml \
          core/4.4/lib/selfupdate.sh; do
   printf '%-46s ' "$u"
-  curl -u '<账号>' -s -o /dev/null -w '%{http_code}\n' "https://<镜像域>/MacWave/$u"
+  curl -u '<账号>' -s -o /dev/null -w '%{http_code}\n' "https://mirror.repohub.top/MacWave/$u"
 done
 ```
 
@@ -421,7 +424,7 @@ done
 for u in selfupdate/macwavedata/latest.toml selfupdate/macwavedata/latest.toml.sig \
          selfupdate/macwavedata/4.4.0/update_commands.sh core/4.4/lib/install.sh; do
   printf '%-52s ' "$u"
-  curl -s -o /dev/null -w '%{http_code}\n' "https://<镜像域>/MacWave/$u"   # 不加 -u
+  curl -s -o /dev/null -w '%{http_code}\n' "https://mirror.repohub.top/MacWave/$u"   # 不加 -u
 done
 ```
 
