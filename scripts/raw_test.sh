@@ -265,6 +265,8 @@ not_ok "install.sh --raw 输出里没有 ESC 转义序列" "$out" "$(printf '\03
 ok     "install.sh --raw 仍在走流程（有 Dry run 行）" "$out" "Dry run"
 not_ok "install.sh --raw 去掉了 WAVE 艺术字"        "$out" "█"
 ok     "对照：不带 --raw 时有艺术字"                "$(install_dry)" "█"
+not_ok "install.sh --raw 连结尾的装饰（~~~ / 诗句）也去掉" "$out" "tide rises"
+ok     "对照：不带 --raw 时有那句诗"                "$(install_dry)" "tide rises"
 
 out=$(/bin/bash "$INSTALL_SH" --help --raw 2>&1)
 not_ok "--help --raw 也没有 🌊"          "$out" "🌊"
