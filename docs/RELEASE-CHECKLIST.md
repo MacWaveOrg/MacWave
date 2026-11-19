@@ -61,31 +61,40 @@ git switch -c 4.2 main
 每次发版都要换一个，格式固定 8 个字符：
 
 ```
-318F1457
+323R1250
 └┬┘│└─┬─┘
  │ │  └── 发布时刻 HHMM（24 小时制）
- │ └───── 周几的字母：周一=A、周二=B、周三=C、周四=D、周五=E、周六=F、周日=G
- └─────── 当天的「年内第几天」，3 位补零（01-01 → 001，12-31 → 365 或 366）
+ │ └───── 字母：见下表（正式版 A–G／H 特殊日期，Beta I–O／P，RC 固定 R）
+ └─────── 今天距离 2026-01-01 的天数，3 位补零（2026-01-01 → 001）
 ```
 
-例：2026-11-14 是周六、年内第 318 天，14:52 发布 → `318F1457`。
+字母规则：
 
-取当前值一行命令（别手算，闰年与周边界都是坑）：
+| 普通版本 | Beta 版 | RC 版本 |
+| --- | --- | --- |
+| `A`-`G` 对应周一-周日，`H` 为特殊日期 | `I`-`O` 对应周一-周日，`P` 为特殊日期 | `R` |
+
+例：2026-11-19 是周四、距年初 323 天，12:50 发布一个 RC → `323R1250`。
+
+取当前值一行命令（别手算，闰年与跨年是坑）：
 
 ```bash
-printf '%s%s%s\n' "$(date +%j)" "$(date +%u | tr '1-7' 'ABCDEFG')" "$(date +%H%M)"
+printf '%sA%s\n' "$(( ( $(date +%s) - $(date -j -f %Y-%m-%d 2026-01-01 +%s) ) / 86400 + 1 ))" "$(date +%H%M)"
+# Beta 把 A 换成当天的 I-O（周一=I）；RC 直接用 R
 ```
 
 三条容易错的地方：
 
-- **第四位是周几，不是「第几次构建」。** 4.3.3 之前所有构建号第四位都是 `A`
-  （`295A2033`、`300A1345`、`307A1409`、`313A1704`……），多数与真实周几不符 ——
-  这条规则以前没被实现过。**历史号不回改**：它只是个标识，改了反而让旧发布说明、
+- **第四位不是「第几次构建」。** 它编码的是渠道与周几：正式版 `A`-`G`、Beta `I`-`O`、
+  RC 永远是 `R`。4.3.3 之前所有构建号第四位都是 `A`，多数与真实周几不符 —— 这条
+  规则以前没被实现过。**历史号不回改**：它只是标识，改了会让旧发布说明、
   `Selfupdate/<版本>/` 目录与 tag 对不上。
-- **`HHMM` 只用于区分同一天内的多次发布**，不参与任何版本比较。客户端比的是
-  `version`（PEP 440，4.4 起由 `lib/versioncompare.py` 统一实现），构建号只显示给人看。
+- **`HHMM` 只用于区分同一天内的多次发布**，不参与版本比较。客户端比的是
+  `version`（PEP 440），版本相同时才比构建号的天数与时分（`lib/versioncompare.py`
+  的 `build_key` / `is_newer_build`），字母只给人看。
 - **三处必须写同一个值**：`configdata/versiondata/latest_version`、
-  `Selfupdate/macwavedata/latest.toml`、发布说明头部「发布日期 · 构建号」那一行。
+  对应渠道的探针（正式版 `macwavedata/latest.toml`、RC `rcdata/latest.toml`）、
+  发布说明头部「发布日期 · 构建号」那一行。
 
 ---
 
@@ -220,6 +229,50 @@ release_date = "YYYY-MM-DD"
 build_number = "<构建号，算法见一点六>"
 branch = "<新分支>"
 ```
+
+### 第 5.5 步：发 RC（渠道隔离，不要碰正式版探针）
+
+RC 走**自己的探针**，正式版用户完全看不到它：
+
+```
+Selfupdate/rcdata/latest.toml              ← RC 探针（只此一份，正式版探针不动）
+Selfupdate/macwavedata/<版本>/update_commands.sh   ← 两渠道共用，按版本冻结
+```
+
+**版本号**用 `4.4.1-rc`（PEP 440 会把没编号的 `-rc` 补成 `rc0`，所以同一个
+`X.Y.Z-rc` 反复发多次都合法）。**构建号**字母固定 `R`，例如 `323R1250`：
+
+```toml
+# Selfupdate/rcdata/latest.toml
+version = "4.4.1-rc"
+build = "323R1250"
+branch = "4.4-261119"          # RC 自己的分支，绝不能写 main
+update_commands_sha256 = "<第 4 步生成器打印的那一行>"
+```
+
+三条与正式版不同的地方：
+
+- **探针路径不同**（`rcdata/` 而不是 `macwavedata/`）。这正是为了让两者互不覆盖：
+  正式版探针每次发版都被改写，RC 一天可能发好几次。
+- **`version` 是预发布**，客户端据此选渠道。装的是 RC → `wave selfupdate` 只读
+  `rcdata/latest.toml`；装的是正式版 → 永远不读它。
+- **`build` 必填**。同一版本可能构建多次，只比 `version` 会得出「已是最新」。
+  构建号进入 `VERSION.json` 的 `build` 字段，比较规则见
+  `lib/versioncompare.py` 的 `newer_release()`。
+
+装一台 RC 试用（`MACWAVE_CHANNEL=rc` 让安装器读 RC 探针）：
+
+```bash
+MACWAVE_CHANNEL=rc /bin/bash -c \
+  "$(curl -fsSL https://github.com/MacWaveOrg/MacWave/releases/latest/download/install.sh)"
+```
+
+RC 渠道收尾（正式版已经比 RC 新）时，客户端会**全量**切到正式版：置
+`MACWAVE_FULL_INSTALL=1`，把安装树整体替换，而不是把正式版的增量铺在 RC 树上 ——
+后者就是 2026-11-15 那次「两条分支混装、wave 启动即崩」的成因。
+
+`latest.toml.sig` 对 RC 探针同样有效：签名的是探针内容，与它放在哪个路径无关。
+RC 探针建议也签，否则 `wave selfupdate` 在 RC 上会打「这份数据没有签名」的警告。
 
 ### 第 6 步：更新官网版本号与 Release 正文
 
@@ -481,6 +534,12 @@ MACWAVE_VERSION=4.4.0-beta2 MACWAVE_BRANCH=4.4 \
 正式版」。
 
 #### 签名：`SHA256SUMS` + `SHA256SUMS.asc`
+
+> **实验性支持（4.4 起）。** 客户端侧的验签与哈希钉住已经接进 `install.sh` /
+> `selfupdate.sh` / `update_commands.sh`，但**验不过只警告、不拦安装**：
+> 老客户端跑的是自己那份老脚本，逼它们验签等于让它们装不上。要变强制，得先让
+> 带签名对的版本铺开，再把 `MACWAVE_STRICT_HASHES` 默认打开（按客户端版本门控）。
+> 现状与开关见 `Keys/README.md`。
 
 资产传完之后再补两份文件，让**任何人**能核对「这批字节确实是 MacWave 发的」：
 
