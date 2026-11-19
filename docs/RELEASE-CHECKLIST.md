@@ -196,12 +196,21 @@ grep -E 'want (lib/(install|uninstall)\.sh|.*__pycache__|.*\.pyc)' /tmp/update_c
 > update_commands_sha256 = "…"   # 第 4 步生成器最后一行会打印出来
 > ```
 >
-> 同目录再放一份签名（机器验，openssl；给人验的 GPG 签名在 Release 附件里）：
+> 同目录再放一份签名（机器验，openssl；给人验的 GPG 签名在 Release 附件里）。
+> 私钥带口令，会问一次：
 >
 > ```bash
 > openssl dgst -sha256 -sign ~/MD/密钥/private/macwave-rsa.key \
 >     -out macwavedata/latest.toml.sig macwavedata/latest.toml
+>
+> # 发之前自己先验一遍，用的是仓库里那份公钥（= 客户端手里那份）
+> openssl dgst -sha256 -verify Keys/macwave-rsa.pub.pem \
+>     -signature macwavedata/latest.toml.sig macwavedata/latest.toml
 > ```
+>
+> 客户端验签用的公钥**内嵌在** `lib/install.sh` / `lib/selfupdate.sh` 里，
+> 与 `Keys/macwave-rsa.pub.pem` 逐字相同（`scripts/signature_test.sh` 会比对）。
+> 换钥那天记得跑 `python3 scripts/embed_rsa_pub.py`。
 >
 > 4.4 客户端拿到它会**只警告**不符；`MACWAVE_STRICT_HASHES=1` 时才失败。
 
