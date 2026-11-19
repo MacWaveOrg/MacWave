@@ -882,6 +882,143 @@ resolve_custom_dir() {
     BASE_DIR="$validated"
 }
 
+# -------------------- 平台守卫：MacWave 只装 macOS 软件 --------------------
+#
+# 再往下就会撞上 macOS 专属的东西：目录菜单里的 /usr/local、SIP 与系统卷密封的
+# 判定、csrutil、Xcode 命令行工具检查。与其装到一半报「csrutil: command not
+# found」，不如第一句就说清楚该去哪 —— Linux 由兄弟项目 LinuxWave 覆盖，两边的
+# 安装命令是同一个形状（releases/latest/download/install.sh）。
+#
+# 平台判断三条线索，按可靠性排：
+#   1. uname -s —— Darwin / Linux / 其它（FreeBSD、MSYS 之类）；
+#   2. Darwin 之上再问 sw_vers -productName —— iOS 也报 Darwin，光看内核分不出
+#      一台越狱的 iPad 和一台 Mac；
+#   3. sw_vers 读不到时（越狱环境里常常没有）退两步：看
+#      /System/Library/CoreServices/SystemVersion.plist 里的 ProductName，再看
+#      /var/jb（rootless 越狱的根前缀，macOS 上不会有）。
+#
+# 为什么值得为 iPhone 单独写一段：本项目的作者有个朋友真的这么干过 —— 在越狱的
+# iPhone 上跑了这个安装脚本，一路装到 /var/jb/macwave，看起来像成功了；随后每条
+# wave 命令都死在 macOS 有、iOS 没有的东西上（csrutil、Xcode 的命令行工具、
+# /usr/local），排查了半天才发现「这个包管理器本来就不该在这台设备上」。
+# 所以认出 iOS 时不但要拒绝，还要把话说得让人不必再试第二次。
+#
+# MACWAVE_TEST 下不判：那是在「把某个目录当作 /」的沙箱里跑同一份脚本，宿主是
+# Linux 完全正常（CircleCI 的 Linux 容器就是这么跑的）。
+mw_platform() {
+    # macos / ios / linux / unknown
+    local kernel sw_vers_bin product version_plist chromeos_release
+    chromeos_release="${MACWAVE_CHROMEOS_RELEASE:-/etc/lsb-release}"
+    kernel="$(uname -s 2>/dev/null || true)"
+    case "$kernel" in
+        Darwin)
+            sw_vers_bin="${MACWAVE_SW_VERS:-/usr/bin/sw_vers}"
+            product="$("$sw_vers_bin" -productName 2>/dev/null || true)"
+            case "$product" in
+                *iOS*|*iPhone*|*iPad*) echo ios; return 0 ;;
+                *macOS*|*Mac*) echo macos; return 0 ;;
+            esac
+            version_plist="/System/Library/CoreServices/SystemVersion.plist"
+            if [[ -r "$version_plist" ]] && grep -q "iPhone OS\|<string>iOS" "$version_plist" 2>/dev/null; then
+                echo ios
+                return 0
+            fi
+            if [[ -e /var/jb ]]; then
+                echo ios
+                return 0
+            fi
+            echo macos
+            ;;
+        Linux)
+            # Linux 内核之上还要分三种：Android（bionic、没有 /usr/local、没有
+            # 桌面发行版那套）、ChromeOS（Crostini 容器确实是 Linux）、以及普通
+            # 桌面 Linux。判据都只读环境与现成的文件，不装任何新工具。
+            #
+            # ANDROID_ROOT / ANDROID_DATA 由 Android 的 init 设，Termux 与 adb
+            # shell 里都有；getprop 是 Android 独有的系统命令。
+            if [[ -n "${ANDROID_ROOT:-}${ANDROID_DATA:-}" ]] \
+               || [[ -d /system/app && -d /data/data ]] \
+               || command -v getprop >/dev/null 2>&1; then
+                echo android
+            # ChromeOS 的容器里 /etc/lsb-release 带一串 CHROMEOS_* 变量；
+            # crossystem 是 Chromebook 上的固件查询命令。
+            elif [[ -r "$chromeos_release" ]] && grep -q "CHROMEOS" "$chromeos_release" 2>/dev/null; then
+                echo chromeos
+            elif command -v crossystem >/dev/null 2>&1; then
+                echo chromeos
+            else
+                echo linux
+            fi
+            ;;
+        *) echo unknown ;;
+    esac
+}
+
+mw_require_macos() {
+    local platform
+    if [[ -n "${MACWAVE_TEST:-}" ]]; then
+        return 0
+    fi
+    platform="$(mw_platform)"
+    if [[ "$platform" == "macos" ]]; then
+        return 0
+    fi
+
+    case "$platform" in
+        ios)
+            # 全部英文：越狱设备的终端 locale 不可预期。
+            mw_say "🌊 An iPhone or iPad — jailbroken, and running a macOS package manager on it."
+            mw_say "🌊 That has been tried before: the install went through to /var/jb/macwave and looked fine,"
+            mw_say "🌊 then every 'wave' command died on things iOS does not have — csrutil, Xcode's"
+            mw_say "🌊 command line tools, /usr/local. Nothing here is a step towards a working install."
+            mw_say "🌊 MacWave targets macOS only. Nothing was changed on this device."
+            mw_say "🌊 Set MACWAVE_TEST=<dir> only if you meant to run this in a sandbox."
+            exit 2
+            ;;
+        android)
+            # 手机终端里的 locale 不可预期，这段也全部英文。
+            mw_say "🌊 Android. That shell is Linux, but a different Linux: bionic libc, no /usr/local,"
+            mw_say "🌊 no Xcode tooling, and nothing MacWave would look for."
+            mw_say "🌊 MacWave targets macOS; LinuxWave targets desktop Linux. Neither installs here."
+            mw_say "🌊 Nothing was changed on this device."
+            exit 2
+            ;;
+        chromeos)
+            mw_say "🌊 ChromeOS — the terminal here is a Linux container, but not a desktop Linux." \
+                   "🌊 ChromeOS —— 这里的终端是个 Linux 容器，但不是桌面 Linux。"
+            mw_say "🌊 MacWave is macOS-only. For Linux (this container included), use LinuxWave:" \
+                   "🌊 MacWave 只装 macOS 软件。Linux（包括这个容器）请用 LinuxWave："
+            mw_say "🌊   https://linuxwave.org"
+            mw_say '🌊   /bin/bash -c "$(curl -fsSL https://github.com/LinuxWaveOrg/LinuxWave/releases/latest/download/install.sh)"'
+            exit 2
+            ;;
+        linux)
+            mw_say "🌊 MacWave installs macOS software; this machine is Linux." \
+                   "🌊 MacWave 装的是 macOS 软件 —— 这台机器是 Linux。"
+            mw_say "🌊 For Linux, use LinuxWave: https://linuxwave.org" \
+                   "🌊 Linux 请改用 LinuxWave：https://linuxwave.org"
+            mw_say '🌊   /bin/bash -c "$(curl -fsSL https://github.com/LinuxWaveOrg/LinuxWave/releases/latest/download/install.sh)"'
+            ;;
+        *)
+            mw_say "🌊 MacWave installs macOS software; this platform was not recognised." \
+                   "🌊 MacWave 装的是 macOS 软件 —— 认不出这个平台。"
+            mw_say "🌊 uname -s says: $(uname -s 2>/dev/null || echo unknown)" \
+                   "🌊 uname -s 报的是：$(uname -s 2>/dev/null || echo unknown)"
+            mw_say "🌊 On Linux use LinuxWave: https://linuxwave.org" \
+                   "🌊 在 Linux 上用 LinuxWave：https://linuxwave.org"
+            mw_say '🌊   /bin/bash -c "$(curl -fsSL https://github.com/LinuxWaveOrg/LinuxWave/releases/latest/download/install.sh)"'
+            ;;
+    esac
+    mw_say "🌊 Nothing was changed on this machine; this is an environment mismatch, not a half-install." \
+           "🌊 这台机器上什么都没改 —— 这是环境不对，不是装了一半。"
+    mw_say "🌊 Set MACWAVE_TEST=<dir> if you meant to run this in a sandbox." \
+           "🌊 如果是想在沙箱里跑，设置 MACWAVE_TEST=<目录>。"
+    # 2 = 环境不满足，见文件头的退出码说明
+    exit 2
+}
+
+mw_require_macos
+
 # -------------------- 测试根（隔离） --------------------
 # MACWAVE_TEST 指向一个目录时，把它当作 /：HOME 和所有系统路径都挂到它下面，
 # 整条链路都落在那个目录里，完全不碰真实系统。
