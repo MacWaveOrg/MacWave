@@ -2017,15 +2017,11 @@ run_cmd tee "$CONFIG_FILE" > /dev/null << EOF
 }
 EOF
 
-run_cmd tee "$VERSION_FILE" > /dev/null << EOF
-{
-  "version": "$MACWAVE_VERSION",
-$( [[ -n "$BUILD_NUMBER" ]] && printf '  "build_number": "%s",\n' "$BUILD_NUMBER" )  "components": {
-    "installer": "$MACWAVE_VERSION",
-    "parser": "$MACWAVE_VERSION"
-  }
-}
-EOF
+# VERSION.json 故意**不**在这里写。它是「装好了」的凭据，必须等文件真的下完
+# （update_commands.sh 跑完）之后才落盘 —— 2026-11-19 发 4.4.0 当天就踩了：
+# 镜像还没同步 core/4.4，下载在第一个文件上失败，而 VERSION.json 已经是 4.4.0，
+# 于是 `wave selfupdate` 看到「版本相同」就再也不修，只留下一棵半旧的树。
+# 那份凭据现在写在 update_commands 成功之后（见「写入版本凭据」一节）。
 
 # ==========================================
 # 安装期间：树暂时交给当前用户
@@ -2037,19 +2033,14 @@ if [[ "$NEED_SUDO" == "true" ]]; then
     lend_tree_to_user "$BASE_DIR"
 fi
 
-if [[ "$NEED_HANDOVER" == "true" ]]; then
-    hand_over_system_install "$CONFIG_DIR"
-fi
 run_cmd chmod 755 "$CONFIG_DIR"
 run_cmd chmod 644 "$CONFIG_FILE"
-run_cmd chmod 644 "$VERSION_FILE"
 
 if mw_dry_run; then
-    mw_plan "🌊 Dry run: would write $CONFIG_FILE (base_dir) and $VERSION_FILE (version $MACWAVE_VERSION)." \
-        "🌊 试运行：将写入 ${CONFIG_FILE}（base_dir）与 ${VERSION_FILE}（版本 ${MACWAVE_VERSION}）。"
+    mw_plan "🌊 Dry run: would write $CONFIG_FILE (base_dir), then $VERSION_FILE (version $MACWAVE_VERSION) once every file is in place." \
+        "🌊 试运行：将写入 ${CONFIG_FILE}（base_dir），并在所有文件到位后写 ${VERSION_FILE}（版本 ${MACWAVE_VERSION}）。"
 else
     mw_say "🌊 Configuration saved to $CONFIG_FILE" "🌊 配置已保存到 $CONFIG_FILE"
-    mw_say "🌊 Version saved to $VERSION_FILE" "🌊 版本信息已保存到 $VERSION_FILE"
 fi
 
 # ==========================================
@@ -2131,6 +2122,29 @@ elif ! /bin/bash "$UPDATE_COMMANDS_TMP"; then
     echo -e "${RED_BOLD}🌊 Error: the update commands for $MACWAVE_VERSION failed.${RESET}"
     echo -e "${RED_BOLD}🌊 Nothing was recorded as installed. Fix the cause above, then run the installer again.${RESET}"
     exit 1
+fi
+
+# ==========================================
+# 写入版本凭据（必须在文件全部到位之后）
+# ==========================================
+# 顺序不能反：这份文件是客户端判断「装没装好、要不要再修」的唯一依据。先写它、
+# 后下载，中途失败就会留下「版本号前进、文件还是旧的」这种最难查的状态 ——
+# `wave selfupdate` 比完版本号就说已是最新，永远不会再修。
+if ! mw_dry_run; then
+    run_cmd tee "$VERSION_FILE" > /dev/null << EOF
+{
+  "version": "$MACWAVE_VERSION",
+$( [[ -n "$BUILD_NUMBER" ]] && printf '  "build_number": "%s",\n' "$BUILD_NUMBER" )  "components": {
+    "installer": "$MACWAVE_VERSION",
+    "parser": "$MACWAVE_VERSION"
+  }
+}
+EOF
+    run_cmd chmod 644 "$VERSION_FILE"
+    if [[ "$NEED_HANDOVER" == "true" ]]; then
+        hand_over_system_install "$CONFIG_DIR"
+    fi
+    mw_say "🌊 Version saved to $VERSION_FILE" "🌊 版本信息已保存到 $VERSION_FILE"
 fi
 
 # ==========================================
