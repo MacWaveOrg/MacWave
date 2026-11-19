@@ -2381,10 +2381,24 @@ if mw_dry_run; then
     mw_say "${GREEN}🌊 Dry run finished. Nothing was installed or changed.${RESET}" \
         "${GREEN}🌊 试运行结束。没有安装或修改任何内容。${RESET}"
     mw_say "🌊 MacWave would be installed to: $DISPLAY_DIR" "🌊 MacWave 将被安装到：$DISPLAY_DIR"
+    echo ""
+    echo -e "${SKY_BLUE}~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~${RESET}"
+    echo ""
+    echo -e "${SKY_BLUE}                  (DRY_RUN)The tide rises, the tide falls...                    ${RESET}"
+    echo ""
+    echo -e "${SKY_BLUE}~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~${RESET}"
 else
     mw_say "🌊 Installation complete!" "🌊 安装完成！"
     mw_say "🌊 MacWave installed to: $DISPLAY_DIR" "🌊 MacWave 已安装到：$DISPLAY_DIR"
+    # 打印诗句
+    echo -e "${SKY_BLUE}~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~${RESET}"
+    echo ""
+    echo -e "${SKY_BLUE}                       The tide rises, the tide falls...                        ${RESET}"
+    echo ""
+    echo -e "${SKY_BLUE}~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~${RESET}"
 fi
+
+echo
 mw_say "🌊 Architecture: $ARCH" "🌊 架构：$ARCH"
 echo ""
 RC_DISPLAY=$(home_to_tilde_arg "$RC_FILE")
