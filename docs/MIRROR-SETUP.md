@@ -391,17 +391,42 @@ ssh -o ControlPath=$HOME/.ssh/cm-lw root@<服务器> \
 `sync-run.sh` 是 cron 用的那个包装：跑 `mirror-sync.sh` → 往 `history.log` 记一行 →
 失败建 `ALERT`、成功删 `ALERT`。直接调 `mirror-sync.sh` 也可以，只是不留 `history.log`。
 
-同步完的三行自检（把 `<镜像域>` 换掉）：
+**同步完怎么自检**（镜像开了 `auth_basic`，所以裸 `curl` 只会拿到 401，别拿它当失败）
+
+最省事的是在服务器上直接看文件 —— 不经过认证层：
 
 ```bash
-curl -fsSL https://<镜像域>/MacWave/selfupdate/macwavedata/latest.toml | grep ^version
-curl -fsSL https://<镜像域>/MacWave/selfupdate/rcdata/latest.toml | grep ^version
-curl -fsS -o /dev/null -w "%{http_code}\n" https://<镜像域>/MacWave/core/4.4/lib/selfupdate.sh
+ssh -o ControlPath=$HOME/.ssh/cm-lw root@<服务器> 'M=/www/wwwroot/mirror.repohub.top/MacWave
+  grep ^version $M/selfupdate/macwavedata/latest.toml
+  grep ^version $M/selfupdate/rcdata/latest.toml
+  ls -l $M/core/4.4/lib/selfupdate.sh' 2>/dev/null
 ```
 
-第一步先验「指针到了」，第二步验「RC 指针也到了」（RC 与正式版是两个文件，最容易
-只同步一半），第三步验「代码树到了」—— 前两步 200、第三步 404 是典型症状：探针同步
-了、发布分支还没进分支表。
+要验「外面能不能取到」，就带凭据（`curl -u 用户名` 会**交互式问口令**，别把口令写进命令行，
+那会留在 shell 历史里）：
+
+```bash
+for u in selfupdate/macwavedata/latest.toml selfupdate/rcdata/latest.toml \
+         core/4.4/lib/selfupdate.sh; do
+  printf '%-46s ' "$u"
+  curl -u '<账号>' -s -o /dev/null -w '%{http_code}\n' "https://<镜像域>/MacWave/$u"
+done
+```
+
+**更要紧的是验客户端那条路**：客户端（`install.sh` / `wave selfupdate`）不带凭据，
+所以它要读的那几个地址必须能匿名 200 —— 靠 nginx 的 `auth_basic off` 例外，或者
+把凭据写进 `MACWAVE_*_DOMAIN`（`https://user:pass@host`，客户端支持，日志里会打码）。
+
+```bash
+for u in selfupdate/macwavedata/latest.toml selfupdate/macwavedata/latest.toml.sig \
+         selfupdate/macwavedata/4.4.0/update_commands.sh core/4.4/lib/install.sh; do
+  printf '%-52s ' "$u"
+  curl -s -o /dev/null -w '%{http_code}\n' "https://<镜像域>/MacWave/$u"   # 不加 -u
+done
+```
+
+四条都得是 `200`。出现 `401` 说明那个路径没有例外规则，客户端走镜像会失败 ——
+例外清单见本文件前面「注意 `install.sh` 那一行本身也要能取到」那一节。
 
 ### 三种跑法
 
