@@ -450,7 +450,8 @@ MACWAVE_VERSION=4.4.0-beta2 MACWAVE_BRANCH=4.4 \
   各一处，共用 `lib/versioncompare.py` 的判定）。理由是 beta 与正式版在不同分支上，
   而 selfupdate 的增量按 `latest.toml` 的分支算 —— 盖到一棵 beta 树上就是两条线
   混在一起（2026-11-15 那次 `wave` 启动即崩，就是这么来的）。
-- **回稳定线也是重装**：`/bin/bash -c "$(curl -fsSL .../releases/latest/download/install.sh)"`。
+- **回稳定线也是重装**：
+  `/bin/bash -c "$(curl -fsSL https://github.com/MacWaveOrg/MacWave/releases/latest/download/install.sh)"`。
 
 写 beta 的发布说明时，安装命令必须是上面那两行带变量的形式，且明说「不带变量会装到
 正式版」。

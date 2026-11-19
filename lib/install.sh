@@ -6,7 +6,7 @@
 # MacWave 🌊 Official Installer
 # This script downloads wave.py, installs dependencies, and configures PATH.
 # Usage: /bin/bash -c "$(curl -fsSL https://github.com/MacWaveOrg/MacWave/releases/latest/download/install.sh)"
-# Unattended (CI): /bin/bash -c "$(curl -fsSL .../releases/latest/download/install.sh)" -- --ci --dir-option=1
+# Unattended (CI): /bin/bash -c "$(curl -fsSL https://github.com/MacWaveOrg/MacWave/releases/latest/download/install.sh)" -- --ci --dir-option=1
 
 # 退出码要有语义
 # 0 = 成功
