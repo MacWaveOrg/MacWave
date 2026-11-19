@@ -960,7 +960,11 @@ mw_platform() {
 }
 
 mw_require_macos() {
-    local platform
+    local platform linuxwave_cmd
+    # 指路用的命令只写一份。超时也一起带上：这条是打印给用户抄去执行的，
+    # 没有超时就会一直挂着 —— 与 lib/selfupdate.py 里那条重装命令同一个理由，
+    # net_policy_test 也是逐条检查 curl 的。
+    linuxwave_cmd='🌊   /bin/bash -c "$(curl -fsSL --max-time 60 https://github.com/LinuxWaveOrg/LinuxWave/releases/latest/download/install.sh)"'
     if [[ -n "${MACWAVE_TEST:-}" ]]; then
         return 0
     fi
@@ -994,7 +998,7 @@ mw_require_macos() {
             mw_say "🌊 MacWave is macOS-only. For Linux (this container included), use LinuxWave:" \
                    "🌊 MacWave 只装 macOS 软件。Linux（包括这个容器）请用 LinuxWave："
             mw_say "🌊   https://linuxwave.org"
-            mw_say '🌊   /bin/bash -c "$(curl -fsSL https://github.com/LinuxWaveOrg/LinuxWave/releases/latest/download/install.sh)"'
+            mw_say "$linuxwave_cmd"
             exit 2
             ;;
         linux)
@@ -1002,7 +1006,7 @@ mw_require_macos() {
                    "🌊 MacWave 装的是 macOS 软件 —— 这台机器是 Linux。"
             mw_say "🌊 For Linux, use LinuxWave: https://linuxwave.org" \
                    "🌊 Linux 请改用 LinuxWave：https://linuxwave.org"
-            mw_say '🌊   /bin/bash -c "$(curl -fsSL https://github.com/LinuxWaveOrg/LinuxWave/releases/latest/download/install.sh)"'
+            mw_say "$linuxwave_cmd"
             ;;
         *)
             mw_say "🌊 MacWave installs macOS software; this platform was not recognised." \
@@ -1011,7 +1015,7 @@ mw_require_macos() {
                    "🌊 uname -s 报的是：$(uname -s 2>/dev/null || echo unknown)"
             mw_say "🌊 On Linux use LinuxWave: https://linuxwave.org" \
                    "🌊 在 Linux 上用 LinuxWave：https://linuxwave.org"
-            mw_say '🌊   /bin/bash -c "$(curl -fsSL https://github.com/LinuxWaveOrg/LinuxWave/releases/latest/download/install.sh)"'
+            mw_say "$linuxwave_cmd"
             ;;
     esac
     mw_say "🌊 Nothing was changed on this machine; this is an environment mismatch, not a half-install." \
