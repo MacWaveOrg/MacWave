@@ -44,3 +44,33 @@
 - `wave install <pkg> --raw > /tmp/log` 时 `/tmp/log` 里仍是逐行 10 条（可 `grep ' 100%'`）。
 - `wave install <pkg>`（非 raw）表现不变。
 - 进度进行中按回车，后续刷新另起一行，不回退覆盖。
+
+### `wave manual --colour`：接受英式拼写
+
+**现状。** 手册上色只认 `--color`（`cli/manual.py:113` 直接比字符串 `"--color"`，
+`cli/flags.py:88` 的白名单里也只有它），文档里写的是 `Colour headings and flags` ——
+说明文字用的是英式拼写，旗标却是美式，看着别扭。有人因此敲了 `--colour` 被当成
+「不认的旗标」拒掉。
+
+**需求。** `--colour` 与 `--color` 等价。
+
+**落点（三处，别漏）。**
+
+1. `cli/flags.py` 的 `manual = {"--color"}` 加上 `--colour`。**注意别直接塞进
+   `ALIASES`**：那条机制是给「改名」用的，`describe()` 会说 `<旧名> is the old name of
+   <新名>`（`:196`），而对拼写变体这是**错的** —— 需要一个新的映射（例如
+   `SPELLINGS = {"--colour": "--color"}`），让 `describe()` 答
+   `--colour is the British spelling of --color`。
+2. `cli/manual.py` 的判定改成「两个名字任意一个出现即上色」，`rest` 过滤也要同时
+   去掉两者（`:113`、`:114`）。
+3. 文档：`cli/commands.py:332/336/342` 的用法行与示例、`cli/help_zh.py:161` 的中文
+   说明、`man/` 里对应条目、README 若提到。
+
+**验收。**
+
+- `wave manual install --colour` 与 `--color` 输出一致（有颜色）。
+- `wave manual install --colour` 不报「不认的旗标」。
+- `wave -h` 里 `manual` 那一行仍只显示规范写法 `--color`（别名不进帮助，只进白名单）。
+- `scripts/commands_test.sh`（帮助里的旗标必须在 `flags.ALL` 里）与 `flags_test.sh`
+  （`describe()` 的措辞）都要跟着补一条。
+
