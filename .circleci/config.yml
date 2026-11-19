@@ -95,6 +95,12 @@ jobs:
             /bin/bash scripts/suggest_test.sh
 
       - run:
+          name: Signature conventions
+          # 公钥放哪、验签结果有哪几种、验不过算不算失败。这条路径平时不跑
+          # （验签还没接进下载流程），坏掉只能靠这个测试发现。
+          command: /bin/bash scripts/signature_test.sh
+
+      - run:
           name: Certificate failure diagnostics
           # 证书失败要按类型给下一步：过期 / 自签 / 链不完整 / 主机名 / 纯网络。
           # 分诊靠错误文本，措辞一改就会走散，而这类路径平时根本跑不到。

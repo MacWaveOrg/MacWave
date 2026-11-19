@@ -126,7 +126,8 @@ BASE_DIR/deps/{引用名}/{引用名}@{版本}/        依赖：整棵解压目�
 BASE_DIR/links/{名字}@{版本}                   软链接，此目录已加入 PATH
 BASE_DIR/pkg/installed.json                   已安装软件包记录
 BASE_DIR/downloads/tmp/                       下载临时目录（*.partial 表示未下载完）
-BASE_DIR/{lib,pkg,surfboard}/                 程序文件自身
+BASE_DIR/{lib,pkg,surfboard,cli,config,net}/  程序文件自身
+BASE_DIR/Keys/*.asc                           发布签名的公钥（验签用；随清单下发）
 /opt/macwave_config/{config.json,VERSION.json}          系统级安装的配置（优先）
 ~/.config/macwave_config/{config.json,VERSION.json}     用户级安装的配置
 ```

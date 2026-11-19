@@ -225,6 +225,12 @@ jobs:
         run: |
           /bin/bash scripts/suggest_test.sh
 
+      # 签名位：公钥目录、验签语义（好签名 / 被改 / 没签名 / 没公钥 / 没 gpg）。
+      # 验签还没接进下载流程，平时这条路径根本不跑，所以语义靠这条测试钉住。
+      - name: Run signature conventions test
+        run: |
+          /bin/bash scripts/signature_test.sh
+
       # 证书失败的分诊：同一句 "SSL error" 不许对应同一条建议（过期 / 自签 /
       # 链不完整 / 主机名 / 纯网络，五种下一步完全不同）。只做字符串分类，离线。
       - name: Run certificate diagnostics test

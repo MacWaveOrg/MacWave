@@ -1788,6 +1788,9 @@ CONFIG_CODE_DIR="$BASE_DIR/config"
 # 文档资源：装进安装树，但不进 sys.path（见 scripts/assets.txt）
 MAN_DIR="$BASE_DIR/man"
 INFO_DIR="$BASE_DIR/info"
+# 发布签名用的公钥。装进来之后 <base_dir>/Keys/*.asc 就是验签的信任根，
+# 用户不必再去官网另找一份（那一步恰恰最容易被换掉）。
+KEYS_DIR="$BASE_DIR/Keys"
 DEPS_DIR="$BASE_DIR/deps"
 DOWNLOAD_DIR="$BASE_DIR/downloads/tmp"
 
@@ -1858,6 +1861,7 @@ run_cmd mkdir -p "$CLI_DIR"
 run_cmd mkdir -p "$CONFIG_CODE_DIR"
 run_cmd mkdir -p "$MAN_DIR/man1"
 run_cmd mkdir -p "$INFO_DIR"
+run_cmd mkdir -p "$KEYS_DIR"
 run_cmd mkdir -p "$DEPS_DIR"
 run_cmd mkdir -p "$DOWNLOAD_DIR"
 run_cmd mkdir -p "$CONFIG_DIR"

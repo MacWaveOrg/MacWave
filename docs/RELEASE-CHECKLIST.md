@@ -477,8 +477,12 @@ gh release upload "$TAG" SHA256SUMS SHA256SUMS.asc -R MacWaveOrg/MacWave --clobb
 - **`.asc` 要 armored。** 能直接贴进 Release 正文与 Issue，拿到的人不看文档也知道
   `gpg --verify`。
 
-公钥与指纹要发在**至少两个渠道**（仓库 `keys/`、README、官网、Release 正文），
+公钥与指纹要发在**至少两个渠道**（仓库 `Keys/`、README、官网、Release 正文），
 单渠道公布等于没公布 —— 能换资产的人通常也能换那一个渠道。
+
+`Keys/` 里的公钥还会随安装树一起下发（列在 `scripts/assets.txt` 里，装到
+`<base_dir>/Keys/`），客户端因此握着验签的信任根。轮换期间目录里可以同时有两把，
+验签程序对任意一把验通即可；验签实现与结果语义见 `net/signature.py`。
 
 守卫工作流按 `publishedAt` 判断：**2026-12-01 起发布的 Release 必须带这两份**，
 更早的（含补发的旧版本）允许没有。判据是发布日期，不是 tag 号 —— 补发一个旧版本时

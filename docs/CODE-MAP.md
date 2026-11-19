@@ -48,6 +48,7 @@
 | `net/` | 传输层：地址表、TLS 策略、三档超时。**唯一允许发请求的层** | 契约由 `scripts/net_policy_test.sh` 盯着，新增请求点必须带策略 |
 | `pkg/` | 软件包安装、查询、卸载、链接、解压、版本比较 | 核心，改动需跑端到端 |
 | `surfboard/` | 依赖处理与动态库路径重写 | 最复杂，改动需跑依赖链测试 |
+| `Keys/` | 发布签名用的**公钥**（只放公钥；轮换期可能有两把） | 列在 `scripts/assets.txt` 里，随安装清单装到 `<base_dir>/Keys/`。验签实现见 `net/signature.py`；私钥永不入库 |
 | `scripts/components.txt` | **运行时组件目录的唯一清单**：安装树装哪些目录、`wave.py` 的 sys.path、测试沙箱拷哪些目录，三处都读它。加一个顶层组件只改这里 | 改动它等于改安装布局，必须同时改 `wave.py` 与 `install.sh`（`structure_test.sh` 会对着改） |
 | `man/` | `wave` 与每条子命令的 man 页，中英各一套；由 `scripts/build_docs.py` 生成，**不要手改** | 改文案去改 `cli/help.py` / `cli/help_zh.py`，再跑生成器 |
 | `info/` | `wave.info` 与 `wave-zh.info`（Info 格式）：`info wave` / `info wave-zh`；同样生成 | 同上；`scripts/docs_test.sh` 比对生成物是否落后 |
@@ -161,6 +162,7 @@
 | --- | --- | --- |
 | `domains.py` | **所有对外地址的校验与拼装**。名字与默认值在 `config/envvar.py`，这里只做协议校验、边界归一化与拼 URL | 边界归一化：`rstrip("/")` 去掉末尾斜杠，于是 13 处拼接点可以无条件写 `f"{domain}/…"`。默认值仍是 3.x 的地址，不设变量即行为不变。与两份 shell 脚本的同名块由 `scripts/check_domain_defaults.py` 比对（表驱动，也查名字与 pip 索引），漂移会失败 |
 | `tls.py` | `--skip-ssl`、`MACWAVE_CACERT` 与**证书失败分诊**的唯一实现：模块级状态 + `configure()` / `request_kwargs()` / `urlopen_kwargs()` / `curl_flags()`（是否要求跳过校验由 `cli/common.py` 解析后传进来） | 分「请求」与「授权」两段：`install`/`upgrade` 先弹安全询问，答否时 `revoke()`，避免询问形同虚设。**任何发请求的地方都必须带它的返回值**。`MACWAVE_CACERT` 是另一种选择：设了就把它当额外的信任根（requests 走 `verify=<pem>`、urllib 走 `cafile=`、curl 走 `--cacert`），**仍然校验证书链与主机名**；设了却不可读就报错退 1，不静默忽略。优先级 `--skip-ssl` > `MACWAVE_CACERT` > 系统证书库。另提供 `explain()` / `hints()`：把 requests / urllib3 / curl 的失败文本归成「过期 / 自签或私有 CA / 链不完整 / 主机名不匹配 / 纯网络问题」五类，各给各的下一步（过期找镜像维护者、自签找网管要根证书、主机名不匹配**不许**用 `--skip-ssl` 绕过、连不上根本不是 TLS 问题）。分诊只在确定是证书问题时做一次不校验的握手，读对端证书的 notAfter 与 SAN（同一主机只做一次），读不到就跳过 |
+| `signature.py` | **GPG 验签的唯一实现**，也是「签名相关的东西放哪」的唯一定义：`SUMS_NAME` / `SIG_NAME`、`PINNED_FINGERPRINTS`、`keys_dir()` / `public_keys()` / `fingerprints_of()`、`verify_detached()`、结果常量（`ok` / `no-signature` / `no-keys` / `no-gpg` / `bad-signature`） | 公钥在仓库 `Keys/`、安装树 `<base_dir>/Keys/`，同一份；`Keys/` 在 `scripts/assets.txt` 里，随安装清单下发，所以装过的人本地就有信任根。轮换期间目录里可能有**两把**钥匙，**任意一把验通即可**。验签用临时 `GNUPGHOME`，不碰用户钥匙环、不弹 pinentry。**当前只做预留**：2026-12-01 之前的 Release 没有 `SHA256SUMS.asc`，这时强制验签会把历史版本全判成失败，所以还没接进下载路径；`scripts/signature_test.sh` 钉住语义 |
 | `timeouts.py` | 三档超时（连接 / 读数据 / 总时长）的解析与折算 | 唯一来源是 `FLAG_FIELDS`；命令行文本原样下传到 shell 层，由 `curl` 自己再解析一次 —— 两层各自取值是为了让「Python 等得住、curl 也知道」 |
 
 **这一层的契约是可执行的**：`scripts/net_policy_test.sh` 用 AST 检查每个 `requests` /
