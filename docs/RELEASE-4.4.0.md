@@ -140,6 +140,77 @@ key layout are in [the RC notes](RELEASE-4.4.0-rc.md) and
 - Documentation: `AGENTS.md` gained the CI-ONLY boundary rules, `docs/CODE-MAP.md` moved
   `config/` to where it actually lives, and the manual documents `MACWAVE_CACERT`.
 
+## 8. Every new switch, in one place
+
+Everything below landed in 4.4, grouped by the file that owns it. Internal hand-off
+variables (those a parent process sets for a child) are marked *(internal)* — they are
+listed so that reading a log or a script does not require guessing, not because they are
+meant to be typed by hand.
+
+### `wave` — subcommands
+
+| Command | What it does | Example |
+| --- | --- | --- |
+| `wave selfupdate --dry-run` | Prints the plan — current → target, branch, build number, channel, whether the agreement will be asked, the three timeouts — **before** the agreement question, then exits. Downloads nothing, writes nothing. | `wave selfupdate --dry-run` |
+
+`wave shellenv` and `wave manual` are not new, but 4.4 is the first release where both
+READMEs and the website list them; earlier they existed and went unmentioned.
+
+### `wave` — flags
+
+| Flag | Commands | What it does | Example |
+| --- | --- | --- | --- |
+| `--no-link` | `install`, `uninstall` | Do not create the unversioned symlink. **Renamed from `--unlink`**, which still works and is described as the old name. | `wave install jq --no-link` |
+| `--raw` | `install`, `upgrade` | Machine-readable output: no `🌊`, no colour, no spinner; one `####` line per 10%. | `wave upgrade --all --raw` |
+
+Common flags (`--verbose`, `--resume`, `--skip-ssl`, `--proxy`, `--max-time`,
+`--connect-timeout`, `--content-time`, `--limit-rate`, `--install-python-from-source`)
+are unchanged in name but now go through one parser, so a malformed `--proxy` or
+`--max-time` fails with the same wording and exit code in `install` / `selfupdate` /
+`latest` / `info` / `mirror`.
+
+### `lib/install.sh` — flags
+
+| Flag | What it does | Example |
+| --- | --- | --- |
+| `--raw` | No ASCII art, no colour, no spinner, no cursor movement; one `####` line per 10% of a download (per MiB when the length is unknown). | `... install.sh -- --raw` |
+| `--print-usage` | Prints the usage text, then installs anyway. | `... install.sh -- --print-usage --ci` |
+| `--skip-probe` | Skips the write probe; explains itself with permission bits only. | `... install.sh -- --skip-probe` |
+| `--help` | Prints usage and stops; no longer touches the network, and may only be combined with `--dry-run`, `--raw`, `--zh`. | `... install.sh -- --help` |
+| `--dry-run` | Walks the whole flow and prints every step, writes nothing, never calls `sudo`. | `... install.sh -- --dry-run` |
+
+Flags go **after `--`**, otherwise `bash -c` treats the first one as `$0` and silently
+drops it (the installer warns when it notices).
+
+### `lib/install.sh` and `lib/selfupdate.sh` — exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | installed / updated |
+| `1` | refused or failed |
+| `2` | usage error |
+| `3` | needs privileges (`sudo` unavailable or refused) |
+| `4` | unsupported platform |
+
+### Environment variables
+
+| Variable | Read by | What it does | Example |
+| --- | --- | --- | --- |
+| `MACWAVE_CACERT` | all three transports (`requests`, `urllib`, `curl`) | Extra root certificate in PEM form. Validated up front — an unreadable file is an error, not a silent fallback. Precedence: `--skip-ssl` > `MACWAVE_CACERT` > system store. | `MACWAVE_CACERT=/etc/ssl/corp-root.pem wave install jq` |
+| `MACWAVE_CHANNEL=rc` | `lib/install.sh` | Read the RC pointer (`rcdata/latest.toml`) instead of the stable one, and record the build number. | `MACWAVE_CHANNEL=rc ... install.sh` |
+| `MACWAVE_WANT_HASHES=1` | `update_commands.sh` *(internal)* | Enables per-file sha256 checking. The client sets it itself once the signed manifest carries hashes. | — |
+| `MACWAVE_STRICT_HASHES=1` | `install.sh`, `selfupdate.sh`, `update_commands.sh` | Turns "checksum mismatch" from a warning into a failure. **This is the intended default later.** | `MACWAVE_STRICT_HASHES=1 wave selfupdate` |
+| `MACWAVE_RSA_PUB` | `install.sh`, `selfupdate.sh` | Path to a PEM public key, overriding the one embedded in the script. For private mirrors and tests. | `MACWAVE_RSA_PUB=/tmp/test.pem ...` |
+| `MACWAVE_FULL_INSTALL=1` | `update_commands.sh` *(internal)* | Forces a full install instead of an incremental one. Set by the client when it crosses from the RC line to stable. | — |
+| `MACWAVE_UPDATE_CHANNEL` / `MACWAVE_UPDATE_BUILD` | `selfupdate.sh` *(internal)* | Which pointer to verify, and the build number to record. | — |
+
+**Removed in 4.4** (written by someone, read by nobody — deleted rather than left as
+decoration): `MACWAVE_DRY_RUN`, `MACWAVE_TARGET_VERSION`, `MACWAVE_CONFIG_DIR`,
+`MACWAVE_TEST_ROOT`, `MACWAVE_PKG_SOURCECODE_DOMAIN`, and the `MACWAVE_MIRROR` that the
+manual mentioned but no code ever read. `config/envvar.py` is now the single register of
+the names that survive, and `scripts/check_domain_defaults.py` fails if a documented name,
+a package-index name, or an unregistered name appears.
+
 ## Upgrading
 
 | From | How |
@@ -273,6 +344,73 @@ Signing key fingerprint: `7220E218395DE865AACC339167F14E52D0E229FB`
 - 没有校验值的依赖会被拒绝安装，而不是装上（这是索引数据缺陷，不是用户的问题）。
 - 文档：`AGENTS.md` 补上 CI-ONLY 边界规则，`docs/CODE-MAP.md` 把 `config/` 挪回它实际所在的位置，
   手册补上 `MACWAVE_CACERT`。
+
+## 8. 新增的开关，集中列一遍
+
+下面全部是 4.4 落地的，按「归哪个文件管」分组。标 *(内部)* 的是父进程传给子进程的
+交接变量 —— 列出来是为了让人读日志/读脚本时不必猜，不是给你手敲的。
+
+### `wave` —— 子命令
+
+| 命令 | 做什么 | 例子 |
+| --- | --- | --- |
+| `wave selfupdate --dry-run` | 在**问协议之前**打印计划：当前 → 目标、分支、构建号、渠道、协议会不会问、三档超时，然后退出。不下载、不写入。 | `wave selfupdate --dry-run` |
+
+`wave shellenv` 与 `wave manual` 不是 4.4 新增的命令，但 4.4 是第一个把它们写进两份
+README 与官网的版本 —— 以前它们存在却没人提。
+
+### `wave` —— 参数
+
+| 参数 | 适用于 | 做什么 | 例子 |
+| --- | --- | --- | --- |
+| `--no-link` | `install`、`uninstall` | 不建不带版本号的链接。**由 `--unlink` 改名而来**，旧名仍可用，帮助里标明是旧名。 | `wave install jq --no-link` |
+| `--raw` | `install`、`upgrade` | 机器可读输出：没有 `🌊`、没有颜色、没有转圈动画，每 10% 一行 `####`。 | `wave upgrade --all --raw` |
+
+公共旗标（`--verbose`、`--resume`、`--skip-ssl`、`--proxy`、`--max-time`、
+`--connect-timeout`、`--content-time`、`--limit-rate`、`--install-python-from-source`）
+名字没变，但改走同一个解析器：写错的 `--proxy` 或 `--max-time` 现在在
+`install`/`selfupdate`/`latest`/`info`/`mirror` 给出同样的措辞与退出码。
+
+### `lib/install.sh` —— 参数
+
+| 参数 | 做什么 | 例子 |
+| --- | --- | --- |
+| `--raw` | 没有艺术字、颜色、转圈动画与光标控制；下载每 10% 一行 `####`（长度未知时按 MiB）。 | `... install.sh -- --raw` |
+| `--print-usage` | 打用法，然后照常安装。 | `... install.sh -- --print-usage --ci` |
+| `--skip-probe` | 跳过写探针，只按权限位判断。 | `... install.sh -- --skip-probe` |
+| `--help` | 只打用法就结束；不再联网，且只能与 `--dry-run`、`--raw`、`--zh` 同用。 | `... install.sh -- --help` |
+| `--dry-run` | 走一遍全流程并打印每一步，不写文件、从不调用 `sudo`。 | `... install.sh -- --dry-run` |
+
+参数要放在 **`--` 之后**，否则 `bash -c` 会把第一个当成 `$0` 静默丢掉
+（安装器检测到会警告）。
+
+### `lib/install.sh` 与 `lib/selfupdate.sh` —— 退出码
+
+| 码 | 含义 |
+| --- | --- |
+| `0` | 装好 / 更新完成 |
+| `1` | 拒绝或失败 |
+| `2` | 用法错误 |
+| `3` | 需要提权（`sudo` 不可用或被拒绝） |
+| `4` | 平台不支持 |
+
+### 环境变量
+
+| 变量 | 谁读 | 做什么 | 例子 |
+| --- | --- | --- | --- |
+| `MACWAVE_CACERT` | 三条传输（`requests`、`urllib`、`curl`） | 额外的根证书（PEM）。会先做可用性校验 —— 读不到就报错，不静默忽略。优先级：`--skip-ssl` > `MACWAVE_CACERT` > 系统证书库。 | `MACWAVE_CACERT=/etc/ssl/corp-root.pem wave install jq` |
+| `MACWAVE_CHANNEL=rc` | `lib/install.sh` | 读 RC 探针（`rcdata/latest.toml`）而不是正式版，并记录构建号。 | `MACWAVE_CHANNEL=rc ... install.sh` |
+| `MACWAVE_WANT_HASHES=1` | `update_commands.sh` *(内部)* | 打开逐文件 sha256 校验。客户端在清单带哈希时自己置上。 | — |
+| `MACWAVE_STRICT_HASHES=1` | `install.sh`、`selfupdate.sh`、`update_commands.sh` | 把「校验值不符」从警告变成失败。**这是以后的默认值。** | `MACWAVE_STRICT_HASHES=1 wave selfupdate` |
+| `MACWAVE_RSA_PUB` | `install.sh`、`selfupdate.sh` | PEM 公钥路径，覆盖脚本内置的那一份。给私有镜像与测试用。 | `MACWAVE_RSA_PUB=/tmp/test.pem ...` |
+| `MACWAVE_FULL_INSTALL=1` | `update_commands.sh` *(内部)* | 强制全量安装而不是增量。客户端从 RC 线切到正式版时自己置上。 | — |
+| `MACWAVE_UPDATE_CHANNEL` / `MACWAVE_UPDATE_BUILD` | `selfupdate.sh` *(内部)* | 该验哪份探针、该记录哪个构建号。 | — |
+
+**4.4 移除的**（写了没人读，与其留着当摆设不如删掉）：`MACWAVE_DRY_RUN`、
+`MACWAVE_TARGET_VERSION`、`MACWAVE_CONFIG_DIR`、`MACWAVE_TEST_ROOT`、
+`MACWAVE_PKG_SOURCECODE_DOMAIN`，以及手册里提过但没有任何代码读的 `MACWAVE_MIRROR`。
+现在 `config/envvar.py` 是「还活着的名字」的唯一登记处，`scripts/check_domain_defaults.py`
+在「文档写了 / 包索引写了 / 没登记」时都会失败。
 
 ## 升级
 
