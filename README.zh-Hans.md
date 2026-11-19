@@ -360,6 +360,7 @@ wave latest --all                  Same, for every installed package
 同一份清单还出现在 `infosource/README.md` 与 [macwave.org](https://macwave.org)。加一个软件包要四处一起改，见 [`docs/ADD-PACKAGE-CHECKLIST.md`](./docs/ADD-PACKAGE-CHECKLIST.md)。
 
 ```
+age              by FiloSottile
 atuin            by atuinsh
 bat              by David Peter
 batt             by charlie0129
@@ -368,6 +369,7 @@ choma            by opa334
 cloc             by Al Danial
 delta            by dandavison
 difft            by Wilfred Hughes
+doggo            by mr-karan
 duckdb           by duckdb
 dust             by bootandy
 eza              by Christina Sørensen and the eza community
@@ -376,7 +378,11 @@ ffmpeg           by FFmpeg Team
 fileicon         by Michael Klement
 fx               by antonmedv
 fzf              by Junegunn Choi
+gh               by cli
+gitleaks         by gitleaks
+glow             by charmbracelet
 gping            by orf
+grpcurl          by fullstorydev
 htop             by Hisham Muhammad and the htop team
 hyperfine        by sharkdp
 ipsw             by blacktop
@@ -386,17 +392,25 @@ just             by Casey Rodarmor
 ldid             by Jay Freeman (saurik) / Procursus Team
 lsd              by Abin Simon
 mise             by jdx
+mkcert           by FiloSottile
 ncdu             by Yoran Heling
 ollama           by ollama
 palera1n         by palera1n Team
 pandoc           by John MacFarlane
+rclone           by rclone
+restic           by restic
 rg               by Andrew Gallant
+shellcheck       by koalaman
 sk               by skim-rs
 starship         by starship
 taskwarrior-tui  by kdheepak
 tmux             by Nicholas Marriott and contributors
+tofu             by opentofu
 tree             by Steve Baker, Thomas Moore, et al.
 trollrestore     by JJTech (@JJTech0130)
+typst            by typst
+vhs              by charmbracelet
+websocat         by vi
 wget             by GNU Project
 xh               by ducaale
 yazi             by sxyazi
