@@ -1,6 +1,6 @@
 # MacWave 4.4.1
 
-Released: 2026-11-19 · build `323D1356` · branch `4.4` ·
+Released: 2026-11-19 · build `323D1524` · branch `4.4` ·
 previous release [4.4.0](RELEASE-4.4.0.md)
 
 A one-bug release. 4.4.0 could record a version it had not actually installed, and once it
@@ -29,6 +29,12 @@ code. Retrying the installer worked; `wave selfupdate` could not.
 is why the file had to be written early — both moved together).
 
 ## Also in this release
+
+- **Two outputs that forgot their language.** The manifest template printed "the installed
+  tree is incomplete" twice — once in English, once in Chinese — so English users saw a
+  Chinese line and Chinese users saw an English one. And the dependency note during package
+  installation carried a hard-coded Chinese suffix (`(被 zstd 引用)`); it now reads
+  `(referenced by zstd)`.
 
 - **A download failure now names the likely cause.** Every failed file prints a line saying
   that, if *every* file fails the same way, the mirror has not synced that branch yet. A
@@ -64,7 +70,7 @@ Signing key fingerprint: `7220E218395DE865AACC339167F14E52D0E229FB`
 
 # MacWave 4.4.1
 
-发布：2026-11-19 · 构建号 `323D1356` · 分支 `4.4` ·
+发布：2026-11-19 · 构建号 `323D1524` · 分支 `4.4` ·
 上一版 [4.4.0](RELEASE-4.4.0.md)
 
 一个 bug 的补丁版。4.4.0 有可能把「没装上的版本」记下来，而一旦记下，任何东西都不会
@@ -89,6 +95,10 @@ wave selfupdate 拿 4.4.0 和 4.4.0 比较，回答「已是最新」
 也跟着挪到那之后（交还原本更早，这正是当初必须提前写文件的原因 —— 两者一起挪）。
 
 ## 同一版里的另外两处
+
+- **两处漏了语言的输出。** 清单模板把「安装树不完整」打了两遍 —— 一遍英文一遍中文，
+  于是英文用户会看到中文那行、中文用户会看到英文那行。另外装包时那句依赖说明里写死了
+  中文后缀（`(被 zstd 引用)`），现在读作 `(referenced by zstd)`。
 
 - **下载失败现在会指出可能的原因。** 每个失败的文件后面都会打一句：如果每个文件都
   这样，说明镜像还没同步这个分支。以前「单个文件缺失」和「整棵分支缺失」在日志里
