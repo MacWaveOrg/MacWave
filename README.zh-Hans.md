@@ -389,6 +389,8 @@ ipsw             by blacktop
 jless            by Paul Julius Martinez
 jq               by Stephen Dolan, Nicolas Williams, et al.
 just             by Casey Rodarmor
+k9s              by derailed
+kubectx          by ahmetb
 ldid             by Jay Freeman (saurik) / Procursus Team
 lsd              by Abin Simon
 mise             by jdx
@@ -401,8 +403,10 @@ rclone           by rclone
 restic           by restic
 rg               by Andrew Gallant
 shellcheck       by koalaman
+shfmt            by mvdan
 sk               by skim-rs
 starship         by starship
+stern            by stern
 taskwarrior-tui  by kdheepak
 tmux             by Nicholas Marriott and contributors
 tofu             by opentofu
