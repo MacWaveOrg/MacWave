@@ -171,6 +171,13 @@ jobs:
         run: |
           python3 scripts/audit_deps.py data --data-dir infosource-data
 
+      # Linux execve 对单个参数字符串的上限是 131071 B。文档推荐的安装方式
+      # `bash -c "$(curl …)"` 会把整份脚本塞进一个参数，超了在 Linux 上就是 E2BIG。
+      # 这个测试只量不改：谁超了、超了多少 B。
+      - name: Run argument length test
+        run: |
+          /bin/bash scripts/arglen_test.sh
+
       - name: Run format tests
         run: |
           /bin/bash scripts/format_test.sh
