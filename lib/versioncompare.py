@@ -156,6 +156,62 @@ def is_newer(candidate, current):
     return _parse(candidate) > _parse(current)
 
 
+# -------------------- 发布渠道与构建号 --------------------
+#
+# 渠道（channel）不是一个客户端开关，而是**装的是什么东西**推出来的结论：
+# 预发布版本（`4.4.1-rc`、`4.4.0-beta2`）只跟 RC 渠道，其余跟正式渠道。
+# 这样 RC 的发布节奏不会把正式版用户卷进来，客户端也无需记住任何额外状态。
+CHANNEL_STABLE = "stable"
+CHANNEL_RC = "rc"
+
+# 构建号（build number）的格式：3 位年内第几天 + 一个字母 + HHMM。
+#
+#     323D1250   正式版：第四位是周几（周一=A … 周日=G）
+#     323R1250   RC：第四位固定是 R
+#
+# 第四位只给人看，排序只用「天数 + 时分」—— 同一天不会有两份同日同分的发布，
+# 而跨渠道比较构建号本来就没有意义（各渠道各读自己的探针）。
+_BUILD_RE = re.compile(r"^([0-9]{3})([A-Z])([0-9]{4})$")
+
+
+def channel_for(value):
+    """这个版本属于哪个渠道。没装（空串）按正式渠道算。"""
+    return CHANNEL_RC if value and is_prerelease(value) else CHANNEL_STABLE
+
+
+def build_key(value):
+    """把构建号解析成可比较的 (天数, 时分)；格式不对返回 None。"""
+    match = _BUILD_RE.match(str(value or "").strip().upper())
+    if not match:
+        return None
+    return int(match.group(1)), int(match.group(3))
+
+
+def is_newer_build(candidate, current):
+    """candidate 构建号是否比 current 新。
+
+    任一边读不出来时按「无法判断」处理：current 读不出来视为「没有可比对象」，
+    返回 True（宁可让 RC 换一次，也不要因为一个脏的本地字段卡住整个渠道）；
+    candidate 读不出来返回 False（探针里的构建号坏了，不该触发更新）。
+    """
+    probe = build_key(candidate)
+    if probe is None:
+        return False
+    now = build_key(current)
+    if now is None:
+        return True
+    return probe > now
+
+
+def newer_release(probe_version, probe_build, current_version, current_build):
+    """探针里那一份是不是比本机这份新。版本优先，版本相同再看构建号。"""
+    if not current_version:
+        return True
+    if _parse(probe_version) != _parse(current_version):
+        return _parse(probe_version) > _parse(current_version)
+    return is_newer_build(probe_build, current_build)
+
+
 def sort_versions(versions, reverse=True):
     """按版本序排序；默认从高到低。"""
     return sorted(versions, key=_parse, reverse=reverse)

@@ -256,6 +256,61 @@ done
 
 FAILED=$((FAILED + HARD_FAIL))
 
+# 渠道与构建号：RC 与正式版各读自己的探针，同一个版本靠构建号区分先后
+OUTPUT=$("$PYTHON" - "$REPO_DIR" <<'PYEOF' 2>&1
+import sys
+
+repo = sys.argv[1]
+components = [line.split("#", 1)[0].strip()
+              for line in open(f"{repo}/scripts/components.txt", encoding="utf-8")]
+sys.path[:0] = [f"{repo}/{name}" for name in components if name]
+
+from versioncompare import channel_for, build_key, is_newer_build, newer_release
+
+passed = 0
+failed = 0
+
+
+def check(label, got, want):
+    global passed, failed
+    if got == want:
+        passed += 1
+        print(f"PASS: {label}")
+    else:
+        failed += 1
+        print(f"FAIL: {label} -> got {got!r}, want {want!r}")
+
+
+check("rc 后缀是 RC 渠道", channel_for("4.4.1-rc"), "rc")
+check("beta 是 RC 渠道", channel_for("4.4.0-beta2"), "rc")
+check("正式版是正式渠道", channel_for("4.4.1"), "stable")
+check("没装按正式渠道", channel_for(""), "stable")
+check("构建号解析（RC 的 R）", build_key("323R1250"), (323, 1250))
+check("构建号解析（正式版的周几）", build_key("323D1250"), (323, 1250))
+check("构建号坏值返回 None", build_key("323X"), None)
+check("晚一分钟是新的", is_newer_build("323R1251", "323R1250"), True)
+check("同一个不是新的", is_newer_build("323R1250", "323R1250"), False)
+check("跨天按天数算", is_newer_build("324R0001", "323R2359"), True)
+check("本机没有构建号时接受探针", is_newer_build("323R1250", ""), True)
+check("探针构建号坏了不接受", is_newer_build("", "323R1250"), False)
+check("版本更新时忽略构建号", newer_release("4.4.1", "320D0900", "4.4.0", "323R1250"), True)
+check("版本相同才比构建号", newer_release("4.4.1-rc", "323R1300", "4.4.1-rc", "323R1250"), True)
+check("版本相同构建号也相同 = 没有新版",
+      newer_release("4.4.1-rc", "323R1250", "4.4.1-rc", "323R1250"), False)
+check("RC 之上是正式版", newer_release("4.4.1", "323D1250", "4.4.1-rc", "323R1250"), True)
+check("正式版不会退回 RC", newer_release("4.4.1-rc", "323R1250", "4.4.1", "323D1250"), False)
+
+print(f"# summary {passed} {failed}")
+PYEOF
+)
+
+[[ $? -eq 0 ]] || { HARD_FAIL=$((HARD_FAIL + 1)); echo -e "${RED_BOLD}🌊 FAIL: 渠道/构建号段 python 异常退出${RESET}"; }
+PASSED=$((PASSED + $(echo "$OUTPUT" | grep -c '^PASS: ')))
+FAILED=$((FAILED + $(echo "$OUTPUT" | grep -c '^FAIL: ')))
+echo "$OUTPUT" | grep '^FAIL: '
+
+FAILED=$((FAILED + HARD_FAIL))
+
 echo
 echo "=========================================="
 echo -e "🌊 Passed: $PASSED"
