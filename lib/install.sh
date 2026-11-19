@@ -2134,7 +2134,8 @@ if ! mw_dry_run; then
     run_cmd tee "$VERSION_FILE" > /dev/null << EOF
 {
   "version": "$MACWAVE_VERSION",
-$( [[ -n "$BUILD_NUMBER" ]] && printf '  "build_number": "%s",\n' "$BUILD_NUMBER" )  "components": {
+$( [[ -n "$BUILD_NUMBER" ]] && printf '  "build_number": "%s",\n' "$BUILD_NUMBER" )
+  "components": {
     "installer": "$MACWAVE_VERSION",
     "parser": "$MACWAVE_VERSION"
   }

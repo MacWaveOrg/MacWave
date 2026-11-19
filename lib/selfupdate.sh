@@ -1187,7 +1187,8 @@ config_cmd mkdir -p "$CONFIG_DIR"
 config_cmd tee "$VERSION_FILE" > /dev/null << EOF
 {
   "version": "$VERSION",
-$([[ -n "$BUILD" ]] && printf '  "build_number": "%s",\n' "$BUILD")  "components": {
+$([[ -n "$BUILD" ]] && printf '  "build_number": "%s",\n' "$BUILD")
+  "components": {
     "installer": "$VERSION",
     "parser": "$VERSION"
   }
