@@ -1,6 +1,6 @@
 # MacWave 4.4.0-rc
 
-Prerelease (release candidate) · build `323R1303` · branch `4.4-261119` ·
+Prerelease (release candidate) · build `323R1307` · branch `4.4` ·
 previous beta [4.4.0-beta3](RELEASE-4.4.0-beta3.md) · stable line `4.3.4`
 
 This is the last checkpoint before 4.4.0. Nothing in it changes what MacWave does for
