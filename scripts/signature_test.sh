@@ -131,7 +131,7 @@ PY
     if [[ "$got" == "$want" ]]; then
         pass "$label → $want"
     else
-        fail "$label → 期望 $want，实际 $got"
+        fail "$label → 期望 ${want}，实际 ${got}"
     fi
 }
 
@@ -219,9 +219,9 @@ PY
 )
     if [[ "$GOT" == "no-gpg" || "$GOT" == "ok" ]]; then
         # PATH 里若还有一份 gpg 就仍然验得过，两种都算通过（断言的是「不误判为坏签名」）
-        pass "没有 gpg 时不会误判成坏签名（$GOT）"
+        pass "没有 gpg 时不会误判成坏签名（${GOT}）"
     else
-        fail "没有 gpg 时返回了 $GOT，应不是 bad-signature"
+        fail "没有 gpg 时返回了 ${GOT}，应不是 bad-signature"
     fi
 
     rm -rf "$WORK"
