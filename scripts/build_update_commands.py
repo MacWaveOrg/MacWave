@@ -115,6 +115,12 @@ def sanitize(paths, source):
         if path.rstrip("/") in EXCLUDED:
             dropped.append((path, "运行时由客户端生成或不该自装"))
             continue
+        # README.md 是写给**仓库读者**的说明，装进安装树没人读，但它一缺就会让
+        # 整个安装失败 —— 2026-11-19 装 4.4.0 时，Keys/README.md 的 404 直接把
+        # 「镜像还没同步 core/4.4」变成了一个看起来像单文件问题的事故。
+        if parts[-1] == "README.md":
+            dropped.append((path, "给人看的说明文件，不进安装树"))
+            continue
         if parts[0] not in INSTALLED_DIRS:
             dropped.append((path, f"不在 {INSTALLED_DIRS} 之下"))
             continue

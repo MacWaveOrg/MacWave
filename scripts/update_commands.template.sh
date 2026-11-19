@@ -181,7 +181,7 @@ want() {
         echo "🌊   $(redact_url "$url")" >&2
         # 404 有两种完全不同的原因：单个文件被删了，或者整棵 core/<分支>/ 压根没同步。
         # 后者是新分支上线当天的常态（镜像一天只跑一次），而且症状看起来一模一样 ——
-        # 2026-11-19 装 4.4.0 时就被这条绕了：日志里只说 Keys/README.md 下不到。
+        # 2026-11-19 装 4.4.0 时就被这条绕了：日志里只说某一个文件下不到。
         mw_say_err "🌊 If every file fails like this, the mirror has not synced branch $MACWAVE_BRANCH yet." \
                    "🌊 如果每个文件都这样，说明镜像还没同步 ${MACWAVE_BRANCH} 这个分支。"
         mw_say_err "🌊 Run scripts/mirror-sync/mirror-sync.sh on the mirror (see docs/MIRROR-SETUP.md)." \
