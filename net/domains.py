@@ -291,12 +291,28 @@ def resolve_payload(kind, name, version, arch, upstream_filename, upstream_url, 
 #   macwavedata/latest.toml             哪个版本是最新的（version 字段兼作指针）
 #   macwavedata/<版本>/update_commands.sh   该版本「下载哪些文件、放到哪里」
 #
+# RC 渠道有自己的探针，与正式版**完全隔离**：
+#
+#   rcdata/latest.toml                  RC 渠道的版本指针（version + build + branch）
+#
+# 为什么要独立文件而不是在 latest.toml 里加一个字段：正式版探针每次发正式版都会
+# 被覆盖，RC 一天可能发好几次；两者写同一个文件，必然出现「发 RC 的时候把正式版
+# 指针改坏」。独立文件还让镜像同步互不干扰 —— 只同步 macwavedata/ 的镜像天然
+# 不会带上 RC。
+#
+# update_commands.sh 仍按版本平铺在 macwavedata/<版本>/ 下，两个渠道共用：
+# 它的内容是「这个版本有哪些文件、各自什么哈希」，与渠道无关。
+#
 # 为什么要两个分开：latest.toml 每次发版都变，update_commands.sh 按版本冻结。
 # 把「当前该装哪个版本」和「那个版本具体怎么装」混在一个文件里，就没法让装了
 # 旧版本的用户继续用他们那份说明 —— 而旧版本仍在运行。
 
 def selfupdate_latest_url():
     return f"{selfupdate_domain()}/macwavedata/latest.toml"
+
+
+def selfupdate_rc_latest_url():
+    return f"{selfupdate_domain()}/rcdata/latest.toml"
 
 
 def selfupdate_commands_url(version):

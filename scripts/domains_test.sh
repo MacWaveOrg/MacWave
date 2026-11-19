@@ -39,6 +39,8 @@ checks = [
      "https://raw.githubusercontent.com/MacWaveOrg/infosource/HEAD/deps/depsinfo_arm64/libidn2/_libidn2@common"),
     ("版本指针", domains.selfupdate_latest_url(),
      "https://raw.githubusercontent.com/MacWaveOrg/Selfupdate/HEAD/macwavedata/latest.toml"),
+    ("RC 版本指针", domains.selfupdate_rc_latest_url(),
+     "https://raw.githubusercontent.com/MacWaveOrg/Selfupdate/HEAD/rcdata/latest.toml"),
     ("更新脚本", domains.selfupdate_commands_url("4.0.0"),
      "https://raw.githubusercontent.com/MacWaveOrg/Selfupdate/HEAD/macwavedata/4.0.0/update_commands.sh"),
     ("解释器指针", domains.python_latest_url(),
