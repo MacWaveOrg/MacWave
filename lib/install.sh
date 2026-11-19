@@ -934,6 +934,11 @@ mw_platform() {
             # 桌面发行版那套）、ChromeOS（Crostini 容器确实是 Linux）、以及普通
             # 桌面 Linux。判据都只读环境与现成的文件，不装任何新工具。
             #
+            # 大胆想象一下：iOS 那位朋友总有一天也会在 ChromeOS 或 Android 上试一遍。
+            # 先防他一手 —— 这两种都能跑 bash，看起来「有终端就能装」，而 Android 上
+            # 连 glibc 都没有，ChromeOS 的终端只是个容器。早点把话说清楚，我省一次
+            # 排查，他省一次白装。
+            #
             # ANDROID_ROOT / ANDROID_DATA 由 Android 的 init 设，Termux 与 adb
             # shell 里都有；getprop 是 Android 独有的系统命令。
             if [[ -n "${ANDROID_ROOT:-}${ANDROID_DATA:-}" ]] \
