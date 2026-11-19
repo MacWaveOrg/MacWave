@@ -38,8 +38,32 @@
 `net/signature.py` 的 `PINNED_FINGERPRINTS`：一份写在代码里、改动会出现在 diff 里的
 指纹白名单。白名单非空时，`public_keys()` 只返回指纹命中的钥匙。
 
-它现在是空的（= 只验证「签名与公钥对得上」，不筛钥匙），**接通验签那天必须填上**
-真实指纹。填之前请先发在两处以上（本仓库、README、官网、Release 正文）。
+现在填的就是本目录这把钥：
+
+```
+7220E218395DE865AACC339167F14E52D0E229FB    Ed25519, sign-only, 2026-11-19 生成
+UID：MacWave Release <macwaveorg@outlook.com>
+公钥文件：D0E229FB.asc
+```
+
+轮换时在这里加新指纹、**旧指纹先留着**（已发布的旧版本还要用它验），等旧版本退场
+再删。填之前请先把指纹发在两处以上（本仓库、README、官网、Release 正文）。
+
+## 4.4 的实验期策略：验不过只警告
+
+4.4 起客户端会做三件事（`lib/install.sh`、`lib/selfupdate.sh`、`update_commands.template.sh`）：
+
+| 检查 | 依赖什么 | 不符时 |
+|---|---|---|
+| `latest.toml` 的签名 | `MACWAVE_RSA_PUB`（RSA 公钥，PEM） | **警告** |
+| `update_commands.sh` 的哈希 | `latest.toml` 的 `update_commands_sha256` | **警告** |
+| 每个下载文件的哈希 | `want <路径> <0\|1> <sha256>` 的第三列 | **警告** |
+
+- 设 `MACWAVE_WANT_HASHES=1` 才会逐文件校验（客户端在拿到 `update_commands_sha256`
+  时自己置上）；不设就是 4.4 之前的行为。
+- 设 `MACWAVE_STRICT_HASHES=1` 才把「警告」升级成「失败」。**这是未来的默认**，
+  现在不设 —— 验签能力要等客户端版本铺开。
+- 没有任何哈希/签名时静默放行：2026-12-01 之前的 Release 本来就没有签名对。
 
 验签入口是 `net/signature.py` 的 `verify_detached()`：给它「数据 + 签名」以及这个
 目录，它用 `gpg --verify` 对着此处的公钥验一次（用临时 GNUPGHOME，不碰用户自己的

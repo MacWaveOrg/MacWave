@@ -190,6 +190,21 @@ grep -E 'want (lib/(install|uninstall)\.sh|.*__pycache__|.*\.pyc)' /tmp/update_c
 
 ### 第 5 步：更新 `Selfupdate` 的 `latest.toml`
 
+> 4.4 起 `latest.toml` 多一个字段，用来钉住「即将被 bash 执行的那个脚本」：
+>
+> ```toml
+> update_commands_sha256 = "…"   # 第 4 步生成器最后一行会打印出来
+> ```
+>
+> 同目录再放一份签名（机器验，openssl；给人验的 GPG 签名在 Release 附件里）：
+>
+> ```bash
+> openssl dgst -sha256 -sign ~/MD/密钥/private/macwave-rsa.key \
+>     -out macwavedata/latest.toml.sig macwavedata/latest.toml
+> ```
+>
+> 4.4 客户端拿到它会**只警告**不符；`MACWAVE_STRICT_HASHES=1` 时才失败。
+
 ```toml
 version = "<新版本>"
 release_date = "YYYY-MM-DD"
