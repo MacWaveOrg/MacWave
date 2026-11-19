@@ -54,9 +54,9 @@ fi
 
 # 目录里只该有公钥与说明；散落的其它文件会被当成「公钥」去 import
 STRAY=$(find "$REPO_DIR/Keys" -type f ! -name '*.asc' ! -name '*.gpg' ! -name '*.pub' \
-        ! -name 'README.md' 2>/dev/null)
+        ! -name '*.pem' ! -name 'README.md' 2>/dev/null)
 if [[ -z "$STRAY" ]]; then
-    pass "Keys/ 里只有公钥（*.asc / *.gpg / *.pub）与 README"
+    pass "Keys/ 里只有公钥（*.asc / *.gpg / *.pub / *.pem）与 README"
 else
     fail "Keys/ 里有不认的文件：$STRAY"
 fi
@@ -237,6 +237,112 @@ PY
     unset GNUPGHOME
 fi
 
+echo "========== 4. 内置 RSA 公钥与 latest.toml 的签名（机器验签）=========="
+
+# 两个脚本是 curl | bash 跑起来的，没法 source，所以各自内嵌一份公钥。它必须
+# 和仓库里那份逐字相同：轮换时漏掉一处，就会出现「一半脚本验旧钥」。
+if python3 "$SCRIPT_DIR/embed_rsa_pub.py" --check > /dev/null 2>&1; then
+    pass "两个脚本内嵌的公钥与 Keys/macwave-rsa.pub.pem 一致"
+else
+    fail "内嵌公钥与 Keys/macwave-rsa.pub.pem 不一致（跑 python3 scripts/embed_rsa_pub.py）"
+fi
+
+if [[ -f "$REPO_DIR/Keys/macwave-rsa.pub.pem" ]] &&
+    openssl pkey -pubin -in "$REPO_DIR/Keys/macwave-rsa.pub.pem" -noout 2> /dev/null
+then
+    pass "Keys/macwave-rsa.pub.pem 是可解析的 PEM 公钥"
+else
+    fail "Keys/macwave-rsa.pub.pem 缺失或解析不了"
+fi
+
+# 它是 PEM 不是 OpenPGP：net/signature.py 的 public_keys() 不能把它当 gpg 公钥 import
+PEM_AS_GPG=$(WORK="$REPO_DIR" PYTHONPATH="$(component_paths)" python3 - <<'PY'
+import os
+import sys
+
+sys.path[:0] = [p for p in os.environ.get("PYTHONPATH", "").split(os.pathsep) if p]
+import signature  # noqa: E402
+
+signature.PINNED_FINGERPRINTS = ()
+names = [os.path.basename(p) for p in signature.public_keys(os.path.join(os.environ["WORK"], "Keys"))]
+print("yes" if "macwave-rsa.pub.pem" in names else "no")
+PY
+)
+if [[ "$PEM_AS_GPG" == "no" ]]; then
+    pass "RSA 公钥不会被当成 GPG 公钥（public_keys 只认 .asc/.gpg/.pub）"
+else
+    fail "net/signature.py 把 macwave-rsa.pub.pem 当成了 GPG 公钥"
+fi
+
+# 下面是真的调用那两个脚本里的验签代码：把 helper 段抽出来 source，
+# 用假 curl 把准备好的 .sig 放到 -o 指定的位置。
+WORK_RSA="$(mktemp -d)"
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$WORK_RSA/key.pem" 2> /dev/null
+openssl pkey -in "$WORK_RSA/key.pem" -pubout -out "$WORK_RSA/key.pub.pem" 2> /dev/null
+printf 'version = "4.4.0"\n' > "$WORK_RSA/latest.toml"
+printf 'version = "9.9.9"\n' > "$WORK_RSA/tampered.toml"
+openssl dgst -sha256 -sign "$WORK_RSA/key.pem" -out "$WORK_RSA/latest.toml.sig" "$WORK_RSA/latest.toml" 2> /dev/null
+
+run_verify() {
+    # run_verify <脚本> <数据文件> <签名文件|空> <STRICT> → 打印 "<退出码>|<输出>"
+    local script="$1" data="$2" sig="$3" strict="${4:-0}" work="$WORK_RSA/h"
+    mkdir -p "$work"
+    awk '/^# >>> RSA public key/ {on=1} on {print} /^# <<< signature helpers <<</ {on=0}' \
+        "$REPO_DIR/$script" > "$work/helpers.sh"
+    cat > "$work/harness.sh" <<'HARNESS'
+RED_BOLD=""
+GREEN=""
+YELLOW=""
+RESET=""
+METADATA_TIMEOUT=10
+CURL_CACERT=""
+mw_signature_note() { printf '%s\n' "$1"; }
+curl() {
+    local out="" prev=""
+    for a in "$@"; do
+        [[ "$prev" == "-o" ]] && out="$a"
+        prev="$a"
+    done
+    [[ -n "${FAKE_SIG:-}" ]] || return 22
+    cp "$FAKE_SIG" "$out"
+}
+source "$HELPERS"
+mw_verify_latest_signature "$(cat "$DATA")" "$URL"
+HARNESS
+    local got rc
+    got=$(FAKE_SIG="$sig" HELPERS="$work/helpers.sh" DATA="$data" \
+        URL="https://example.invalid/latest.toml" MACWAVE_STRICT_HASHES="$strict" \
+        MACWAVE_RSA_PUB="$WORK_RSA/key.pub.pem" bash "$work/harness.sh" 2>&1)
+    rc=$?
+    printf '%s|%s' "$rc" "$(printf '%s' "$got" | tr '\n' ' ')"
+}
+
+check_verify() {
+    # check_verify <说明> <脚本> <数据> <签名|空> <STRICT> <期望退出码> <输出里该有的词>
+    local label="$1" script="$2" data="$3" sig="$4" strict="$5" want_rc="$6" want_text="$7"
+    local got rc out
+    got="$(run_verify "$script" "$data" "$sig" "$strict")"
+    rc="${got%%|*}"
+    out="${got#*|}"
+    if [[ "$rc" == "$want_rc" && "$out" == *"$want_text"* ]]; then
+        pass "$label"
+    else
+        fail "${label}（退出码 ${rc}，输出 ${out:-<空>}）"
+    fi
+}
+
+for script in lib/install.sh lib/selfupdate.sh; do
+    check_verify "${script}：签名对得上 → 通过" "$script" \
+        "$WORK_RSA/latest.toml" "$WORK_RSA/latest.toml.sig" 0 0 "signature OK"
+    check_verify "${script}：数据被改 → 只警告不失败" "$script" \
+        "$WORK_RSA/tampered.toml" "$WORK_RSA/latest.toml.sig" 0 0 "Warning"
+    check_verify "${script}：数据被改 + STRICT → 失败" "$script" \
+        "$WORK_RSA/tampered.toml" "$WORK_RSA/latest.toml.sig" 1 1 "Error"
+    check_verify "${script}：这一版没有 .sig → 静默放行" "$script" \
+        "$WORK_RSA/latest.toml" "" 0 0 "No signature"
+done
+rm -rf "$WORK_RSA"
+
 echo
 echo "=========================================="
 echo -e "🌊 Passed: $PASSED   Skipped: $SKIPPED"
@@ -246,4 +352,4 @@ if [ "$FAILED" -gt 0 ]; then
     echo -e "${RED_BOLD}🌊 Signature conventions are broken${RESET}"
     exit 1
 fi
-echo -e "${GREEN}🌊 Signature slots are in place (verification not wired into downloads yet)${RESET}"
+echo -e "${GREEN}🌊 Signature checks are in place (warn-only until MACWAVE_STRICT_HASHES=1)${RESET}"

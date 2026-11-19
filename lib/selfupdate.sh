@@ -213,6 +213,9 @@ fi
 # 在这里同样适用：改一处就要改另一处。
 #
 # 4.4 只**警告**：验签能力要客户端版本铺开之后才能真正强制。
+#
+# 公钥从哪来：mw_trusted_pub() —— 优先 MACWAVE_RSA_PUB（PEM 路径），否则用
+# 脚本内嵌的那把（scripts/embed_rsa_pub.py 维护，测试会比对是否同步）。
 
 mw_sha256() {
     openssl dgst -sha256 -r "$1" 2>/dev/null | awk '{print $1}'
@@ -236,11 +239,50 @@ mw_check_integrity() {
     return 0
 }
 
+# >>> RSA public key (managed by scripts/embed_rsa_pub.py) >>>
+MW_RSA_PUB_PEM='-----BEGIN PUBLIC KEY-----
+MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAjU1mGJPPTAhFrjXYtE65
+xfDZtAaK8OM+uWJSTnXkLJuFWXMZsFtqVU78Hab/qYWGFbb4csY/9nDe3gChVWNe
+z6gz+pevUmMBI53IaUlj/ifqHbMzINyTcVrass2D60+dzyFxwd0n58IFWsKEBq2m
+tTO9o2aQWmJPHjK4mOmItXDpbjM8qcDnf6tOHBoPBJni07zE/v1b3eRuJt3m++J0
+F1zKJN4PWdgyuwSQWxXHP3/zeT0oTFC25zR/4jdCI10MY9fYZk7R1u6bf65nW0dd
+W/Bixk2Gn5rI1ddGn+FpLgilggVPRyF+PoLtsEDqGT2pWieEU+TrpHNWzPbYNTfj
+CThk8UNi6xGfnYsok3MkS1QRG4F1JZ0hkoI2ChgefKam9xYIRcdnJ3i65/2ZUpAx
+nIybx6s0ysMUITaqQOUCNBo009W9ivRuwD8Iae9t0Hwpv7Ou87fkBWvysYYRwF9l
+yrQUrEHrNKHvFDhzyAHAFrSBjLATEQrNLZhwnkSjV447AgMBAAE=
+-----END PUBLIC KEY-----'
+# <<< RSA public key <<<
+
+MW_RSA_PUB_TMP=""
+
+mw_trusted_pub() {
+    # 输出一个**可读的 PEM 路径**，调用方拿它喂 openssl。两个来源：
+    #   1. MACWAVE_RSA_PUB（运维/测试自己指定）
+    #   2. 脚本内置的那一份
+    # 不去读安装树里的 Keys/macwave-rsa.pub.pem：那份和 latest.toml 走同一个
+    # 下载通道，能换数据的人也能换公钥，拿它验等于自证。脚本内置的这份随脚本
+    # 一起装进来，是「上一次可信安装」留下的锚点。
+    # 两个都没有就输出空串，调用方据此整段跳过（4.4 之前的行为）。
+    if [[ -n "${MACWAVE_RSA_PUB:-}" ]]; then
+        printf '%s' "$MACWAVE_RSA_PUB"
+        return 0
+    fi
+    if [[ -z "$MW_RSA_PUB_TMP" ]]; then
+        MW_RSA_PUB_TMP="$(mktemp -d 2>/dev/null)" || return 0
+        printf '%s\n' "$MW_RSA_PUB_PEM" > "$MW_RSA_PUB_TMP/macwave-rsa.pub.pem"
+        chmod 700 "$MW_RSA_PUB_TMP"
+        chmod 600 "$MW_RSA_PUB_TMP/macwave-rsa.pub.pem"
+    fi
+    printf '%s' "$MW_RSA_PUB_TMP/macwave-rsa.pub.pem"
+}
+
 mw_verify_latest_signature() {
     # mw_verify_latest_signature <latest.toml 的内容> <它的 URL>
     # 没有公钥就跳过；有公钥但 .sig 404 也算「这一版没签名」（实验期常态）。
     local data="$1" url="$2"
-    [[ -n "${MACWAVE_RSA_PUB:-}" ]] || return 0
+    local pub
+    pub="$(mw_trusted_pub)"
+    [[ -n "$pub" ]] || return 0
 
     local tmp sig status=0
     tmp="$(mktemp)"
@@ -253,7 +295,7 @@ mw_verify_latest_signature() {
         rm -f "$tmp" "$sig"
         return 0
     fi
-    if openssl dgst -sha256 -verify "$MACWAVE_RSA_PUB" -signature "$sig" "$tmp" > /dev/null 2>&1; then
+    if openssl dgst -sha256 -verify "$pub" -signature "$sig" "$tmp" > /dev/null 2>&1; then
         echo "🌊 Self-update data: signature OK"
     elif [[ "${MACWAVE_STRICT_HASHES:-}" == "1" ]]; then
         echo -e "${RED_BOLD}🌊 Error: the self-update data is not signed by the trusted key.${RESET}" >&2
@@ -265,6 +307,8 @@ mw_verify_latest_signature() {
     rm -f "$tmp" "$sig"
     return 0
 }
+
+# <<< signature helpers <<<
 
 
 # ==========================================
