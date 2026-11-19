@@ -74,3 +74,33 @@
 - `scripts/commands_test.sh`（帮助里的旗标必须在 `flags.ALL` 里）与 `flags_test.sh`
   （`describe()` 的措辞）都要跟着补一条。
 
+
+---
+
+## 下个版本：rc 目标改成 `.zshrc`，并清掉旧的 `.zprofile` 行
+
+**背景。** 4.4 把 shellenv 那一行写进 `~/.zprofile`（zsh）/ `~/.bash_profile`（bash），
+理由是「PATH 是登录级的东西，`.zprofile` 每个登录 shell 只跑一次」。
+这个理由在 macOS 上成立但不必要，在 Linux 上则直接不成立（图形终端起的是
+**非登录**交互 shell，`.zprofile` 根本不读）。
+
+**结论：改用 `.zshrc` / `.bashrc`，只写一处。**
+
+- `.zshrc` 在**登录 shell 里也会被读**（`zshenv → zprofile → zshrc`），是超集；
+  `.zprofile` 能做的它都能做，反过来不成立。
+- 「嵌套 shell 重复 prepend」这个唯一真实的优势已经不存在了 —— `wave shellenv`
+  的输出自带 `case ":$PATH:"` 守卫，重复 eval 是空操作。
+- 「`.zshrc` 非交互不读，所以 `ssh host cmd`/cron 看不见」这条论据是**错的**：
+  `ssh host cmd` 是非交互**非登录**，`.zprofile` 同样不读，只有 `.zshenv` 读。
+  真要在意那种场景就用 `.zshenv` 或绝对路径，不要靠 `.zprofile`。
+
+**要做的三件事。**
+
+1. `lib/install.sh` 的 `RC_FILE` 选择改成 `.zshrc` / `.bashrc`（`sh/dash` 仍 `.profile`）。
+   注释里的理由同步改对，别再留「PATH 是登录级的」那段。
+2. **迁移**：升级/卸载时把旧版写进 `.zprofile` / `.bash_profile` 的那一行一并摘掉，
+   否则用户文件里会留一行指向可能已失效的路径（这一条比"两个都写"重要得多）。
+3. **不要两个都写**：两处同一行，卸载要清两处，用户还会困惑哪行算数。
+
+**验收。** 新装只写 `.zshrc`；从 4.4 升级后 `.zprofile` 里那行消失；`wave shellenv`
+执行两次 PATH 不变长。
