@@ -376,6 +376,8 @@ btop             by Aristocratos
 choma            by opa334
 cloc             by Al Danial
 delta            by dandavison
+difft            by Wilfred Hughes
+duckdb           by duckdb
 dust             by bootandy
 eza              by Christina Sørensen and the eza community
 fd               by David Peter
@@ -383,12 +385,16 @@ ffmpeg           by FFmpeg Team
 fileicon         by Michael Klement
 fx               by antonmedv
 fzf              by Junegunn Choi
+gping            by orf
 htop             by Hisham Muhammad and the htop team
 hyperfine        by sharkdp
 ipsw             by blacktop
+jless            by Paul Julius Martinez
 jq               by Stephen Dolan, Nicolas Williams, et al.
+just             by Casey Rodarmor
 ldid             by Jay Freeman (saurik) / Procursus Team
 lsd              by Abin Simon
+mise             by jdx
 ncdu             by Yoran Heling
 ollama           by ollama
 palera1n         by palera1n Team
@@ -401,7 +407,10 @@ tmux             by Nicholas Marriott and contributors
 tree             by Steve Baker, Thomas Moore, et al.
 trollrestore     by JJTech (@JJTech0130)
 wget             by GNU Project
+xh               by ducaale
+yazi             by sxyazi
 yq               by Mike Farah
+zellij           by zellij-org
 zoxide           by Ajeet D'Souza
 ```
 ## 🌊 For Developers
