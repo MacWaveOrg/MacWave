@@ -1,6 +1,6 @@
 # MacWave 4.4.0
 
-Released: 2026-11-19 · build `323D1315` · branch `4.4` ·
+Released: 2026-11-19 · build `323D1346` · branch `4.4` ·
 previous stable 4.3.4 ·
 detail per stage: [beta1](RELEASE-4.4.0-beta1.md) · [beta2](RELEASE-4.4.0-beta2.md) ·
 [beta3](RELEASE-4.4.0-beta3.md) · [rc](RELEASE-4.4.0-rc.md)
@@ -162,7 +162,7 @@ Signing key fingerprint: `7220E218395DE865AACC339167F14E52D0E229FB`
 
 # MacWave 4.4.0
 
-发布：2026-11-19 · 构建号 `323D1315` · 分支 `4.4` ·
+发布：2026-11-19 · 构建号 `323D1346` · 分支 `4.4` ·
 上一个稳定版 4.3.4 ·
 各阶段细节：[beta1](RELEASE-4.4.0-beta1.md) · [beta2](RELEASE-4.4.0-beta2.md) ·
 [beta3](RELEASE-4.4.0-beta3.md) · [rc](RELEASE-4.4.0-rc.md)
