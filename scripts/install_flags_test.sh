@@ -265,6 +265,7 @@ write_sw_vers() {
 run_bare() {
     # run_bare [参数...]：不设 MACWAVE_TEST，平台判断才会真的跑起来
     OUT=$(PATH="$STUB_BIN:$PATH" MACWAVE_SW_VERS="$STUB_BIN/sw_vers" \
+          MACWAVE_SYSCTL="$STUB_BIN/sysctl" \
           MACWAVE_SELFUPDATE_DOMAIN="file://$SELFUPDATE_DIR" \
           /bin/bash "$INSTALL_SH" "$@" < /dev/null 2>&1)
     RC=$?
@@ -272,6 +273,7 @@ run_bare() {
 
 write_uname Darwin
 write_sw_vers iOS
+write_sysctl ""
 run_bare --dry-run --dir-option=1
 if [[ "$RC" -eq 2 ]] && has "$OUT" "iPhone or iPad" && has "$OUT" "targets macOS only"; then
     pass "iOS/iPadOS：认出越狱设备，说明为什么不该在这上面装（rc=2）"
@@ -279,19 +281,107 @@ else
     fail "iOS 的提示不对（rc=${RC}）：$(printf '%s' "$OUT" | head -2)"
 fi
 
-# sw_vers 读不到时（越狱环境里常见）靠文件兜底：/private/var/mobile 是 iOS 一定有、
-# macOS 一定没有的目录，所以它比「有没有 /var/jb」（只有 rootless 越狱才有）更普适。
-write_sw_vers ""
-mkdir -p "$WORK/fake-mobile"
-OUT=$(PATH="$STUB_BIN:$PATH" MACWAVE_SW_VERS="$STUB_BIN/sw_vers" \
-      MACWAVE_IOS_MARKER="$WORK/fake-mobile" \
+# 主线索是内核给的 hw.model：Mac 与 iPhone/iPad 的前缀不重叠，也不受越狱方式影响
+# （RootHide 藏得掉 /var/jb，藏不掉内核报的机型）。
+write_sysctl() {
+    printf '#!/bin/sh\ncase "$*" in\n  *hw.model*) echo "%s" ;;\n  *) exit 1 ;;\nesac\n' "$1" \
+        > "$STUB_BIN/sysctl"
+    chmod +x "$STUB_BIN/sysctl"
+}
+
+for device in iPhone15,3 iPad13,4; do
+    write_sysctl "$device"
+    OUT=$(PATH="$STUB_BIN:$PATH" MACWAVE_SYSCTL="$STUB_BIN/sysctl" \
+          MACWAVE_SW_VERS="$STUB_BIN/sw_vers" \
+          MACWAVE_SELFUPDATE_DOMAIN="file://$SELFUPDATE_DIR" \
+          /bin/bash "$INSTALL_SH" --dry-run --dir-option=1 < /dev/null 2>&1)
+    RC=$?
+    if [[ "$RC" -eq 2 ]] && has "$OUT" "iPhone or iPad"; then
+        pass "hw.model=${device}：认作 iOS（与越狱方式无关）"
+    else
+        fail "hw.model=$device 没认成 iOS（rc=${RC}）"
+    fi
+done
+
+# hw.machine 只当补充：报出 iPhone*/iPad* 才算数，报 arm64 不足以证明是 Mac。
+printf '#!/bin/sh\ncase "$*" in\n  *hw.machine*) echo "iPhone14,2" ;;\n  *) exit 1 ;;\nesac\n' \
+    > "$STUB_BIN/sysctl-machine"
+chmod +x "$STUB_BIN/sysctl-machine"
+OUT=$(PATH="$STUB_BIN:$PATH" MACWAVE_SYSCTL="$STUB_BIN/sysctl-machine" \
+      MACWAVE_SW_VERS="$STUB_BIN/sw_vers" MACWAVE_JB_ROOT="$WORK/nonexistent-jb" \
       MACWAVE_SELFUPDATE_DOMAIN="file://$SELFUPDATE_DIR" \
       /bin/bash "$INSTALL_SH" --dry-run --dir-option=1 < /dev/null 2>&1)
 RC=$?
 if [[ "$RC" -eq 2 ]] && has "$OUT" "iPhone or iPad"; then
-    pass "sw_vers 读不到时，/private/var/mobile 这条兜底也认得出 iOS"
+    pass "hw.model 失灵 + hw.machine 报 iPhone14,2：认作 iOS"
 else
-    fail "iOS 的文件兜底没生效（rc=${RC}）：$(printf '%s' "$OUT" | head -2)"
+    fail "hw.machine 这条补充线索没生效（rc=${RC}）"
+fi
+
+# hw.model 失灵时，/var/jb 那条能提前给出结论 —— 但必须长得像一棵越狱根。
+write_sysctl ""
+mkdir -p "$WORK/jb/usr/bin" "$WORK/not-jb"
+OUT=$(PATH="$STUB_BIN:$PATH" MACWAVE_SYSCTL="$STUB_BIN/sysctl" \
+      MACWAVE_SW_VERS="$STUB_BIN/sw_vers" MACWAVE_JB_ROOT="$WORK/jb" \
+      MACWAVE_SELFUPDATE_DOMAIN="file://$SELFUPDATE_DIR" \
+      /bin/bash "$INSTALL_SH" --dry-run --dir-option=1 < /dev/null 2>&1)
+RC=$?
+if [[ "$RC" -eq 2 ]] && has "$OUT" "iPhone or iPad"; then
+    pass "hw.model 失灵 + /var/jb 有结构：提前判定为 iOS"
+else
+    fail "/var/jb 快速路径没生效（rc=${RC}）"
+fi
+
+# 空目录（没有 usr/ 也没有 Library/）不算越狱根：macOS 上真有人 mkdir 一个 /var/jb
+# 也不能因此把一台 Mac 拦掉。
+OUT=$(PATH="$STUB_BIN:$PATH" MACWAVE_SYSCTL="$STUB_BIN/sysctl" \
+      MACWAVE_SW_VERS="$STUB_BIN/sw_vers" MACWAVE_JB_ROOT="$WORK/not-jb" \
+      MACWAVE_SELFUPDATE_DOMAIN="file://$SELFUPDATE_DIR" \
+      /bin/bash "$INSTALL_SH" --help < /dev/null 2>&1)
+RC=$?
+if [[ "$RC" -eq 0 ]]; then
+    pass "空的 /var/jb（有人手建的）不会把 macOS 误判成 iOS"
+else
+    fail "空的 /var/jb 触发了误判（rc=${RC}）"
+fi
+
+# hw.model 读不到时才退到 sw_vers；两条都读不到再看密封卷上的 plist。
+write_sysctl ""
+write_sw_vers iOS
+run_bare --dry-run --dir-option=1
+if [[ "$RC" -eq 2 ]] && has "$OUT" "iPhone or iPad"; then
+    pass "hw.model 读不到：退到 sw_vers -productName 仍认得出 iOS"
+else
+    fail "sw_vers 这条兜底没生效（rc=${RC}）"
+fi
+
+write_sw_vers ""
+printf '<?xml version="1.0"?><plist><dict><key>ProductName</key><string>iPhone OS</string></dict></plist>' \
+    > "$WORK/systemversion.plist"
+OUT=$(PATH="$STUB_BIN:$PATH" MACWAVE_SYSCTL="$STUB_BIN/sysctl" \
+      MACWAVE_SW_VERS="$STUB_BIN/sw_vers" \
+      MACWAVE_SYSTEM_VERSION_PLIST="$WORK/systemversion.plist" \
+      MACWAVE_SELFUPDATE_DOMAIN="file://$SELFUPDATE_DIR" \
+      /bin/bash "$INSTALL_SH" --dry-run --dir-option=1 < /dev/null 2>&1)
+RC=$?
+if [[ "$RC" -eq 2 ]] && has "$OUT" "iPhone or iPad"; then
+    pass "两条都读不到：密封卷上的 SystemVersion.plist 仍认得出 iOS"
+else
+    fail "plist 这条兜底没生效（rc=${RC}）"
+fi
+
+# 三条都给不出结论时按 macOS 处理（误拦真 Mac 比漏判更糟）
+write_sysctl ""
+printf '#!/bin/sh\nexit 1\n' > "$STUB_BIN/sw_vers"; chmod +x "$STUB_BIN/sw_vers"
+OUT=$(PATH="$STUB_BIN:$PATH" MACWAVE_SYSCTL="$STUB_BIN/sysctl" MACWAVE_SW_VERS="$STUB_BIN/sw_vers" \
+      MACWAVE_SYSTEM_VERSION_PLIST="$WORK/nonexistent.plist" \
+      MACWAVE_SELFUPDATE_DOMAIN="file://$SELFUPDATE_DIR" \
+      /bin/bash "$INSTALL_SH" --help < /dev/null 2>&1)
+RC=$?
+if [[ "$RC" -eq 0 ]]; then
+    pass "三条线索都没有时按 macOS 处理（不误拦）"
+else
+    fail "线索缺失时把 macOS 拦掉了（rc=${RC}）"
 fi
 
 write_sw_vers macOS

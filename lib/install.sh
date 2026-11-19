@@ -889,13 +889,18 @@ resolve_custom_dir() {
 # found」，不如第一句就说清楚该去哪 —— Linux 由兄弟项目 LinuxWave 覆盖，两边的
 # 安装命令是同一个形状（releases/latest/download/install.sh）。
 #
-# 平台判断三条线索，按可靠性排：
+# 平台判断分两层：
+#
 #   1. uname -s —— Darwin / Linux / 其它（FreeBSD、MSYS 之类）；
-#   2. Darwin 之上再问 sw_vers -productName —— iOS 也报 Darwin，光看内核分不出
-#      一台越狱的 iPad 和一台 Mac；
-#   3. sw_vers 读不到时（越狱环境里常常没有）退两步：看
-#      /System/Library/CoreServices/SystemVersion.plist 里的 ProductName，再看
-#      /var/jb（rootless 越狱的根前缀，macOS 上不会有）。
+#   2. Darwin 之上再分 macOS 与 iOS：iOS 也报 Darwin，光看内核分不出来。这里只认
+#      **不可伪造**的三条线索 —— 内核给的 `hw.model` 前缀（Mac* / iPhone* / iPad*），
+#      `sw_vers -productName`，以及密封卷上 SystemVersion.plist 里的 ProductName。
+#
+# **不看越狱痕迹**（/var/jb、/private/var/mobile 之类），两条理由都成立才做得下去：
+#   · RootHide 那类反检测工具的工作方式就是把痕迹藏起来/重定向，认它等于留一个
+#     一按就过的后门；
+#   · 老式**有根**越狱（checkra1n / unc0ver）压根没有 /var/jb，认它又会漏判。
+# 换成内核与密封卷上的信息，rootful / rootless 一视同仁，也绕不过去。
 #
 # 为什么值得为 iPhone 单独写一段：本项目的作者有个朋友真的这么干过 —— 在越狱的
 # iPhone 上跑了这个安装脚本，一路装到 /var/jb/macwave，看起来像成功了；随后每条
@@ -906,34 +911,65 @@ resolve_custom_dir() {
 # MACWAVE_TEST 下不判：那是在「把某个目录当作 /」的沙箱里跑同一份脚本，宿主是
 # Linux 完全正常（CircleCI 的 Linux 容器就是这么跑的）。
 mw_platform() {
-    # macos / ios / linux / unknown
-    local kernel sw_vers_bin product version_plist chromeos_release ios_marker
+    # macos / ios / linux / android / chromeos / unknown
+    local kernel sysctl_bin sw_vers_bin product model machine version_plist chromeos_release jb_root
     chromeos_release="${MACWAVE_CHROMEOS_RELEASE:-/etc/lsb-release}"
     kernel="$(uname -s 2>/dev/null || true)"
     case "$kernel" in
         Darwin)
+            # 认 macOS 与 iOS 只看**不可伪造**的信息，不看越狱痕迹：
+            #
+            #   · hw.model 由内核给出 —— Mac 是 MacBookPro18,3 这种，iOS 是
+            #     iPhone15,3 / iPad13,4 这种，两类前缀不重叠；
+            #   · sw_vers -productName 与 SystemVersion.plist 内的 ProductName
+            #     都在密封系统卷（SSV）上，写不进去。
+            #
+            # 为什么不用 /var/jb、/private/var/mobile 这些：RootHide 那类反检测
+            # 工具的工作方式就是把越狱痕迹藏起来 / 重定向，认它等于给自己留一个
+            # 一按就过的后门；而且老式**有根**越狱（checkra1n / unc0ver）根本
+            # 没有 /var/jb，认它又会漏判。两代越狱在这三条线索面前是一样的。
+            sysctl_bin="${MACWAVE_SYSCTL:-/usr/sbin/sysctl}"
+            model="$("$sysctl_bin" -n hw.model 2>/dev/null || true)"
+            case "$model" in
+                iPhone*|iPad*|iPod*) echo ios; return 0 ;;
+                Mac*) echo macos; return 0 ;;
+            esac
+            # hw.machine 只当补充线索：macOS 与 iOS 的 shell 都可能把它报成 arm64
+            # （本机 macOS 就是 arm64），所以 arm64 / x86_64 **不能**用来证明是 Mac，
+            # 否则等于把 iOS 全放行；反过来，它若报出 iPhone*/iPad* 就是 iOS 的直接
+            # 证据，可以立刻结束。
+            machine="$("$sysctl_bin" -n hw.machine 2>/dev/null || true)"
+            case "$machine" in
+                iPhone*|iPad*|iPod*) echo ios; return 0 ;;
+            esac
+            # 快速命中：rootless 越狱的根前缀。放在 hw.model 之后是有意的 —— 真 Mac
+            # 上 hw.model 一定答 Mac*，所以有人故意在 macOS 建一个 /var/jb 也绝不会
+            # 让它被误判；反过来，sysctl 被挡、sw_vers 被删的极端情况下，这条能让
+            # 判定提前结束，不必再往下试。
+            #
+            # 只当线索、不当证据，两个理由：
+            #   · 一台 Mac 上也可能有人自己 mkdir 一个 /var/jb（就想看看会怎样），
+            #     所以还要求它长得像一棵越狱根（有 usr/ 或 Library/）才算数；
+            #   · 'jb' 本身没有权威含义，别的工具占了这个名字也不该影响判断 ——
+            #     因此它只用来**提前结束**，绝不用来单独下结论。
+            jb_root="${MACWAVE_JB_ROOT:-/var/jb}"
+            if [[ -d "$jb_root" ]] && { [[ -e "$jb_root/usr" ]] || [[ -e "$jb_root/Library" ]]; }; then
+                echo ios
+                return 0
+            fi
             sw_vers_bin="${MACWAVE_SW_VERS:-/usr/bin/sw_vers}"
             product="$("$sw_vers_bin" -productName 2>/dev/null || true)"
             case "$product" in
                 *iOS*|*iPhone*|*iPad*) echo ios; return 0 ;;
                 *macOS*|*Mac*) echo macos; return 0 ;;
             esac
-            version_plist="/System/Library/CoreServices/SystemVersion.plist"
+            version_plist="${MACWAVE_SYSTEM_VERSION_PLIST:-/System/Library/CoreServices/SystemVersion.plist}"
             if [[ -r "$version_plist" ]] && grep -q "iPhone OS\|<string>iOS" "$version_plist" 2>/dev/null; then
                 echo ios
                 return 0
             fi
-            # 最后两条是「sw_vers 靠不住」时的兜底，说的其实是两代越狱：
-            #   /private/var/mobile —— iOS 一定有，macOS 一定没有（rootful 与
-            #     rootless 越狱都在），所以它是主信号；
-            #   /var/jb —— 只有 rootless 越狱（iOS 15 起，Dopamine/palera1n 那类）
-            #     才有这个前缀，rootful（checkra1n/unc0ver）根本没有。
-            # 只认 /var/jb 会漏掉 rootful 那一半，所以两个都看。
-            ios_marker="${MACWAVE_IOS_MARKER:-/private/var/mobile}"
-            if [[ -e "$ios_marker" ]] || [[ -e /var/jb ]]; then
-                echo ios
-                return 0
-            fi
+            # 三条线索都给不出结论时按 macOS 处理：误拦一台真的 Mac 比漏判更糟，
+            # 而漏判的代价只是这人之后会撞上一串「iOS 没有这东西」的报错。
             echo macos
             ;;
         Linux)

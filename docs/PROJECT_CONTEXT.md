@@ -45,10 +45,11 @@ MacWave 的配置只有这一处：**用哪些环境变量、默认值是什么�
 | `wave.py` | 主入口。读配置目录（`config.json`）的 `base_dir`，把 `lib/`、`net/`、`pkg/`、`surfboard/` 注入 `sys.path`；用 `COMMANDS` 字典把 `install / uninstall / list / search / info / version / selfupdate / link / unlink / linkquery` 分发到对应模块，`ARGUMENTS` 处理 `-h/--help/-V/--version`；命令分发**之前**先拦下 `wave <命令> -h|--help`，交给 `help.print_command_help` 打印该命令自己的用法（否则各 handler 的白名单不认 `--help`：`install` 报错、`list` 静默忽略、`selfupdate` 会真的开始自更新） |
 | `help.py` | 帮助与版本文本：`print_custom_help`（`-h` / `--help` 的用法，命令与旗标列表与 README 的 Command Reference 对齐）、`print_version`、`print_error_help`（未知命令时先报错再打帮助）；另有 `COMMAND_HELP` 表与 `print_command_help`（`wave <命令> --help` 的子命令用法，旗标只列该 handler 白名单里真正接受的，不承诺做不到的事） |
 | `install.sh` | 官方安装脚本：选安装目录、`sudo` 提权、建运行时目录（`bin` / `links` / `deps` / `pkg` / `surfboard` / `lib` / `downloads/tmp`，3.1 起还有 `python` 与 `venv`）、写 `config.json` / `VERSION.json`（**系统目录→`/opt/macwave_config`，用户目录→`~/.config/macwave_config`**）、**用户级安装时把 2.5 之前的旧系统级配置 `/opt/macwave_config` 迁走**（否则它会因系统级优先而盖住新配置）、**按 configdata 的 `versiondata/files_info` 清单拉取全部程序文件**（与 `selfupdate.sh` 共用同一份清单，解析逻辑也相同）、**自带便携 Python**（3.1 起：读 `configdata/pythondata/latest_python` 下载并校验 sha256，解到 `python/<版本>/`，`current` 指向它），用它建 `venv/` 并在其中安装依赖（requests / packaging / rich）；下载失败则回退系统 `python3` 并提示、把 `bin/` + `links/` + `lib/` 写入 PATH（升级时替换旧版只含 `bin`/`lib` 的行）、清理旧版平铺 `bin/` 文件、检查 Xcode 命令行工具（`otool` / `install_name_tool` / `codesign`）、`set -eE` 加 ERR 陷阱（中途失败时打印「安装未完成」、已下载内容可能残留的路径与重跑指引，**刻意不自动删除**）、许可协议确认**排在「安装完成」之前**（直接回车视为同意；同意后把协议标识写进 `AGREEMENT.json`，标识从装好的 `lib/selfupdate.py` 读、不另抄日期，`--ci` 的自动同意也记；拒绝时把安装树、配置目录与 rc 里的 PATH 一起回滚，回滚不写死 sudo）、支持批量/脚本化安装（`--ci`，`--CI` 等价，全程免交互，未给 `--dir-option` 时按默认的选项 1；`--dir-option=N` 免菜单直接选定，自定义项可写 `--dir-option=N=DIR`；`--dry-run` 只走流程、只打印每一步会做什么，不下载、不提权（不碰 `sudo`）、不建目录、不写文件，取不到最新版本号时用占位值继续，所以断网也能看完输出；`-h/--help`（**只打用法、不安装**，且只能单独出现或与 `--dry-run` 连用，与其它安装参数一起用会报错并点名；`--raw` / `--zh` 不算安装参数，可与它同用）；`--print-usage`（打用法后**继续**安装，可与任何参数同用）；`--raw`（机器可读输出：没有艺术字、颜色、转圈动画与光标控制，下载进度每 10% 打一行 `####`，与 `wave install --raw` 同义）；`--skip-probe`（跳过写探针，只按权限位判断能不能写）；`--ci` 需要免密 sudo，否则明确报错退出）。**非 macOS 一律不装**：`mw_platform` 先看
-`uname -s`，Darwin 之上再看 `sw_vers -productName` 分 macOS 与 iOS；`sw_vers` 读不到时
-退到 `SystemVersion.plist`、`/private/var/mobile`（iOS 一定有、macOS 一定没有）与
-`/var/jb`（只有 rootless 越狱才有）。认出 iOS 时单独说一段为什么不该在这台设备上装，
-并明确「什么都没改」，Linux 之上再分 Android（`ANDROID_ROOT`/`getprop`，两个项目都不装那里）与 ChromeOS
+`uname -s`，Darwin 之上再分 macOS 与 iOS —— 只认不可伪造的三条线索：内核给的 `hw.model`
+前缀（`Mac*` / `iPhone*` / `iPad*`）、`sw_vers -productName`、密封卷上 `SystemVersion.plist`
+的 ProductName。**不看越狱痕迹**（`/var/jb`、`/private/var/mobile`）：RootHide 那类工具就是靠
+隐藏它们工作的，而老式有根越狱根本没有 `/var/jb`。认出 iOS 时单独说一段为什么不该在这台
+设备上装，并明确「什么都没改」，Linux 之上再分 Android（`ANDROID_ROOT`/`getprop`，两个项目都不装那里）与 ChromeOS
 （`/etc/lsb-release` 里的 `CHROMEOS_*`，指向 LinuxWave）；其余平台报出 `uname -s` 原值。
 都以退出码 2 收场。
 `MACWAVE_TEST` 下不判平台 —— 沙箱里宿主是 Linux 是常态。目录菜单按架构分叉（Intel 多一个 `/usr/local/macwave`），自定义项编号也随之变化。`MACWAVE_VERSION` 与代码来源分支都从 configdata 的 `versiondata/latest_version`（`version` / `branch`）读取，不写死在脚本里，保证「下载的代码」与「写进 VERSION.json 的版本号」对应同一版本 |
