@@ -163,6 +163,7 @@ def is_newer(candidate, current):
 # 这样 RC 的发布节奏不会把正式版用户卷进来，客户端也无需记住任何额外状态。
 CHANNEL_STABLE = "stable"
 CHANNEL_RC = "rc"
+CHANNEL_BETA = "beta"
 
 # 构建号（build number）的格式：3 位年内第几天 + 一个字母 + HHMM。
 #
@@ -175,8 +176,20 @@ _BUILD_RE = re.compile(r"^([0-9]{3})([A-Z])([0-9]{4})$")
 
 
 def channel_for(value):
-    """这个版本属于哪个渠道。没装（空串）按正式渠道算。"""
-    return CHANNEL_RC if value and is_prerelease(value) else CHANNEL_STABLE
+    """这个版本属于哪个渠道。没装（空串）按正式渠道算。
+
+    `-rc` 有自己的一套探针（rcdata/latest.toml），所以它算 RC 渠道；
+    beta / alpha / dev 暂时仍是「不许 selfupdate」——它们没有自己的探针，
+    跟着正式版走就会把两条分支混在一棵树里（2026-11-15 的事故）。
+    """
+    if not value:
+        return CHANNEL_STABLE
+    parsed = _parse(value)
+    if not parsed.is_prerelease:
+        return CHANNEL_STABLE
+    if parsed.pre and parsed.pre[0] == "rc":
+        return CHANNEL_RC
+    return CHANNEL_BETA
 
 
 def build_key(value):

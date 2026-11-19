@@ -282,7 +282,10 @@ def check(label, got, want):
 
 
 check("rc 后缀是 RC 渠道", channel_for("4.4.1-rc"), "rc")
-check("beta 是 RC 渠道", channel_for("4.4.0-beta2"), "rc")
+check("beta 仍是「不许 selfupdate」那条路（没有自己的探针）",
+      channel_for("4.4.0-beta2"), "beta")
+check("dev 同上", channel_for("4.4.0.dev1"), "beta")
+check("带编号的 rc 也是 RC 渠道", channel_for("4.4.1-rc1"), "rc")
 check("正式版是正式渠道", channel_for("4.4.1"), "stable")
 check("没装按正式渠道", channel_for(""), "stable")
 check("构建号解析（RC 的 R）", build_key("323R1250"), (323, 1250))
