@@ -554,7 +554,7 @@ MACWAVE_VERSION=4.4.0-beta2 MACWAVE_BRANCH=4.4 \
 > `selfupdate.sh` / `update_commands.sh`，但**验不过只警告、不拦安装**：
 > 老客户端跑的是自己那份老脚本，逼它们验签等于让它们装不上。要变强制，得先让
 > 带签名对的版本铺开，再把 `MACWAVE_STRICT_HASHES` 默认打开（按客户端版本门控）。
-> 现状与开关见 `Keys/README.md`。
+> 现状与开关见 `Keys/description.md`。
 
 资产传完之后再补两份文件，让**任何人**能核对「这批字节确实是 MacWave 发的」：
 

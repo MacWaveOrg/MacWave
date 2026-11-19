@@ -13,6 +13,6 @@
 # scripts/structure_test.sh 会拦。
 man
 info
-# 发布签名用的公钥（仓库与安装树里同名同内容，见 Keys/README.md）。
+# 发布签名用的公钥（仓库与安装树里同名同内容，见 Keys/description.md）。
 # 验签实现是 net/signature.py；把它当资源而不是组件：没有 __init__、不进 sys.path。
 Keys

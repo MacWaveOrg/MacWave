@@ -70,7 +70,7 @@ _HINT = {
 
 
 def keys_dir(base_dir):
-    """安装树里的公钥目录（仓库里同名，见 Keys/README.md）。"""
+    """安装树里的公钥目录（仓库里同名，见 Keys/description.md）。"""
     return os.path.join(str(base_dir), KEYS_DIR_NAME)
 
 
