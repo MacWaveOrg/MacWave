@@ -129,7 +129,7 @@ by a hash inside that signed data, and every downloaded file carries its own has
 intended default later, once a signed line has been in the field: old clients run their own
 old scripts, so turning it on now would lock them out. The full table, the switches and the
 key layout are in [the RC notes](RELEASE-4.4.0-rc.md) and
-[Keys/README.md](../Keys/README.md).
+[Keys/description.md](../Keys/description.md).
 
 ## 7. Smaller things worth knowing
 
@@ -336,7 +336,7 @@ Signing key fingerprint: `7220E218395DE865AACC339167F14E52D0E229FB`
 **校验失败只警告，继续安装。** 强制（`MACWAVE_STRICT_HASHES=1`）是以后的目标默认值，
 要等带签名的发布线在场上跑过一段：老客户端跑的是自己那份老脚本，现在打开等于把它们锁在门外。
 完整表格、开关与密钥布局见 [RC 说明](RELEASE-4.4.0-rc.md) 与
-[Keys/README.md](../Keys/README.md)。
+[Keys/description.md](../Keys/description.md)。
 
 ## 7. 其它值得知道的
 

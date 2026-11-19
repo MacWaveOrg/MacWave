@@ -87,7 +87,7 @@ shasum -a 256 -c SHA256SUMS                # everything OK
 
 Signing key fingerprint: `7220E218395DE865AACC339167F14E52D0E229FB`
 (`MacWave Release <macwaveorg@outlook.com>`). Machine-verification key:
-`Keys/macwave-rsa.pub.pem`. See [Keys/README.md](../Keys/README.md).
+`Keys/macwave-rsa.pub.pem`. See [Keys/description.md](../Keys/description.md).
 
 ---
 
@@ -166,4 +166,4 @@ shasum -a 256 -c SHA256SUMS                # 全部 OK
 
 签名指纹：`7220E218395DE865AACC339167F14E52D0E229FB`
 （`MacWave Release <macwaveorg@outlook.com>`）。机器验签公钥：`Keys/macwave-rsa.pub.pem`。
-详见 [Keys/README.md](../Keys/README.md)。
+详见 [Keys/description.md](../Keys/description.md)。

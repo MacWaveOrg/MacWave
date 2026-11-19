@@ -53,10 +53,12 @@ else
 fi
 
 # 目录里只该有公钥与说明；散落的其它文件会被当成「公钥」去 import
+# 说明文件叫 README.md 还是 description.md 都算「说明」（2026-11-19 从前者改名成后者，
+# 下个版本才随发布线铺开，所以两个名字都要认）。
 STRAY=$(find "$REPO_DIR/Keys" -type f ! -name '*.asc' ! -name '*.gpg' ! -name '*.pub' \
-        ! -name '*.pem' ! -name 'README.md' 2>/dev/null)
+        ! -name '*.pem' ! -name 'README.md' ! -name 'description.md' 2>/dev/null)
 if [[ -z "$STRAY" ]]; then
-    pass "Keys/ 里只有公钥（*.asc / *.gpg / *.pub / *.pem）与 README"
+    pass "Keys/ 里只有公钥（*.asc / *.gpg / *.pub / *.pem）与说明文件"
 else
     fail "Keys/ 里有不认的文件：$STRAY"
 fi
