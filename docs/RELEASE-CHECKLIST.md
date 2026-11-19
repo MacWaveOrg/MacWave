@@ -435,7 +435,22 @@ gh release view "$TAG" -R MacWaveOrg/MacWave --json assets --jq '.assets | lengt
 五个容易踩的点：
 
 - **文件名会撞。** 扁平化后同名的两个文件只会剩一个，而且**后写的那个静默覆盖前一个**，
-  不报错、资产数少一也不明显。已知两处：
+  不报错、资产数少一也不明显。**2026-11-19 又踩了一次**：`lib/install.sh` 与
+  `scripts/mirror-check/install.sh` 同名，按上面的循环上传（字母序，`lib/` 在前）
+  最后留下的是镜像巡检那个 —— Release 里的 `install.sh` 就不再是安装器了。
+  现在守卫工作流要求那个文件叫 **`mirror-check-install.sh`**，所以补一句：
+
+  ```bash
+  # 循化上传之后，把巡检脚本按带前缀的名字补上
+  gh api -H "Accept: application/vnd.github.raw" \
+    "repos/MacWaveOrg/MacWave/contents/scripts/mirror-check/install.sh?ref=$TAG" \
+    > /tmp/mirror-check-install.sh
+  gh release upload "$TAG" /tmp/mirror-check-install.sh -R MacWaveOrg/MacWave --clobber
+  ```
+
+  校验一行：`gh api repos/MacWaveOrg/MacWave/releases/tags/$TAG \
+    --jq '.assets[] | select(.name=="install.sh") | .size'` 必须等于 `wc -c lib/install.sh`
+  （约 139 KB），不是 1 KB 级。已知的另一处：
   - `.Pseudocode/pkg/pkginstaller.py` 与 `pkg/pkginstaller.py` 同名。
     所以第 1 步要 `grep -v '^\.'` —— 那个目录只是早期伪代码，本来就不该出现在资产里。
   - `lib/install.sh`（主安装器）与 `scripts/mirror-check/install.sh`（镜像巡检）同名。
