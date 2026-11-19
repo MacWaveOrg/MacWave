@@ -1,336 +1,159 @@
-# MacWave 4.4.0 Release Notes
+# MacWave 4.4.0
 
-- Released: 2026-11-09, build `313B1740`
-- Branch: `4.4` (cut from the `4.3` line; `v4.3.2` stays at `e74921c`)
-- Previous release: [4.3.2](RELEASE-4.3.2.md)
+Released: at publish · build `323R____` · branch `4.4` ·
+previous stable 4.3.4 ·
+detail per stage: [beta1](RELEASE-4.4.0-beta1.md) · [beta2](RELEASE-4.4.0-beta2.md) ·
+[beta3](RELEASE-4.4.0-beta3.md) · [rc](RELEASE-4.4.0-rc.md)
 
-## What is in it
+> This file supersedes the 2026-11-09 draft that carried build `313B1740`; that plan became
+> 4.4.0-beta1 and the line has moved on since.
 
-Four things, and only one of them is new work:
+4.4 is a "make the failure happen earlier" release. Almost everything in it moves a problem
+from *after* the user has committed — installed, configured, half-running — to *before*
+anything is downloaded, and says what to do instead. Two structural changes ride along: the
+installer now knows what machine it is on, and the download path can be checked against a
+key.
 
-1. **The fixes first shipped in 4.3.2**, unchanged — see [RELEASE-4.3.2](RELEASE-4.3.2.md)
-   for the evidence. That is why the title carries a security prefix: on 4.3.0 / 4.3.1 this
-   release is the shortest way out. **No new vulnerability is involved in 4.4.0 itself.**
-2. **The internals were split up and re-laid-out.** Nothing users type changed; the code
-   that decides how it behaves is no longer all in one file — neither the entry point
-   (§1, §2), the argument handling (§3), nor the directory layout (§4).
+## Bottom line first
 
-### 1. `wave.py` only reads a command and hands it over
-
-`lib/wave.py` had grown into three jobs at once: parse arguments, hold the command table,
-and carry two heuristics tables. The last one does not belong in an entry point, so it moved:
-
-| Module | Owns | Called by |
+| Area | Before 4.4 | Now |
 | --- | --- | --- |
-| `lib/silent.py` | `-s` / `-S`: which commands may be silenced, how the flags are stripped (`-sX`, `-CsX`), and applying the result (section A) | `wave.py` only |
-| `lib/suggest.py` | "did you mean": command names (typo table + spelling) and package names (edit distance + similarity) | `wave.py`, `pkg/pkginstaller.py`, `lib/latest.py` |
-| `lib/quiet.py` → merged into `silent.py` | the runtime output gate (`say` / `ask` / `silence_everything`), now section B of the same file | `pkg/`, `surfboard/` |
+| Wrong machine (iOS, Android, ChromeOS, old macOS) | installed, then every command failed | refused before download, with the reason and an alternative |
+| Elevation | "is the target outside `$HOME`" | write permission, confirmed by a real write probe |
+| Sealed system volume / SIP | not considered | checked before download; unsealed systems continue with a warning |
+| Scripted install | spinner, ANSI, `--help` fetched the network | `--raw`, `--print-usage`, `--help` offline |
+| Version comparison | three implementations | one (`lib/versioncompare.py`), channels and build numbers included |
+| Download integrity | transport only | checksums pinned to a signed manifest (**experimental, warn-only**) |
 
-```
-lib/wave.py   355 → 213 lines
-lib/silent.py      108 lines   (new, section A)  →  293 lines after the merge below
-lib/suggest.py     151 lines   (new)
-```
+## 1. Which machine are we on
 
-The split is also a correctness boundary: "which commands accept `-s`" used to live inside
-the dispatcher, so touching the silent rules meant editing the file that every command goes
-through. It now sits in one module that only the entry point imports.
+`lib/install.sh` decides this first, before the version request, before `sudo`, before
+anything is written.
 
-### 2. One package-name matcher instead of two
+- **macOS older than 10.15** — refused by version. The bundled interpreter and the command
+  set do not exist there.
+- **iOS** — refused. iOS also reports `Darwin`, so the kernel alone cannot tell them apart;
+  the decision uses `hw.model`, `hw.machine` and `version.plist`, i.e. information the
+  kernel supplies. Jailbreak traces (`/var/jb`, `/private/var/mobile`) are only a fallback:
+  new-style rootless jailbreaks hide deliberately, old-style rooted ones never create
+  `/var/jb`, so trusting them gets both directions wrong. Creating `/var/jb` on a Mac does
+  not fool it.
+- **Android and ChromeOS** — refused. Both can run `bash` and look installable; Android has
+  no glibc, ChromeOS is a container. Better to say so once than to fail at the first
+  command.
+- Each refusal prints what was detected and where to go instead.
 
-`wave install` and `wave latest` both answer "did you mean this package?", and they did it
-with two different implementations — a hand-written Levenshtein + similarity score in
-`pkg/pkginstaller.py`, and `difflib.get_close_matches(cutoff=0.6)` in `lib/latest.py`.
-Same question, two answers, and only one of them was ever tuned.
+**Elevation and the system volume**
 
-There is now one: `suggest.closest_name()`.
+- Permission *bits* are only the first check: an empty probe file is created in the nearest
+  existing directory and immediately removed. `Permission denied` means `sudo`; anything
+  else (ENOSPC, read-only mount) is a hard error, because dressing an environment problem up
+  as a password prompt wastes the user's time.
+- Targets inside SIP's range are checked for a sealed system volume first — that refusal is
+  the kernel's and `sudo` does not help. Unsealed systems (OCLP and friends) warn and
+  continue. Unknown state proceeds: otherwise every container and every 10.x box is locked
+  out.
+- `--skip-probe` keeps the old bits-only check; `--dry-run` never writes, so it uses bits.
 
-Measured over **12,432** single-character typos of the 47 `arm64` package names (every name
-× every position × `a-z0-9-_`), asking each implementation for its one suggestion:
+## 2. The installer, as something a script can drive
 
-| Path | Before | After |
-| --- | --- | --- |
-| `wave install <typo>` | 97.6% (hand-written matcher) | 97.6% — same function, moved |
-| `wave latest <typo>` | 94.7% (`difflib`, cutoff 0.6) | 97.6% — now the same matcher |
+- `--raw`: no ASCII art, no colour, no spinner, no cursor movement; downloads print one
+  `####` line per 10% (unknown length → per MiB). Same semantics as `wave install --raw`.
+- `--print-usage` prints usage and continues; `--help` prints usage and stops — and neither
+  touches the network any more. Arguments are parsed exactly once, before the version
+  request.
+- **Agreement** is asked once, normalised (`y`/`yes`/empty → yes, `n`/`no` → no, anything
+  else asks again, three times, then counts as no), and *recorded* — 4.3 promised to write
+  `AGREEMENT.json` and did not. Upgrades across a major version no longer ask: the
+  "reinstall from the release page" guard speaks first.
+- **Rollback never deletes an existing installation.** The tree is only removed if this run
+  created it (`TREE_PREEXISTED`); otherwise the message is "your existing installation is
+  untouched, re-run the installer to continue".
+- An incomplete tree is repaired rather than trusted: `VERSION.json` plus `lib/wave.py`
+  existing was not proof that the last update finished.
+- Installer exit codes have meaning now (`0` done, `1` refused/failed, `2` usage, `3`
+  needs privileges, `4` platform), so CI and wrappers can branch on them.
 
-Of the 667 answers that changed, **363** now land on the name the user meant when `latest`
-used to suggest a different one; **108** go the other way, and every one of those is a tie
-between two names that are both one edit away — `wave latest atop` answers `btop` where it
-used to answer `htop`. Either answer is defensible; there is no case where the new matcher
-loses to a distance the old one got right.
+**One more thing, deliberately vague:** the installer opens and closes with a little
+terminal decoration, and there are one or two other small things in there for people who
+read the script end to end. They are not listed here on purpose.
 
-The install path is unchanged by construction (the function was moved, not rewritten), apart
-from one deliberate difference: a query identical to a name in the list is no longer
-suggested back. That case cannot occur on this path — if the name exists, there is no 404 to
-explain.
+## 3. One CLI, one parser, one command table
 
-### 3. One tokenizer instead of four
+- Common flags (`--verbose`, `--resume`, `--skip-ssl`, `--proxy`, `--max-time`,
+  `--limit-rate`, …) go through a single `cli/common.parse()`. A malformed `--proxy` or
+  `--max-time` now fails with the same wording and the same exit code in
+  `install`/`selfupdate`/`latest`/`info`/`mirror` — they used to differ per command.
+- Subcommands and their help live in `cli/commands.py`; `wave -h`, `-h --zh` and the 15
+  per-command help pages are generated from it, and `scripts/commands_test.sh` keeps the
+  metadata honest.
+- `--unlink` is now `--no-link` (the old name still works and is labelled as the old name).
+- `wave selfupdate --dry-run`: prints the plan — current → target, branch, whether the
+  agreement will be asked, the three timeouts — before the agreement question, then exits.
+  Nothing is downloaded, nothing is written.
+- `wave shellenv` and `wave manual` are documented in both READMEs and on the website.
 
-Deciding what is a flag and what is a package name was implemented four times — once in
-each command's own argument loop:
+## 4. Network failures that say what to do
 
-| Place | What it had to handle |
-| --- | --- |
-| `pkginstaller.parse_flags` | `--name=value`, `-abc`, and a bare `-` that ends the flag list |
-| `silent.strip` | pulling `s` / `S` out of a cluster (`-sX`, `-CsX`) |
-| `upgrader.split_input` | pulling `X` / `a` out of a cluster (`-Xv`) |
-| `latest.split_arguments` | long form with `=`, and letter-by-letter clusters |
-| `pkginfohelper` | `word.partition("=")[0]` |
+- TLS failures are classified into five kinds — expired (`notAfter` printed), self-signed or
+  private CA, incomplete chain, hostname mismatch, plain network — each with its own next
+  step. Hostname mismatch says *do not* bypass, and why.
+- `MACWAVE_CACERT` points at an extra root certificate (PEM); it is validated up front
+  rather than silently ignored, and applies to `requests`, `urllib` and `curl` alike.
+  Precedence: `--skip-ssl` > `MACWAVE_CACERT` > system store.
+- Every `MACWAVE_*` variable that is actually read is listed in `config/envvar.py`, and
+  `scripts/check_domain_defaults.py` fails if a documented name, a package-index name, or an
+  unregistered name appears. Six variables that were written and never read were removed.
 
-Each one only knew the letters it cared about, so a rule learned in one place had to be
-relearned in the next: `-sX` had to work in `silent` *and* be recognised as a valid cluster
-by `install`, and those were two separate pieces of code that could disagree.
+## 5. Versions, channels, builds
 
-`lib/flags.py` now owns the rules (`flag_name` / `split` / `tokens` / `short_cluster` /
-`remove_short`). They are pure functions — no printing, no `sys.exit`, no config — which is
-what lets `pkg/` and `lib/` both use them. The flag catalogue that was already in that file
-stays exactly as it was: **diagnostics only**, never validation.
+- `lib/versioncompare.py` is the only version comparison in the project (three used to
+  exist, and a beta counted as *newer* than its release).
+- Channel follows what is installed: `X.Y.Z-rc` reads `rcdata/latest.toml`, everything else
+  reads `macwavedata/latest.toml`. Betas are still refused — they have no pointer of their
+  own, and following the stable one mixes two lines in one tree.
+- Build numbers are part of the decision now, not just decoration: same version, newer build
+  means a newer build. Format is `<days since 2026-01-01><letter><HHMM>`, the letter
+  encoding channel and weekday: `A`-`G` stable (Mon-Sun), `H` special dates, `I`-`O` beta
+  (`P` special), `R` always for RC.
+- When the RC line closes, the client crosses to stable as a **full** install.
 
-The same round of work finished the job on the runtime half. `quiet.py` was not a general
-output library — its own header said it was "the only switch for `-s / --silent`", and every
-function in it was gated by the same flag. Two files, one feature, two names. They are now
-one module, `lib/silent.py`, in two clearly marked sections: **A** parses argv and may exit
-(called only by `wave.py`), **B** is the runtime gate that `pkg/` and `surfboard/` call and
-which never exits. The split was historical, not principled.
+## 6. Experimental signing
 
-One fact also stopped being stored twice. "Which commands may be silenced" was written out by
-hand in `silent.apply()` and contradicted by the flag catalogue, which filed `-s` under "every
-command accepts it". It is now a per-command group in the catalogue, so
-`flags.describe("-s")` produces that sentence — byte for byte the same string the code used to
-build by hand, and the silent commands are no longer claimed to be all of them. Adding a
-read-only command no longer leaves a hole nothing tests.
+4.4 is the first line that ships a key: an OpenPGP key in `Keys/` with its fingerprint
+pinned in `net/signature.py`, plus an RSA key for machines, because LibreSSL on macOS
+cannot verify OpenPGP. `latest.toml` gets a detached signature, the update script is pinned
+by a hash inside that signed data, and every downloaded file carries its own hash.
 
-Nothing about behaviour was rewritten, so the change was checked by equivalence rather than
-by re-reading: the old and new implementations were run side by side over **26,930**
-argument combinations (`-sX`, `-CsX`, `-Xa`, `--max-time=1min`, a bare `-`, unknown flags,
-mixed with package names) and every pair of outputs was identical. The four single cases
-that differ at all are the ones where the *old* code differed from itself.
+**A failed check warns and continues.** Enforcement (`MACWAVE_STRICT_HASHES=1`) is the
+intended default later, once a signed line has been in the field: old clients run their own
+old scripts, so turning it on now would lock them out. The full table, the switches and the
+key layout are in [the RC notes](RELEASE-4.4.0-rc.md) and
+[Keys/README.md](../Keys/README.md).
 
-### 4. The repository is laid out the way the install tree is
+## 7. Smaller things worth knowing
 
-`lib/` had grown into "everything that is not a package operation". Two groups inside it had
-nothing to do with the entry point, so they became their own top-level directories — in the
-repository **and** in the install tree, which mirror each other:
-
-| Directory | What lives there | Why it is its own place |
-| --- | --- | --- |
-| `cli/` | `help.py`, `flags.py` (the argv tokenizer), `suggest.py`, `silent.py` | All four answer "what did the user type?", and none of them needs the install location to answer it |
-| `config/` | `configpaths.py`, `configerror.py` | Both answer "where is this MacWave installed, if at all?" — the question everything else asks *first* |
-
-`lib/` keeps the entry point, step tracing, the two read-only commands (`latest`, `mirror`),
-and the four install/self-update scripts.
-
-This is not a cosmetic move: `scripts/components.txt` is the single list that drives the
-install manifest, the `sys.path` entries and the test sandboxes, so the two new directories
-are wired in at all three places by adding two lines. `bash scripts/structure_test.sh`
-enforces that `wave.py` and both installers know every directory in that list.
-
-One ordering detail is deliberate and load-bearing. On an upgrade from 4.3.x the old tree
-still has `lib/help.py` and friends, and `lib/` stays on `sys.path`. `wave.py` therefore puts
-`cli/` and `config/` **ahead** of `lib/`, and the generated update script deletes the flat
-copies once the new files are in place. Without both, an upgrade would keep running the old
-module while looking like it had updated.
-
-### 5. What did not change
-
-Checked by hand after the split, not inferred from a green build:
-
-```
-$ wave list -s
-wave: -s only applies to wave install, wave link, wave selfupdate, wave uninstall, wave unlink, wave upgrade
-$ wave upgrade jq -sX          # -sX still merges into -s; nothing printed
-$ wave -s update jq
-wave: unknown command: update  # silent keeps errors, drops 🌊
-```
-
-`wave instal jq` still prints the caret line under the misspelt word and still suggests
-`install`; `-sS` still prints the error without the leading 🌊.
+- `wave uninstall` exit codes have meanings, and a failure part-way no longer aborts the
+  rest of the removal; the `sed` fallback removes the `# MacWave` marker line too.
+- Dependencies without a checksum are refused instead of installed (index data defect, not
+  a user problem).
+- Documentation: `AGENTS.md` gained the CI-ONLY boundary rules, `docs/CODE-MAP.md` moved
+  `config/` to where it actually lives, and the manual documents `MACWAVE_CACERT`.
 
 ## Upgrading
 
-```bash
-wave selfupdate
-```
-
-A minor release re-downloads **all 32** program files rather than a delta (the same
-convention as 4.2.0 and 4.3.0), so a client on any 4.x — 4.3.0, 4.3.1 or 4.3.2 — lands on a
-complete tree in one step. The two new modules are listed first in that download, so an
-interrupted update cannot leave a tree whose `wave.py` imports a file that is not there yet.
-
-## Regression
-
-| Suite | Assertions |
+| From | How |
 | --- | --- |
-| `bash scripts/message_test.sh` | 61 |
-| `bash scripts/suggest_test.sh` | 3 (now imports `lib/suggest.py` directly) |
-| `bash scripts/flags_test.sh` | 12, §8 pins the tokenizer's return shapes |
-| `bash scripts/dir_guard_test.sh` | 72 |
-| `flags` / `latest` / `info_format` / `configpath` / `structure` / `net_policy` / `markdown` / `shell_lint` | all green |
+| 4.3.x | installer, or `wave selfupdate` once this release is the stable pointer |
+| 4.4.0-beta1/2/3 | `wave selfupdate` refuses on purpose — reinstall from the release page |
+| 4.4.0-rc | `wave selfupdate` crosses to this release as a full install |
 
-`wave.py` is the one file every command goes through, so beyond the suites above the entry
-point was smoke-tested by hand for each dispatch branch: unknown command, misspelt command,
-`--help` per command, `-s` / `-S` placement before and after the command, and a read-only
-command given `-s`. The same for the four parsers in §3: a bad long flag, `-X` used on
-`install`, `-av` on `latest`, `--json` with `--raw` on `info`, and `mirror` keeping its own
-mutually exclusive formats.
-
----
-
-# MacWave 4.4.0 发布说明
-
-- 发布：2026-11-09，构建号 `313B1740`
-- 分支：`4.4`（从 `4.3` 这条线切出；`v4.3.2` 的 tag 仍在 `e74921c`）
-- 上一版：[4.3.2](RELEASE-4.3.2.md)
-
-## 这一版有什么
-
-四件事，只有一件是新做的：
-
-1. **4.3.2 首发的那些修复**，原样带过来 —— 证据见
-   [RELEASE-4.3.2](RELEASE-4.3.2.md)。标题带安全前缀就是这个原因：对还在 4.3.0 / 4.3.1
-   上的人来说，这一版是最短的出路。**4.4.0 本身不涉及新的漏洞。**
-2. **内部结构拆开了、也重新分目录了。** 用户敲的东西一个都没变，但「决定行为的那部分
-   代码」不再全挤在一个文件里 —— 入口（第 1、2 节）、参数处理（第 3 节）、目录布局
-   （第 4 节）都是。
-
-### 1. `wave.py` 只负责「读一个命令、交出去」
-
-`lib/wave.py` 已经长成三件事叠在一起：解析参数、持有命令表、还背着两张启发式表。
-最后一件不属于入口，所以搬走了：
-
-| 模块 | 管什么 | 谁调用 |
-| --- | --- | --- |
-| `lib/silent.py` | `-s` / `-S`：哪些命令能静默、怎么剥旗标（`-sX`、`-CsX`）、剥完怎么落地（A 段） | 只有 `wave.py` |
-| `lib/suggest.py` | 「你是不是想敲……」：命令名（误用表 + 拼写）、包名（编辑距离 + 相似度） | `wave.py`、`pkg/pkginstaller.py`、`lib/latest.py` |
-| `lib/quiet.py` → 已并入 `silent.py` | 运行期的输出闸门（`say` / `ask` / `silence_everything`），现在是同一文件的 B 段 | `pkg/`、`surfboard/` |
-
-```
-lib/wave.py   355 → 213 行
-lib/silent.py      108 行   （新增，A 段）→ 合并后 293 行
-lib/suggest.py     151 行   （新增）
-```
-
-拆开也是一条边界：以前「哪些命令接受 `-s`」写在分发器里，改静默规则就得动那个所有命令
-都要经过的文件；现在它待在一个只被入口导入的模块里。
-
-### 2. 包名纠错只剩一份实现
-
-`wave install` 与 `wave latest` 回答的是同一个问题「你是不是想装这个包」，却用了两套
-实现 —— `pkg/pkginstaller.py` 里手写的 Levenshtein + 相似度，和 `lib/latest.py` 里的
-`difflib.get_close_matches(cutoff=0.6)`。同样的问题、两个答案，而且只有一边被调过参。
-
-现在是同一个：`suggest.closest_name()`。
-
-测法是拿 47 个 `arm64` 包名的 **12,432** 组单字母错拼（每个名字 × 每个位置 ×
-`a-z0-9-_`），逐个问两套实现「你给哪个名字」：
-
-| 路径 | 改之前 | 改之后 |
-| --- | --- | --- |
-| `wave install <错拼>` | 97.6%（手写匹配） | 97.6% —— 同一个函数，只是搬了位置 |
-| `wave latest <错拼>` | 94.7%（`difflib`，cutoff 0.6） | 97.6% —— 换成同一个匹配 |
-
-667 处答案变了，其中 **363** 处是「本来给的是另一个包，现在给对了」；**108** 处反过来，
-而且这 108 处全是「两个名字都只差一个编辑」的平手 —— `wave latest atop` 以前答 `htop`，
-现在答 `btop`。两个都说得通，没有一处是新匹配输给了旧匹配本来答对的距离。
-
-install 那条路径按构造是不变的（函数是搬过去的，不是重写）。只有一处有意为之的差别：
-查询与清单里某个名字完全相同时，不再把这个名字建议回来 —— 这条路径上不可能出现这种
-情况（名字存在就不会 404 到这里）。
-
-### 3. 参数拆解只剩一份实现
-
-「哪个是旗标、哪个是包名」这件事以前实现了四遍，每个命令在自己的参数循环里各写一遍：
-
-| 位置 | 它得处理什么 |
-| --- | --- |
-| `pkginstaller.parse_flags` | `--name=value`、`-abc`、以及终止旗标列表的单独 `-` |
-| `silent.strip` | 从簇里抠出 `s` / `S`（`-sX`、`-CsX`） |
-| `upgrader.split_input` | 从簇里抠出 `X` / `a`（`-Xv`） |
-| `latest.split_arguments` | 带 `=` 的长写法、逐字母拆的短簇 |
-| `pkginfohelper` | 一句 `word.partition("=")[0]` |
-
-每份实现只认得自己关心的那几个字母，于是「在 A 处学到的规则得在 B 处再学一遍」：
-`-sX` 既要能在 `silent` 里被剥掉、又要能被 `install` 认成合法簇，而这是两段可以互不
-一致的代码。
-
-现在这套规则归 `lib/flags.py`（`flag_name` / `split` / `tokens` / `short_cluster` /
-`remove_short`）。它们是纯函数 —— 不打印、不 `sys.exit`、不读配置 —— 所以 `pkg/` 与
-`lib/` 都能直接用。这个文件里原本就有的那张旗标清单**一个字没动**：它只用于诊断，
-从不参与校验。
-
-同一轮也把运行期那半收进来了。`quiet.py` 从来不是一个通用输出库 —— 它自己的文件头
-写着「`-s / --silent` 的唯一开关」，里面每个函数都由同一个标志把关。两个文件、一个特性、
-两个名字。现在合成 `lib/silent.py`，两段各自标注清楚：**A 段**解析 argv、会退出（只被
-`wave.py` 调用），**B 段**是 `pkg/` 与 `surfboard/` 调用的运行期闸门、永不退出。当初分家
-是历史原因，不是设计。
-
-顺带让一个事实不再存两份。「哪些命令能静默」原本在 `silent.apply()` 里手拼成一句话，
-而旗标清单却把 `-s` 记在「任何命令都接受」那一组里 —— 两处互相矛盾。现在它按命令列进
-清单，`flags.describe("-s")` 就能生成那句话：与手拼的字符串逐字节相同，同时不再宣称
-所有命令都认 `-s`。以后加一条只读命令，不会留下一个没人测得到的窟窿。
-
-行为没有被重写，所以验证方式是「对照」而不是「重读一遍」：把新旧实现并排跑
-**26,930** 组参数组合（`-sX`、`-CsX`、`-Xa`、`--max-time=1min`、单独的 `-`、未知旗标、
-与包名混着来），逐组比对输出，全部一致。唯一有差异的四组，是**旧代码自己跟自己**
-对不上的那几处。
-
-### 4. 仓库布局与安装树一致了
-
-`lib/` 已经长成「不是软件包操作的东西都放这儿」。里面有两组东西与入口无关，于是各自
-独立成顶层目录 —— 仓库与安装树都是，两边布局完全一致：
-
-| 目录 | 装什么 | 为什么值得单独一处 |
-| --- | --- | --- |
-| `cli/` | `help.py`、`flags.py`（argv 拆解）、`suggest.py`、`silent.py` | 四者回答的都是「用户到底敲了什么」，而要回答这个问题都不需要知道安装位置 |
-| `config/` | `configpaths.py`、`configerror.py` | 两者回答的都是「这台机器上的 MacWave 装在哪、到底装没装」—— 而这是**别的模块第一件要问的事** |
-
-`lib/` 留下入口、步骤追踪、两个只读命令（`latest`、`mirror`）与四个安装/自更新脚本。
-
-这不是纯搬家：`scripts/components.txt` 是安装清单、`sys.path` 与测试沙箱共用的唯一
-来源，所以两个新目录只是给它加两行，三处就都跟上了。`bash scripts/structure_test.sh`
-会检查 `wave.py` 与两个安装脚本是否认得清单里的每一个目录。
-
-有一条顺序是有意的、且不能省。从 4.3.x 升级上来的树里还留着 `lib/help.py` 这些平铺
-副本，而 `lib/` 仍在 `sys.path` 上。所以 `wave.py` 把 `cli/` 与 `config/` 排在 `lib/`
-**之前**，生成的更新脚本又会在新文件就位后删掉那些平铺副本。少任一半，升级后的机器会
-看起来更新了、实际还在跑旧模块。
-
-### 5. 什么没变
-
-下面这些是拆完之后手敲出来的，不是「CI 绿了所以大概没变」：
-
-```
-$ wave list -s
-wave: -s only applies to wave install, wave link, wave selfupdate, wave uninstall, wave unlink, wave upgrade
-$ wave upgrade jq -sX          # -sX 仍合并成 -s，零输出
-$ wave -s update jq
-wave: unknown command: update  # 静默保留错误，只剥掉 🌊
-```
-
-`wave instal jq` 仍然在拼错的那个词下面打 `^^^` 并提示 `install`；`-sS` 仍然打错误但不带
-开头的 🌊。
-
-## 升级方式
+## Verifying the download
 
 ```bash
-wave selfupdate
+gpg --verify SHA256SUMS.asc SHA256SUMS     # Good signature
+shasum -a 256 -c SHA256SUMS                # everything OK
 ```
 
-次版本号发布下载的是**全部 32 个**程序文件而不是差量（4.2.0、4.3.0 都是这个约定），所以
-任何 4.x 客户端 —— 4.3.0、4.3.1、4.3.2 —— 一次就能落到完整的树上。两个新模块排在这份
-下载清单的最前面，中途失败也不会留下「`wave.py` import 一个还没下到的模块」的状态。
-
-## 回归
-
-| 脚本 | 断言数 |
-| --- | --- |
-| `bash scripts/message_test.sh` | 61 |
-| `bash scripts/suggest_test.sh` | 3（改成直接导入 `lib/suggest.py`） |
-| `bash scripts/flags_test.sh` | 12，第 8 节钉住拆解函数的返回形状 |
-| `bash scripts/dir_guard_test.sh` | 72 |
-| `flags` / `latest` / `info_format` / `configpath` / `structure` / `net_policy` / `markdown` / `shell_lint` | 全绿 |
-
-`wave.py` 是所有命令都要过的那个文件，所以除上面的脚本外，每条分发分支都手工冒烟过：
-未知命令、拼错命令、各命令的 `--help`、`-s`/`-S` 放在命令前后两种位置、以及给只读命令
-加 `-s`。第 3 节那四个解析器同理：长旗标写错、`install` 用 `-X`、`latest` 的 `-av`、
-`info` 同时给 `--json` 与 `--raw`、以及 `mirror` 自己那几组互斥格式。
+Signing key fingerprint: `7220E218395DE865AACC339167F14E52D0E229FB`
+(`MacWave Release <macwaveorg@outlook.com>`).
