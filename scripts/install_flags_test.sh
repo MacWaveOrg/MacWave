@@ -279,6 +279,21 @@ else
     fail "iOS 的提示不对（rc=${RC}）：$(printf '%s' "$OUT" | head -2)"
 fi
 
+# sw_vers 读不到时（越狱环境里常见）靠文件兜底：/private/var/mobile 是 iOS 一定有、
+# macOS 一定没有的目录，所以它比「有没有 /var/jb」（只有 rootless 越狱才有）更普适。
+write_sw_vers ""
+mkdir -p "$WORK/fake-mobile"
+OUT=$(PATH="$STUB_BIN:$PATH" MACWAVE_SW_VERS="$STUB_BIN/sw_vers" \
+      MACWAVE_IOS_MARKER="$WORK/fake-mobile" \
+      MACWAVE_SELFUPDATE_DOMAIN="file://$SELFUPDATE_DIR" \
+      /bin/bash "$INSTALL_SH" --dry-run --dir-option=1 < /dev/null 2>&1)
+RC=$?
+if [[ "$RC" -eq 2 ]] && has "$OUT" "iPhone or iPad"; then
+    pass "sw_vers 读不到时，/private/var/mobile 这条兜底也认得出 iOS"
+else
+    fail "iOS 的文件兜底没生效（rc=${RC}）：$(printf '%s' "$OUT" | head -2)"
+fi
+
 write_sw_vers macOS
 run_bare --help
 if [[ "$RC" -eq 0 ]] && has "$OUT" "Usage:"; then

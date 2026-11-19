@@ -907,7 +907,7 @@ resolve_custom_dir() {
 # Linux 完全正常（CircleCI 的 Linux 容器就是这么跑的）。
 mw_platform() {
     # macos / ios / linux / unknown
-    local kernel sw_vers_bin product version_plist chromeos_release
+    local kernel sw_vers_bin product version_plist chromeos_release ios_marker
     chromeos_release="${MACWAVE_CHROMEOS_RELEASE:-/etc/lsb-release}"
     kernel="$(uname -s 2>/dev/null || true)"
     case "$kernel" in
@@ -923,7 +923,14 @@ mw_platform() {
                 echo ios
                 return 0
             fi
-            if [[ -e /var/jb ]]; then
+            # 最后两条是「sw_vers 靠不住」时的兜底，说的其实是两代越狱：
+            #   /private/var/mobile —— iOS 一定有，macOS 一定没有（rootful 与
+            #     rootless 越狱都在），所以它是主信号；
+            #   /var/jb —— 只有 rootless 越狱（iOS 15 起，Dopamine/palera1n 那类）
+            #     才有这个前缀，rootful（checkra1n/unc0ver）根本没有。
+            # 只认 /var/jb 会漏掉 rootful 那一半，所以两个都看。
+            ios_marker="${MACWAVE_IOS_MARKER:-/private/var/mobile}"
+            if [[ -e "$ios_marker" ]] || [[ -e /var/jb ]]; then
                 echo ios
                 return 0
             fi
