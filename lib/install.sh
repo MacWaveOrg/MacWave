@@ -1271,7 +1271,15 @@ fi
 # 格式是 TOML 的一个子集：平铺的 `key = "value"`，允许行尾 # 注释。
 # 这里用 sed 而不是引 TOML 解析器，因为此刻客户端还没有可用的 Python 环境。
 
-LATEST_DATA_URL="$SELFUPDATE_URL/macwavedata/latest.toml"
+# 渠道：装 RC 时读 RC 自己的探针（rcdata/latest.toml），与正式版完全隔离。
+# 用环境变量而不是命令行旗标，是因为 install.sh 的参数要一路传到 update_commands
+# 里那份手抄的帮助文本（scripts/message_test.sh 钉着它），而 RC 是发布者视角的
+# 东西，不该出现在普通用户的用法里。
+if [[ "${MACWAVE_CHANNEL:-}" == "rc" ]]; then
+    LATEST_DATA_URL="$SELFUPDATE_URL/rcdata/latest.toml"
+else
+    LATEST_DATA_URL="$SELFUPDATE_URL/macwavedata/latest.toml"
+fi
 # `|| true` 不能省：赋值语句的退出码就是 curl 的退出码，在 `set -e` 下取不到
 # 版本会直接静默退出（实测 exit 7，下面那段「读不到版本」的提示一个字都打不出来）。
 LATEST_VERSION_DATA="$(curl -fsSL --max-time 30 ${CURL_CACERT:+--cacert "$CURL_CACERT"} "$LATEST_DATA_URL" 2>/dev/null || true)"
@@ -1301,6 +1309,8 @@ MACWAVE_VERSION="$(read_toml_string "$LATEST_VERSION_DATA" version)"
 LATEST_BRANCH="$(read_toml_string "$LATEST_VERSION_DATA" branch)"
 # 4.4 实验性签名：钉住即将被 bash 执行的那个脚本（空 = 这一版没带哈希）
 EXPECTED_UPDATE_COMMANDS_SHA256="$(read_toml_string "$LATEST_VERSION_DATA" update_commands_sha256)"
+# 构建号（`323R1250`）：RC 渠道靠它区分「同一版本的第几次构建」，必须落进 VERSION.json
+BUILD_NUMBER="$(read_toml_string "$LATEST_VERSION_DATA" build)"
 # 验 latest.toml 自己的签名（没有公钥 / 没有 .sig 时静默跳过）
 mw_verify_latest_signature "$LATEST_VERSION_DATA" "$LATEST_DATA_URL"
 
@@ -2010,7 +2020,7 @@ EOF
 run_cmd tee "$VERSION_FILE" > /dev/null << EOF
 {
   "version": "$MACWAVE_VERSION",
-  "components": {
+$( [[ -n "$BUILD_NUMBER" ]] && printf '  "build": "%s",\n' "$BUILD_NUMBER" )  "components": {
     "installer": "$MACWAVE_VERSION",
     "parser": "$MACWAVE_VERSION"
   }

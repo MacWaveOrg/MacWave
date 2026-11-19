@@ -107,8 +107,14 @@ def fetch_text(url, budget, raws=()):
     return result.stdout
 
 
-def fetch_version_data(budget, raws=()):
-    return fetch_text(domains.selfupdate_latest_url(), budget, raws)
+def fetch_version_data(budget, raws=(), url=None):
+    return fetch_text(url or domains.selfupdate_latest_url(), budget, raws)
+
+
+def probe_is_newer(data, current, current_build):
+    """这份探针里的版本比本机新吗（版本优先，版本相同看构建号）。"""
+    return versioncompare.newer_release(data.get("version", ""), data.get("build", ""),
+                                        current, current_build)
 
 
 def run_script(environment, overall_timeout):
@@ -319,7 +325,8 @@ def wants_dry_run(input_string):
     return DRY_RUN_FLAG in (input_string or "").split()
 
 
-def report_dry_run(current, latest, data, options, overall_timeout):
+def report_dry_run(current, latest, data, options, overall_timeout,
+                   channel=versioncompare.CHANNEL_STABLE, crossed=False):
     """`--dry-run`：把「会做什么」打印出来，然后什么都不做。
 
     只读：本地版本、刚取到的版本数据、命令行里的旗标。**不**问协议、**不**写
@@ -333,6 +340,14 @@ def report_dry_run(current, latest, data, options, overall_timeout):
 
     print(f"🌊 Dry run: MacWave would be updated from {current or 'unknown'} to {latest}.")
 
+    if channel == versioncompare.CHANNEL_RC:
+        line("channel", "rc (testing builds, follows rcdata/latest.toml)")
+    else:
+        line("channel", "stable")
+    if data.get("build"):
+        line("build", data["build"])
+    if crossed:
+        line("switch", "RC → stable as a *full* install (every file replaced)")
     if data.get("branch"):
         line("branch", data["branch"])
     if _is_cross_major(current, latest):
@@ -408,6 +423,17 @@ def installed_version():
         return None
 
 
+def installed_build():
+    """本机的构建号（`323R1250` 这种）。4.4 之前的安装里没有这个字段，返回 None。"""
+    path = version_file()
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text()).get("build")
+    except (ValueError, OSError):
+        return None
+
+
 # -------------------- 主流程 --------------------
 
 def handle_selfupdate(input_string=""):
@@ -415,10 +441,17 @@ def handle_selfupdate(input_string=""):
         print(f"{RED_BOLD}🌊 Error: MacWave is not installed. Run lib/install.sh first.{RESET}")
         sys.exit(1)
 
-    # 先看本机装的是什么，再决定要不要联网 —— 判断 beta 不需要网络，
+    # 先看本机装的是什么，再决定要不要联网 —— 判断渠道不需要网络，
     # 早退一步就少一次「Fetching the latest version...」之后的失败。
+    #
+    # 渠道由「装的是什么」推出来，客户端不记任何额外状态：
+    #   -rc            → RC 渠道，读 rcdata/latest.toml，只跟 RC
+    #   beta/alpha/dev → 仍然拒绝（它们没有自己的探针，跟正式版走会混分支）
+    #   其余           → 正式渠道
     current = installed_version()
-    if current and versioncompare.is_prerelease(current):
+    current_build = installed_build()
+    channel = versioncompare.channel_for(current)
+    if channel == versioncompare.CHANNEL_BETA:
         refuse_on_prerelease(current)
 
     options = options_from(input_string)
@@ -429,37 +462,69 @@ def handle_selfupdate(input_string=""):
 
     print("🌊 Fetching the latest version...")
 
-    text = fetch_version_data(budget, timeout_raws)
-    if text is None:
-        print(f"{RED_BOLD}🌊 Error: Cannot reach the MacWave version data.{RESET}")
-        print(f"{RED_BOLD}🌊 {domains.redact_url(domains.selfupdate_latest_url())}{RESET}")
-        # 证书过期 / 自签 / 链不完整 / 主机名不匹配 / 纯网络：五种的下一步不同
-        explained = tls.explain(LAST_ERROR, domains.selfupdate_latest_url())
-        if explained is not None:
-            for index, line in enumerate([explained[0]] + explained[1]):
-                prefix = "🌊 Next      " if index == 0 else "🌊           "
-                print(f"{RED_BOLD}{prefix}{line}{RESET}")
-        sys.exit(1)
+    data = None
+    crossed_from_rc = False
+    if channel == versioncompare.CHANNEL_RC:
+        text = fetch_version_data(budget, timeout_raws, domains.selfupdate_rc_latest_url())
+        if text is not None:
+            candidate = version_data(text)
+            if probe_is_newer(candidate, current, current_build):
+                data = candidate
+            # 否则 RC 渠道没有更新的构建，接着看正式版 —— 渠道收尾之后，
+            # 正式版就是出路（走全量，见下面 MACWAVE_FULL_INSTALL）。
 
-    data = version_data(text)
+    if data is None:
+        stable_url = domains.selfupdate_latest_url()
+        text = fetch_version_data(budget, timeout_raws, stable_url)
+        if text is None:
+            print(f"{RED_BOLD}🌊 Error: Cannot reach the MacWave version data.{RESET}")
+            print(f"{RED_BOLD}🌊 {domains.redact_url(stable_url)}{RESET}")
+            # 证书过期 / 自签 / 链不完整 / 主机名不匹配 / 纯网络：五种的下一步不同
+            explained = tls.explain(LAST_ERROR, stable_url)
+            if explained is not None:
+                for index, line in enumerate([explained[0]] + explained[1]):
+                    prefix = "🌊 Next      " if index == 0 else "🌊           "
+                    print(f"{RED_BOLD}{prefix}{line}{RESET}")
+            sys.exit(1)
+        data = version_data(text)
+        crossed_from_rc = (channel == versioncompare.CHANNEL_RC
+                           and probe_is_newer(data, current, current_build))
     latest = data.get("version", "")
+    latest_build = data.get("build", "")
     if not latest:
         print(f"{RED_BOLD}🌊 Error: The version data has no 'version' field.{RESET}")
         sys.exit(1)
 
-    print(f"🌊 Latest version found: {latest}")
+    if channel == versioncompare.CHANNEL_RC:
+        print("🌊 Channel: RC (testing builds) — updates follow rcdata/latest.toml")
+    else:
+        print("🌊 Channel: stable")
+    print(f"🌊 Latest version found: {latest}"
+          + (f" (build {latest_build})" if latest_build else ""))
 
-    if current and version_key(current) >= version_key(latest):
-        print(f"{GREEN}🌊 MacWave is already up to date (current: {current}).{RESET}")
+    if not probe_is_newer(data, current, current_build):
+        where = f"build {current_build}" if current_build else "no build number"
+        print(f"{GREEN}🌊 MacWave is already up to date (current: {current}, {where}).{RESET}")
         if dry_run:
             print("🌊 Dry run: nothing would be downloaded or changed.")
         sys.exit(0)
+
+    if channel == versioncompare.CHANNEL_RC and not crossed_from_rc:
+        print("🌊 The RC channel has no newer build, and the stable release is not newer either.")
+
+    if crossed_from_rc:
+        print(f"{YELLOW}🌊 The RC channel has no newer build; the stable release "
+              f"{latest} is newer.{RESET}")
+        print(f"{YELLOW}🌊 Moving to it as a full install: every file is replaced, so no "
+              f"RC and stable files end up in the same tree.{RESET}")
 
     # 试运行在**问协议之前**结束：它既不该弹询问，也不该写 AGREEMENT.json。
     # 这一段的判断全是只读的（版本比较、协议是否已记录）。
     if dry_run:
         report_dry_run(current, latest, data, options,
-                       max(UPDATE_TIMEOUT, int(budget.total) * 20))
+                       max(UPDATE_TIMEOUT, int(budget.total) * 20),
+                       channel=versioncompare.channel_for(latest),
+                       crossed=crossed_from_rc)
         sys.exit(0)
 
     # 「确实要更新」之后才问协议：没东西可装的时候不打扰人。
@@ -477,6 +542,14 @@ def handle_selfupdate(input_string=""):
     # --max-time 也这样传：原样传文本，让脚本自己解析（它才是真正发请求的那一层）。
     environment = dict(os.environ)
     environment["MACWAVE_UPDATE_VERSION"] = latest
+    # 编排脚本还要自己取一份 latest.toml（验签与哈希都对着那份），所以渠道也得传，
+    # 否则它会去读正式版探针，验的是另一份数据。
+    environment["MACWAVE_UPDATE_CHANNEL"] = versioncompare.channel_for(latest)
+    if latest_build:
+        environment["MACWAVE_UPDATE_BUILD"] = latest_build
+    if crossed_from_rc:
+        # 跨渠道必须全量：增量按目标分支的文件列表铺，盖在 RC 树上就是两条线混装。
+        environment["MACWAVE_FULL_INSTALL"] = "1"
     if data.get("branch"):
         environment["MACWAVE_UPDATE_BRANCH"] = data["branch"]
     if install_python_from_source:
@@ -506,12 +579,19 @@ def handle_selfupdate(input_string=""):
     # 下载由 update_commands.sh 完成，它可能在某些路径上吞掉非零退出码，
     # 所以这里以 VERSION.json 的实际内容为准，避免误报成功
     final = installed_version()
-    if not final or version_key(final) < version_key(latest):
-        print(f"{RED_BOLD}🌊 Error: The update did not complete (still on {final or 'unknown'}).{RESET}")
+    final_build = installed_build()
+    reached = bool(final) and version_key(final) >= version_key(latest) and (
+        version_key(final) != version_key(latest)
+        or not versioncompare.is_newer_build(latest_build, final_build))
+    if not reached:
+        print(f"{RED_BOLD}🌊 Error: The update did not complete (still on "
+              f"{final or 'unknown'}"
+              f"{f', build {final_build}' if final_build else ''}).{RESET}")
         sys.exit(1)
 
     print("")
-    print(f"{GREEN}🌊 MacWave has been updated to {final}!{RESET}")
+    print(f"{GREEN}🌊 MacWave has been updated to {final}"
+          f"{f' (build {final_build})' if final_build else ''}!{RESET}")
 
     # wave.py 会被覆盖，但当前进程已经加载完了，直接退出即可
     sys.exit(0)

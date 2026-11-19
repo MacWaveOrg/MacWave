@@ -349,7 +349,14 @@ if [[ -n "${MACWAVE_TEST:-}" ]]; then
     echo "🌊 Test root: $SYS_ROOT"
 fi
 
-VERSION_DATA_URL="$SELFUPDATE_URL/macwavedata/latest.toml"
+# RC 渠道读自己的探针（与正式版完全隔离，见 net/domains.py 的说明）。
+# 渠道由调用方通过 MACWAVE_UPDATE_CHANNEL 传进来 —— 只有 selfupdate.py 知道
+# 本机装的是哪个渠道；直接执行本脚本时默认正式渠道。
+if [[ "${MACWAVE_UPDATE_CHANNEL:-}" == "rc" ]]; then
+    VERSION_DATA_URL="$SELFUPDATE_URL/rcdata/latest.toml"
+else
+    VERSION_DATA_URL="$SELFUPDATE_URL/macwavedata/latest.toml"
+fi
 
 read_toml_string() {
     # read_toml_string <文本> <键> —— 取平铺 TOML 的字符串值，去掉引号与行尾注释。
@@ -692,10 +699,14 @@ fi
 
 VERSION="${MACWAVE_UPDATE_VERSION:-}"
 
+# 探针**总是**要取一次：即使调用方已经给了版本号，验签与「update_commands 的哈希」
+# 都对着这份数据。以前只在没给版本号时才取，于是 Python 那条路（它总会给版本号）
+# 从头到尾没有校验过 update_commands_sha256 —— 实验期只是警告，但那是另一回事。
+VERSION_DATA="$(fetch_text "$VERSION_DATA_URL" "$METADATA_TIMEOUT")" || true
 if [[ -z "$VERSION" ]]; then
-    VERSION_DATA="$(fetch_text "$VERSION_DATA_URL" "$METADATA_TIMEOUT")" || true
     VERSION="$(read_toml_string "$VERSION_DATA" version)"
 fi
+BUILD="${MACWAVE_UPDATE_BUILD:-$(read_toml_string "$VERSION_DATA" build)}"
 
 # 4.4 实验性签名：钉住即将被 bash 执行的那个脚本（空 = 这一版没带哈希）
 EXPECTED_UPDATE_COMMANDS_SHA256="$(read_toml_string "$VERSION_DATA" update_commands_sha256)"
@@ -706,7 +717,7 @@ if [[ -z "$VERSION" ]]; then
     exit 1
 fi
 
-echo "🌊 Updating MacWave to $VERSION"
+echo "🌊 Updating MacWave to $VERSION$([[ -n "$BUILD" ]] && printf ' (build %s)' "$BUILD")"
 
 # ==========================================
 # 大版本守卫（跨大版本不允许 selfupdate）
@@ -1171,10 +1182,12 @@ fi
 
 config_cmd mkdir -p "$CONFIG_DIR"
 
+# 构建号（`323R1250` 这种）是 RC 渠道区分「同一个版本的第几次构建」的唯一依据，
+# 所以必须落进 VERSION.json —— 少了它，RC 客户端会认为「已经是最新」，再也升不上去。
 config_cmd tee "$VERSION_FILE" > /dev/null << EOF
 {
   "version": "$VERSION",
-  "components": {
+$([[ -n "$BUILD" ]] && printf '  "build": "%s",\n' "$BUILD")  "components": {
     "installer": "$VERSION",
     "parser": "$VERSION"
   }
