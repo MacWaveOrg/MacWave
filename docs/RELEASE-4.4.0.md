@@ -1,6 +1,6 @@
 # MacWave 4.4.0
 
-Released: at publish · build `323R____` · branch `4.4` ·
+Released: 2026-11-19 · build `323D1315` · branch `4.4` ·
 previous stable 4.3.4 ·
 detail per stage: [beta1](RELEASE-4.4.0-beta1.md) · [beta2](RELEASE-4.4.0-beta2.md) ·
 [beta3](RELEASE-4.4.0-beta3.md) · [rc](RELEASE-4.4.0-rc.md)
