@@ -333,7 +333,7 @@ if [[ -s "$UNRESOLVED_FILE" ]]; then
         missing_count="$(wc -l < "$MISSING_FILE" | tr -d ' ')"
         echo -e "${YELLOW}🌊 Warning: $missing_count library reference(s) exist in this installation but could not be linked:${RESET}"
         sort -u "$MISSING_FILE" | head -10 | while IFS= read -r entry; do
-            echo -e "${YELLOW}🌊   ${entry##*|}  (被 $(basename "${entry%%|*}") 引用)${RESET}"
+            echo -e "${YELLOW}🌊   ${entry##*|}  (referenced by $(basename "${entry%%|*}"))${RESET}"
         done
     fi
 
@@ -341,7 +341,7 @@ if [[ -s "$UNRESOLVED_FILE" ]]; then
         external_count="$(wc -l < "$EXTERNAL_FILE" | tr -d ' ')"
         echo "🌊 Note: $external_count library reference(s) not provided by any installed dependency, left unchanged:"
         sort -u "$EXTERNAL_FILE" | head -10 | while IFS= read -r entry; do
-            echo "🌊   ${entry##*|}  (被 $(basename "${entry%%|*}") 引用)"
+            echo "🌊   ${entry##*|}  (referenced by $(basename "${entry%%|*}"))"
         done
     fi
 fi

@@ -257,8 +257,10 @@ main() {
     elif ! tree_complete; then
         # 树在那儿但不完整：增量的前提（「没变动的文件都是对的」）不成立，
         # 直接全量补齐。这里不先跑 delta —— 缺的文件正好可能就是它要留着的那些。
-        mw_say "🌊 The installed tree is incomplete; reinstalling all of MacWave $VERSION"
-        mw_say "🌊 安装树不完整，正在重新安装 MacWave ${VERSION} 的全部文件"
+        # 两句要合成**一次**调用：mw_say 的第二个参数才是中文。分成两次的话，
+        # 英文模式会看到中文那行、中文模式会看到英文那行 —— 2026-11-19 用户报的就是这个。
+        mw_say "🌊 The installed tree is incomplete; reinstalling all of MacWave $VERSION" \
+            "🌊 安装树不完整，正在重新安装 MacWave ${VERSION} 的全部文件"
         install_fresh || return 1
     else
         mw_say "🌊 Updating MacWave ${MACWAVE_CURRENT_VERSION:-unknown} -> $VERSION" "🌊 正在更新 MacWave ${MACWAVE_CURRENT_VERSION:-unknown} -> $VERSION"
@@ -266,8 +268,8 @@ main() {
         # 增量之后再确认一次：delta 只含「上一版 → 本版」的差异，跨版本跳级时
         # 会漏掉中间那些版本改过的文件。补全比报错好 —— 用户什么也没做错。
         if ! tree_complete; then
-            mw_say "🌊 Some files are still missing after the update; fetching all of MacWave $VERSION"
-            mw_say "🌊 更新后仍有文件缺失，正在补齐 MacWave ${VERSION} 的全部文件"
+            mw_say "🌊 Some files are still missing after the update; fetching all of MacWave $VERSION" \
+                "🌊 更新后仍有文件缺失，正在补齐 MacWave ${VERSION} 的全部文件"
             install_fresh || return 1
         fi
     fi
