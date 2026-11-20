@@ -62,6 +62,8 @@ MacWave 是一个**面向 macOS 的包管理器**，用于分发 macOS 软件开
 
 （如果你使用的是 bash 而非 zsh，请运行 ```source ~/.bashrc```）
 
+**安装后建议阅读手册。点击阅读（这个词以后做成链接）**。
+
 **环境要求：macOS Monterey 12 及以上、Xcode Command Line Tools。**
 
 **你不需要自己安装 Python。** MacWave 自带一份 CPython，放在
