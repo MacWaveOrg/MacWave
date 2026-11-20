@@ -257,21 +257,61 @@ mw_plan() {
 # 这一段必须与 lib/selfupdate.sh 逐字一致 —— scripts/domains_test.sh 有断言。
 
 mw_domain() {
-    # mw_domain <变量名> <值>：校验协议、去掉末尾斜杠，然后打印规范化后的值
+    # mw_domain <变量名> <值>：校验协议、去掉末尾斜杠，然后打印规范化后的值。
+    # 规则必须与 net/domains.py 的 _validate 完全一致 —— scripts/domains_test.sh
+    # 会拿同一批输入分别喂给两边逐条比对。之前这里只认三种前缀写法，于是
+    # 「含空格 / 含反引号 / 大写协议头 / IPv6 回环」在 Python 侧被拒、在 shell 侧
+    # 放行，两边说法不一。
+    #
+    # 下面用 tr 而不是 ${x,,}：MacWave 要跑在 bash 3.2 上（macOS 自带那份）。
     local name="$1"
     local value="$2"
+    local scheme rest authority host
 
     while [[ "$value" == */ ]]; do
         value="${value%/}"
     done
 
+    # 这些字符会被拼进 URL、写进错误信息，也可能被 shell 当参数用，一律先拒
     case "$value" in
-        https://?*|file://?*) printf '%s\n' "$value"; return 0 ;;
-        # 明文 http 只给本机镜像（离线测试、本机代理）
-        http://127.0.0.1:?*|http://localhost:?*) printf '%s\n' "$value"; return 0 ;;
+        *' '*|*$'\t'*|*$'\n'*|*'"'*|*"'"*|*'`'*|*'$'*|*'\'*)
+            echo -e "${RED_BOLD}🌊 Error: $name contains a forbidden character (space, quote, backtick, \$ or \\\): $value${RESET}" >&2
+            echo -e "${RED_BOLD}🌊 错误：$name 含有禁止字符（空格、引号、反引号、\$ 或 \\）：$value${RESET}" >&2
+            exit 1 ;;
     esac
 
-    echo -e "${RED_BOLD}🌊 Error: $name must be an https:// (or file://) address, got: $value${RESET}" >&2
+    scheme="${value%%://*}"
+    rest="${value#*://}"
+    if [[ "$scheme" == "$value" || -z "$rest" ]]; then
+        echo -e "${RED_BOLD}🌊 Error: $name must include a scheme (https:// or file://): $value${RESET}" >&2
+        echo -e "${RED_BOLD}🌊 错误：$name 必须带协议头（https:// 或 file://）：$value${RESET}" >&2
+        exit 1
+    fi
+
+    scheme="$(printf '%s' "$scheme" | tr '[:upper:]' '[:lower:]')"
+    case "$scheme" in
+        https|file) printf '%s\n' "$value"; return 0 ;;
+    esac
+
+    if [[ "$scheme" == "http" ]]; then
+        # 明文 http 只给本机镜像（离线测试、本机代理）
+        authority="${rest%%/*}"
+        authority="${authority##*@}"
+        case "$authority" in
+            \[*\]*) host="${authority#[}"; host="${host%%]*}" ;;
+            *)     host="${authority%%:*}" ;;
+        esac
+        host="$(printf '%s' "$host" | tr '[:upper:]' '[:lower:]')"
+        case "$host" in
+            127.0.0.1|localhost|::1) printf '%s\n' "$value"; return 0 ;;
+        esac
+        echo -e "${RED_BOLD}🌊 Error: $name: plain HTTP is only allowed for loopback mirrors: $value${RESET}" >&2
+        echo -e "${RED_BOLD}🌊 错误：${name}：明文 HTTP 只允许本机回环镜像：$value${RESET}" >&2
+        exit 1
+    fi
+
+    echo -e "${RED_BOLD}🌊 Error: $name has an unsupported scheme '$scheme': $value${RESET}" >&2
+    echo -e "${RED_BOLD}🌊 错误：$name 的协议头不受支持（'$scheme'）：$value${RESET}" >&2
     exit 1
 }
 
