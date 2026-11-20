@@ -120,8 +120,8 @@ Installed binaries are stored in (options):
 ```
 Config file is stored in (a system-level install always takes priority):
 ```
-1. /opt/macwave_config          system-level install (needs sudo)
-2. ~/.config/macwave_config     user-level install (no sudo)
+1. /opt/macwave_config          system-level install
+2. ~/.config/macwave_config     user-level install
 ```
 ## 🌊 Using a Mirror (4.0 and later)
 Every address MacWave contacts is configurable, so switching mirrors is a set of environment variables rather than a command. To check which address is in effect, run `wave mirror` — it prints every source, whether it came from the environment or the built-in default, with passwords masked.

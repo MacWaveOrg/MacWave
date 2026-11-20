@@ -114,8 +114,8 @@ MacWave 是一个**面向 macOS 的包管理器**，用于分发 macOS 软件开
 ```
 配置文件存储于（系统级安装始终优先）：
 ```
-1. /opt/macwave_config          系统级安装（需要 sudo）
-2. ~/.config/macwave_config     用户级安装（无需 sudo）
+1. /opt/macwave_config          系统级安装
+2. ~/.config/macwave_config     用户级安装
 ```
 ## 🌊 使用镜像站（4.0 起）
 MacWave 用到的每个地址都能替换，所以换镜像是一组环境变量而不是命令。要查当前生效的是哪个地址，用 `wave mirror` —— 它会列出每一项的来源（环境变量还是内置默认值）与地址，密码默认脱敏。

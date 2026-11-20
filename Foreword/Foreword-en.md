@@ -43,13 +43,13 @@ default prefix on Intel Macs.
 
 **MacWave:**
 
-1. `/opt/macwave_config` — shared install (needs sudo)
-2. `~/.config/macwave_config` — single-user install (no sudo)
+1. `/opt/macwave_config` — shared install
+2. `~/.config/macwave_config` — single-user install
 
 **LinuxWave:**
 
-1. `/etc/linuxwave_config` — shared install (needs sudo)
-2. `~/.config/linuxwave_config` — single-user install (no sudo)
+1. `/etc/linuxwave_config` — shared install
+2. `~/.config/linuxwave_config` — single-user install
 
 **Warning: do not edit the configuration files casually — that can make `wave` behave
 strangely or in ways you do not expect.**
