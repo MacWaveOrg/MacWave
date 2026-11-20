@@ -62,6 +62,8 @@ MacWave 是一个**面向 macOS 的包管理器**，用于分发 macOS 软件开
 
 （如果你使用的是 bash 而非 zsh，请运行 ```source ~/.bashrc```）
 
+**安装后建议阅读手册。[点击阅读](Foreword/Foreword-zh.md)。**
+
 **环境要求：macOS Monterey 12 及以上、Xcode Command Line Tools。**
 
 **你不需要自己安装 Python。** MacWave 自带一份 CPython，放在
@@ -487,6 +489,7 @@ shallow clone 会报：
 | `lib/` | 入口、帮助、配置路径、自更新 |
 | `pkg/` | 安装、升级、卸载、链接、版本号解析 |
 | `surfboard/` | 依赖解析、解压、Mach-O 重定位 |
+| `Foreword/` | 使用手册：`Foreword-zh.md` / `Foreword-en.md`，README 与站点都从这里链接 |
 | `scripts/` | 测试与数据审计 |
 
 每个命令都是一个模块，各自只有一个处理函数，由 `lib/wave.py` 统一分派。

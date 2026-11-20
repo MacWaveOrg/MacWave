@@ -63,6 +63,8 @@ lists the rest.
 
 (If you are using bash instead of zsh, run ```source ~/.bashrc```)
 
+**We recommend reading the handbook after installing. [Read it here](Foreword/Foreword-en.md).**
+
 **Requirements: macOS Monterey 12 or later, Xcode Command Line Tools.**
 
 **You do not need to install Python.** MacWave ships its own CPython under
@@ -507,6 +509,7 @@ install a throwaway copy under a temporary root, or run the scripts in
 | `net/` | Transport policy: domains, TLS, timeouts |
 | `man/` | man pages for `wave` and every subcommand, English and Chinese (generated) |
 | `info/` | Info manuals `wave.info` / `wave-zh.info` — `info wave-zh` (generated) |
+| `Foreword/` | The handbook: `Foreword-en.md` / `Foreword-zh.md`, linked from the README and the site |
 | `scripts/` | Tests and data audits |
 
 `lib/`, `cli/`, `config/`, `pkg/`, `surfboard/` and `net/` are the runtime components:
