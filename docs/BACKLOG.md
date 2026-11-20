@@ -79,6 +79,12 @@
 
 ## 下个版本：rc 目标改成 `.zshrc`，并清掉旧的 `.zprofile` 行
 
+> **2026-11-20 决定：先搁置。** MacWave 继续用 `~/.zprofile` / `~/.bash_profile`，
+> LinuxWave 那边单独用 `~/.zshrc` / `~/.bashrc`（已改）。两个项目的前提不同：
+> macOS 的终端默认起**登录** shell，`.zprofile` 一定会被读到；Linux 图形终端的
+> 终端模拟器起的是**非登录**交互 shell，只有 rc 会被读。等哪天真要统一时再回来
+> 看这一条 —— 下面的论证本身仍然成立。
+
 **背景。** 4.4 把 shellenv 那一行写进 `~/.zprofile`（zsh）/ `~/.bash_profile`（bash），
 理由是「PATH 是登录级的东西，`.zprofile` 每个登录 shell 只跑一次」。
 这个理由在 macOS 上成立但不必要，在 Linux 上则直接不成立（图形终端起的是
