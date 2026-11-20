@@ -19,6 +19,14 @@ PY_PATHS="$(component_paths)"
 
 FAILED=0
 
+# 这个脚本量的是「不设环境变量时的行为」，所以先把用户 shell 里那份地址摘掉：
+# 谁的 ~/.zshrc 里导出过 MACWAVE_API_DOMAIN，整份用例都会红在一个假问题上。
+while IFS='=' read -r _name _; do
+    if [[ "$_name" == MACWAVE_* && "$_name" != "MACWAVE_TEST" ]]; then
+        unset "$_name"
+    fi
+done < <(env)
+
 pass() { echo -e "  ${GREEN}✅ $1${RESET}"; }
 fail() { echo -e "  ${RED_BOLD}❌ $1${RESET}"; FAILED=$((FAILED + 1)); }
 
@@ -318,6 +326,53 @@ if python3 "$REPO_DIR/scripts/check_domain_defaults.py"; then
     pass "shell 与 config/envvar.py 的默认值一致"
 else
     fail "shell 与 config/envvar.py 的默认值不一致"
+fi
+
+echo
+echo "========== 7. 读不到索引时，先排掉「地址少了 ref 段」 =========="
+
+# 镜像布局是 <Org>/<repo>/<ref>/<仓库内路径>。少了 ref 那一段，整条路径都 404，
+# 报错看起来却和「镜像没同步」一样 —— 我们自己在 .../infosource 上踩过一次。
+if PYTHONPATH="$PY_PATHS" python3 - << 'PY'
+import domains
+
+cases = [
+    # (地址, 期望的「本该是 ref 的那一段」)
+    ("https://m.top/MacWave/infosource/pkg/pkginfo_arm64/versions", "infosource"),
+    ("https://m.top/MacWave/infosource/pkg/pkginfo_arm64/jq/versions", "infosource"),
+    ("https://m.top/MacWave/infosource/HEAD/pkg/pkginfo_arm64/jq/versions", None),
+    ("https://m.top/LinuxWave/infosource/main/pkg/pkginfo_arm64/versions", None),
+    ("https://m.top/MacWave/infosource/v4.4.1/pkg/pkginfo_arm64/versions", None),
+    # 直连一个自带路径的服务器：没有 <Org>/<repo> 前缀，不该误报
+    ("http://127.0.0.1:8080/pkg/pkginfo_arm64/versions", None),
+]
+for url, expected in cases:
+    got = domains.ref_segment_missing(url)
+    assert got == expected, f"{url} -> {got!r}, expected {expected!r}"
+
+# 404 的提示里要点名「没有 ref 段」，网络类的提示里不能有这个说法
+missing = "\n".join(domains.unreachable_hint(
+    "https://m.top/MacWave/infosource/pkg/pkginfo_arm64/jq/versions", "HTTP 404"))
+assert "no ref segment" in missing, missing
+assert "MACWAVE_API_DOMAIN" in missing, missing
+
+fine = "\n".join(domains.unreachable_hint(
+    "https://m.top/MacWave/infosource/HEAD/pkg/pkginfo_arm64/versions", "HTTP 404"))
+assert "no ref segment" not in fine, fine
+
+network = "\n".join(domains.unreachable_hint(
+    "https://m.top/MacWave/infosource/HEAD/pkg/pkginfo_arm64/versions", "Connection refused"))
+assert "--proxy" in network, network
+
+# 证书那几类已经有更具体的说法，原样带出去、不叠泛泛提示
+assert domains.unreachable_hint("https://m.top/x", "HTTP 404",
+                                "certificate expired") == ["certificate expired"]
+print("ref segment diagnostics OK")
+PY
+then
+    pass "少了 ref 段的地址能被认出来，404 与网络故障分开说"
+else
+    fail "ref 段诊断不对"
 fi
 
 echo

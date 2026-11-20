@@ -19,8 +19,9 @@
 # 默认值仍是 3.x 在用的地址，所以一个都不设时行为与 3.x 完全一致。
 
 import json
+import re
 import sys
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import steplog
 
@@ -406,6 +407,62 @@ def redact_url(url):
     user, colon, _password = userinfo.partition(":")
     masked = f"{user}:***" if colon else "***"
     return f"{scheme}://{masked}@{host}{slash}{path}"
+
+
+# -------------------- 读不到索引时怎么解释 --------------------
+#
+# 镜像布局是 <Org>/<repo>/<ref>/<仓库内路径>。少了 ref 那一段，整条路径都会
+# 404，而报错看起来和「镜像没同步」一模一样 —— 这已经踩过一次（域名写成了
+# .../infosource 而不是 .../infosource/HEAD），所以诊断要从地址本身先排掉它。
+
+_BRANCH_SEGMENTS = {"main", "master", "head", "develop", "trunk"}
+_REF_VERSION_LIKE = re.compile(r"^v?\d+(\.\d+)*([-+.][0-9A-Za-z.]*)?$")
+
+
+def ref_segment_missing(url):
+    """地址里 ref 那一段缺了的话，返回它该在位置上、实际出现的那一段；否则 None。
+
+    索引路径的形状是固定的（pkg/pkginfo_<arch>[/<包名>]/versions），倒着找到
+    pkg 就定位到「pkg 之前那一段」。那一段既不是常见分支名、也不像版本号或
+    标签，就几乎可以肯定是 <repo> 后面直接接了仓库内路径。
+    """
+    segments = [part for part in urlsplit(url).path.split("/") if part]
+    if "pkg" not in segments:
+        return None
+    cut = len(segments) - 1 - segments[::-1].index("pkg")
+    before = segments[:cut]
+    if not before:
+        return None
+    candidate = before[-1]
+    if candidate.casefold() in _BRANCH_SEGMENTS or _REF_VERSION_LIKE.match(candidate):
+        return None
+    return candidate
+
+
+def unreachable_hint(url, status=None, advice=None):
+    """读不到索引时，「下一步」该看哪里。
+
+    最常见的两个原因都在本机配置（域名少了 ref 段、域名指错产品），而不是
+    镜像挂了 —— 所以提示必须先排掉这两条，再谈网络。纯函数：打印交给调用方。
+    """
+    if advice:
+        # 证书过期/自签/链不完整那几类已经有更具体的说法，别再叠一层泛泛的提示。
+        return [advice] if isinstance(advice, str) else list(advice)
+
+    hint = []
+    missing = ref_segment_missing(url)
+    if missing:
+        hint.append(f"the address has no ref segment: `{missing}` is the repository, "
+                    f"so this is a path the mirror does not have")
+    hint.append("MACWAVE_API_DOMAIN should be <mirror>/MacWave/infosource/<ref> — "
+                "MacWave's ref is `HEAD`, LinuxWave's is `main`")
+    hint.append("`wave mirror` prints the address in effect (credentials masked)")
+    if status and "404" in str(status):
+        hint.append("404 means the path itself is missing: fix the address first, "
+                    "then ask the administrator to re-run the mirror's index step")
+    else:
+        hint.append("if the address is right, check the network / --proxy setting")
+    return hint
 
 
 def fetch_text(url, timeout=30):

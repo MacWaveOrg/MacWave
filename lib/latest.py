@@ -43,6 +43,7 @@ AHEAD = "local is newer"
 MISSING = "not installed"
 UNKNOWN = "not in the index"
 NO_LIST = "no version list"
+UNREADABLE = "index unreadable"
 READ_FAIL = "cannot read the index"
 
 
@@ -203,6 +204,7 @@ STATUS_COLOR = {
     MISSING: YELLOW,
     UNKNOWN: RED_BOLD,
     NO_LIST: RED_BOLD,
+    UNREADABLE: RED_BOLD,
     READ_FAIL: RED_BOLD,
 }
 
@@ -238,7 +240,19 @@ def render(rows, arch):
 
 def summarize(rows):
     outdated = [row["name"] for row in rows if row["status"] == UPDATE]
+    unchecked = [row["name"] for row in rows
+                 if row["status"] in (UNKNOWN, NO_LIST, UNREADABLE)]
     total = len(rows)
+
+    # 「读不到」不等于「最新」：没有版本清单就无从比较。以前这条路径会说
+    # 「All 15 package(s) are up to date」，而实际上一个都没查到 —— 一个读不到
+    # 索引的配置错误，看起来像是「升级已经做完了」。
+    if unchecked and not outdated:
+        print(f"\n{RED_BOLD}🌊 {len(unchecked)} of {total} package(s) could not be "
+              f"checked — the index has no version list for them.{RESET}")
+        print(f"{YELLOW}🌊 Next      if every package is like this, fix the index "
+              f"address (`wave mirror`), then retry{RESET}")
+        return 1
 
     if not outdated:
         print(f"\n{GREEN}🌊 All {total} package(s) are up to date.{RESET}")
@@ -246,6 +260,9 @@ def summarize(rows):
 
     print(f"\n{YELLOW}🌊 {len(outdated)} of {total} package(s) have an update. "
           f"Run: wave upgrade <name>{RESET}")
+    if unchecked:
+        print(f"{YELLOW}🌊           {len(unchecked)} of {total} could not be checked "
+              f"(no version list in the index).{RESET}")
     return len(outdated)
 
 
@@ -376,21 +393,25 @@ def handle_latest(input_string):
     if not everything:
         # 单个包：查不到就是错，先把话说清楚，不必先打一行全是破折号的表
         row = rows[0]
-        if row["status"] in (UNKNOWN, NO_LIST, READ_FAIL):
+        if row["status"] in (UNKNOWN, NO_LIST, UNREADABLE, READ_FAIL):
             report_failure(row, arch, timeout, advice)
         render(rows, arch)
         return 0
 
     # --all：名字清单在手，可以分清「索引里没这个名字」和「有名字但没出清单」。
     # 这两种都只能显示成一行，但说法不同 —— 前者要提示拼写，后者指向镜像的清单。
+    # 连名字清单都读不到时，不能把每个包都写成「not in the index」：那是地址问题。
     folded = {name.casefold() for name in index_names or []}
     for row in rows:
-        if row["status"] == UNKNOWN and row["name"].casefold() in folded:
+        if row["status"] not in (UNKNOWN, NO_LIST):
+            continue
+        if index_names is None:
+            row["status"] = UNREADABLE
+        elif row["name"].casefold() in folded:
             row["status"] = NO_LIST
 
     render(rows, arch)
-    summarize(rows)
-    return 0
+    return summarize(rows)
 
 
 def report_failure(row, arch, timeout, advice=None):
@@ -409,15 +430,19 @@ def report_failure(row, arch, timeout, advice=None):
             steplog.fail(f"{name} is not in the index", hint=hint)
         # 名字在清单里，却读不到它的版本清单 —— 问题在清单本身，不在拼写
         steplog.fail(f"the index has no version list for {name}",
+                     request=domains.index_list_url(arch, name),
                      response=row["problem"] or "empty list",
                      hint=["if every package is like this, the mirror has no versions "
                            "lists yet (see docs/MIRROR-SETUP.md)"])
 
-    # 连名字清单都拿不到：只能是网络 / 证书 / 地址问题，别再猜包名。
-    # 证书问题的那几行（过期、自签、链不完整、主机名）由 fetch_versions 带回来。
+    # 连名字清单都拿不到：只能是地址 / 网络 / 证书问题，别再猜包名。
+    # 地址是我们自己踩过的坑（少了 ref 段），所以提示里先排掉它 —— 只说
+    # 「检查网络」的话，用户会把一条 404 当成网络故障查很久。
+    url = domains.index_list_url(arch, name)
     steplog.fail(f"cannot read the version list for {name}",
+                 request=url,
                  response=row["problem"] or "empty list",
-                 hint=advice or "check the network and any --proxy setting, then retry")
+                 hint=domains.unreachable_hint(url, row["problem"], advice))
 
 
 def main():

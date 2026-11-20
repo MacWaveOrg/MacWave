@@ -196,6 +196,11 @@ def handle_search(query, budget=None):
             print(f"{RED_BOLD}🌊 Error: Cannot fetch package list.{RESET}")
             # 用镜像时 api_url 里带凭据，直接打印等于把密码写进终端记录
             print(f"{RED_BOLD}🌊 URL: {domains.redact_url(api_url)}{RESET}")
+            # 一条 404 最常见的原因是地址少了 ref 段，不是镜像挂了：把该看的地方写出来
+            for index, line in enumerate(
+                    domains.unreachable_hint(api_url, f"HTTP {resp.status_code}")):
+                prefix = "🌊 Next      " if index == 0 else "🌊           "
+                print(f"{RED_BOLD}{prefix}{line}{RESET}")
             sys.exit(1)
     except Exception as e:
         # 证书失败要分类说，别只甩一句 SSL error；认不出才原样打印
