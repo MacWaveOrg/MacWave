@@ -70,12 +70,16 @@ mirror will usually tell you which commands to run:
 | `MACWAVE_CORE_DOMAIN` | MacWave's own files | `MacWave` on raw.githubusercontent |
 | `MACWAVE_PIP_INDEX` | The `pip` index (affects only the three Python dependencies) | `https://pypi.org/simple` |
 
+**The ref segment after `infosource` is not optional:** it is `/HEAD` for MacWave and
+`/main` for LinuxWave (the mirror lays files out as `<org>/<repo>/<ref>/…`). Leave it out
+and `wave search` / `wave latest` get nothing but 404s when they read the lists.
+
 Run the following to add them:
 
 ```zsh
 export MACWAVE_BOTTLE_DOMAIN=https://mirror.example.cn/MacWave/bottle
 export MACWAVE_DEPS_DOMAIN=https://mirror.example.cn/MacWave/deps
-export MACWAVE_API_DOMAIN=https://mirror.example.cn/MacWave/infosource
+export MACWAVE_API_DOMAIN=https://mirror.example.cn/MacWave/infosource/HEAD
 export MACWAVE_SELFUPDATE_DOMAIN=https://mirror.example.cn/MacWave/selfupdate
 export MACWAVE_PYTHON_DOMAIN=https://mirror.example.cn/MacWave/python
 export MACWAVE_CORE_DOMAIN=https://mirror.example.cn/MacWave/core
@@ -91,11 +95,11 @@ cat >> ~/.zshrc <<'MWMIRROR'
 # MacWave mirror
 export MACWAVE_BOTTLE_DOMAIN=https://mirror.example.cn/MacWave/bottle
 export MACWAVE_DEPS_DOMAIN=https://mirror.example.cn/MacWave/deps
-export MACWAVE_API_DOMAIN=https://mirror.example.cn/MacWave/infosource
+export MACWAVE_API_DOMAIN=https://mirror.example.cn/MacWave/infosource/HEAD
 export MACWAVE_SELFUPDATE_DOMAIN=https://mirror.example.cn/MacWave/selfupdate
 export MACWAVE_PYTHON_DOMAIN=https://mirror.example.cn/MacWave/python
 export MACWAVE_CORE_DOMAIN=https://mirror.example.cn/MacWave/core
-export MACWAVE_PIP_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
+export MACWAVE_PIP_INDEX=https://pypi.mirror.example.cn/simple
 MWMIRROR
 source ~/.zshrc
 ```

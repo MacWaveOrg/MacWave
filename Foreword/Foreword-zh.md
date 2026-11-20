@@ -14,16 +14,16 @@
 | `wave -V` | 查看MacWave的版本号 | 查看当前MacWave版本 | |
 | `wave install <pkg_name>`  | 安装一个软件包 | 安装软件 | `wave install <pkg_name>@<pkg_version>` 可以安装指定版本的软件包 |
 | `wave upgrade -X` | 升级一个软件包 | 一般的升级软件 | 适用于一般的开发者。 `-X, --remove-old-versions` 会删除存在的旧版软件包。请确认你不需要旧版，否则不要使用此参数 |
-| `wave latest <pkg_name>` | 搜索一个包是否有相对本机的最新版本 | 不知道某个包能不能升级 | `wave latest -a` 可查看所有包的状态 |
+| `wave latest <pkg_name>` | 查看某个包有没有比本机更新的版本 | 不知道某个包能不能升级 | `wave latest -a` 可查看所有包的状态 |
 | `wave selfupdate` | 更新MacWave自身 | 当你想升级你的MacWave | |
 | `wave list` | 列举出已经安装的软件包和它们的版本号 | 想知道自己装了什么软件或什么版本的软件 | `wave list -a` 也是同样效果 |
-| `wave info <pkg_name>` | 查看你安装了这个软件包的什么版本（未安装时输出 `None` | 不知道自己是否安装过某个软件包或不知道安装过什么版本 | |
-| `wave search <pkg_name>` | 搜索一个软件包（可输出部分内容然后模糊匹配）| 想要搜 `wave` 有没有这个包 |
+| `wave info <pkg_name>` | 查看你安装了这个软件包的什么版本（未安装时输出 `None`） | 不知道自己是否安装过某个软件包、或不知道装过什么版本 | |
+| `wave search <pkg_name>` | 搜索一个软件包（可输出部分内容然后模糊匹配）| 想要搜 `wave` 有没有这个包 | |
 | `wave uninstall <pkg_name>` | 删除某个包 | 删除软件 |  `wave uninstall <pkg_name>@<pkg_version>` 可以删除指定版本的软件包 |
 
-更多帮助，请运行 `wave -h` `wave -h --zh`（中文版）或 `wave manual` `wave manual`（中文版）。
+更多帮助，请运行 `wave -h`、`wave -h --zh`（中文版）或 `wave manual`、`wave manual --zh`（中文版）。
 
-注：实际执行命令时，请把上述 `<temple>` 换成实际内容。
+注：实际执行命令时，请把上述 `<占位符>` 换成实际内容。
 
 ### 安装位置
 
@@ -33,7 +33,7 @@ macOS（单用户安装）： `~/.local/macwave`
 macOS（共享安装）：`/opt/macwave`  
 Linux： `/home/linuxwave/.linuxwave`  
 
-注意：在 Intel Mac 不建议选择 `/usr/local` ———— 这可能和 Homebrew 在 Intel Mac 的默认目录冲突。
+注意：在 Intel Mac 不建议选择 `/usr/local` —— 这可能和 Homebrew 在 Intel Mac 的默认目录冲突。
 
 **配置文件存储于（系统级安装始终优先）：**  
 
@@ -44,14 +44,14 @@ Linux： `/home/linuxwave/.linuxwave`
 
 **LinuxWave：**
 
-1. `/etc/macwave_config`          共享安装（需要 sudo）
+1. `/etc/linuxwave_config`        共享安装（需要 sudo）
 2. `~/.config/macwave_config`     单用户安装（无需 sudo）
 
-**警告：请不要随意修改配置文件 ———— 这可能导致 `wave` 的某些行为异常或不符合预期！**
+**警告：请不要随意修改配置文件 —— 这可能导致 `wave` 的某些行为异常或不符合预期！**
 
 ### 镜像
 
-如果你是中国大陆用户，你很可能还需要镜像。如果你使用的是全量镜像，需要在 `~/.zshrc` （若用 `bash` 则是 `~/.zshrc` ）添加的环境变量如下（一些好的镜像可能会引导你去执行命令添加）：
+如果你是中国大陆用户，你很可能还需要镜像。如果你使用的是全量镜像，需要在 `~/.zshrc` （若用 `bash` 则是 `~/.bashrc` ）添加的环境变量如下（一些好的镜像可能会引导你去执行命令添加）：
 
 | 变量 | 取什么 | 默认 |
 | --- | --- | --- |
@@ -63,12 +63,16 @@ Linux： `/home/linuxwave/.linuxwave`
 | `MACWAVE_CORE_DOMAIN` | MacWave 自身文件 | raw.githubusercontent 上的 `MacWave` |
 | `MACWAVE_PIP_INDEX` | `pip` 的索引（只影响三个 Python 依赖） | `https://pypi.org/simple` |
 
+**`infosource` 后面的 ref 段不能少：** MacWave 是 `/HEAD`，LinuxWave 是 `/main`
+（镜像按 `<组织>/<仓库>/<ref>/…` 布局）。少了这一段，`wave search`、`wave latest`
+读清单时只会得到 404。
+
 执行下面的命令即可添加：
 
 ```zsh
 export MACWAVE_BOTTLE_DOMAIN=https://mirror.example.cn/MacWave/bottle
 export MACWAVE_DEPS_DOMAIN=https://mirror.example.cn/MacWave/deps
-export MACWAVE_API_DOMAIN=https://mirror.example.cn/MacWave/infosource
+export MACWAVE_API_DOMAIN=https://mirror.example.cn/MacWave/infosource/HEAD
 export MACWAVE_SELFUPDATE_DOMAIN=https://mirror.example.cn/MacWave/selfupdate
 export MACWAVE_PYTHON_DOMAIN=https://mirror.example.cn/MacWave/python
 export MACWAVE_CORE_DOMAIN=https://mirror.example.cn/MacWave/core
@@ -83,11 +87,11 @@ cat >> ~/.zshrc <<'MWMIRROR'
 # MacWave mirror
 export MACWAVE_BOTTLE_DOMAIN=https://mirror.example.cn/MacWave/bottle
 export MACWAVE_DEPS_DOMAIN=https://mirror.example.cn/MacWave/deps
-export MACWAVE_API_DOMAIN=https://mirror.example.cn/MacWave/infosource
+export MACWAVE_API_DOMAIN=https://mirror.example.cn/MacWave/infosource/HEAD
 export MACWAVE_SELFUPDATE_DOMAIN=https://mirror.example.cn/MacWave/selfupdate
 export MACWAVE_PYTHON_DOMAIN=https://mirror.example.cn/MacWave/python
 export MACWAVE_CORE_DOMAIN=https://mirror.example.cn/MacWave/core
-export MACWAVE_PIP_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
+export MACWAVE_PIP_INDEX=https://pypi.mirror.example.cn/simple
 MWMIRROR
 source ~/.zshrc
 ```
