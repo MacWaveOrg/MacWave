@@ -248,6 +248,32 @@ else
     fail "MACWAVE_TEST 下被平台守卫拦住了（rc=${RC}）"
 fi
 
+# -------------------- 7a2. --skip-platform-check：跳过守卫，但必须出声 --------------------
+#
+# 用途有两个：调试安装器本身；手上没有 Mac 的时候把流程演练一遍（配 --dry-run）。
+# 跳过的是「这套东西装在这台机器上能不能跑」的判断，所以警告里要报出当前是什么
+# 系统，并且明说结果没验证过 —— 静默跳过等于把风险藏起来。
+
+mklinux --skip-platform-check --dry-run --dir-option=1
+if [[ "$RC" -eq 0 ]] && has "$OUT" "Dry run" && has "$OUT" "--skip-platform-check"; then
+    pass "--skip-platform-check：非 macOS 也继续，且打印了警告（rc=0）"
+else
+    fail "--skip-platform-check 没跳过平台守卫（rc=${RC}）：$(printf '%s' "$OUT" | head -2)"
+fi
+
+if has "$OUT" "This system is Linux"; then
+    pass "--skip-platform-check：警告里报了当前系统"
+else
+    fail "--skip-platform-check 的警告没说是哪个系统"
+fi
+
+mklinux --skip-platform-check --dry-run --dir-option=1 --raw
+if [[ "$RC" -eq 0 ]] && [[ "$(printf '%s\n' "$OUT" | grep -c '^🌊')" -eq 0 ]]; then
+    pass "--skip-platform-check --raw：警告也没有行首 🌊"
+else
+    fail "--skip-platform-check --raw 的输出不干净（rc=${RC}）"
+fi
+
 # -------------------- 7b. iOS / iPadOS：越狱设备上别让人白装一遍 --------------------
 #
 # iOS 也报 uname -s = Darwin，光看内核分不出越狱的 iPad 与 Mac，所以脚本会再问

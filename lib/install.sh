@@ -708,6 +708,9 @@ CLI_CUSTOM_DIR=""
 # --skip-probe：不真写那个探针文件，提权判定只用 test -w 的静态结论。
 # 见「是否需要 sudo」那一节里 mw_can_write 的说明。
 CLI_SKIP_PROBE=false
+# --skip-platform-check：跳过「只装 macOS」这套平台判定。调试安装器、或者在
+# 手上没有 Mac 的时候演练一遍时用（通常配 --dry-run）。跳过必须出声，见闸门那边。
+CLI_SKIP_PLATFORM_CHECK=false
 # --help：打用法后**停**在这里；--print-usage：打用法后继续安装（或继续试运行）。
 CLI_HELP=false
 CLI_PRINT_USAGE=false
@@ -755,6 +758,12 @@ usage() {
            "      --skip-probe        判定是否需要提权时不在目标里建那个临时探针文件，只用\n\
                           权限位判断。适合「目标必须一点痕迹都不留」的场合 ——\n\
                           判断错了只是把失败推迟到第一次真正写入。"
+    mw_say "      --skip-platform-check\n\
+                          Continue even if this is not macOS. For debugging,\n\
+                          usually with --dry-run; the result is not tested here." \
+           "      --skip-platform-check\n\
+                          即使不是 macOS 也继续。调试用，通常与 --dry-run 连用；\n\
+                          装出来能不能跑本机不保证。"
     mw_say "      --dir-option=N      Pick menu entry N without prompting (1-$CUSTOM_OPTION)." \
            "      --dir-option=N      不提问，直接选菜单第 N 项（1-${CUSTOM_OPTION}）。"
     mw_say "      --dir-option=DIR    Use DIR as the installation directory (shorthand for\n\
@@ -827,6 +836,9 @@ while [[ $# -gt 0 ]]; do
             ;;
         --skip-probe|--SKIP-PROBE)
             CLI_SKIP_PROBE=true
+            ;;
+        --skip-platform-check|--SKIP-PLATFORM-CHECK)
+            CLI_SKIP_PLATFORM_CHECK=true
             ;;
         --dir-option=*)
             _value="${1#--dir-option=}"
@@ -1231,7 +1243,19 @@ mw_require_macos() {
     exit 2
 }
 
-mw_require_macos
+# --skip-platform-check 跳过整套平台判定（内核、macOS / iOS 之分、以及后面指路
+# 用的那段话）。跳过时必须说一声：后面的下载地址、SIP 判定、Xcode 检查都是按
+# macOS 设计的，换台机器跑出来的结果没人验证过。
+if [[ "$CLI_SKIP_PLATFORM_CHECK" == "true" ]]; then
+    mw_say "${YELLOW}🌊 Warning: --skip-platform-check — the platform check is skipped." \
+           "${YELLOW}🌊 警告：--skip-platform-check —— 已跳过平台检查。${RESET}"
+    mw_say "${YELLOW}🌊   This system is $(uname -s 2>/dev/null) $(uname -m 2>/dev/null);" \
+           "${YELLOW}🌊   当前系统是 $(uname -s 2>/dev/null) $(uname -m 2>/dev/null)；${RESET}"
+    mw_say "${YELLOW}🌊   what gets installed is untested here. Use it with --dry-run." \
+           "${YELLOW}🌊   装出来的东西在本机没有验证过，请配合 --dry-run 使用。${RESET}"
+else
+    mw_require_macos
+fi
 
 # -------------------- 测试根（隔离） --------------------
 # MACWAVE_TEST 指向一个目录时，把它当作 /：HOME 和所有系统路径都挂到它下面，
