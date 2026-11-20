@@ -369,6 +369,7 @@ batt             by charlie0129
 btop             by Aristocratos
 choma            by opa334
 cloc             by Al Danial
+columbula        by Sha0huaZhang
 delta            by dandavison
 difft            by Wilfred Hughes
 doggo            by mr-karan
