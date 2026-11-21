@@ -110,10 +110,13 @@ mirror.repohub.top    A    <服务器公网 IP>
 > 没同步。两行命令先确认现场：
 >
 > ```bash
-> nginx -T 2>/dev/null | grep -A2 'location ^~ /MacWave/'
-> curl -sI http://127.0.0.1/MacWave/infosource/HEAD/README.md | grep -i content-length
-> ls -l "$ROOT/MacWave/infosource/HEAD/README.md"    # 大小、时间要与上一条一致
+> nginx -T 2>/dev/null | grep -A2 'location .*MacWave' | grep -E 'location|alias'
+> curl -sI https://mirror.repohub.top/MacWave/infosource/HEAD/README.md | grep -i content-length
+> ls -l "$ROOT/MacWave/infosource/HEAD/README.md"    # 大小要与上一条一致
 > ```
+>
+> 自查一律走 `https://` 或带 `Host` 头：`http://127.0.0.1/…` 在开了「强制 HTTPS」的
+> 站点上只返回 301，拿到的不是内容（见第七步）。
 >
 > 对不上就二选一：把 cron 里的 `ROOT` 改成 `alias` 那个目录，或者让 `alias` 指向
 > `ROOT`（例如把 `/srv/mirror` 换成指向同一棵树的符号链接，注意先迁移数据）。
@@ -257,6 +260,26 @@ https://mirror.repohub.top/MacWave/bottle/jq/jq%401.7.1.arm64
 curl -o /dev/null -w '速度 %{speed_download} B/s\n' \
   https://mirror.repohub.top/MacWave/bottle/jq/jq%401.7.1.arm64
 ```
+
+**在服务器上自查时不要用 `http://127.0.0.1/…`。** 站点开了「强制 HTTPS」，这个地址
+返回的是 **301**，不是内容；`curl` 不加 `-L` 时拿到的 301 页面正文只有 7 行，
+`wc -l` 数出来就是 7 —— 看着像「清单只剩 7 个包」，其实一个包都没读到。三种正确写法：
+
+```bash
+# A. 带 Host 头，让 nginx 用对 server 块（http 会 301，所以用 https）
+curl -sk --resolve mirror.repohub.top:443:127.0.0.1 \
+     https://mirror.repohub.top/MacWave/infosource/HEAD/pkg/pkginfo_arm64/versions | wc -l
+
+# B. 直接走域名（最省事）
+curl -s https://mirror.repohub.top/MacWave/infosource/HEAD/pkg/pkginfo_arm64/versions | wc -l
+
+# C. 只看状态码时记得跟随跳转
+curl -sL -o /dev/null -w '%{http_code}\n' \
+     https://mirror.repohub.top/MacWave/infosource/HEAD/pkg/pkginfo_arm64/columbula/versions
+```
+
+另外 `nginx -T` 里还有一个 `server_name 127.0.0.1` 的监控块（只放 `nginx_status`），
+它没有 MacWave 那套 `alias` —— 用 `127.0.0.1` 自查时容易被它或 301 误导。
 
 同时确认校验值没被中间环节改坏：
 
@@ -570,6 +593,7 @@ def python_archive_url(version, filename):
 | **同步失败时不能清理旧分支目录** | 发布线刚切到 `4.5`、而 `4.5` 分支还没建时，清理会把仍在服务的 `4.1` 删掉 —— 一次上游打嗝变成镜像全站不可用。脚本里只要有一个 core 分支没同步成功就跳过清理 |
 | **`pythondata/*.tar.gz` 必须排除在 `--delete` 之外** | 它们在仓库里不存在，rsync 的 `--delete` 会当成「上游删了」而清掉。实测确认：不排除时两个压缩包会被删，镜像从此装不了自带解释器 |
 | **`bottle/deps` 只增不删** | 上游删掉一个旧包时，镜像里已有的文件不该跟着消失：客户端的索引缓存可能还指着它 |
+| **代码树与产物树可以在两个根下** | 历史机器上出现过 `/www/…/MacWave/bottle`（产物）+ `/srv/mirror/MacWave/infosource`（代码树）。这时 `ROOT` 填代码树那个根，`MIRROR_ROOT` 指向有 `bottle/` 的那一层 |
 
 另外，产物那一步走的是 `--source payload`，即从**我们自己的 Release** 取，不打扰上游。
 它依赖 `domains.py` 的内置默认值，所以脚本开头会显式 `unset MACWAVE_*_DOMAIN` ——
@@ -577,6 +601,59 @@ def python_archive_url(version, filename):
 
 > **LinuxWave 暂未纳入**：它的客户端还没定稿，且缺少与之配套的 `sync_payloads`。
 > 等那边统一处理时，`mirror-sync.sh` 的结构可以直接照搬，只有 `ORG` 与产物来源要换。
+
+## 旧布局怎么清（会用到一次）
+
+镜像跑过一阵之后，站点上常会留下**没人再读的副本**：早先手工铺的目录、脚本改过落点
+之后的旧位置、按仓库名建的大写目录。它们的害处不是占空间，而是**排查时对着错误的
+那份看**（这次的 columbula 就是对着停在两天前的旧拷贝查了半天）。
+
+清理原则：**先移到隔离目录，确认一周没问题再删**，不要 `rm -rf` 上线。
+
+```bash
+# 0) 先给现状留个底
+STAMP=$(date +%F)
+ls -la /srv/mirror/MacWave > /root/macwave-mirror-$STAMP.txt
+du -sh /www/wwwroot/mirror.repohub.top/MacWave/* /srv/mirror/MacWave/* 2>/dev/null
+
+# 1) 看清每个 location 到底指向哪棵树（决定哪些目录能删）
+nginx -T 2>/dev/null | grep -A2 'location .*MacWave' | grep -E 'location|alias'
+```
+
+**真正被服务的那棵树**要留下；其余都可以挪走。典型的两类废数据：
+
+```bash
+QUAR=/root/trash-macwave-$STAMP
+mkdir -p "$QUAR"
+
+# A. /www 下只留 bottle 与 deps —— 代码树现在只写 /srv
+for d in infosource core selfupdate python MacWave; do
+    [ -d "/www/wwwroot/mirror.repohub.top/MacWave/$d" ] || continue
+    mv "/www/wwwroot/mirror.repohub.top/MacWave/$d" "$QUAR/www-$d"
+done
+
+# B. /srv 下按仓库名建的大写目录（客户端用的是小写 selfupdate/python）
+for d in Selfupdate Python; do
+    [ -d "/srv/mirror/MacWave/$d" ] || continue
+    mv "/srv/mirror/MacWave/$d" "$QUAR/srv-$d"
+done
+```
+
+挪完再验一遍（**必须走 https 或带 Host 头**，`http://127.0.0.1` 只会给你 301）：
+
+```bash
+for u in \
+  /MacWave/infosource/HEAD/pkg/pkginfo_arm64/versions \
+  /MacWave/selfupdate/macwavedata/latest.toml \
+  /MacWave/python/pythondata/latest.toml \
+  /MacWave/core/4.4/lib/wave.py \
+  /MacWave/bottle/jq/jq%401.8.2.arm64 ; do
+    printf '%s  %s\n' "$(curl -s -o /dev/null -w '%{http_code}' "https://mirror.repohub.top$u")" "$u"
+done
+```
+
+全是 `200` 就说明废数据确实没人读；一周后 `rm -rf "$QUAR"`。
+有一条变成 `404`，就把它 `mv` 回去，并去 `nginx -T` 里找那条指错方向的 `alias`。
 
 ## 让服务器自己盯着（日常巡检）
 
