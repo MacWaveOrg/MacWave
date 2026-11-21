@@ -154,8 +154,8 @@ mirror.repohub.top    A    <服务器公网 IP>
 
 | 做法 | 做法细节 |
 | --- | --- |
-| A. 铺进真实目录 | `rsync` 目标写成 `$DEST/infosource/HEAD/`（本仓库 `mirror-sync.sh` 写的是 `$DEST/infosource`，这种情况下要改） |
-| B. nginx 别名 / 符号链接 | 数据照旧放 `$DEST/infosource/`，用 `location /MacWave/infosource/HEAD/ { alias …/MacWave/infosource/; }` 或 `ln -s infosource infosource/HEAD` 顶上 |
+| A. 铺进真实目录（**`mirror-sync.sh` 从 4.4 起默认这么做**） | `rsync` 目标就是 `$DEST/infosource/HEAD/`，站点只写一条 `alias /…/MacWave/infosource/` 即可 |
+| B. nginx 别名 / 符号链接 | 数据放 `$DEST/infosource/`，用 `location ~ ^/MacWave/infosource/HEAD/(.*)$ { alias …/MacWave/infosource/$1; }` 顶上（早先的服务器是这么做的） |
 
 两种都能用，**但别名指错地方的后果很隐蔽**：客户端照样 200、`wave install` 却发现
 某个新包「不在索引里」，因为 `/HEAD` 指向的是一份没人再更新的旧拷贝。判断办法是比
@@ -420,7 +420,7 @@ rm -rf /www/wwwroot/mirror.repohub.top/MacWave/python/.git
 
 | 目标 | 来源 | 处理 |
 | --- | --- | --- |
-| `infosource/` | `MacWaveOrg/infosource` 的 `main` | 浅克隆 + `rsync --delete`；**站点要对客户端暴露成 `infosource/HEAD/`**（真实目录或 nginx 别名，见第四步） |
+| `infosource/HEAD/` | `MacWaveOrg/infosource` 的 `main` | 浅克隆 + `rsync --delete`，铺进一层 `HEAD/`（客户端地址里就有这层；见第四步） |
 | `selfupdate/` | `MacWaveOrg/Selfupdate` 的 `main` | 同上 |
 | `python/` | `MacWaveOrg/Python` 的 `main` | 同上 |
 | `core/<分支>/` | `MacWaveOrg/MacWave` 的对应分支 | 同上；分支表 = `configdata` 的当前发布线 + `KEEP_BRANCHES` |

@@ -27,6 +27,20 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 
 ROOT=${ROOT:-/www/wwwroot/mirror.repohub.top}
 DEST=$ROOT/MacWave
+
+# 站点的目录形状有两种（实测都见过），产物树不一定在 MacWave/ 下面：
+#   A. <ROOT>/MacWave/{bottle,deps,infosource,core,selfupdate,python}
+#   B. <ROOT>/{bottle,deps}, MacWave/{infosource,core,selfupdate,python}
+# 下面这几个步骤（产物同步的 --out、清单重建的 --mirror）都要指向**真正有
+# bottle/ 的那一层**，选错就会出现「同步全绿、客户端却读不到新包」，
+# 或者在最后一步才炸出 `does not look like a mirror root (no bottle/)`。
+if [[ -d "$DEST/bottle" ]]; then
+    MIRROR_ROOT=$DEST
+elif [[ -d "$ROOT/bottle" ]]; then
+    MIRROR_ROOT=$ROOT
+else
+    MIRROR_ROOT=$DEST        # 两边都没有：首次铺设，按 A 建，后面会补上
+fi
 SRC=${SRC:-/root/mirror-src}
 GH=${GH:-https://github.com}
 ORG=${ORG:-MacWaveOrg}
@@ -132,7 +146,29 @@ publish() {
     [[ -n "$exclude" ]] && args+=(--exclude "$exclude")
 
     mkdir -p "$dest" || return 1
-    rsync "${args[@]}" --delete "$dir/" "$dest/"
+    # `--exclude versions` 的副作用：存着 versions 的目录删不掉，rsync 会为每个
+    # 这样的目录打一行 `cannot delete non-empty directory:`。那是**预期**的 ——
+    # versions 是本地生成的，必须留着。这类行单独挑出去，只报真正的错误，
+    # 否则一次同步刷出两百行红字，真失败反而看不见。
+    # 整段输出一起收（不加 -v 时 rsync 的 stdout 基本是空的），再挑出噪声行。
+    # 不用 `2>&1 >/dev/null`：那样在命令替换里 stderr 会跟着 stdout 一起丢掉。
+    local out rc benign=0 line
+    out=$(rsync "${args[@]}" --delete "$dir/" "$dest/" 2>&1)
+    rc=$?
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        # 两种写法都要认：rsync 3.x 是 `cannot delete non-empty directory: <路径>`，
+        # macOS 自带的 2.6.9 是 `<路径>: not empty, cannot delete`。
+        case "$line" in
+            "cannot delete non-empty directory: "*|*"not empty, cannot delete"*)
+                benign=$((benign+1)) ;;
+            *) printf '%s\n' "$line" >&2 ;;
+        esac
+    done <<< "$out"
+    if (( benign > 0 )); then
+        note "保留 $benign 个含 versions 的目录（预期行为，不是错误）"
+    fi
+    return "$rc"
 }
 
 # tree 名称 仓库 引用 目标 [额外排除]
@@ -166,6 +202,7 @@ tree() {
 
 mw_say "镜像同步 · MacWave"
 mw_say "  站点根目录 $ROOT"
+mw_say "  产物树     ${MIRROR_ROOT}（bottle/、deps/ 所在的那一层）"
 mw_say "  工作区     $SRC"
 (( DRY_RUN )) && mw_say "  模式       演练（不写文件）"
 hr
@@ -210,7 +247,29 @@ note "当前发布线 ${CUR}，额外保留 ${KEEP_BRANCHES:-（无）}"
 
 hr
 mw_say "第 2/6 步 · 同步三棵主干"
-tree infosource infosource main "$DEST/infosource"
+# infosource 要铺进一层 `HEAD/`：客户端默认地址是
+# `…/MacWaveOrg/infosource/HEAD`（HEAD 是默认分支的别名），拼路径时直接接
+# `pkg/pkginfo_<arch>/…`。站点上那层 HEAD 是真实目录（nginx 只做
+# `alias /…/MacWave/infosource/`），所以数据必须落在 HEAD 里。
+infosource_publish() {
+    tree infosource infosource main "$DEST/infosource/HEAD" || return 1
+
+    # 旧版脚本把同一份内容铺在上一级（`$DEST/infosource/pkg/…`）。留着有两个坏处：
+    # 一是占空间，二是排查时容易对着那份没人读的副本找问题。
+    local stale
+    for stale in pkg docs scripts deps .github README.md LICENSE .gitignore \
+                 fill_deps.py versions; do
+        [[ -e "$DEST/infosource/$stale" ]] || continue
+        if (( DRY_RUN )); then
+            note "演练模式：会删掉旧布局 $DEST/infosource/$stale"
+        else
+            rm -rf "${DEST:?}/infosource/$stale"
+            note "已清掉旧布局 $DEST/infosource/$stale"
+        fi
+    done
+    return 0
+}
+infosource_publish
 tree selfupdate Selfupdate main "$DEST/selfupdate"
 # pythondata/<版本>/*.tar.gz 是自带解释器的产物，仓库里没有（二进制不进 git），
 # 由下一步单独补。这里不排除的话，--delete 会先把它删掉，镜像就装不了解释器。
@@ -347,15 +406,15 @@ else
     fi
 
     out=$(python3 "$SRC/tools/scripts/sync_payloads.py" \
-            --infosource "$DEST/infosource" \
-            --out "$DEST" \
+            --infosource "$DEST/infosource/HEAD" \
+            --out "$MIRROR_ROOT" \
             --source payload \
             --skip "$skip" \
             --jobs "$JOBS" 2>&1)
     rc=$?
     mw_say "$out" | tail -6
     if (( rc == 0 )); then
-        ok "产物" "$(find "$DEST/bottle" "$DEST/deps" -type f 2>/dev/null | wc -l | tr -d ' ') 个文件"
+        ok "产物" "$(find "$MIRROR_ROOT/bottle" "$MIRROR_ROOT/deps" -type f 2>/dev/null | wc -l | tr -d ' ') 个文件"
     else
         no "产物" "有失败项，见上（已存在的文件不受影响）"
     fi
@@ -367,22 +426,22 @@ if (( DRY_RUN )); then
     note "演练模式：跳过"
 else
     out=$(python3 "$SRC/tools/scripts/build_versions_index.py" \
-            --infosource "$DEST/infosource" \
-            --mirror "$DEST" 2>&1)
+            --infosource "$DEST/infosource/HEAD" \
+            --mirror "$MIRROR_ROOT" 2>&1)
     rc=$?
     mw_say "$out" | tail -4
     if (( rc == 0 )); then
-        ok "清单" "$(find "$DEST/infosource" -name versions -type f | wc -l | tr -d ' ') 个"
+        ok "清单" "$(find "$DEST/infosource/HEAD" -name versions -type f | wc -l | tr -d ' ') 个"
     else
         no "清单" "重建失败 —— 客户端会表现为「没有版本可装」"
     fi
     # 索引仓库自带的 .git 不该留在站点根下
-    rm -rf "$DEST/infosource/.git"
+    rm -rf "$DEST/infosource/HEAD/.git"
 fi
 
 hr
 if (( ! DRY_RUN )); then
-    if chown -R "$OWNER" "$DEST" 2>/dev/null; then
+    if chown -R "$OWNER" "$DEST" "$MIRROR_ROOT" 2>/dev/null; then
         ok "属主" "$OWNER"
     else
         no "属主" "chown 失败（nginx 可能读不到新文件）"
