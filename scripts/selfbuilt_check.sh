@@ -12,7 +12,8 @@
 # 用法：
 #   bash scripts/selfbuilt_check.sh <二进制> [选项]
 #
-#   --arch arm64|amd64      索引里这条记录属于哪个架构（默认按 lipo 判断）
+#   --arch arm64|amd64      索引里这条记录属于哪个架构（默认按 lipo 判断；
+#                           也接受 x86_64 / aarch64 这类 lipo 叫法）
 #   --bin-name NAME         用户在终端敲的命令名（默认取文件名）
 #   --deps "openssl@3.0.15 wget@1.25.0"
 #                           索引记录里打算写哪些 deps
@@ -80,6 +81,19 @@ if [[ ! -f "$BINARY" ]]; then
     printf '%b🌊 文件不存在：%s%b\n' "$RED_BOLD" "$BINARY" "$RESET" >&2
     exit 2
 fi
+
+# --arch 归一化：lipo 说的是 x86_64，索引说的是 amd64，两个名字都得认。
+# 不认的取值要在**这里**报用法错误（exit 2），否则它会一路走到架构比对那一步，
+# 表现成「架构不符」—— 那是产物的问题还是参数的问题，就说不清了。
+case "${WANT_ARCH:-}" in
+    "") ;;
+    arm64|aarch64) WANT_ARCH=arm64 ;;
+    amd64|x86_64|x86-64) WANT_ARCH=amd64 ;;
+    *)
+        printf '%b🌊 Error: --arch accepts arm64 or amd64 (got %s)%b\n' \
+            "$RED_BOLD" "$WANT_ARCH" "$RESET" >&2
+        exit 2 ;;
+esac
 
 BIN_NAME="${BIN_NAME:-$(basename "$BINARY")}"
 

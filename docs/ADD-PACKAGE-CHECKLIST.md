@@ -472,22 +472,39 @@ universal —— 索引是「每架构一份」）；编完 `codesign --force --
 **④ 索引最后写。** 客户端只有从 `pkginfo_*/` 看到记录才会去装；记录不写，谁也不知道它
 存在。所以顺序是：产物 → Ports + Bottle → 沙箱实测 → 索引 → 镜像同步 → 三处清单。
 
-### `aria2` 的具体情况（第一个自建包）
+### `aria2c`：第一个按这条路走完的包（2026-11-21 上线）
 
-`configure.ac` 里这几个开关能把依赖面砍到只剩 zlib，值得照抄：
+`configure` 里这几个开关把依赖面砍到只剩系统库，值得照抄：
 
 ```
 --with-appletls          TLS 走 macOS 自带的 Secure Transport（不引 openssl）
---without-libxml2        不引 libxml2
+--without-gnutls --without-openssl   明确不要另外两种 TLS 后端
+--without-libxml2        不引 libxml2（Metalink 随之关闭）
+--without-libexpat       不引 expat（同上）
+--without-libcares       不引 c-ares（DNS 退回同步 getaddrinfo）
 --without-libssh2        不引 libssh2（代价：没有 SFTP）
+--without-libnettle      不引 nettle/gmp/gcrypt（消息摘要用 CommonCrypto）
+--without-sqlite3        不引 sqlite3
 --disable-nls            不引 gettext
 ```
 
-两个坑：
+结果是 `otool -L` 只有 `libz` / `Security` / `CoreFoundation` / `libc++` / `libSystem`，
+**索引记录里不需要 `deps:`** —— 这是与 `choma` 最大的区别（那个必须声明
+`deps: "openssl@3.0.15"`）。BitTorrent 保留：它不引外部库，且那是 aria2 的主要用途。
 
-- **`bin_name` 是 `aria2c`**，不是 `aria2`。上游项目叫 aria2，命令叫 `aria2c`。
+三个坑：
+
+- **包名与 `bin_name` 都写 `aria2c`**，不是 `aria2`。上游项目叫 aria2，命令叫 aria2c，
+  而索引里包名一律等于用户敲的命令名（infosource `60e8376`）。叫 `aria2` 会让
+  `wave list` / `uninstall` / link 系命令找不到版本 —— 安装目录是按 `bin_name` 建的。
+  `wave search aria2` 仍能命中，搜索是子串匹配。
 - **1.35.0 的 `osx-darwin.tar.bz2` 是 2022 年的 x86_64**，不能当 arm64 用，也不能当
   「上游还有 macOS 产物」的证据。
+- **`selfbuilt_check.sh --arch` 只认 `arm64` / `amd64`**（也接受 `x86_64` / `aarch64`）。
+  写成别的值会在参数校验阶段就以 exit 2 退出；早期版本会一路走到架构比对，
+  报成「架构不符」，看起来像产物的问题。
+
+实测数据与逐步命令在 `MacWaveOrg/Ports` 的 `aria2c/notes.md`。
 
 ### 坏了怎么止损
 
