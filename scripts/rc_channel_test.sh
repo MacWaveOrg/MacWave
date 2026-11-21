@@ -39,7 +39,8 @@ mkdir -p "$SITE/rcdata" "$SITE/macwavedata" "$HOME_DIR/.config/macwave_config"
 printf '{"base_dir": "%s"}\n' "$WORK/base" > "$HOME_DIR/.config/macwave_config/config.json"
 
 USER_SITE=$(python3 -c 'import site; print(site.getusersitepackages())' 2>/dev/null)
-export PYTHONPATH="$(component_paths)"
+PYTHONPATH="$(component_paths)"
+export PYTHONPATH
 [[ -d "$USER_SITE" ]] && export PYTHONPATH="$PYTHONPATH:$USER_SITE"
 
 PORT=$(python3 - <<'PY'

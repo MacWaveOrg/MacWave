@@ -96,7 +96,12 @@ else
     for who in "MacWave Test A <a@example.invalid>" "MacWave Test B <b@example.invalid>"; do
         gpg --batch --quiet --passphrase '' --quick-generate-key "$who" ed25519 sign 1d 2>/dev/null
     done
-    FPRS=($(gpg --list-keys --with-colons 2>/dev/null | awk -F: '/^fpr/{print $10}'))
+    # 不用 `FPRS=($(...))`：SC2207，而且 gpg 输出里带空格时会被再拆一次。
+    # bash 3.2（macOS 自带）没有 mapfile，所以用 while read 逐行收。
+    FPRS=()
+    while IFS= read -r _fpr; do
+        FPRS+=("$_fpr")
+    done < <(gpg --list-keys --with-colons 2>/dev/null | awk -F: '/^fpr/{print $10}')
     KEY_A="${FPRS[0]}"
     KEY_B="${FPRS[1]:-}"
 
