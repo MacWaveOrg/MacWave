@@ -141,7 +141,7 @@ Those two lines only cover the bulk downloads. When `github.com` and `raw.github
 ```bash
 export MACWAVE_BOTTLE_DOMAIN=https://mirror.example.cn/MacWave/bottle
 export MACWAVE_DEPS_DOMAIN=https://mirror.example.cn/MacWave/deps
-export MACWAVE_API_DOMAIN=https://mirror.example.cn/MacWave/infosource
+export MACWAVE_API_DOMAIN=https://mirror.example.cn/MacWave/infosource/HEAD
 export MACWAVE_SELFUPDATE_DOMAIN=https://mirror.example.cn/MacWave/selfupdate
 export MACWAVE_PYTHON_DOMAIN=https://mirror.example.cn/MacWave/python
 export MACWAVE_CORE_DOMAIN=https://mirror.example.cn/MacWave/core
@@ -149,6 +149,19 @@ export MACWAVE_PIP_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
 `MACWAVE_PIP_INDEX` is the odd one out: it only affects the three Python dependencies (`requests`, `toml`, `colorama`) that `pip` installs once, so it can point at any PyPI mirror. The other six are paths under one mirror host, which is why a single account covers all of them.
+**The trailing `/HEAD` in `MACWAVE_API_DOMAIN` is required.** A mirror lays files out
+as `<org>/<repo>/<ref>/…`, and `infosource` is a git repository, so the ref has to be a
+real directory level:
+
+```
+…/MacWave/infosource/HEAD/pkg/pkginfo_arm64/versions   ← correct
+…/MacWave/infosource/pkg/pkginfo_arm64/versions        ← wrong, 404
+```
+
+Without it **every** package fails to install (`wave install` stops at "cannot read the
+version list", and so do `wave search` and `wave latest`), not just one. The other kinds
+(`bottle`, `deps`) are not repositories and have no ref segment.
+
 
 ### Write it once, keep it
 
@@ -160,7 +173,7 @@ cat >> ~/.zshrc <<'MWMIRROR'
 # MacWave mirror — delete this block to go back to the official addresses
 export MACWAVE_BOTTLE_DOMAIN=https://mirror.example.cn/MacWave/bottle
 export MACWAVE_DEPS_DOMAIN=https://mirror.example.cn/MacWave/deps
-export MACWAVE_API_DOMAIN=https://mirror.example.cn/MacWave/infosource
+export MACWAVE_API_DOMAIN=https://mirror.example.cn/MacWave/infosource/HEAD
 export MACWAVE_SELFUPDATE_DOMAIN=https://mirror.example.cn/MacWave/selfupdate
 export MACWAVE_PYTHON_DOMAIN=https://mirror.example.cn/MacWave/python
 export MACWAVE_CORE_DOMAIN=https://mirror.example.cn/MacWave/core
@@ -206,7 +219,7 @@ The same credentials go into each of the six paths when you want the full set �
 | --- | --- | --- |
 | `MACWAVE_BOTTLE_DOMAIN` | prebuilt packages | GitHub Releases |
 | `MACWAVE_DEPS_DOMAIN` | dependency libraries | GitHub Releases |
-| `MACWAVE_API_DOMAIN` | package index | `infosource` on raw.githubusercontent |
+| `MACWAVE_API_DOMAIN` | package index (**the ref segment is required**, e.g. `/HEAD`) | `infosource` on raw.githubusercontent |
 | `MACWAVE_SELFUPDATE_DOMAIN` | self-update data | `Selfupdate` on raw.githubusercontent |
 | `MACWAVE_PYTHON_DOMAIN` | the bundled interpreter | `Python` on raw.githubusercontent |
 | `MACWAVE_CORE_DOMAIN` | MacWave's own files | `MacWave` on raw.githubusercontent |

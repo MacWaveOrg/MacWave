@@ -138,7 +138,7 @@ export MACWAVE_DEPS_DOMAIN=https://mirror.example.cn/MacWave/deps
 ```bash
 export MACWAVE_BOTTLE_DOMAIN=https://mirror.example.cn/MacWave/bottle
 export MACWAVE_DEPS_DOMAIN=https://mirror.example.cn/MacWave/deps
-export MACWAVE_API_DOMAIN=https://mirror.example.cn/MacWave/infosource
+export MACWAVE_API_DOMAIN=https://mirror.example.cn/MacWave/infosource/HEAD
 export MACWAVE_SELFUPDATE_DOMAIN=https://mirror.example.cn/MacWave/selfupdate
 export MACWAVE_PYTHON_DOMAIN=https://mirror.example.cn/MacWave/python
 export MACWAVE_CORE_DOMAIN=https://mirror.example.cn/MacWave/core
@@ -146,6 +146,18 @@ export MACWAVE_PIP_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple
 ```
 
 `MACWAVE_PIP_INDEX` 是唯一不一样的那个：它只影响 `pip` 安装的三个 Python 依赖（`requests`、`toml`、`colorama`），所以可以指向任意 PyPI 镜像。其余六个都是同一个镜像域名下的路径，因此一个账号就能覆盖全部。
+**`MACWAVE_API_DOMAIN` 末尾的 `/HEAD` 不能省。** 镜像按 `<组织>/<仓库>/<ref>/…`
+布局，`infosource` 是一个 git 仓库，所以 ref 那一段必须真实存在一层目录：
+
+```
+…/MacWave/infosource/HEAD/pkg/pkginfo_arm64/versions   ← 正确
+…/MacWave/infosource/pkg/pkginfo_arm64/versions        ← 错误，404
+```
+
+少了它的症状是**所有**软件包都装不上（`wave install` 停在「读不到版本清单」，
+`wave search`、`wave latest` 也一样），而不是某一个包出问题。其余几类
+（`bottle`、`deps`）不是仓库，没有 ref 段。
+
 
 ### 一次写入，长期生效
 
@@ -157,7 +169,7 @@ cat >> ~/.zshrc <<'MWMIRROR'
 # MacWave mirror — 删掉这一块就恢复官方地址
 export MACWAVE_BOTTLE_DOMAIN=https://mirror.example.cn/MacWave/bottle
 export MACWAVE_DEPS_DOMAIN=https://mirror.example.cn/MacWave/deps
-export MACWAVE_API_DOMAIN=https://mirror.example.cn/MacWave/infosource
+export MACWAVE_API_DOMAIN=https://mirror.example.cn/MacWave/infosource/HEAD
 export MACWAVE_SELFUPDATE_DOMAIN=https://mirror.example.cn/MacWave/selfupdate
 export MACWAVE_PYTHON_DOMAIN=https://mirror.example.cn/MacWave/python
 export MACWAVE_CORE_DOMAIN=https://mirror.example.cn/MacWave/core
@@ -201,7 +213,7 @@ export MACWAVE_DEPS_DOMAIN="https://<用户名>:<密码>@<镜像地址>/MacWave/
 | --- | --- | --- |
 | `MACWAVE_BOTTLE_DOMAIN` | 预编译软件包 | GitHub Releases |
 | `MACWAVE_DEPS_DOMAIN` | 依赖库 | GitHub Releases |
-| `MACWAVE_API_DOMAIN` | 软件包索引 | raw.githubusercontent 上的 `infosource` |
+| `MACWAVE_API_DOMAIN` | 软件包索引（**末尾要带 ref 段**，如 `/HEAD`） | raw.githubusercontent 上的 `infosource` |
 | `MACWAVE_SELFUPDATE_DOMAIN` | 自更新数据 | raw.githubusercontent 上的 `Selfupdate` |
 | `MACWAVE_PYTHON_DOMAIN` | 自带解释器 | raw.githubusercontent 上的 `Python` |
 | `MACWAVE_CORE_DOMAIN` | MacWave 自身文件 | raw.githubusercontent 上的 `MacWave` |

@@ -230,8 +230,20 @@ MACWAVE_PYTHON_DOMAIN=https://mirror.repohub.top/MacWave/python \
 
 | 变量 | 取什么 | 镜像要承载 |
 | --- | --- | --- |
+| `MACWAVE_API_DOMAIN` | 软件包索引与「列出版本」清单 | `<根>/MacWave/infosource/<ref>/…` |
 | `MACWAVE_CORE_DOMAIN` | MacWave 自身的代码（`lib/`、`pkg/`、`surfboard/`） | `<根>/MacWave/core/<分支>/…` |
 | `MACWAVE_PYTHON_DOMAIN` | 自带 CPython（独立仓库） | `<根>/MacWave/python/pythondata/…` |
+
+`infosource/` 底下那层 ref **必须写在变量值里**（MacWave 用 `HEAD`）：
+
+```
+export MACWAVE_API_DOMAIN=https://<根>/MacWave/infosource/HEAD   ← 正确
+export MACWAVE_API_DOMAIN=https://<根>/MacWave/infosource        ← 错误，全部 404
+```
+
+与下面 `core/` 的分支层是同一类坑，但后果更广：少了 ref 不是某个包出问题，
+而是**所有**包都装不上 —— `wave install` 停在「读不到版本清单」，`wave search`
+与 `wave latest` 同样失败。`bottle/`、`deps/` 不是 git 仓库，没有这一层。
 
 `core/` 的形状有个坑：客户端按 **`<CORE_DOMAIN>/<分支>/<路径>`** 取文件
 （`BASE_URL="$CORE_URL/$BRANCH"`），所以分支名必须是一层真实目录：
