@@ -10,6 +10,11 @@
 
 set -uo pipefail
 
+# 站点根目录 —— 必须与 nginx 里 `alias` 指的那棵树一致，否则本脚本会拿另一棵树
+# 去和 HTTP 比大小。mirror.repohub.top 上 nginx 指的是 /srv/mirror，
+# 而同步脚本默认写 /www/wwwroot/mirror.repohub.top/MacWave；两者不一致时
+# 第 6.5 节会直接报红。先确认：
+#   nginx -T 2>/dev/null | grep -A2 'location ^~ /MacWave/'
 BASE=${BASE:-/www/wwwroot/mirror.repohub.top}
 DOMAIN=${DOMAIN:-https://mirror.repohub.top}
 LW_PASS_DIR=${LW_PASS_DIR:-/root/LinuxWaveMirror/password}
@@ -183,6 +188,32 @@ for v in \
     c=$(curl --path-as-is -so /dev/null -w '%{http_code}' --max-time 15 "$DOMAIN$v")
     expect "$v" "$c" 401
 done
+
+# ─────────────────────────────────────────────────────────────
+section "6.5 站点 alias 指向的就是 ROOT 这棵树"
+#
+# 这是踩过的坑：nginx 把 /MacWave/ 指到 /srv/mirror/，而同步脚本往
+# /www/wwwroot/mirror.repohub.top/MacWave 写。同步日志全绿、体检的其他项也全过
+# —— 但客户端读的是另一棵没人更新的树，症状是某个新发布的包「不在索引里」，
+# 其余包都正常。
+#
+# 判据用索引里那份 `versions`（每次同步都会重算）与 README：两者都不大，
+# 且内容一改大小就会变。比大小而不是比时间 —— 时间是服务器本地时区，
+# 而 HTTP 给的是 GMT，直接比容易看错。
+alias_probe() {   # alias_probe 相对路径
+    local rel=$1 local_bytes remote_bytes
+    local_bytes=$(wc -c < "$BASE/$rel" 2>/dev/null | tr -d ' ')
+    remote_bytes=$(size_of "/$rel" "" "")   # 三个参数：URL 用户 口令（这里不需要认证）
+    if [[ -z "${local_bytes:-}" ]]; then
+        no "磁盘有 $rel" "缺失" "存在（$BASE 是不是 alias 指的目录？）"
+    elif [[ "$local_bytes" == "${remote_bytes:-}" ]]; then
+        ok "alias 与 ROOT 一致：$rel" "$local_bytes 字节"
+    else
+        no "alias 与 ROOT 一致：$rel" "HTTP $remote_bytes / 磁盘 $local_bytes" \
+           "两边相等（alias 指的是另一棵树？）"
+    fi
+}
+alias_probe "MacWave/infosource/HEAD/README.md"
 
 # ─────────────────────────────────────────────────────────────
 section "7. 真实产物内容长度（确认不是空壳 200）"

@@ -92,7 +92,33 @@ mirror.repohub.top    A    <服务器公网 IP>
 
 ## 第四步：放入文件
 
-最终必须是这个结构：
+最终必须是这个结构……
+
+> **`ROOT` 必须等于 nginx 里 `alias` 指的那棵树。** 本文下面所有路径都以
+> `/www/wwwroot/mirror.repohub.top` 为例，但**服务器上未必是这个目录** —— 实测
+> `mirror.repohub.top` 的 nginx 把它指到了 `/srv/mirror/`：
+>
+> ```nginx
+> location ^~ /MacWave/infosource/ {
+>     alias /srv/mirror/MacWave/infosource/;
+> }
+> ```
+>
+> 同步脚本默认往 `/www/wwwroot/mirror.repohub.top/MacWave` 写。**两棵树对不上时，
+> 同步照样「成功」，日志全绿，而客户端读的是另一棵没人更新的树** —— 症状是某个
+> 新发布的包在客户端「不在索引里」，其余包一切正常，排查时最容易被误判成上游数据
+> 没同步。两行命令先确认现场：
+>
+> ```bash
+> nginx -T 2>/dev/null | grep -A2 'location ^~ /MacWave/'
+> curl -sI http://127.0.0.1/MacWave/infosource/HEAD/README.md | grep -i content-length
+> ls -l "$ROOT/MacWave/infosource/HEAD/README.md"    # 大小、时间要与上一条一致
+> ```
+>
+> 对不上就二选一：把 cron 里的 `ROOT` 改成 `alias` 那个目录，或者让 `alias` 指向
+> `ROOT`（例如把 `/srv/mirror` 换成指向同一棵树的符号链接，注意先迁移数据）。
+
+结构：
 
 ```
 /www/wwwroot/mirror.repohub.top/
