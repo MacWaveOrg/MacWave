@@ -12,7 +12,8 @@
 #   bash mirror-sync.sh              全量同步
 #
 # 环境变量（都有默认值，正常不用设）：
-#   ROOT            站点根目录
+#   ROOT            站点根目录（DEST=$ROOT/MacWave）
+#   MIRROR_ROOT     bottle/、deps/ 所在的那一层；不设就按标准布局自动判定
 #   SRC             工作区（浅克隆与锁都在这里）
 #   KEEP_BRANCHES   除当前发布线外额外保留的 core 分支
 #   JOBS            产物并发下载数
@@ -34,12 +35,19 @@ DEST=$ROOT/MacWave
 # 下面这几个步骤（产物同步的 --out、清单重建的 --mirror）都要指向**真正有
 # bottle/ 的那一层**，选错就会出现「同步全绿、客户端却读不到新包」，
 # 或者在最后一步才炸出 `does not look like a mirror root (no bottle/)`。
-if [[ -d "$DEST/bottle" ]]; then
+#
+# 顺序：环境变量 > ${DEST}（标准布局）> ${ROOT}（产物在上面一层）> ${DEST}/MacWave
+# （有人手工把那棵嵌套了一层）。都没有就按 $DEST 当首次铺设。
+if [[ -n "${MIRROR_ROOT:-}" ]]; then
+    :                                    # 显式指定，原样用
+elif [[ -d "$DEST/bottle" ]]; then
     MIRROR_ROOT=$DEST
 elif [[ -d "$ROOT/bottle" ]]; then
     MIRROR_ROOT=$ROOT
+elif [[ -d "$DEST/MacWave/bottle" ]]; then
+    MIRROR_ROOT=$DEST/MacWave
 else
-    MIRROR_ROOT=$DEST        # 两边都没有：首次铺设，按 A 建，后面会补上
+    MIRROR_ROOT=$DEST
 fi
 SRC=${SRC:-/root/mirror-src}
 GH=${GH:-https://github.com}
@@ -441,7 +449,14 @@ fi
 
 hr
 if (( ! DRY_RUN )); then
-    if chown -R "$OWNER" "$DEST" "$MIRROR_ROOT" 2>/dev/null; then
+    # 只在这次真的往产物树写过东西时才 chown 它 —— 产物动辄 1.5 GB，
+    # `--no-payloads` 时递归改一遍纯属白花时间（况且那一轮它是只读的）。
+    chown_ok=1
+    chown -R "$OWNER" "$DEST" 2>/dev/null || chown_ok=0
+    if (( ! NO_PAYLOADS )) && [[ "$MIRROR_ROOT" != "$DEST" ]]; then
+        chown -R "$OWNER" "$MIRROR_ROOT" 2>/dev/null || chown_ok=0
+    fi
+    if (( chown_ok )); then
         ok "属主" "$OWNER"
     else
         no "属主" "chown 失败（nginx 可能读不到新文件）"

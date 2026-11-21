@@ -117,6 +117,23 @@ mirror.repohub.top    A    <服务器公网 IP>
 >
 > 对不上就二选一：把 cron 里的 `ROOT` 改成 `alias` 那个目录，或者让 `alias` 指向
 > `ROOT`（例如把 `/srv/mirror` 换成指向同一棵树的符号链接，注意先迁移数据）。
+>
+> 还有一种常见的历史包袱：**站点被一个个 `location` 手工拼出来**，于是同一台机器上
+> 同时存在 `MacWave/MacWave/`（放着 `bottle`、`deps`）、`MacWave/infosource/`、
+> `MacWave/core/` 等不同的树。这种情况下 `DEST=$ROOT/MacWave` 里没有 `bottle/`，
+> 清单重建会在最后一步失败。两条路：
+>
+> - 用 `MIRROR_ROOT` 指到真正有 `bottle/` 的那一层（不必搬数据）：
+>   `ROOT=/srv/mirror MIRROR_ROOT=/srv/mirror/MacWave/MacWave ./mirror-sync.sh --no-payloads`
+>   （`ls` 一下确认哪一层有 `bottle/`：`ls -d /srv/mirror/MacWave/*/bottle`）
+> - 或者一次搬干净，让站点只剩一层：
+>
+>   ```
+>   /srv/mirror/MacWave/{bottle,deps,infosource/HEAD,core,selfupdate,python}
+>   ```
+>
+>   然后把 nginx 收成一条 `location ^~ /MacWave/ { alias /srv/mirror/MacWave/; }`。
+>   这条最省事：客户端的六类地址全都落在这一个前缀下面。
 
 结构：
 
