@@ -453,7 +453,7 @@ universal —— 索引是「每架构一份」）；编完 `codesign --force --
 依赖闭包、sha256、实跑：
 
 ```bash
-bash scripts/selfbuilt_check.sh out/aria2@1.37.0.arm64 \
+/bin/bash scripts/selfbuilt_check.sh out/aria2@1.37.0.arm64 \
      --arch arm64 --bin-name aria2c --deps "zlib@1.2.13" --run-args "--version"
 ```
 

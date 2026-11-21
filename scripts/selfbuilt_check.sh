@@ -96,7 +96,7 @@ with open(sys.argv[1], "rb") as f:
 
 case "$MAGIC" in
     cffaedfe|cefaedfe|feedfacf|feedface|cafebabe|bebafeca)
-        pass "Mach-O（magic $MAGIC）" ;;
+        pass "Mach-O（magic ${MAGIC}）" ;;
     *)
         fail "不是 Mach-O（magic ${MAGIC:-读不到}）—— 索引里的单文件产物必须是可执行文件"
         hr; printf '❌ 不可上线（%d 项阻塞）\n' "$BLOCKING"; exit 1 ;;
@@ -107,7 +107,7 @@ esac
 ARCHS=$(lipo -archs "$BINARY" 2>/dev/null)
 case "$ARCHS" in
     *" "*)
-        fail "是 universal（$ARCHS）—— 索引按「每架构一份」组织，请分别编两个产物"
+        fail "是 universal（${ARCHS}）—— 索引按「每架构一份」组织，请分别编两个产物"
         ;;
     "")
         fail "lipo 读不出架构" ;;
@@ -118,9 +118,9 @@ case "$ARCHS" in
             *) ACTUAL="$ARCHS" ;;
         esac
         if [[ -n "$WANT_ARCH" && "$ACTUAL" != "$WANT_ARCH" ]]; then
-            fail "架构不符：产物是 $ARCHS（$ACTUAL），索引记录要的是 $WANT_ARCH"
+            fail "架构不符：产物是 ${ARCHS}（${ACTUAL}），索引记录要的是 $WANT_ARCH"
         else
-            pass "架构 $ARCHS（索引里的 $ACTUAL）"
+            pass "架构 ${ARCHS}（索引里的 ${ACTUAL}）"
         fi
         ;;
 esac
@@ -153,7 +153,7 @@ if [[ -z "$MINOS" ]]; then
     MINOS_SRC="LC_VERSION_MIN_MACOSX"
 fi
 if [[ -n "$MINOS" ]]; then
-    pass "min_os $MINOS（$MINOS_SRC）→ 索引记录写 min_os: \"$MINOS\""
+    pass "min_os ${MINOS}（${MINOS_SRC}）→ 索引记录写 min_os: \"$MINOS\""
 else
     warn "读不到 min_os —— 索引里不要瞎写，缺这个字段客户端会静默放行（见 AGENTS.md 的行为矩阵）"
 fi
@@ -222,7 +222,7 @@ while IFS= read -r ref; do
             else
                 hint="$owner@<版本>"
             fi
-            fail "依赖 $base 来自 $owner，但索引记录里没声明 —— 加 deps: \"$hint\"，否则用户装不到它"
+            fail "依赖 $base 来自 ${owner}，但索引记录里没声明 —— 加 deps: \"$hint\"，否则用户装不到它"
         fi
     fi
     UNRESOLVED=$((UNRESOLVED + 1))
@@ -271,9 +271,9 @@ else
             printf '%s\n' "$OUTPUT" | head -3 | sed 's/^/      /' ;;
         *)
             if [[ "$RC" -eq 0 || "$RC" -eq 1 ]]; then
-                pass "实跑 $BIN_NAME $RUN_ARGS 通过（exit $RC）"
+                pass "实跑 $BIN_NAME $RUN_ARGS 通过（exit ${RC}）"
             else
-                warn "实跑退出码 $RC，前几行输出："
+                warn "实跑退出码 ${RC}，前几行输出："
                 printf '%s\n' "$OUTPUT" | head -3 | sed 's/^/      /'
             fi
             ;;
