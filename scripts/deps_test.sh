@@ -170,8 +170,29 @@ run_case() {
         RUN_RC=$?
         [[ "$RUN_RC" -eq 0 ]] && break
     done
+    # 判据是「二进制起来了、动态库都解析得到」，不是「它支持这三个开关」。
+    # choma 这类工具三个都不认：它会打印用法然后 exit 255 —— 那依然是**跑起来了**，
+    # 反倒是 dyld 失败才是这条断言真正要抓的（relink 漏改的症状）。
+    RAN_OK=0
     if [[ "$RUN_RC" -eq 0 ]]; then
-        echo -e "${GREEN}🌊 OK: $PKG $FLAG${RESET}"
+        RAN_OK=1
+    else
+        case "$RUN_OUT" in
+            *"Library not loaded"*|*"image not found"*)
+                RAN_OK=0 ;;
+            *"Options:"*|*"Usage:"*|*"usage:"*|*"用法"*)
+                RAN_OK=1 ;;
+            *)
+                RAN_OK=0 ;;
+        esac
+    fi
+
+    if [[ "$RAN_OK" -eq 1 ]]; then
+        if [[ "$RUN_RC" -eq 0 ]]; then
+            echo -e "${GREEN}🌊 OK: $PKG $FLAG${RESET}"
+        else
+            echo -e "${GREEN}🌊 OK: $PKG 起来了（$FLAG 打印用法后 exit ${RUN_RC}）${RESET}"
+        fi
     else
         echo -e "${RED_BOLD}🌊 FAIL: $PKG 起不来（最后试的 ${FLAG}，rc=${RUN_RC}）${RESET}"
         echo "$RUN_OUT" | head -12 | sed 's/^/   /'
