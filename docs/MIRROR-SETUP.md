@@ -97,6 +97,20 @@ mirror.repohub.top    A    <服务器公网 IP>
 ```
 /www/wwwroot/mirror.repohub.top/
 └── MacWave/
+    ├── infosource/
+    │   └── HEAD/                     ← ref 那一层，客户端默认地址里就有
+    │       ├── README.md
+    │       ├── versions              ← 包名清单（build_versions_index.py 生成）
+    │       └── pkg/pkginfo_arm64/
+    │           ├── versions          ← 版本号清单（同上）
+    │           └── jq/
+    │               └── versions
+    ├── selfupdate/
+    │   └── macwavedata/latest.toml   ← 没有 ref 层
+    ├── python/
+    │   └── pythondata/…
+    ├── core/
+    │   └── 4.4/…                     ← 分支就是那一层
     ├── bottle/
     │   └── jq/
     │       └── jq@1.7.1.arm64
@@ -104,6 +118,31 @@ mirror.repohub.top    A    <服务器公网 IP>
         └── libidn2/
             └── libidn2@2.3.7.arm64.tar.gz
 ```
+
+**只有 `infosource/` 在地址里多一层 ref，其余都没有。** 这不是设计不一致而是跟着上游
+地址走的：`infosource` 的默认地址是 `…/MacWaveOrg/infosource/HEAD`（`HEAD` 是默认分支的
+别名），`selfupdate` / `python` 的默认地址以 `/main` 结尾、客户端拼路径时不再接 ref，
+`core` 拼的是分支名。
+
+磁盘上那层 `HEAD` 有两种做法，**选一种并保证客户端拿到的就是同步脚本写的那棵树**：
+
+| 做法 | 做法细节 |
+| --- | --- |
+| A. 铺进真实目录 | `rsync` 目标写成 `$DEST/infosource/HEAD/`（本仓库 `mirror-sync.sh` 写的是 `$DEST/infosource`，这种情况下要改） |
+| B. nginx 别名 / 符号链接 | 数据照旧放 `$DEST/infosource/`，用 `location /MacWave/infosource/HEAD/ { alias …/MacWave/infosource/; }` 或 `ln -s infosource infosource/HEAD` 顶上 |
+
+两种都能用，**但别名指错地方的后果很隐蔽**：客户端照样 200、`wave install` 却发现
+某个新包「不在索引里」，因为 `/HEAD` 指向的是一份没人再更新的旧拷贝。判断办法是比
+`README.md` 的 `content-length` / `Last-Modified` 与磁盘上的那份：
+
+```bash
+curl -sI "$MACWAVE_API_DOMAIN/README.md" | grep -iE 'content-length|last-modified'
+ls -l /www/wwwroot/mirror.repohub.top/MacWave/infosource/README.md
+# 两行不一致 = /HEAD 没有指向同步出来的那棵树
+```
+
+而少了 `HEAD` 那一层（或别名指错），**所有**包的「列出版本」都会 404 —— 症状是
+`wave install` 说「读不到版本清单」，`wave search`、`wave latest` 一起失灵。
 
 **这一步最容易出错**：很多压缩工具会在外面多包一层目录，解出来变成 `.../mirror/bottle/...`，于是 URL 里凭空多出 `/mirror`，全部 404。
 
@@ -355,7 +394,7 @@ rm -rf /www/wwwroot/mirror.repohub.top/MacWave/python/.git
 
 | 目标 | 来源 | 处理 |
 | --- | --- | --- |
-| `infosource/` | `MacWaveOrg/infosource` 的 `main` | 浅克隆 + `rsync --delete` |
+| `infosource/` | `MacWaveOrg/infosource` 的 `main` | 浅克隆 + `rsync --delete`；**站点要对客户端暴露成 `infosource/HEAD/`**（真实目录或 nginx 别名，见第四步） |
 | `selfupdate/` | `MacWaveOrg/Selfupdate` 的 `main` | 同上 |
 | `python/` | `MacWaveOrg/Python` 的 `main` | 同上 |
 | `core/<分支>/` | `MacWaveOrg/MacWave` 的对应分支 | 同上；分支表 = `configdata` 的当前发布线 + `KEEP_BRANCHES` |

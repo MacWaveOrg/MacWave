@@ -76,10 +76,12 @@ shell 侧（`install.sh`、`selfupdate.sh`）有一份逐字对应的副本，�
 ### 3.2 索引（infosource）
 
 ```
-<MACWAVE_API_DOMAIN>/
-    pkg/
+<MACWAVE_API_DOMAIN>/           默认 https://raw.githubusercontent.com/MacWaveOrg/infosource/HEAD
+    pkg/                        注意：ref 段（HEAD）在域名里，不在这里
         pkginfo_arm64/<包名>/<版本>      一条记录一个文件
         pkginfo_amd64/<包名>/<版本>
+        pkginfo_arm64/versions           一行一个包名（镜像生成）
+        pkginfo_arm64/<包名>/versions     一行一个版本号（镜像生成）
 ```
 
 记录是 `field: "value"` 的平铺文本。4.0 起新增 `file` 字段（上游那份文件的名字）：
