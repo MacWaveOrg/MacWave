@@ -639,17 +639,27 @@ for d in Selfupdate Python; do
 done
 ```
 
-挪完再验一遍（**必须走 https 或带 Host 头**，`http://127.0.0.1` 只会给你 301）：
+挪完再验一遍。三个前提，缺一个结论就会反过来：
+
+1. **必须 `https://`**（或带 `Host` 头）：`http://127.0.0.1` 只给 301；
+2. **必须带凭据**：`selfupdate`、`python`、`core`、`bottle`、`deps` 这些路径都开了
+   HTTP 基本认证，**认证在碰文件系统之前发生** —— 不带 `-u` 时永远是 `401`，
+   哪怕目录被删光了也还是 `401`，等于什么都没验；只有 `infosource` 是公开的；
+3. 口令从密码文件读进变量，**不要 `echo`**：
 
 ```bash
+MP=$(awk '$1=="REPOHUBUSER1"{print $2; exit}' /root/macwave-passwords.txt)
 for u in \
   /MacWave/infosource/HEAD/pkg/pkginfo_arm64/versions \
   /MacWave/selfupdate/macwavedata/latest.toml \
   /MacWave/python/pythondata/latest.toml \
   /MacWave/core/4.4/lib/wave.py \
+  /MacWave/core/4.0/lib/wave.py \
   /MacWave/bottle/jq/jq%401.8.2.arm64 ; do
-    printf '%s  %s\n' "$(curl -s -o /dev/null -w '%{http_code}' "https://mirror.repohub.top$u")" "$u"
+    printf '%s  %s\n' \
+      "$(curl -s -o /dev/null -w '%{http_code}' -u "REPOHUBUSER1:$MP" "https://mirror.repohub.top$u")" "$u"
 done
+unset MP
 ```
 
 全是 `200` 就说明废数据确实没人读；一周后 `rm -rf "$QUAR"`。
