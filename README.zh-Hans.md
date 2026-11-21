@@ -376,6 +376,7 @@ wave latest --all                  Same, for every installed package
 
 ```
 age              by FiloSottile
+aria2c           by Tatsuhiro Tsujikawa
 atuin            by atuinsh
 bat              by David Peter
 batt             by charlie0129

@@ -384,6 +384,7 @@ The same list appears in `infosource/README.md` and on [macwave.org](https://mac
 
 ```
 age              by FiloSottile
+aria2c           by Tatsuhiro Tsujikawa
 atuin            by atuinsh
 bat              by David Peter
 batt             by charlie0129
