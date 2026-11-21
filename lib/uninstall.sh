@@ -278,49 +278,108 @@ done
 #   2. 更早的版本：只有一行 export PATH，没有注释行
 #   3. 4.3 起推荐给 POSIX shell 的：`eval "$(.../lib/wave shellenv)"`
 #   4. 4.3 起推荐给 csh / tcsh 的：`if ( "$PATH" !~ *".../lib"* ) setenv PATH ...`
-# 只删指向**本机 MacWave 安装目录**的行；别人的配置一句都不动。
+#
+# 判据只有一条：**这一行必须指向本机 MacWave 安装目录**。别人的配置一句都不动 ——
+# 以前的 sed 兜底是 `/export PATH=".*macwave\//d`，任何含「macwave/」的行都会删，
+# 连 `~/.local/macwave-other` 和用户自己写的注释都算在内。
+#
+# 用纯 bash 实现而不是 python3：卸载时自带解释器刚被删掉，PATH 上可能已经没有
+# python3 了 —— 那时再靠 Python 过滤，要么整段失败、要么退回子串匹配的老路。
+# 一份实现同时管「正常」与「兜底」两种情况，不会两边漂移。
+
+# 参与匹配的目录 = 配置里读到的 + 三个默认候选。默认候选一定是我们自己的路径，
+# 加上它们，旧安装留下的行在配置已经丢失时也能被认出来。
+RC_DIRS=()
+mw_add_rc_dir() {
+    local dir="$1" existing
+    [[ -n "$dir" ]] || return 0
+    for existing in ${RC_DIRS[@]+"${RC_DIRS[@]}"}; do
+        [[ "$existing" == "$dir" ]] && return 0
+    done
+    RC_DIRS+=("$dir")
+}
+
+for _rc_dir in ${BASE_DIRS[@]+"${BASE_DIRS[@]}"} \
+                "$HOME/.local/macwave" \
+                "$SYS_ROOT/opt/macwave" \
+                "$SYS_ROOT/usr/local/macwave"; do
+    mw_add_rc_dir "$_rc_dir"
+done
+
+# 这一行是否提到了某个本机安装目录。家目录下的安装目录在 rc 里可能写成
+# `~` 或 `$HOME`（install.sh 打印的就是这两种）；含空格时还会带一层引号。
+mw_line_refs_install() {
+    local line="$1" dir rel
+    for dir in ${RC_DIRS[@]+"${RC_DIRS[@]}"}; do
+        case "$line" in
+            *"$dir"/*) return 0 ;;
+        esac
+        if [[ "$dir" == "$HOME"/* ]]; then
+            rel="${dir#"$HOME"/}"
+            case "$line" in
+                *"~/$rel"/*|*'$HOME'/"$rel"/*) return 0 ;;
+                *"~/\"$rel\""/*|*'$HOME'/"\"$rel\""/*) return 0 ;;
+            esac
+        fi
+    done
+    return 1
+}
+
+mw_line_is_ours() {
+    local line="$1" ltrim
+    # 旧版标记行：整行相等才算。子串匹配会误删用户自己的 `# MacWave mirror`。
+    [[ "$line" == "# MacWave" ]] && return 0
+    # 注释行一律不动（除非上面那条整行相等的标记行）。
+    ltrim="${line#"${line%%[![:space:]]*}"}"
+    case "$ltrim" in
+        \#*) return 1 ;;
+    esac
+    # 其余的判据是「像不像我们给的 PATH 条目」+「指不指向本机安装目录」。
+    mw_line_refs_install "$line" || return 1
+    case "$line" in
+        *export[[:space:]]PATH=*) return 0 ;;
+        *setenv[[:space:]]PATH*) return 0 ;;
+        *lib/wave*shellenv*) return 0 ;;
+    esac
+    return 1
+}
+
+mw_clean_rc() {
+    local rc="$1" tmp line changed=0
+    [[ -f "$rc" ]] || return 0
+    # 临时文件放在 rc 同目录：跨文件系统 rename 会失败，而同目录又是同一权限。
+    tmp="$rc.macwave.$$"
+    if ! : > "$tmp" 2>/dev/null; then
+        echo "🌊 Warning: cannot write next to $rc; its PATH entries were left in place." >&2
+        return 0
+    fi
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if mw_line_is_ours "$line"; then
+            changed=1
+            continue
+        fi
+        printf '%s\n' "$line" >> "$tmp"
+    done < "$rc"
+    if [[ "$changed" -eq 0 ]]; then
+        rm -f "$tmp"
+        return 0
+    fi
+    # rc 常是指向 dotfiles 仓库的符号链接：写临时文件再 `cat >` 回写，
+    # 不能用 mv 或 sed -i —— 那会把链接换成普通文件，链接就断了。
+    if cat "$tmp" > "$rc" 2>/dev/null; then
+        echo "🌊 Removed MacWave PATH entries from $rc"
+    else
+        echo "🌊 Warning: could not update $rc; its PATH entries were left in place." >&2
+    fi
+    rm -f "$tmp"
+    return 0
+}
+
 for RC_FILE in "$HOME/.zshrc" "$HOME/.zprofile" \
                "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.bash_login" \
                "$HOME/.profile" \
                "$HOME/.tcshrc" "$HOME/.cshrc" "$HOME/.login"; do
-    if [ -f "$RC_FILE" ]; then
-        if ! python3 - "$RC_FILE" "${BASE_DIRS[@]}" << 'PYEOF'
-import sys
-from pathlib import Path
-
-rc_file = Path(sys.argv[1])
-install_dirs = [d for d in sys.argv[2:] if d]
-kept = []
-skip_next = False
-for line in rc_file.read_text().splitlines():
-    if line.strip() == "# MacWave":
-        skip_next = True
-        continue
-    if skip_next and line.startswith("export PATH="):
-        skip_next = False
-        continue
-    skip_next = False
-    # shellenv 写法：一行里同时出现 lib/wave 与 shellenv 才算我们给的
-    if "lib/wave" in line and "shellenv" in line:
-        continue
-    # csh / tcsh 写法：带 !~ 守卫的 setenv，且指向本机安装目录
-    if "setenv PATH" in line and "!~" in line and any(d in line for d in install_dirs):
-        continue
-    kept.append(line)
-rc_file.write_text("\n".join(kept) + ("\n" if kept else ""))
-PYEOF
-        then
-            # PATH 清理是尽力而为：python3 不可用（自带解释器刚被删掉时可能如此）
-            # 或文件写不进去，都还有下面的 sed 兜底。不能让它把整次卸载变成
-            # exit 1 —— 那既不符合退出码契约，也会盖掉前面已经记下的结果。
-            echo "🌊 Warning: could not clean $RC_FILE with python3; trying the pattern fallback." >&2
-        fi
-        # 兜底：注释行缺失时，仍按旧版写法删掉 macwave 的 PATH 行
-        sed -i '' -e '/^# MacWave$/d' \
-                  -e '/export PATH=".*macwave\//d' \
-                  -e '/setenv PATH .*macwave\//d' "$RC_FILE" 2>/dev/null || true
-        echo "🌊 Removed MacWave PATH entries from $RC_FILE"
-    fi
+    mw_clean_rc "$RC_FILE"
 done
 
 echo ""

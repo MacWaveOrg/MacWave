@@ -528,6 +528,65 @@ else
     fail "一次删除失败后流程就断了（配置目录还在）"
 fi
 
+# ---- PATH 清理：只删指向本机安装目录的行 ----
+#
+# 判据是「这一行指向本机安装目录」，不是「这一行里有 macwave」。旧实现用
+# sed 的 `/export PATH=".*macwave\//d` 做兜底，`~/.local/macwave-other` 这种
+# 别人的路径、以及用户自己写的注释都会被一起删掉。
+RBOX="$WORK/uninstall-rc"
+RTREE="$RBOX$HOME/.local/macwave"
+OTHER="$RBOX$HOME/.local/macwave-other"
+mkdir -p "$RTREE/lib" && echo x > "$RTREE/lib/wave.py"
+mkdir -p "$RBOX/opt/macwave_config"
+printf '{"base_dir": "%s"}\n' "$RTREE" > "$RBOX/opt/macwave_config/config.json"
+RCFILE="$RBOX$HOME/.zshrc"
+mkdir -p "$RBOX$HOME"
+{
+    echo "# MacWave"
+    printf 'export PATH="%s/bin:%s/links:%s/lib:$PATH"\n' "$RTREE" "$RTREE" "$RTREE"
+    printf 'eval "$(%s/lib/wave shellenv)"\n' "$RTREE"
+    printf 'export PATH="%s/bin:$PATH"\n' "$OTHER"
+    printf 'eval "$(%s/lib/wave shellenv)"\n' "$OTHER"
+        echo 'alias ll="ls -l"'
+} > "$RCFILE"
+run_uninstall_rc "$RBOX" >/dev/null
+if ! grep -qF "$RTREE/" "$RCFILE"; then
+    pass "指向本机安装目录的 PATH 行被清掉"
+else
+    fail "指向本机安装目录的 PATH 行还在（实际：$(grep -F "$RTREE/" "$RCFILE" | head -1)）"
+fi
+if [[ "$(grep -cF "$OTHER" "$RCFILE")" -eq 2 ]]; then
+    pass "指向别的 macwave 目录的两行原样保留"
+else
+    fail "指向别的 macwave 目录的行被误删（实际剩 $(grep -cF "$OTHER" "$RCFILE") 行）"
+fi
+if grep -qF 'alias ll="ls -l"' "$RCFILE"; then
+    pass "无关的别名行不受影响"
+else
+    fail "无关的别名行被删掉了"
+fi
+
+# rc 常是指向 dotfiles 仓库的符号链接：清理必须写穿链接，不能把链接换成普通文件。
+LBOX="$WORK/uninstall-rc-link"
+LTREE="$LBOX$HOME/.local/macwave"
+mkdir -p "$LTREE/lib" && echo x > "$LTREE/lib/wave.py"
+mkdir -p "$LBOX/opt/macwave_config" "$LBOX$HOME" "$WORK/dotfiles"
+printf '{"base_dir": "%s"}\n' "$LTREE" > "$LBOX/opt/macwave_config/config.json"
+DOTFILES_ZSH="$WORK/dotfiles/zshrc"
+printf 'export PATH="%s/bin:$PATH"\n' "$LTREE" > "$DOTFILES_ZSH"
+ln -s "$DOTFILES_ZSH" "$LBOX$HOME/.zshrc"
+run_uninstall_rc "$LBOX" >/dev/null
+if [[ -L "$LBOX$HOME/.zshrc" ]]; then
+    pass "清理后 rc 仍是符号链接"
+else
+    fail "清理把 rc 的符号链接换成了普通文件"
+fi
+if [[ "$(grep -cF "$LTREE/" "$DOTFILES_ZSH")" -eq 0 ]]; then
+    pass "PATH 行被写穿链接清掉了"
+else
+    fail "符号链接指向的文件里 PATH 行还在"
+fi
+
 echo
 echo "=========================================="
 echo -e "🌊 Passed: $PASSED"
