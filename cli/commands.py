@@ -307,6 +307,24 @@ COMMANDS = (
         ],
     ),
     Command(
+        name="basedir",
+        module="basedir",
+        handler="handle_basedir",
+        takes_input=True,
+        listed=True,
+        summary="Print the directory MacWave is installed into",
+        usage="wave basedir [--raw]",
+        desc="Print MacWave's install root -- the base_dir in config.json, which is where the binaries, the links and the dependencies live. A path under your home directory is shown with ~. With --raw it prints the absolute path as-is and nothing else.",
+        flags=[
+            ("--raw", "Print the absolute path as-is, with no emoji or colour (for scripts)"),
+        ],
+        examples=[
+            "wave basedir",
+            "wave basedir --raw",
+            "cd \"$(wave basedir --raw)\"",
+        ],
+    ),
+    Command(
         name="shellenv",
         module="shellenv",
         handler="handle_shellenv",

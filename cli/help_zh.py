@@ -69,6 +69,14 @@ COMMANDS_ZH = {
             "-v, --verbose": "详细模式",
         },
     },
+    "basedir": {
+        "desc": "打印 MacWave 的安装根目录 —— 即 config.json 里的 base_dir，"
+                "可执行文件、链接与依赖都在这棵树下。家目录下的路径写作 ~。"
+                "加 --raw 只输出原样的绝对路径。",
+        "flags": {
+            "--raw": "输出原样的绝对路径，不带 🌊 与颜色（给脚本用）",
+        },
+    },
     "shellenv": {
         "desc": "打印一段把 MacWave 的目录加到 PATH 前面的 shell 代码。在 shell 配置里 "
                 "eval 一次即可；它自己什么也不改。",
@@ -192,6 +200,7 @@ OVERVIEW_DESC = {
         "mirror": "显示各类数据实际从哪个地址取",
         "latest": "显示哪些软件包有新版本",
         "shellenv": "打印把 MacWave 加进 PATH 的 shell 代码",
+        "basedir": "打印 MacWave 的安装根目录（base_dir）",
         "manual": "显示完整手册（与 man、info 里的是同一份）",
     },
     "flags": {

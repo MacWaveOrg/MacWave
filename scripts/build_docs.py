@@ -39,7 +39,7 @@ INFO_DIR = REPO_DIR / "info"
 # 会让下面 assert 直接失败 —— 加命令忘了改这里，比生成一份缺章节的手册好。
 ORDER = ["install", "upgrade", "uninstall", "list", "search", "info",
          "selfupdate", "link", "unlink", "linkquery", "mirror", "latest",
-         "shellenv", "version", "manual"]
+         "basedir", "shellenv", "version", "manual"]
 
 # 每个语言一份静态散文。放在这里而不是 help.py：这些句子只属于手册，
 # `wave -h` 里不出现，写进 help.py 只会让那个模块背着没人读的段落。

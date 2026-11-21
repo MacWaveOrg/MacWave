@@ -93,6 +93,7 @@ jobs:
           command: |
             /bin/bash scripts/flags_test.sh
             /bin/bash scripts/suggest_test.sh
+            /bin/bash scripts/basedir_test.sh
 
       - run:
           name: Signature conventions

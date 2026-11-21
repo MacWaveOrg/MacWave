@@ -50,6 +50,11 @@ MacWave 把每个软件包装进安装根目录下、带版本号的独立目录
 .B latest
 将本机已装的版本与索引里的最新版本比较，不下载。
 .TP
+.B basedir
+打印 MacWave 的安装根目录 —— 即 config.json 里的 base_dir，可执行文件、
+链接与依赖都在这棵树下。家目录下的路径写作 ~。加 --raw 只输出原样的绝对
+路径。
+.TP
 .B shellenv
 打印一段把 MacWave 的目录加到 PATH 前面的 shell 代码。在 shell 配置里
 eval 一次即可；它自己什么也不改。
@@ -120,6 +125,7 @@ wave unlink jq
 wave linkquery jq
 wave mirror
 wave latest jq
+wave basedir
 eval "$(~/.local/macwave/lib/wave shellenv)"
 wave version
 wave manual

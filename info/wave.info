@@ -34,6 +34,10 @@ nothing is compiled on the user's machine.
         by an environment variable.
 * latest::	Compare what you have with the newest version in the index;
         nothing is downloaded.
+* basedir::	Print MacWave's install root -- the base_dir in config.json,
+        which is where the binaries, the links and the dependencies
+        live. A path under your home directory is shown with ~. With
+        --raw it prints the absolute path as-is and nothing else.
 * shellenv::	Print the shell code that prepends MacWave's directories to
         PATH. You eval it once from your shell profile; it does
         nothing on its own.
@@ -380,7 +384,7 @@ Examples:
      wave mirror --show-password
 
 
-File: wave.info, Node: latest, Next: shellenv, Prev: mirror, Up: Top
+File: wave.info, Node: latest, Next: basedir, Prev: mirror, Up: Top
 
 
 Compare what you have with the newest version in the index; nothing is
@@ -408,7 +412,26 @@ Examples:
      wave latest -a --max-time=1min
 
 
-File: wave.info, Node: shellenv, Next: version, Prev: latest, Up: Top
+File: wave.info, Node: basedir, Next: shellenv, Prev: latest, Up: Top
+
+
+Print MacWave's install root -- the base_dir in config.json, which is
+where the binaries, the links and the dependencies live. A path under
+your home directory is shown with ~. With --raw it prints the absolute
+path as-is and nothing else.
+
+  --raw
+      Print the absolute path as-is, with no emoji or colour (for
+      scripts)
+
+Examples:
+
+     wave basedir
+     wave basedir --raw
+     cd "$(wave basedir --raw)"
+
+
+File: wave.info, Node: shellenv, Next: version, Prev: basedir, Up: Top
 
 
 Print the shell code that prepends MacWave's directories to PATH. You

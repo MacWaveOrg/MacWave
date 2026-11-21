@@ -84,6 +84,8 @@ selfupdate = {"--dry-run"} | silent
 latest = {"--all", "-a"}
 info = {"--json", "--yaml", "--toml", "--raw"}
 mirror = {"--show-password", "--hide-user", "--only-set", "--raw"}
+# basedir 的 --raw 是「只打值」，与 mirror 同义；它不接 -s/--silent（见 lib/basedir.py）
+basedir = {"--raw"}
 # manual 的 --color 只给手册上色；--zh 在 EARLY 里（它不参与分发）。
 manual = {"--color"}
 
@@ -98,6 +100,7 @@ COMMAND_FLAGS = {
     "latest": latest,
     "info": info,
     "mirror": mirror,
+    "basedir": basedir,
     "manual": manual,
 }
 

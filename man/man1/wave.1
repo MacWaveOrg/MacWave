@@ -59,6 +59,12 @@ variable.
 Compare what you have with the newest version in the index; nothing is
 downloaded.
 .TP
+.B basedir
+Print MacWave's install root -- the base_dir in config.json, which is
+where the binaries, the links and the dependencies live. A path under
+your home directory is shown with ~. With --raw it prints the absolute
+path as-is and nothing else.
+.TP
 .B shellenv
 Print the shell code that prepends MacWave's directories to PATH. You
 eval it once from your shell profile; it does nothing on its own.
@@ -133,6 +139,7 @@ wave unlink jq
 wave linkquery jq
 wave mirror
 wave latest jq
+wave basedir
 eval "$(~/.local/macwave/lib/wave shellenv)"
 wave version
 wave manual

@@ -1,0 +1,23 @@
+.TH WAVE-BASEDIR-ZH 1 "" "MacWave" "MacWave Manual"
+
+.SH 名称
+wave-basedir-zh \- 打印 MacWave 的安装根目录 —— 即 config.json 里的 base_dir，可执行文件、链接与依赖都在这棵树下。家目录下的路径写作 ~。加 --raw 只输出原样的绝对路径。
+.SH 用法
+.B wave basedir [\-\-raw]
+.SH 说明
+打印 MacWave 的安装根目录 —— 即 config.json 里的 base_dir，可执行文件、
+链接与依赖都在这棵树下。家目录下的路径写作 ~。加 --raw 只输出原样的绝对
+路径。
+.SH 选项
+.TP
+.B \-\-raw
+输出原样的绝对路径，不带 🌊 与颜色（给脚本用）
+
+.SH 示例
+.nf
+wave basedir
+wave basedir --raw
+cd "$(wave basedir --raw)"
+.fi
+.SH 另见
+wave-zh(1)

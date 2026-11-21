@@ -20,7 +20,8 @@ RESET = '\033[0m'
 
 # -------------------- 配置加载 --------------------
 
-from configpaths import assert_inside, assert_inside_entry, load_base_dir, require_safe_token
+from configpaths import (assert_inside, assert_inside_entry, load_base_dir, require_safe_token,
+                         to_tilde)
 import silent
 
 # 只取「任何命令都接受」的那一组；模块名不用 flags ——
@@ -57,15 +58,6 @@ except ImportError as error:
 
 
 # -------------------- 辅助函数 --------------------
-
-def to_tilde(path):
-    # 把 $HOME 前缀显示成 ~
-    home = os.path.expanduser("~")
-    path = str(path)
-    if path.startswith(home):
-        return "~" + path[len(home):]
-    return path
-
 
 def load_installed():
     if INSTALLED_DB.exists():

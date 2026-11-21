@@ -289,6 +289,7 @@ Commands:
   linkquery   Show which version an unversioned link points to
   mirror      Show which address each kind of data is fetched from
   latest      Show which packages have a newer version available
+  basedir     Print MacWave's install root (the base_dir in config.json)
   shellenv    Print the shell code that puts MacWave on your PATH
   manual      Show the full manual (same text as man and info)
 
@@ -322,8 +323,8 @@ wave upgrade --all, -a             把所有已装的软件包更新到最新版
     --remove-old-versions          同 --remove-old-version
     --rov                          同 --remove-old-version
     -X                             同 --remove-old-version
-    --raw                          给日志和脚本用的输出（install / upgrade）：不带 🌊、
-                                   不带颜色、进度条用井号刻度
+    --raw                          给日志和脚本用的输出（install / upgrade / basedir）：
+                                   不带 🌊、不带颜色、进度条用井号刻度
     --no-link                      Leave the unversioned link alone (install / uninstall;
                                    the old name --unlink works too)
     --all, -a                      Apply to every installed package (upgrade / link / unlink / linkquery)

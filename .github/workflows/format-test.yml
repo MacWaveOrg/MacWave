@@ -105,6 +105,11 @@ jobs:
         run: |
           /bin/bash scripts/configpath_test.sh
 
+      # basedir：家目录折成 ~，--raw 保持绝对路径；-s 被拒绝。
+      - name: Run basedir test
+        run: |
+          /bin/bash scripts/basedir_test.sh
+
       # 纯离线：地址怎么拼、环境变量怎么覆盖、shell 与 Python 的默认值是否一致。
       # 放在需要联网的那些之前，地址层坏了就没必要再等网络超时。
       - name: Run domain test

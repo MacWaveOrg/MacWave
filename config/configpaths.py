@@ -126,6 +126,22 @@ def load_base_dir():
     sys.exit(1)
 
 
+def to_tilde(path):
+    # 家目录里的路径显示成 ~/…，其余原样返回。
+    # 边界必须按「整段」判断：只写 startswith(home) 会把 /Users/you2 折成 ~2。
+    # 先按字面比一次；不一致再比 realpath —— macOS 的 $HOME 常是 /Users/x，
+    # 而 /tmp/... 会被解析成 /private/tmp/...，字面比对会漏掉。
+    home = os.path.expanduser("~").rstrip("/")
+    path = str(path)
+    for prefix, candidate in ((home, path),
+                             (os.path.realpath(home), os.path.realpath(path))):
+        if candidate == prefix:
+            return "~"
+        if candidate.startswith(prefix + "/"):
+            return "~" + candidate[len(prefix):]
+    return path
+
+
 # -------------------- 名字与版本号的安全校验 --------------------
 #
 # 包名、版本号、可执行文件名既来自命令行，也来自远端数据（@common / deps 字段），
