@@ -8,9 +8,9 @@
 
 ---
 
-## 零、先认清一件事：一个软件包同时存在于五个地方
+## 零、先认清一件事：一个软件包同时存在于五到六个地方
 
-加包出问题，十次有九次是这五处之一漏了或写岔了。
+加包出问题，十次有九次是下面这几处之一漏了或写岔了。
 
 | # | 位置 | 谁读它 | 漏了的后果 |
 | --- | --- | --- | --- |
@@ -19,9 +19,11 @@
 | 3 | `infosource/README.md` 的 Supported Packages | 人 | 说明与事实不符 |
 | 4 | **`MacWave/README.md` + `README.zh-Hans.md`** | 人 | 同上，中英各一份 |
 | 5 | **`Pages/index.html`（macwave.org）** | 人 | 官网清单少一个包 |
+| 6 | **`MacWaveOrg/Ports` 的 Release（tag = 包名）** | 人、审计、`--install-from-source` | 只有自建包才有这一处；缺了等于自建产物没有溯源（见[五之二](#五之二自建包上游不发-macos-产物怎么办)） |
 
 第 3、4、5 处是**同一份清单的三个副本**，格式一字不差。改就要三处一起改，
-下面第 6 步给了自动核对的办法。
+下面第 6 步给了自动核对的办法。第 6 处只对自建包存在 —— 上游发了 macOS 产物的
+包不需要它。
 
 > 这三份副本是同形的，所以它们**必然**会一起落后 —— 4.1.4 发布时官网还停在
 > 24 个包，而索引里已经有 33 个。谁也没错，只是没人记得改。
@@ -405,6 +407,125 @@ gh release list -R <owner>/<repo> --limit 40 --json tagName,publishedAt,isPrerel
 - 跳过 prerelease / rc / beta
 - 同一大版本里只留**最新**那个小版本（`0.18.2` 而不是 `0.18.0`）
 - 三条线各一个，不多不少
+
+---
+
+## 五之二、自建包：上游不发 macOS 产物怎么办
+
+上面整份清单假设「上游有现成的 macOS 产物」。**但有些工具从来不发布 macOS 二进制**，
+只能自己编译。`aria2` 就是：1.35.0 之后只剩 Windows 与源码，1.36/1.37 一个 macOS 资产都没有。
+
+自建包没有上游把关，坏包一旦进了索引，用户装完跑不起来 —— 代价是我们的公信力。
+所以「能不能上线」不靠人记得，靠下面四道闸门。
+
+### 产物放两处，各管一件事
+
+| 放哪 | 放什么 | 谁读 |
+| --- | --- | --- |
+| **`MacWaveOrg/Ports`** 的 Release（tag = 包名） | 原始产物 + 构建脚本 | 人、审计、`--install-from-source` |
+| **`MacWaveOrg/Bottle`** 的 Release（tag = 包名） | 同样两个架构的产物，文件名按 `<包名>@<版本>.<架构>` | **客户端与镜像** |
+
+**这不是重复劳动，是硬约束。** 客户端的取件地址是拼出来的：
+
+```python
+# net/domains.py
+url = payload_url(kind, name, filename)      # <BOTTLE_DOMAIN>/<包名>/<文件>
+```
+
+索引记录里的 `url` 字段**不参与默认下载**（只有 `--install-from-source` 才读它）。
+`choma` 就是双份：`Sha0huaZhang/ChOma-macwave` 存原始产物，`MacWaveOrg/Bottle` 的
+`choma` release 供下载。2026-11-21 起原始产物那一份迁到了 `MacWaveOrg/Ports`。
+
+`Ports` 里每个包三个文件：
+
+```
+<包名>/README.md    为什么自建、上游从哪一版起不发 macOS 产物、产物大小与 sha256
+<包名>/build.sh     可复现构建：固定上游 tag、固定 configure 参数、两架构分别编、ad-hoc 签名
+<包名>/notes.md     实测记录：lipo -archs、min_os、otool -L 输出、跑过的命令
+```
+
+### 四道闸门（顺序不能换）
+
+**① 构建脚本必须可复现。** 固定上游 tag，不跟 `main`；两个架构分别编（不要
+universal —— 索引是「每架构一份」）；编完 `codesign --force --sign -`。
+
+**② `scripts/selfbuilt_check.sh` 必须全绿。** 一条命令查完架构、签名、min_os、
+依赖闭包、sha256、实跑：
+
+```bash
+bash scripts/selfbuilt_check.sh out/aria2@1.37.0.arm64 \
+     --arch arm64 --bin-name aria2c --deps "zlib@1.2.13" --run-args "--version"
+```
+
+它查出的三类问题，恰好是自建包最常见的三种死法：
+
+| 症状 | 后果 |
+| --- | --- |
+| 链着构建机的 `/opt/homebrew/...` 或 `/opt/local/...` | 用户机器上 `dyld: Library not loaded` |
+| 没声明 `deps:` | 依赖不会跟着装，路径改写找不到目标 |
+| universal 或架构标错 | 另一架构的用户装到跑不了的东西 |
+
+**③ 沙箱真装一次，再真跑一次。** 装的是「安装后的产物」而不是原始文件 —— 因为
+`install_name_tool` 会改写依赖、`codesign` 会重签，装完的 sha256 **必然**与 Release
+里的不同。所以 `--expect-sha` 只对上传前的原始产物用。
+
+**④ 索引最后写。** 客户端只有从 `pkginfo_*/` 看到记录才会去装；记录不写，谁也不知道它
+存在。所以顺序是：产物 → Ports + Bottle → 沙箱实测 → 索引 → 镜像同步 → 三处清单。
+
+### `aria2` 的具体情况（第一个自建包）
+
+`configure.ac` 里这几个开关能把依赖面砍到只剩 zlib，值得照抄：
+
+```
+--with-appletls          TLS 走 macOS 自带的 Secure Transport（不引 openssl）
+--without-libxml2        不引 libxml2
+--without-libssh2        不引 libssh2（代价：没有 SFTP）
+--disable-nls            不引 gettext
+```
+
+两个坑：
+
+- **`bin_name` 是 `aria2c`**，不是 `aria2`。上游项目叫 aria2，命令叫 `aria2c`。
+- **1.35.0 的 `osx-darwin.tar.bz2` 是 2022 年的 x86_64**，不能当 arm64 用，也不能当
+  「上游还有 macOS 产物」的证据。
+
+### 坏了怎么止损
+
+发现某个版本确实不能用时，按这个顺序，别改历史：
+
+1. 删掉 `infosource` 里那条版本记录（客户端立刻看不到它）；
+2. 把包名写进 `scripts/known-bad-records.txt` —— 镜像同步会跳过它，不会把坏产物复制出去
+   （`ldid` 现在就在这份名单里）；
+3. Release 上留一句说明（`choma` 那种「已由 X 取代」），不要删资产：删了就没法复核。
+
+**已经装上的用户不受影响**（客户端每次校验 sha256，也不会回收已装的文件），他们看到的是
+`wave latest` 里那个版本消失。
+
+### 一个真实案例：`choma` 曾经是坏包
+
+2026-11-21 迁移产物时，闸门②当场发现问题：
+
+```
+❌ 依赖 libcrypto.3.dylib 来自 openssl@3.0.15，但索引记录里没声明
+```
+
+产物的 `otool -L` 里写着 `/opt/homebrew/opt/openssl@3/lib/libcrypto.3.dylib`
+（arm64）与 `/opt/local/libexec/openssl3/lib/libcrypto.3.dylib`（amd64，MacPorts 的路径），
+而记录里没有 `deps:` —— 于是 `wave install choma` 不会装 openssl，路径改写找不到
+`libcrypto.3.dylib`，在没装 Homebrew 的机器上直接 `dyld: Library not loaded`。
+
+修法是给两个架构的记录各加一行 `deps: "openssl@3.0.15"`。修完实测：
+
+```
+$ otool -L ~/.local/macwave/bin/choma@1.0-macwaveteam2/choma | tail -n +2
+   /System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation
+   /Users/<你>/.local/macwave/deps/openssl/openssl@3.0.15/lib/libcrypto.3.dylib
+   /usr/lib/libSystem.B.dylib
+$ choma
+Options: …            ← 跑起来了
+```
+
+教训：**「装得上」和「跑得起来」是两件事**，而只有第 6 项依赖检查能提前发现后者。
 
 ---
 
