@@ -402,7 +402,7 @@ htop             by Hisham Muhammad and the htop team
 hyperfine        by sharkdp
 ipsw             by blacktop
 jless            by Paul Julius Martinez
-jq               by Stephen Dolan, Nicolas Williams, et al.
+jq               by Stephen Dolan, Nicolas Williams, William Langford, Owen Ou, itchyny, Mattias Wadman, Emanuele Torre, Asaf Meizner, avid Korczynski, et al.
 just             by Casey Rodarmor
 k9s              by derailed
 kubectx          by ahmetb
@@ -417,6 +417,7 @@ pandoc           by John MacFarlane
 rclone           by rclone
 restic           by restic
 rg               by Andrew Gallant
+robinsing        by Sha0huaZhang
 shellcheck       by koalaman
 shfmt            by mvdan
 sk               by skim-rs
@@ -425,7 +426,7 @@ stern            by stern
 taskwarrior-tui  by kdheepak
 tmux             by Nicholas Marriott and contributors
 tofu             by opentofu
-tree             by Steve Baker, Thomas Moore, et al.
+tree             by Steve Baker, Thomas Moore, Francesc Rocher, Florian Sesser, Kyosuke Tokoro
 trollrestore     by JJTech (@JJTech0130)
 typst            by typst
 vhs              by charmbracelet
