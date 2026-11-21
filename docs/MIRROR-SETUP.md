@@ -610,6 +610,27 @@ def python_archive_url(version, filename):
 
 清理原则：**先移到隔离目录，确认一周没问题再删**，不要 `rm -rf` 上线。
 
+> **按名字猜哪棵树在服务，一定会错。** 实测遇到过这样的站点：同一个 `/MacWave/`
+> 前缀下，`location ^~ /MacWave/infosource/` 指向 `/srv/mirror/…`，而
+> `core`、`selfupdate`、`python`、`bottle`、`deps` 根本没有自己的 location ——
+> 它们落到通用的 `location /`，由它的 `root` 从 `/www/wwwroot/…` 取。
+> 于是「把 `/www` 下那几份没人读的代码树挪走」直接让 `wave install` 全线 404，
+> 而 `infosource` 照旧 200，看着像只坏了一半。
+>
+> 所以动手前**逐条**核对，两件事都要做：
+>
+> ```bash
+> # a) 每个 location 的 alias / root 是什么
+> nginx -T 2>/dev/null | grep -A3 'location' | grep -E 'location|alias|root' \
+>   | grep -iE 'macwave|core|bottle|deps|python|selfupdate'
+>
+> # b) 有没有人真的在读某个前缀（读访问日志，不靠感觉）
+> grep -cE 'MacWave/(Selfupdate|Python|MacWave)/' /www/wwwlogs/*.log 2>/dev/null
+> ```
+>
+> 只看 (a) 还不够：`core`/`deps`/`bottle` 这类**没有自己的 location** 的前缀，
+> 靠 `(b)` 才能确认访问量。
+
 ```bash
 # 0) 先给现状留个底
 STAMP=$(date +%F)
