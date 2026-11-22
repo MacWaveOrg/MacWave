@@ -241,22 +241,23 @@ wave uninstall <包名>          # 卸得掉，不带版本号的链接被清掉
 
 **这一步最容易漏，因为它不在 `infosource` 里。**
 
-四份副本，格式完全相同，`<包名>` 左对齐 + `by <作者>`：
+四份副本，**两种格式**：
 
-```
-atuin            by atuinsh
-bat              by David Peter
-```
+- 三份 README：`<包名>` 左对齐 + `by <作者>`；
+- 官网 `Pages/index.html`：`<div class="pkg-list">` 里一行一个 `<span>包名</span>`，只有包名、没有作者。
+
+三份 README 之间必须**逐行相同**；官网那份必须是同一批包名、同一顺序。所以不要拿 README
+的码块去逐行比官网，格式本来就不一样 —— 比的是「包名序列」：
 
 | 文件 | 位置 |
 | --- | --- |
 | `infosource/README.md` | `# 🌊 Supported Packages` → `(Listed in alphabetical order)` 之后的代码块 |
 | `MacWave/README.md` | `## 🌊 Supported Packages` → `(Listed in alphabetical order)` 之后 |
 | `MacWave/README.zh-Hans.md` | `## 🌊 支持的软件包` → `（按字母顺序排列）` 之后 |
-| **`Pages/index.html`** | `id="supported"` 一节里 `Supported Packages</h2>` 之后的 `<pre>` |
+| **`Pages/index.html`** | `Supported Packages` 标题之后 `<div class="pkg-list">` 与它对应的 `</div>` 之间的 `<span>` 列表 |
 
-不要手打。从左对齐的码块里删掉多余空格、重新对齐很费神，而且四处对不齐就看不出来。
-用索引生成，再写进四个文件：
+不要手打。从左对齐的码块里删掉多余空格、重新对齐很费神，而且几处对不齐就看不出来。
+用索引把**两份内容一次生成**：
 
 ```bash
 cd ~/Projects/MacWaveOrg/infosource
@@ -281,50 +282,51 @@ for d in sorted(p for p in root.iterdir() if p.is_dir()):
     rows.append((d.name, SIMPLE.get(d.name, aut)))
 
 width = max(len(n) for n, _ in rows) + 2
+print("# 三份 README：整段替换代码块内容")
 print("\n".join(f"{n:<{width}}by {a}" for n, a in rows))
+print()
+print('# Pages/index.html：整段替换 <div class="pkg-list"> 里的 <span> 列表')
+print("\n".join(f"            <span>{n}</span>" for n, _ in rows))
 PY
 ```
 
-把输出整段替换进四个文件的代码块，然后核对 —— **四份必须逐行相同**：
+改完一次核对全部四处（README 之间逐行比，官网比包名序列，最后与索引集合比）：
 
 ```bash
 cd ~/Projects/MacWaveOrg
 python3 - <<'PY'
-import pathlib
+import pathlib, re
 
-def block(path, marker):
+
+def readme_rows(path, marker):
     s = pathlib.Path(path).read_text()
-    i = s.index(marker)
-    if path.endswith(".html"):
-        start, end = s.index("<pre>", i) + 5, s.index("</pre>", s.index("<pre>", i) + 5)
-    else:
-        start = s.index("```\n", i) + 4
-        end = s.index("```", start)
+    start = s.index("```\n", s.index(marker)) + 4
+    end = s.index("```", start)
     return [l for l in s[start:end].strip().splitlines() if l.strip()]
 
-files = [("MacWave/README.md", "(Listed in alphabetical order)"),
-         ("MacWave/README.zh-Hans.md", "（按字母顺序排列）"),
-         ("infosource/README.md", "(Listed in alphabetical order)"),
-         ("Pages/index.html", "Supported Packages</h2>")]
 
-lists = {f: block(f, m) for f, m in files}
-ref_name, ref = next(iter(lists.items()))
-for name, got in lists.items():
-    print(f"{name:<30} {len(got):>2} 行  {'一致' if got == ref else '不一致 ← 与 ' + ref_name}")
-PY
-```
+def site_rows(path):
+    s = pathlib.Path(path).read_text()
+    i = s.index('<div class="pkg-list">')
+    start = s.index("<span>", i)
+    end = s.index("</div>", start)
+    return re.findall(r"<span>([^<]+)</span>", s[start:end])
 
-再确认清单与索引的**集合**相等（不只是行数）：
 
-```bash
-cd ~/Projects/MacWaveOrg
-python3 - <<'PY'
-import pathlib
+readmes = {
+    "MacWave/README.md": readme_rows("MacWave/README.md", "(Listed in alphabetical order)"),
+    "MacWave/README.zh-Hans.md": readme_rows("MacWave/README.zh-Hans.md", "（按字母顺序排列）"),
+    "infosource/README.md": readme_rows("infosource/README.md", "(Listed in alphabetical order)"),
+}
+ref_name, ref = next(iter(readmes.items()))
+for name, got in readmes.items():
+    print(f"{name:<32} {len(got):>2} 行  {'一致' if got == ref else '不一致 ← 与 ' + ref_name}")
 
-html = pathlib.Path("Pages/index.html").read_text()
-i = html.index("Supported Packages</h2>")
-start = html.index("<pre>", i) + 5
-site = [l.split()[0] for l in html[start:html.index("</pre>", start)].strip().splitlines() if l.strip()]
+names = [l.split()[0] for l in ref]
+site = site_rows("Pages/index.html")
+print(f"{'Pages/index.html':<32} {len(site):>2} 行  "
+      f"{'与 README 一致' if site == names else '不一致 ← 与 README'}")
+
 real = sorted(p.name for p in pathlib.Path("infosource/pkg/pkginfo_arm64").iterdir()
               if p.is_dir() and not p.name.startswith("test_"))
 print("清单缺:", [x for x in real if x not in site])
