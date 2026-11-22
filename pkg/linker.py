@@ -121,15 +121,17 @@ def extra_bin_names(name, version):
     return names
 
 
-def linked_version(name):
-    # links/{名称} 当前指向哪个版本；没链接、或指向别的名字时返回 None
-    name = require_safe_token(name, "package name")
-    link = LINKS_DIR / name
+def _link_owner(link_name):
+    # links/{链接名} 属于哪个包、指向哪个版本（不校验名字，调用方自己处理输入）。
+    #
+    # 整树包的附属命令（git-upload-pack、fdtget 这种）链接名**不是**包名，
+    # 只看名字会把它当成「一个没链接的包」；目标路径里那段 {包名}@{版本} 才是权威。
+    link = LINKS_DIR / link_name
     if not link.is_symlink():
         return None
 
     target = os.readlink(link)
-    if os.path.basename(target) != name:
+    if os.path.basename(target) != link_name:
         return None
 
     # 从后往前找形如 {名称}@{版本} 的那一段：binary 是 links/x -> ../bin/x@1/x，
@@ -137,9 +139,18 @@ def linked_version(name):
     for part in reversed(os.path.dirname(target).split(os.sep)):
         if "@" not in part:
             continue
-        dir_name, _, version = part.partition("@")
-        return version if dir_name == name and version else None
+        name, _, version = part.partition("@")
+        if name and version:
+            return name, version
+        return None
     return None
+
+
+def linked_version(name):
+    # links/{名称} 当前指向哪个版本；没链接、或指向别的名字时返回 None
+    name = require_safe_token(name, "package name")
+    owner = _link_owner(name)
+    return owner[1] if owner and owner[0] == name else None
 
 
 def is_dangling(name):
@@ -337,15 +348,55 @@ def handle_unlink_command(input_string=""):
 
 # -------------------- wave linkquery --------------------
 
+def report_all_links():
+    """`linkquery -a`：按**包名**逐个报，而不是按 links/ 里的条目名。
+
+    整树包会给树里的每个可执行文件各建一条链接（git 的 git-upload-pack、
+    dtc 的 fdtget…）。拿这些名字去 bin/ 里找 {名字}@{版本} 目录永远找不到，
+    于是每台装了 git / dtc / testdisk 的机器上 `linkquery -a` 都会吐一片
+    「is not linked」并以 1 退出 —— 而链接其实好得很。名单取自 bin/，才是包。
+    """
+    if not unversioned_links():
+        print(f"{YELLOW}🌊 No unversioned links found.{RESET}")
+        sys.exit(0)
+
+    # 退出码只表达「有坏链接」：一个装好但没链接的包只是状态，不是错误 ——
+    # 用户可以自己决定要不要 link 它，脚本也不该因此判定这台机器有问题。
+    missing = 0
+    for name in installed_packages():
+        version = linked_version(name)
+        if version is None:
+            print(f"{YELLOW}🌊 {name} is not linked.{RESET}")
+        elif version not in installed_versions(name):
+            print(f"{RED_BOLD}🌊 Error: {name} points to {name}@{version}, which is not installed.{RESET}")
+            missing += 1
+        else:
+            print(f"🌊 {name}@{version}")
+
+    # 反过来也要查：链接还在、包目录没了（手删 bin，或卸载漏删链接）。只按包名
+    # 走一遍永远发现不了这种 —— 而它正是「昨天还好好的命令今天 command not found」。
+    packages = set(installed_packages())
+    for link_name in unversioned_links():
+        if link_name in packages:
+            continue  # 主命令已经在上面按包报过了
+        owner = _link_owner(link_name)
+        if owner is None:
+            print(f"{YELLOW}🌊 Warning: links/{link_name} is not a link MacWave made.{RESET}")
+            missing += 1
+        elif owner[0] not in packages or owner[1] not in installed_versions(owner[0]):
+            print(f"{RED_BOLD}🌊 Error: {link_name} points to {owner[0]}@{owner[1]}, "
+                  f"which is not installed.{RESET}")
+            missing += 1
+
+    sys.exit(1 if missing else 0)
+
+
 def handle_linkquery_command(input_string=""):
     # 查询不带版本号的链接当前指向哪个版本：wave linkquery ffmpeg -> 🌊 ffmpeg@9.0
     everything, targets = parse_targets(input_string)
 
     if everything:
-        targets = unversioned_links()
-        if not targets:
-            print(f"{YELLOW}🌊 No unversioned links found.{RESET}")
-            sys.exit(0)
+        report_all_links()
 
     if not targets:
         print(f"{RED_BOLD}🌊 Error: Missing package name. Use 'wave linkquery <name>' or 'wave linkquery --all'.{RESET}")
@@ -356,8 +407,18 @@ def handle_linkquery_command(input_string=""):
         name = target.partition("@")[0]
         version = linked_version(name)
         if version is None:
-            print(f"{YELLOW}🌊 {name} is not linked.{RESET}")
-            missing += 1
+            # 整树包的附属命令：名字不是包，但链接确实是 MacWave 建的。
+            # 说它「is not linked」是假话，还会让人以为坏了。
+            owner = _link_owner(name)
+            if owner is None:
+                print(f"{YELLOW}🌊 {name} is not linked.{RESET}")
+                missing += 1
+            elif owner[1] not in installed_versions(owner[0]):
+                print(f"{RED_BOLD}🌊 Error: {name} points to {owner[0]}@{owner[1]}, "
+                      f"which is not installed.{RESET}")
+                missing += 1
+            else:
+                print(f"🌊 {name} -> {owner[0]}@{owner[1]}")
         elif version not in installed_versions(name):
             print(f"{RED_BOLD}🌊 Error: {name} points to {name}@{version}, which is not installed.{RESET}")
             missing += 1

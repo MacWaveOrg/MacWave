@@ -1450,6 +1450,9 @@ def predict(cmd, argv, installed, links):
     if cmd == "linkquery":
         if not operands and not everything:
             return 1, ("Missing package name",)
+        # -a 只报告：装好但没链接的包只打一行「is not linked」，退出码仍是 0 ——
+        # 它表达的是「有没有坏链接」（悬空、指向不存在的版本），而本测试的
+        # link/unlink 流程不会造出坏链接（悬空由 link_test 第 8 节单独钉住）。
         if operands and not everything:
             name = operands[0].partition("@")[0]
             if name not in links:

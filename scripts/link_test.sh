@@ -213,8 +213,16 @@ DANGLE_EXIT=$?
 set -e
 check "8.2 悬空链接退出码为 1" "$DANGLE_EXIT" "1"
 check "8.3 报出指向的版本已不存在" "$([[ "$DANGLE_OUT" == *"is not installed"* ]] && echo yes || echo no)" "yes"
+# 悬空的包目录已经删了，此时它不在「已装包名」里 —— 只按包名遍历的 -a 会漏掉它
+set +e
+ALL_DANGLE=$(python3 "$WAVE_BIN" linkquery -a 2>&1)
+ALL_DANGLE_EXIT=$?
+set -e
+check "8.4 linkquery -a 也能发现悬空链接" \
+    "$([[ "$ALL_DANGLE" == *"$PKG"*"is not installed"* ]] && echo yes || echo no)" "yes"
+check "8.5 有悬空链接时 -a 退出码为 1" "$ALL_DANGLE_EXIT" "1"
 python3 "$WAVE_BIN" unlink "$PKG" >/dev/null
-check "8.4 unlink 可以清掉悬空链接" "$(link_state "$UNV")" "no"
+check "8.6 unlink 可以清掉悬空链接" "$(link_state "$UNV")" "no"
 
 echo ""
 echo "========== 9. 整树软件包（.is_a_tree） =========="
@@ -231,9 +239,22 @@ check "9.5 其余命令也建了不带版本号的链接" "$(link_state "$EXTRA_
 check "9.6 其余命令的链接指向同一个包的 bin/" \
     "$(readlink "$EXTRA_UNV")" "../bin/$PKG@$VER/bin/$PKG-extra"
 check "9.7 其余命令能跑" "$("$EXTRA_UNV")" "Tree Extra!"
+# 这一步是回退过的东西：附属命令不是包，拿它的名字去 bin/ 里找 {名}@{版} 永远找不到，
+# 于是 -a 在每台装了整树包的机器上都吐一片「is not linked」并以 1 退出。
+check "9.8 附属命令按包名回答" \
+    "$(python3 "$WAVE_BIN" linkquery "$PKG-extra")" "🌊 $PKG-extra -> $PKG@$VER"
+set +e
+TREE_ALL=$(python3 "$WAVE_BIN" linkquery -a 2>&1)
+TREE_ALL_EXIT=$?
+set -e
+check "9.9 linkquery -a 不误报整树包的附属命令" \
+    "$([[ "$TREE_ALL" == *"is not linked"* ]] && echo yes || echo no)" "no"
+check "9.10 linkquery -a 里有 $PKG@$VER" \
+    "$([[ "$TREE_ALL" == *"🌊 $PKG@$VER"* ]] && echo yes || echo no)" "yes"
+check "9.11 全部正常时 -a 退出码为 0" "$TREE_ALL_EXIT" "0"
 python3 "$WAVE_BIN" unlink "$PKG" >/dev/null
-check "9.8 unlink 后主命令链接消失" "$(link_state "$UNV")" "no"
-check "9.9 unlink 后其余命令的链接也消失" "$(link_state "$EXTRA_UNV")" "no"
+check "9.12 unlink 后主命令链接消失" "$(link_state "$UNV")" "no"
+check "9.13 unlink 后其余命令的链接也消失" "$(link_state "$EXTRA_UNV")" "no"
 
 echo ""
 echo "=========================================="
