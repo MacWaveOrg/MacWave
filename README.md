@@ -394,6 +394,7 @@ The same list appears in `infosource/README.md` and on [macwave.org](https://mac
 ```
 
 7zz              by Igor Pavlov
+actionlint       by rhysd
 age              by FiloSottile
 aria2c           by Tatsuhiro Tsujikawa
 atuin            by atuinsh
@@ -404,9 +405,11 @@ btop             by Aristocratos
 choma            by opa334
 circleci         by CircleCI
 cloc             by Al Danial
+cloudflared      by cloudflare
 columbula        by Sha0huaZhang
 delta            by dandavison
 difft            by Wilfred Hughes
+direnv           by direnv
 doggo            by mr-karan
 dtc              by Device Tree Compiler contributors
 duckdb           by duckdb
@@ -419,10 +422,12 @@ fx               by antonmedv
 fzf              by Junegunn Choi
 gh               by cli
 git              by Git community
+git-lfs          by git-lfs
 gitleaks         by gitleaks
 glow             by charmbracelet
 gping            by orf
 grpcurl          by fullstorydev
+helm             by helm
 htop             by Hisham Muhammad and the htop team
 hyperfine        by sharkdp
 ipsw             by blacktop
@@ -431,6 +436,7 @@ jq               by Stephen Dolan, Nicolas Williams, et al.
 just             by Casey Rodarmor
 k9s              by derailed
 kubectx          by ahmetb
+lazygit          by jesseduffield
 ldid             by Jay Freeman (saurik) / Procursus Team
 lsd              by Abin Simon
 mint             by Yonas Kolb
@@ -459,6 +465,7 @@ tofu             by opentofu
 tree             by Steve Baker, Thomas Moore, et al.
 trollrestore     by JJTech (@JJTech0130)
 typst            by typst
+uv               by astral-sh
 vhs              by charmbracelet
 websocat         by vi
 wget             by GNU Project
@@ -466,6 +473,7 @@ xcodegen         by Yonas Kolb
 xh               by ducaale
 yazi             by sxyazi
 yq               by Mike Farah
+yt-dlp           by yt-dlp
 zellij           by zellij-org
 zoxide           by Ajeet D'Souza
 ```
