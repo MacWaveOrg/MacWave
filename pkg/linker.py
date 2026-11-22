@@ -222,6 +222,24 @@ def linked_bin_names(name):
     return sorted(names)
 
 
+def remove_package_links(name):
+    """摘掉这个包全部不带版本号的链接：主命令，以及整树包每个附属命令。
+
+    卸载只删「链接名 == 包名」那一条是不够的 —— 整树包还挂着 git-upload-pack、
+    fdtdump 这类链接，它们指向的 `bin/<名>@<版本>/` 一删就成了死链：
+    命令变成 command not found，`linkquery -a` 还会把它们报成孤儿。
+    """
+    name = require_safe_token(name, "package name")
+    removed = []
+    for link_name in linked_bin_names(name):
+        link = LINKS_DIR / link_name
+        assert_inside_entry(link, LINKS_DIR, "link path")
+        if link.is_symlink() or link.exists():
+            link.unlink()
+            removed.append(link_name)
+    return removed
+
+
 def remove_link(name):
     name = require_safe_token(name, "package name")
     link = LINKS_DIR / name
@@ -332,8 +350,7 @@ def handle_unlink_command(input_string=""):
     for target in targets:
         name = target.partition("@")[0]
         # 整树包的其余命令也一起摘掉，不然 links/ 里会留下没人认领的软链
-        names = [name] + [n for n in linked_bin_names(name) if n != name]
-        removed = [n for n in names if remove_link(n)]
+        removed = remove_package_links(name)
         if removed:
             silent.say(f"🌊 {', '.join(removed)}: unlinked")
             unlinked += 1

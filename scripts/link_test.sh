@@ -257,6 +257,13 @@ check "9.11 全部正常时 -a 退出码为 0" "$TREE_ALL_EXIT" "0"
 python3 "$WAVE_BIN" unlink "$PKG" >/dev/null
 check "9.12 unlink 后主命令链接消失" "$(link_state "$UNV")" "no"
 check "9.13 unlink 后其余命令的链接也消失" "$(link_state "$EXTRA_UNV")" "no"
+# 卸载同样要摘掉它们。只删「链接名 == 包名」那一条会留下死链：命令变成 command not
+# found，`linkquery -a` 还会把它报成孤儿（random_test 就是这么发现的）。
+install_fake_tree "$VER"
+python3 "$WAVE_BIN" link "$PKG" >/dev/null
+check "9.14 重新装上附属命令的链接还在" "$(link_state "$EXTRA_UNV")" "yes"
+python3 "$WAVE_BIN" uninstall "$PKG@$VER" >/dev/null 2>&1 || true
+check "9.15 卸载后附属命令的链接一起消失" "$(link_state "$EXTRA_UNV")" "no"
 
 echo ""
 echo "=========================================="

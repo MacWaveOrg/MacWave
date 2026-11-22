@@ -272,7 +272,9 @@ def refresh_link(pkg_name):
         linker.create_link(pkg_name, version)
         silent.say(f"🌊 Unversioned link now points to {pkg_name}@{version}")
     else:
-        linker.remove_link(pkg_name)
+        # 整树包的附属命令链接也得一起摘 —— 只删主链接会把 git-upload-pack、
+        # fdtdump 这类留在 links/ 里，指向已经删掉的目录。
+        linker.remove_package_links(pkg_name)
         silent.say(f"🌊 Removed the unversioned link for {pkg_name}")
 
 
