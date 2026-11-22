@@ -1309,6 +1309,15 @@ def run_limit_rate_case(wave, plan, checks):
     expect(checks, result.as_result, 0, f"install {plan.token} --limit-rate",
            must_contain=("Successfully installed",))
 
+    # 安装没成功时，下面两处「体积 ÷ 耗时」算的是「失败前到的那点字节 ÷ 失败耗时」，
+    # 会得出远高于限速的假速度，把一次连接被重置写成「限速没生效」——2026-11-21
+    # 就是这么误导的（真因是 ConnectionResetError 54，14.6 MB 下到一半断了）。
+    # 失败已经由上面那条断言记录过，这里不再制造第二条错结论。
+    if result.as_result.returncode != 0:
+        checks.warn(f"--limit-rate {wave.limit_rate}: install 没成功"
+                    f"（rc={result.as_result.returncode}），跳过速度断言")
+        return
+
     if limit and samples:
         points = [(stamp, size) for stamp, size, rate in samples]
         peak = peak_window_rate(points, LIMIT_RATE_WINDOW_SECONDS)
