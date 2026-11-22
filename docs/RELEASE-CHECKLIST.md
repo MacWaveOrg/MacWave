@@ -561,10 +561,16 @@ MACWAVE_VERSION=4.4.0-beta2 MACWAVE_BRANCH=4.4 \
 ```bash
 cd /tmp/rel && ls | grep -vE '^SHA256SUMS' | xargs shasum -a 256 > SHA256SUMS
 gpg --armor --detach-sign --output SHA256SUMS.asc SHA256SUMS
-gpg --verify SHA256SUMS.asc SHA256SUMS     # Good signature
-shasum -a 256 -c SHA256SUMS                # 全部 OK
+gpg --verify SHA256SUMS.asc SHA256SUMS
+shasum -a 256 -c SHA256SUMS
 gh release upload "$TAG" SHA256SUMS SHA256SUMS.asc -R MacWaveOrg/MacWave --clobber
 ```
+
+（前一版这里把 `# Good signature` 与 `# 全部 OK` 写在同一行末尾当注释。2026-11-22
+实测：有人粘进终端后 gpg 报「无法打开已签名的数据 '#'」、shasum 报「#: No such file
+or directory」—— 那个 `#` 连同后面的词变成了参数。仓库里其它文档也有行尾注释的写法，
+平时没事；但**一步错就白跑一遍的步骤（建 tag、传资产、签名、推指针）不要靠 shell 的
+注释规则**，说明一律放正文。）
 
 三条不能省：
 
