@@ -23,11 +23,14 @@ package. Old versions are kept — -X, --remove-old-versions removes them
 in the same run.
 .TP
 .B uninstall
-Uninstall a package version. The unversioned link falls back to the
-highest remaining version, and goes away with the last one.
+Uninstall a package version. Several packages can be given at once,
+separated by commas; a package may carry several @versions, or @all for
+every installed version. The unversioned link falls back to the highest
+remaining version, and goes away with the last one.
 .TP
 .B list
-List the packages you have installed, with their versions.
+List the packages you have installed, with their versions, in two
+columns.
 .TP
 .B search
 Search the online package index.

@@ -69,7 +69,8 @@ silent = {"-s", "--silent", "-S", "--show-error"}
 # 各自由自己的模块解析。同一个名字出现在两组里不是笔误，是同一个旗标在不同命令
 # 下做不同的事 —— 就像 -a 在 upgrade 与 link 上都是「所有」。
 install = {"-F", "--force", "--raw"} | set(NO_LINK) | silent
-uninstall = set(NO_LINK) | silent
+# -a/--all：这个包的全部版本。与显式版本互斥，uninstaller 里会拒绝混用。
+uninstall = set(NO_LINK) | {"-a", "--all"} | silent
 upgrade = {"-X", "--remove-old-version", "--remove-old-versions", "--rov",
            "-a", "--all", "-F", "--force", "--raw"} | silent
 link = {"-a", "--all"} | silent
@@ -86,6 +87,9 @@ info = {"--json", "--yaml", "--toml", "--raw"}
 mirror = {"--show-password", "--hide-user", "--only-set", "--raw"}
 # basedir 的 --raw 是「只打值」，与 mirror 同义；它不接 -s/--silent（见 lib/basedir.py）
 basedir = {"--raw"}
+# list 的 --raw 是「一行一个名字、无 🌊、不对齐」（见 pkginfohelper.handle_list），
+# 给脚本吃。它同样不接 -s：-s 会把列表本身也吞掉。
+list = {"--raw"}
 # manual 的 --color 只给手册上色；--zh 在 EARLY 里（它不参与分发）。
 manual = {"--color"}
 
@@ -101,6 +105,7 @@ COMMAND_FLAGS = {
     "info": info,
     "mirror": mirror,
     "basedir": basedir,
+    "list": list,
     "manual": manual,
 }
 

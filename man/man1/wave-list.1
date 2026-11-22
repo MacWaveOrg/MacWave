@@ -1,14 +1,21 @@
 .TH WAVE-LIST 1 "" "MacWave" "MacWave Manual"
 
 .SH NAME
-wave-list \- List the packages you have installed, with their versions.
+wave-list \- List the packages you have installed, with their versions, in two columns.
 .SH SYNOPSIS
-.B wave list
+.B wave list [\-\-raw]
 .SH DESCRIPTION
-List the packages you have installed, with their versions.
+List the packages you have installed, with their versions, in two
+columns.
+.SH OPTIONS
+.TP
+.B \-\-raw
+Plain output for scripts: one name per line, no emoji, no columns
+
 .SH EXAMPLES
 .nf
 wave list
+wave list --raw
 .fi
 .SH SEE ALSO
 wave(1)

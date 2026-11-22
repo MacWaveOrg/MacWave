@@ -12,9 +12,11 @@ MacWave 把每个软件包装进安装根目录下、带版本号的独立目录
         隔，每个都可以带自己的 @版本。
 * upgrade::	把软件包升级到最新版本；使用 --all 可升级所有已装包，旧版本
         会被保留。使用 -X, --remove-old-versions 可升级同时移除旧版。
-* uninstall::	卸载某个包的一个版本。不带版本号的链接会自动退到剩下的最高版
-        本，并在最后一个版本被卸载时一起消失。
-* list::	列出已安装的软件包及其版本。
+* uninstall::	卸载某个包的一个版本。一次可以卸多个，用逗号分隔；同一个包可
+        以用 @ 连写多个版本，或写 @all 表示它的全部版本。不带版本号
+        的链接会自动退到剩下的最高版本，并在最后一个版本被卸载时一起
+        消失。
+* list::	列出已安装的软件包及其版本，排成两竖列。
 * search::	在软件包索引（线上）里搜索。
 * info::	显示作者、简介、主页，以及已安装版本与索引里的可用版本。
 * selfupdate::	把 MacWave 自身更新到自更新仓库里发布的版本。
@@ -189,8 +191,12 @@ Examples:
 File: wave-zh.info, Node: uninstall, Next: list, Prev: upgrade, Up: Top
 
 
-卸载某个包的一个版本。不带版本号的链接会自动退到剩下的最高版本，并在最后
-一个版本被卸载时一起消失。
+卸载某个包的一个版本。一次可以卸多个，用逗号分隔；同一个包可以用 @ 连写
+多个版本，或写 @all 表示它的全部版本。不带版本号的链接会自动退到剩下的最
+高版本，并在最后一个版本被卸载时一起消失。
+
+  -a, --all
+      卸掉这个包的全部版本（不能与 @<版本> 混用）
 
   --no-link
       不动此软件包不带版本号的软链接（旧写法 --unlink 仍然可用）
@@ -199,16 +205,23 @@ Examples:
 
      wave uninstall jq
      wave uninstall ffmpeg@6.1
+     wave uninstall jq, yq
+     wave uninstall ffmpeg@6.1@6.0, jq@all
+     wave uninstall jq -a
 
 
 File: wave-zh.info, Node: list, Next: search, Prev: uninstall, Up: Top
 
 
-列出已安装的软件包及其版本。
+列出已安装的软件包及其版本，排成两竖列。
+
+  --raw
+      给脚本用的纯文本：一行一个，不带 🌊，不分列
 
 Examples:
 
      wave list
+     wave list --raw
 
 
 File: wave-zh.info, Node: search, Next: info, Prev: list, Up: Top

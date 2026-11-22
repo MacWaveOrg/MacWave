@@ -280,7 +280,7 @@ Commands:
   install     Install one or more packages (Latest Version)
   upgrade     Install a package at the latest version
   uninstall   Uninstall a package
-  list        List installed packages
+  list        List installed packages (two columns; --raw for scripts)
   search      Search for a package in the index
   info        Display detailed information about a package
   selfupdate  Update MacWave itself
@@ -319,6 +319,9 @@ Special Flags:
 wave install <pkgname>@<version>   Download certain version(s) of a package
 wave install a, b, c@<version>     Install several at once (commas separate them;
                                    each may carry its own @version)
+wave uninstall a, b@v1@v2          Uninstall several at once; a package may list
+                                   several @versions, or @all for every version
+wave uninstall a -a                Remove every installed version of one package
 wave upgrade <pkgname>             把软件包更新到最新版本
 wave upgrade --all, -a             把所有已装的软件包更新到最新版本
     --remove-old-version           移除比刚装上的版本更旧的版本
@@ -348,6 +351,10 @@ wave mirror                        Show the address each source is fetched from
     --only-set                     With --raw: export only the sources you overrode
     --show-password                Print passwords instead of six asterisks
     --hide-user                    Mask the user name too
+
+Installed Packages:
+wave list                          Two columns, one 🌊 per line
+wave list --raw                    One name per line, no 🌊 — for scripts
 
 Info Output:
 wave info <name>                   Show one package in a human-readable form

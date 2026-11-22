@@ -159,22 +159,59 @@ def fetch_version_min_os(pkg_name, arch, version, budget=None):
 
 # -------------------- list --------------------
 
-def handle_list(budget=None):
+LIST_COLUMNS = 2
+LIST_GAP = 4
+
+
+def list_columns(entries, columns=LIST_COLUMNS, gap=LIST_GAP):
+    """把名字排成竖列：自上而下填满一列再换下一列（与 `brew list`、`ls` 一致）。
+
+    行尾不补空格 —— 选中一整行复制时不该带尾巴。
+    """
+    rows = -(-len(entries) // columns)
+    grid = [entries[index * rows:(index + 1) * rows] for index in range(columns)]
+    widths = [max((len(cell) for cell in column), default=0) for column in grid]
+
+    lines = []
+    for row in range(rows):
+        cells = [column[row] if row < len(column) else None for column in grid]
+        parts = []
+        for index, cell in enumerate(cells):
+            if cell is None:
+                continue
+            # 只有后面还有内容才补宽，否则就是行尾空格。
+            if all(later is None for later in cells[index + 1:]):
+                parts.append(cell)
+            else:
+                parts.append(cell.ljust(widths[index] + gap))
+        lines.append("".join(parts).rstrip())
+    return lines
+
+
+def handle_list(budget=None, raw=False):
 
     # 直接扫描 BASE_DIR/bin 目录下的子目录，列出所有已安装的包
     # （2.2 起每个包是一个 <包名>@<版本号> 目录）。
+    #
+    # --raw 是给脚本用的：一行一个、不带 🌊、不做竖列对齐。
+    # 空列表时它也一个字符都不输出 —— 「没有包」由退出码和空输出表达，
+    # 插入一行说明文字会让 `wave list --raw | xargs` 拿到一个假包名。
 
-    if not BIN_DIR.exists():
-        print("🌊 No packages installed yet.")
+    entries = []
+    if BIN_DIR.exists():
+        entries = sorted([f.name for f in BIN_DIR.iterdir() if f.is_dir()])
+
+    if raw:
+        for name in entries:
+            print(name)
         return
 
-    entries = sorted([f.name for f in BIN_DIR.iterdir() if f.is_dir()])
     if not entries:
         print("🌊 No packages installed yet.")
         return
 
-    for name in entries:
-        print(f"🌊 - {name}")
+    for line in list_columns(entries):
+        print(f"🌊 {line}")
 
 
 # -------------------- search --------------------
@@ -451,7 +488,20 @@ def handle_info_command(input_string):
     budget = _budget(input_string)
 
     if subcommand == "list":
-        handle_list(budget)
+        # `--raw` 之前，list 一个旗标都不认，多余的字被静默忽略；
+        # 现在它有了自己的旗标，拼错也得说出来，否则 `wave list --raww`
+        # 会安静地打出普通输出，人以为 -raw 生效了。
+        rest = words[2:]
+        for word in rest:
+            name = flags.flag_name(word)
+            if not name.startswith("-") or name == "-" or name == "--raw":
+                continue
+            description = flags.describe(name)
+            if description:
+                print(f"{YELLOW}🌊 Warning: {description}; ignored.{RESET}")
+            else:
+                print(f"{YELLOW}🌊 Warning: unknown flag '{name}' ignored.{RESET}")
+        handle_list(budget, raw="--raw" in rest)
     elif subcommand == "search":
         if len(words) < 3:
             print(f"{RED_BOLD}🌊 Error: Missing search query.{RESET}")

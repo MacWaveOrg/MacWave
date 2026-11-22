@@ -493,13 +493,8 @@ def package_specs(input_string):
             continue
         tokens.append(word)
 
-    specs = []
-    for token in tokens:
-        for part in token.split(","):
-            part = part.strip()
-            if part and part not in specs:
-                specs.append(part)
-    return specs
+    common.reject_fullwidth_comma(input_string)
+    return common.split_operands(tokens)
 
 
 def _flag_words(input_string):

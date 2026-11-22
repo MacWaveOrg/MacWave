@@ -1,13 +1,19 @@
 .TH WAVE-UNINSTALL 1 "" "MacWave" "MacWave Manual"
 
 .SH NAME
-wave-uninstall \- Uninstall a package version. The unversioned link falls back to the highest remaining version, and goes away with the last one.
+wave-uninstall \- Uninstall a package version. Several packages can be given at once, separated by commas; a package may carry several @versions, or @all for every installed version. The unversioned link falls back to the highest remaining version, and goes away with the last one.
 .SH SYNOPSIS
-.B wave uninstall <package>[@<version>] [flags]
+.B wave uninstall <package>[@<version>[@<version>...]] [, ...] [flags]
 .SH DESCRIPTION
-Uninstall a package version. The unversioned link falls back to the
-highest remaining version, and goes away with the last one.
+Uninstall a package version. Several packages can be given at once,
+separated by commas; a package may carry several @versions, or @all for
+every installed version. The unversioned link falls back to the highest
+remaining version, and goes away with the last one.
 .SH OPTIONS
+.TP
+.B \-a, \-\-all
+Remove every installed version of the package (cannot be combined with
+@<version>)
 .TP
 .B \-\-no\-link
 Do not touch the unversioned link (the old name --unlink still works)
@@ -16,6 +22,9 @@ Do not touch the unversioned link (the old name --unlink still works)
 .nf
 wave uninstall jq
 wave uninstall ffmpeg@6.1
+wave uninstall jq, yq
+wave uninstall ffmpeg@6.1@6.0, jq@all
+wave uninstall jq -a
 .fi
 .SH SEE ALSO
 wave(1)

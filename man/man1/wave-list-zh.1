@@ -1,14 +1,20 @@
 .TH WAVE-LIST-ZH 1 "" "MacWave" "MacWave Manual"
 
 .SH 名称
-wave-list-zh \- 列出已安装的软件包及其版本。
+wave-list-zh \- 列出已安装的软件包及其版本，排成两竖列。
 .SH 用法
-.B wave list
+.B wave list [\-\-raw]
 .SH 说明
-列出已安装的软件包及其版本。
+列出已安装的软件包及其版本，排成两竖列。
+.SH 选项
+.TP
+.B \-\-raw
+给脚本用的纯文本：一行一个，不带 🌊，不分列
+
 .SH 示例
 .nf
 wave list
+wave list --raw
 .fi
 .SH 另见
 wave-zh(1)

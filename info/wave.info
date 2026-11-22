@@ -16,10 +16,13 @@ nothing is compiled on the user's machine.
 * upgrade::	Upgrade a package to its latest version; with --all, every
         installed package. Old versions are kept — -X,
         --remove-old-versions removes them in the same run.
-* uninstall::	Uninstall a package version. The unversioned link falls back
-        to the highest remaining version, and goes away with the
-        last one.
-* list::	List the packages you have installed, with their versions.
+* uninstall::	Uninstall a package version. Several packages can be given
+        at once, separated by commas; a package may carry several
+        @versions, or @all for every installed version. The
+        unversioned link falls back to the highest remaining
+        version, and goes away with the last one.
+* list::	List the packages you have installed, with their versions,
+        in two columns.
 * search::	Search the online package index.
 * info::	Show author, description, homepage and the installed /
         available versions.
@@ -218,8 +221,14 @@ Examples:
 File: wave.info, Node: uninstall, Next: list, Prev: upgrade, Up: Top
 
 
-Uninstall a package version. The unversioned link falls back to the
-highest remaining version, and goes away with the last one.
+Uninstall a package version. Several packages can be given at once,
+separated by commas; a package may carry several @versions, or @all for
+every installed version. The unversioned link falls back to the highest
+remaining version, and goes away with the last one.
+
+  -a, --all
+      Remove every installed version of the package (cannot be combined
+      with @<version>)
 
   --no-link
       Do not touch the unversioned link (the old name --unlink still
@@ -229,16 +238,24 @@ Examples:
 
      wave uninstall jq
      wave uninstall ffmpeg@6.1
+     wave uninstall jq, yq
+     wave uninstall ffmpeg@6.1@6.0, jq@all
+     wave uninstall jq -a
 
 
 File: wave.info, Node: list, Next: search, Prev: uninstall, Up: Top
 
 
-List the packages you have installed, with their versions.
+List the packages you have installed, with their versions, in two
+columns.
+
+  --raw
+      Plain output for scripts: one name per line, no emoji, no columns
 
 Examples:
 
      wave list
+     wave list --raw
 
 
 File: wave.info, Node: search, Next: info, Prev: list, Up: Top

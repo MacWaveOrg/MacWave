@@ -95,6 +95,8 @@ jobs:
             /bin/bash scripts/suggest_test.sh
             /bin/bash scripts/basedir_test.sh
             /bin/bash scripts/multi_install_test.sh
+            /bin/bash scripts/multi_uninstall_test.sh
+            /bin/bash scripts/list_format_test.sh
 
       - run:
           name: Signature conventions

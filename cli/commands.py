@@ -126,16 +126,24 @@ COMMANDS = (
         handler="handle_uninstall",
         takes_input=True,
         listed=True,
-        summary="Uninstall a package",
-        usage="wave uninstall <package>[@<version>] [flags]",
-        desc="Uninstall a package version. The unversioned link falls back to the highest remaining version, and goes away with the last one.",
+        summary="Uninstall one or more packages",
+        usage="wave uninstall <package>[@<version>[@<version>...]] [, ...] [flags]",
+        desc="Uninstall a package version. Several packages can be given at once, "
+             "separated by commas; a package may carry several @versions, or @all for "
+             "every installed version. The unversioned link falls back to the highest "
+             "remaining version, and goes away with the last one.",
         flags=[
+            ("-a, --all", "Remove every installed version of the package "
+                          "(cannot be combined with @<version>)"),
             ("--no-link", "Do not touch the unversioned link (the old name --unlink "
                           "still works)"),
         ],
         examples=[
             "wave uninstall jq",
             "wave uninstall ffmpeg@6.1",
+            "wave uninstall jq, yq",
+            "wave uninstall ffmpeg@6.1@6.0, jq@all",
+            "wave uninstall jq -a",
         ],
     ),
     Command(
@@ -145,12 +153,15 @@ COMMANDS = (
         takes_input=True,
         listed=True,
         summary="List installed packages",
-        usage="wave list",
-        desc="List the packages you have installed, with their versions.",
+        usage="wave list [--raw]",
+        desc="List the packages you have installed, with their versions, in two "
+             "columns.",
         flags=[
+            ("--raw", "Plain output for scripts: one name per line, no emoji, no columns"),
         ],
         examples=[
             "wave list",
+            "wave list --raw",
         ],
     ),
     Command(
