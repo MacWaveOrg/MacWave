@@ -63,9 +63,10 @@ COMMANDS = (
         handler="handle_install",
         takes_input=True,
         listed=True,
-        summary="Install a package (latest version)",
-        usage="wave install <package>[@<version>] [flags]",
-        desc="Install a package, or one specific version of it.",
+        summary="Install one or more packages (latest version)",
+        usage="wave install <package>[@<version>] [, <package>[@<version>] ...] [flags]",
+        desc="Install a package, or one specific version of it. Several packages can be "
+             "given at once, separated by commas; each may carry its own @version.",
         flags=[
             ("-C, --continue", "Resume an interrupted download"),
             ("--proxy <string>", "HTTP/HTTPS proxy (e.g. http://127.0.0.1:8080)"),
@@ -83,6 +84,8 @@ COMMANDS = (
         examples=[
             "wave install jq",
             "wave install ffmpeg@6.1",
+            "wave install jq, yq, fx@40.0.2",
+            "wave install jq,yq",
             "wave install jq --limit-rate 1M",
             "wave install jq --max-time=1min",
         ],

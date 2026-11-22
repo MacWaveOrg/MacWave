@@ -110,6 +110,11 @@ jobs:
         run: |
           /bin/bash scripts/basedir_test.sh
 
+      # 多包安装：逗号分隔（有无空格都行）、一个失败不拖垮其余、带值旗标不错位。
+      - name: Run multi-install test
+        run: |
+          /bin/bash scripts/multi_install_test.sh
+
       # 纯离线：地址怎么拼、环境变量怎么覆盖、shell 与 Python 的默认值是否一致。
       # 放在需要联网的那些之前，地址层坏了就没必要再等网络超时。
       - name: Run domain test

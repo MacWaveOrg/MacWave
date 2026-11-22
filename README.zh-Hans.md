@@ -277,7 +277,7 @@ Usage:
   wave <command> [package] [flags]
 
 Commands:
-  install     Install a package (Latest Version)
+  install     Install one or more packages (Latest Version)
   upgrade     Install a package at the latest version
   uninstall   Uninstall a package
   list        List installed packages
@@ -317,6 +317,8 @@ Global Flags (can be used with any command):
 
 Special Flags:
 wave install <pkgname>@<version>   Download certain version(s) of a package
+wave install a, b, c@<version>     Install several at once (commas separate them;
+                                   each may carry its own @version)
 wave upgrade <pkgname>             把软件包更新到最新版本
 wave upgrade --all, -a             把所有已装的软件包更新到最新版本
     --remove-old-version           移除比刚装上的版本更旧的版本

@@ -1,11 +1,12 @@
 .TH WAVE-INSTALL-ZH 1 "" "MacWave" "MacWave Manual"
 
 .SH 名称
-wave-install-zh \- 安装一个软件包，或它的某个指定版本。
+wave-install-zh \- 安装一个软件包，或它的某个指定版本。一次可以装多个，用逗号分隔，每个都可以带自己的 @版本。
 .SH 用法
-.B wave install <package>[@<version>] [flags]
+.B wave install <package>[@<version>] [, <package>[@<version>] ...] [flags]
 .SH 说明
-安装一个软件包，或它的某个指定版本。
+安装一个软件包，或它的某个指定版本。一次可以装多个，用逗号分隔，每个都可
+以带自己的 @版本。
 .SH 选项
 .TP
 .B \-C, \-\-continue
@@ -45,6 +46,8 @@ HTTP/HTTPS 代理（例如 http://127.0.0.1:8080）
 .nf
 wave install jq
 wave install ffmpeg@6.1
+wave install jq, yq, fx@40.0.2
+wave install jq,yq
 wave install jq --limit-rate 1M
 wave install jq --max-time=1min
 .fi

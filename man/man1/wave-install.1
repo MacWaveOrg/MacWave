@@ -1,11 +1,12 @@
 .TH WAVE-INSTALL 1 "" "MacWave" "MacWave Manual"
 
 .SH NAME
-wave-install \- Install a package, or one specific version of it.
+wave-install \- Install a package, or one specific version of it. Several packages can be given at once, separated by commas; each may carry its own @version.
 .SH SYNOPSIS
-.B wave install <package>[@<version>] [flags]
+.B wave install <package>[@<version>] [, <package>[@<version>] ...] [flags]
 .SH DESCRIPTION
-Install a package, or one specific version of it.
+Install a package, or one specific version of it. Several packages can
+be given at once, separated by commas; each may carry its own @version.
 .SH OPTIONS
 .TP
 .B \-C, \-\-continue
@@ -47,6 +48,8 @@ Verbose mode
 .nf
 wave install jq
 wave install ffmpeg@6.1
+wave install jq, yq, fx@40.0.2
+wave install jq,yq
 wave install jq --limit-rate 1M
 wave install jq --max-time=1min
 .fi

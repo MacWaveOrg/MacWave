@@ -464,6 +464,63 @@ def first_package_token(input_string):
     return None if index is None else words[index]
 
 
+def package_specs(input_string):
+    """把 `wave install` 后面的包名解析成列表。
+
+    两种写法等价，逗号后面有没有空格都行：
+
+        wave install jq, yq, fx@40.0.2
+        wave install jq,yq,fx@40.0.2
+
+    规则只有一条：**逗号分隔**。空格也当分隔（把非旗标的词都收下），因为
+    `wave install jq yq` 本来就只有一个合理解释 —— 装两个。以前多余的那个
+    被静默丢掉，用户以为装上了，`wave list` 里却没有。
+
+    旗标与旗标的值（`--ver 1.8.2`、`--proxy http://…`）不算包名，判断依据与
+    `package_index` 共用 FLAGS_TAKING_VALUE，避免两处走散。
+    """
+    words = input_string.split()[2:]
+    tokens = []
+    skip_next = False
+    for word in words:
+        if skip_next:
+            skip_next = False
+            continue
+        if word in FLAGS_TAKING_VALUE:
+            skip_next = True
+            continue
+        if word.startswith("-"):
+            continue
+        tokens.append(word)
+
+    specs = []
+    for token in tokens:
+        for part in token.split(","):
+            part = part.strip()
+            if part and part not in specs:
+                specs.append(part)
+    return specs
+
+
+def _flag_words(input_string):
+    """原样保留除包名以外的词（旗标及旗标值），供逐个安装时复用。"""
+    words = input_string.split()[2:]
+    kept = []
+    skip_next = False
+    for word in words:
+        if skip_next:
+            skip_next = False
+            kept.append(word)
+            continue
+        if word in FLAGS_TAKING_VALUE:
+            skip_next = True
+            kept.append(word)
+            continue
+        if word.startswith("-"):
+            kept.append(word)
+    return " ".join(kept)
+
+
 def handle_download_args(input_string):
     """
     处理下载相关的参数逻辑。
@@ -956,6 +1013,59 @@ def _launcher_path():
 
 
 def handle_install(input_string):
+    """`wave install` 的入口：一个包走原路径，多个包（逗号分隔）逐个装。
+
+    多个包时逐个安装，**一个失败不影响其余**：装完统一汇总，有失败就以非 0 退出。
+    这样 `wave install jq, yq, fx` 里某一个名字打错，不会让另外两个白等一场 ——
+    而逐个装的选择也正是 apt/brew 用户的直觉。
+    """
+    specs = package_specs(input_string)
+    if len(specs) <= 1:
+        return _install_single(input_string)
+
+    ver_flag = common.value(input_string, "--ver")
+    if ver_flag is not None:
+        steplog.fail(
+            "--ver cannot be used when installing several packages",
+            extra=f"packages: {', '.join(specs)}; --ver {ver_flag}",
+            hint=["put the version on the package itself, e.g. "
+                  "wave install jq@1.8.2, yq@2.47.1",
+                  "or install them one by one if they need the same --ver"])
+
+    flags = _flag_words(input_string)
+    total = len(specs)
+    installed = []
+    failed = []
+
+    for index, spec in enumerate(specs, 1):
+        silent.say(f"🌊 [{index}/{total}] {spec}")
+        try:
+            _install_single(f"wave install {spec} {flags}".strip())
+            installed.append(spec)
+        except SystemExit as exit_error:
+            code = exit_error.code
+            if code in (None, 0):
+                installed.append(spec)
+            else:
+                failed.append(spec)
+
+    silent.say(f"🌊 Installed {len(installed)} of {total} package(s)")
+    for spec in installed:
+        silent.say(f"🌊   ok    {spec}")
+    for spec in failed:
+        silent.say(f"🌊   failed {spec}")
+
+    if failed:
+        steplog.fail(
+            f"{len(failed)} of {total} package(s) failed to install",
+            extra=", ".join(failed),
+            hint=["the packages listed as ok above are installed and usable",
+                  "fix the problem and run the failed ones again, e.g. "
+                  f"wave install {failed[0]}"])
+    sys.exit(0)
+
+
+def _install_single(input_string):
     # 参数解析
     steplog.reset()
     steplog.plan(INSTALL_STEPS)

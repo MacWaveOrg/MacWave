@@ -36,7 +36,8 @@ GLOBAL_FLAGS_ZH = {
 # 与 help.COMMAND_HELP 一一对应：命令 → {desc, flags:{旗标写法: 说明}}
 COMMANDS_ZH = {
     "install": {
-        "desc": "安装一个软件包，或它的某个指定版本。",
+        "desc": "安装一个软件包，或它的某个指定版本。一次可以装多个，用逗号分隔，"
+                "每个都可以带自己的 @版本。",
         "flags": {
             "-C, --continue": "断点续传",
             "--proxy <string>": "HTTP/HTTPS 代理（例如 http://127.0.0.1:8080）",
@@ -187,7 +188,7 @@ OVERVIEW_TITLES = {
 
 OVERVIEW_DESC = {
     "commands": {
-        "install": "安装软件包（最新版本）",
+        "install": "安装软件包（最新版本），一次可装多个",
         "upgrade": "把软件包升级到最新版本",
         "uninstall": "卸载软件包",
         "list": "列出已安装的软件包",

@@ -10,7 +10,9 @@ nothing is compiled on the user's machine.
 
 * Menu:
 
-* install::	Install a package, or one specific version of it.
+* install::	Install a package, or one specific version of it. Several
+        packages can be given at once, separated by commas; each may
+        carry its own @version.
 * upgrade::	Upgrade a package to its latest version; with --all, every
         installed package. Old versions are kept — -X,
         --remove-old-versions removes them in the same run.
@@ -107,7 +109,8 @@ File: wave.info, Node: GLOBAL FLAGS, Up: Top
 File: wave.info, Node: install, Next: upgrade, Up: Top
 
 
-Install a package, or one specific version of it.
+Install a package, or one specific version of it. Several packages can
+be given at once, separated by commas; each may carry its own @version.
 
   -C, --continue
       Resume an interrupted download
@@ -151,6 +154,8 @@ Examples:
 
      wave install jq
      wave install ffmpeg@6.1
+     wave install jq, yq, fx@40.0.2
+     wave install jq,yq
      wave install jq --limit-rate 1M
      wave install jq --max-time=1min
 
