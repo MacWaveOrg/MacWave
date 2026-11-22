@@ -196,11 +196,17 @@ echo "========== 5. 一律用 /bin/bash，不要裸 bash =========="
 # 所以：脚本、测试、工作流、文档里的命令，一律写 `/bin/bash`。这条只查**命令位置**
 # 的裸 bash（行首、`;` `&&` `||` `|` `(` `!` `$(` 之后），散文里的「bash 3.2」
 # 「~/.bashrc」不算。
+#
+# 还要排除「Supported Packages」清单里的行：那是 `<包名>  by <作者>` 的格式，
+# 而 `bash` 恰好是一个真包（2026-11-22 加进来的），行首就叫 bash —— 它是数据，
+# 不是命令。判据用清单行的形状（两个以上空格 + by），对将来 `make`、`test`
+# 这类同名包也成立。
 BARE_BASH=$(cd "$REPO_DIR" && grep -rnE '(^[[:space:]]*|&&[[:space:]]*|\|\|[[:space:]]*|[;&|(){}!][[:space:]]*|\$\([[:space:]]*)bash([[:space:]]|$)' \
     --include=*.sh --include=*.py --include=*.yml --include=*.md --include=*.mdc . 2>/dev/null \
     | grep -v '^\./\.git/' \
     | grep -v 'shell_lint\.sh:' \
     | grep -vE ':[0-9]+:[[:space:]]*#' \
+    | grep -vE ':[0-9]+:[[:space:]]*[a-z0-9._+-]+[[:space:]]{2,}by[[:space:]]' \
     || true)
 
 if [[ -z "$BARE_BASH" ]]; then
