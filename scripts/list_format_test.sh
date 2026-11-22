@@ -51,7 +51,7 @@ PKGS=(
 )
 
 install_fixture() {
-    rm -rf "$BASE/bin"
+    rm -rf "${BASE:?}/bin"
     mkdir -p "$BASE/bin"
     local spec
     for spec in "$@"; do
