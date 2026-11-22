@@ -414,7 +414,11 @@ while read -r p; do
   gh api -H "Accept: application/vnd.github.raw" \
     "repos/MacWaveOrg/MacWave/contents/$p?ref=$TAG" > "/tmp/rel/$(basename "$p")"
 done < /tmp/src.txt
-for f in /tmp/rel/*; do gh release upload "$TAG" "$f" -R MacWaveOrg/MacWave --clobber; done
+# 一次传整批。不要写成 `for f in …; do gh release upload "$f"; done` ——
+# 每个文件一次 API 调用，96 个文件要五分钟以上，而守卫的等待窗口只有
+# 3 × 120 秒（见下面「五个容易踩的点」最后一条）。2026-11-22 发 4.5.0
+# 就是这么红的：重查三次时只传上去 55 个。
+gh release upload "$TAG" /tmp/rel/* -R MacWaveOrg/MacWave --clobber
 
 # 3) 整棵源码树打包，顶层目录名必须是 MacWave-<版本>/
 rm -rf /tmp/arc && mkdir -p /tmp/arc && cd /tmp/arc
@@ -580,6 +584,12 @@ or directory」—— 那个 `#` 连同后面的词变成了参数。仓库里�
   下一次 `-c` 必然失败。
 - **`.asc` 要 armored。** 能直接贴进 Release 正文与 Issue，拿到的人不看文档也知道
   `gpg --verify`。
+- **守卫的等待窗口是 6 分钟，不是「等多久都行」。** `release: published` 在第一个
+  资产上传之前就触发，所以它重查 3 次、每次间隔 120 秒；三次之后仍不齐就判红。
+  96 个文件逐个上传会超过这个窗口 —— 2026-11-22 的 4.5.0 就这样红了一次
+  （重查时只到 55/98），资产其实没错，只是还没传完。两种应对：**一次传整批**
+  （见上面第 2 步），或者先 `gh release create --draft`、传完再
+  `gh release edit "$TAG" --draft=false`（`published` 那一刻资产已经齐了）。
 
 公钥与指纹要发在**至少两个渠道**（仓库 `Keys/`、README、官网、Release 正文），
 单渠道公布等于没公布 —— 能换资产的人通常也能换那一个渠道。
