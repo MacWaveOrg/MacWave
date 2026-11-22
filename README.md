@@ -383,18 +383,23 @@ when that would leave the link pointing at the version you are removing.
 The same list appears in `infosource/README.md` and on [macwave.org](https://macwave.org). Adding a package means updating all of them — see [`docs/ADD-PACKAGE-CHECKLIST.md`](./docs/ADD-PACKAGE-CHECKLIST.md).
 
 ```
+
+7zz              by Igor Pavlov
 age              by FiloSottile
 aria2c           by Tatsuhiro Tsujikawa
 atuin            by atuinsh
+bash             by Free Software Foundation
 bat              by David Peter
 batt             by charlie0129
 btop             by Aristocratos
 choma            by opa334
+circleci         by CircleCI
 cloc             by Al Danial
 columbula        by Sha0huaZhang
 delta            by dandavison
 difft            by Wilfred Hughes
 doggo            by mr-karan
+dtc              by Device Tree Compiler contributors
 duckdb           by duckdb
 dust             by bootandy
 eza              by Christina Sørensen and the eza community
@@ -419,22 +424,27 @@ k9s              by derailed
 kubectx          by ahmetb
 ldid             by Jay Freeman (saurik) / Procursus Team
 lsd              by Abin Simon
+mint             by Yonas Kolb
 mise             by jdx
 mkcert           by FiloSottile
 ncdu             by Yoran Heling
 ollama           by ollama
 palera1n         by palera1n Team
 pandoc           by John MacFarlane
+patch            by Free Software Foundation
 rclone           by rclone
 restic           by restic
 rg               by Andrew Gallant
 robinsing        by Sha0huaZhang
+scc              by Ben Boyter
 shellcheck       by koalaman
 shfmt            by mvdan
 sk               by skim-rs
 starship         by starship
 stern            by stern
+tar              by Free Software Foundation
 taskwarrior-tui  by kdheepak
+testdisk         by Christophe Grenier
 tmux             by Nicholas Marriott and contributors
 tofu             by opentofu
 tree             by Steve Baker, Thomas Moore, et al.
@@ -443,6 +453,7 @@ typst            by typst
 vhs              by charmbracelet
 websocat         by vi
 wget             by GNU Project
+xcodegen         by Yonas Kolb
 xh               by ducaale
 yazi             by sxyazi
 yq               by Mike Farah
