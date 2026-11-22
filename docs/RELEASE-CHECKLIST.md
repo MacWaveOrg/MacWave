@@ -561,10 +561,16 @@ MACWAVE_VERSION=4.4.0-beta2 MACWAVE_BRANCH=4.4 \
 ```bash
 cd /tmp/rel && ls | grep -vE '^SHA256SUMS' | xargs shasum -a 256 > SHA256SUMS
 gpg --armor --detach-sign --output SHA256SUMS.asc SHA256SUMS
-gpg --verify SHA256SUMS.asc SHA256SUMS     # Good signature
-shasum -a 256 -c SHA256SUMS                # 全部 OK
+gpg --verify SHA256SUMS.asc SHA256SUMS
+shasum -a 256 -c SHA256SUMS
 gh release upload "$TAG" SHA256SUMS SHA256SUMS.asc -R MacWaveOrg/MacWave --clobber
 ```
+
+（前一版这里把 `# Good signature` 与 `# 全部 OK` 写在同一行末尾当注释。2026-11-22
+实测：有人粘进终端后 gpg 报「无法打开已签名的数据 '#'」、shasum 报「#: No such file
+or directory」—— 那个 `#` 连同后面的词变成了参数。仓库里其它文档也有行尾注释的写法，
+平时没事；但**一步错就白跑一遍的步骤（建 tag、传资产、签名、推指针）不要靠 shell 的
+注释规则**，说明一律放正文。）
 
 三条不能省：
 
@@ -604,6 +610,18 @@ gh release upload "$TAG" SHA256SUMS SHA256SUMS.asc -R MacWaveOrg/MacWave --clobb
 - **任一为红就停下，不要发版。** CircleCI 只跑离线的子集，定位是「一两分钟给结论」，
   但这不等于它是可选项 —— 它红说明这份代码本身有问题，不能因为 `Format Test` 绿就跳过。
 - **两条都在 push 时触发**，`4.1` 与 `main` 各自都要确认，不能只看一边。
+- **先确认新发布分支在被触发列表里。** 两处白名单都是显式列出来的，不是通配：
+  `.github/workflows/format-test.yml` 的 `on.push.branches` / `on.pull_request.branches`，
+  与 `.circleci/config.yml` 的 `workflows.quick-feedback.jobs.offline-tests.filters.branches.only`。
+  漏一处两份文件里都有注释警告，但**漏了不会有任何提示** —— 推上去只是静静地没有流水线，
+  CircleCI 面板上连记录都不出现。自查：
+
+  ```bash
+  grep -n 'branches: \[' .github/workflows/format-test.yml
+  grep -n -A12 'only:' .circleci/config.yml
+  ```
+
+  2026-11-22 发现 4.4 与 4.5 都不在名单里，所以 4.4 全线的推送从来没跑过这两条流水线。
 - CircleCI 需要 GitHub App 授权才会跑。面板上**看不到 pipeline** 本身就是问题，
   先确认触发，再说「绿」。
 - 合并提交内容零变化时也应重跑一遍确认。

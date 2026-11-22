@@ -2,6 +2,8 @@
 
 # minos_test.sh
 # min_os（实验性，4.3 转正）：版本解析、安装前警告、info 展示。
+# 4.5 起同一段还覆盖 min_client_version —— 两者都是「版本记录里的安装门槛」，
+# 共用 spoken/ask 这套辅助；差别只在语义：min_os 问一句，min_client_version 硬拦。
 #
 # 为什么需要它：这个字段的判断逻辑很窄，但错法很难在真机上复现 ——
 #   * 位数不同怎么比（10.15 与 10.15.7、14 与 14.0、26.6.2 与 26.6.3）
@@ -189,6 +191,51 @@ else:
     check("-sS：同样不询问、直接拒绝", ret, False)
     check("-sS：本函数自己不打字", said, "")
     inst.silent.set_silent(False)
+
+# -------------------- 3.5 min_client_version：硬拦，不问 --------------------
+print("# min_client_version")
+# 本机版本由 VERSION.json 决定；测试里直接替换 get_version，别去改文件。
+real_get_version = inst.get_version
+
+
+def client_record(required=None):
+    text = 'sha256:"' + "a" * 64 + '\nurl: "https://example.invalid/x"\n'
+    if required is not None:
+        text += f'min_client_version: "{required}"\n'
+    return text
+
+
+for label, text in [
+    ("无 min_client_version 字段", client_record()),
+    ("空串", client_record("")),
+    ("非法版本串", client_record("abc")),
+]:
+    said, ret = spoken(lambda t=text: inst.confirm_min_client_version(t, "git", "2.56.1"))
+    check(f"{label}：放行", ret, True)
+    check(f"{label}：不打字", said, "")
+
+inst.get_version = lambda: "unknown"
+check("本机版本读不到：放行",
+      inst.confirm_min_client_version(client_record("4.5.0"), "git", "2.56.1"), True)
+
+inst.get_version = lambda: "4.5.0"
+check("本机 4.5.0，要求 4.5.0：放行",
+      inst.confirm_min_client_version(client_record("4.5.0"), "git", "2.56.1"), True)
+check("本机 4.5.0，要求 4.5.1：拦下",
+      inst.confirm_min_client_version(client_record("4.5.1"), "git", "2.56.1"), False)
+
+inst.get_version = lambda: "4.4.1"
+said, ret = spoken(
+    lambda: inst.confirm_min_client_version(client_record("4.5.0"), "git", "2.56.1"))
+check("本机 4.4.1，要求 4.5.0：拦下", ret, False)
+check("拦下时不在函数里打字（原因交给调用点的 steplog.fail）", said, "")
+
+said, ret = spoken(
+    lambda: inst.confirm_min_client_version(client_record("4.5.0"), "git", "2.56.1", True))
+check("--force：放行", ret, True)
+check("--force：打一条警告", "4.5" in said, True)
+
+inst.get_version = real_get_version
 
 print(f"# summary {passed} {failed}")
 PYEOF

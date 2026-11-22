@@ -510,6 +510,34 @@ universal —— 索引是「每架构一份」）；编完 `codesign --force --
 **④ 索引最后写。** 客户端只有从 `pkginfo_*/` 看到记录才会去装；记录不写，谁也不知道它
 存在。所以顺序是：产物 → Ports + Bottle → 沙箱实测 → 索引 → 镜像同步 → 三处清单。
 
+### tree 包必须声明 `min_client_version`
+
+`install: "tree"`（整树包）是 **4.5** 才有的安装形态。旧客户端读到这条记录不会报错 ——
+它只是不认识这个字段，然后按单文件装，只取一个可执行文件。实测 v4.4.1 装
+`git@2.56.1` 得到的是：
+
+```
+bin/git@2.56.1/git                                       ← 只有一个文件，3.7 MB
+$ …/links/git --exec-path
+/Users/<builder>/build/git/stage-arm64/libexec/git-core   ← 构建机路径，本机不存在
+```
+
+`git --version`、`init`、本地 `clone` 都还能跑（git 是多调用二进制，多数子命令内建），
+但 `git-remote-https` 这类外部 helper 要靠系统 Xcode CLT 的 git 提供 —— 没装 CLT 的
+机器上 `git clone https://` 会挂。
+
+所以 **tree 记录必须同时写 `min_client_version: "4.5.0"`**。4.5 客户端读到它在**下载
+之前**就中止，并给出下一步（`wave selfupdate`）；`-F/--force` 可以越过，越过时打黄字警告。
+字段缺失时新客户端不拦、旧客户端更不知道 —— 等于这层保护整条不存在。
+
+判断依据是「装了会不会坏」，不是「版本号好看」：
+
+| 记录内容 | 写什么 |
+| --- | --- |
+| 普通单文件包 | 不写（4.0 起的客户端都能装） |
+| `install: "tree"` | `min_client_version: "4.5.0"` |
+| 用了更晚才有的字段/形态 | 那个版本号 |
+
 ### `aria2c`：第一个按这条路走完的包（2026-11-21 上线）
 
 `configure` 里这几个开关把依赖面砍到只剩系统库，值得照抄：

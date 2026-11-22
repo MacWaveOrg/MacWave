@@ -38,7 +38,17 @@ import flags as flags_module
 import timeouts
 import silent
 import steplog
+import versioncompare
 from suggest import closest_name, name_examples
+
+
+# 下载中途连接被重置 / 超时时的自动重试次数（仅非交互场景）。
+# 为什么需要：交互终端可以问「要不要重试」，而 -s、CI、`< /dev/null` 这些场景
+# 没有人能回答 —— 旧实现在那里直接把整次安装判死。2026-11-21 的 random-test
+# 就是这么红的：14.6 MB 下到一半连接被重置（ConnectionResetError 54），
+# pty 里无人应答，安装以 rc=1 结束，而日志只留下一句「平均超速」。
+AUTO_RETRIES = 2
+AUTO_RETRY_DELAY = 2      # 秒；按第几次线性退避
 
 
 def github_api_headers(url):
@@ -71,7 +81,13 @@ DOWNLOAD_TMP = BASE_DIR / "downloads" / "tmp"
 
 try:
     import requests
-    from requests.exceptions import HTTPError, ConnectionError, Timeout
+    # ChunkedEncodingError 也要：响应体读到一半连接被断开时 requests 抛的是它，
+    # 而它不是 ConnectionError 的子类（MRO: RequestException + OSError）。
+    # 2026-11-21 那次 14.6 MB 下载中断正是这一类，旧代码落进最后的 except Exception，
+    # 直接失败、没有重试。
+    from requests.exceptions import (
+        HTTPError, ConnectionError, Timeout, ChunkedEncodingError,
+    )
 except ImportError:
     print(f"{RED_BOLD}🌊 Error: 'requests' library is not installed.{RESET}")
     print(f"{RED_BOLD}🌊 Please install it using: pip3 install requests{RESET}")
@@ -167,6 +183,56 @@ def current_macos_version():
     if sys.platform != "darwin":
         return None
     return _parse_dotted_version(platform.mac_ver()[0] or "")
+
+
+def confirm_min_client_version(record_text, pkg_name, pkg_version, force=False):
+    """版本记录声明了 min_client_version 且本机 MacWave 更旧时中止安装。
+
+    与 min_os 不是一回事：min_os 是「构建时声明的最低系统，可能偏保守」，所以问一句
+    由用户决定；min_client_version 说的是「这个包要求客户端具备某种安装形态」——
+    旧客户端不是「装得勉强」，而是**一定装坏**。
+
+    实际例子：`git` 声明 install: "tree"（整树包）。4.5 之前的客户端不认识这个字段，
+    会按单文件装，只取一个 `bin/git`：`git --version` 还能跑，但 `--exec-path` 指向
+    构建机的路径（实测 `/Users/<builder>/build/git/stage-arm64/libexec/git-core`），
+    依赖系统 git 提供 helper。所以默认硬拦，只有 -F/--force 越过。
+
+    字段缺失时静默跳过；本机版本读不到（VERSION.json 不存在）时也跳过 —— 猜不出
+    就别拦人。
+    """
+    match = re.search(r'min_client_version:\s*"([^"]*)"', record_text)
+    if not match:
+        return True
+
+    required_text = match.group(1).strip()
+    if not required_text:
+        return True
+
+    running_text = get_version()
+    if running_text in ("", "unknown"):
+        steplog.detail("min_client_version declared but the client version is unreadable, ignored")
+        return True
+
+    try:
+        required = versioncompare.version(required_text)
+        running = versioncompare.version(running_text)
+    except Exception:
+        steplog.detail(f"min_client_version {required_text!r} is not a version, ignored")
+        return True
+
+    if running >= required:
+        return True
+
+    steplog.detail(f"min_client_version {required_text} > running {running_text}")
+
+    if force:
+        if not silent.is_silent():
+            print(f"{YELLOW}🌊 Warning: {pkg_name}@{pkg_version} needs MacWave "
+                  f"{required_text} or later, this is {running_text}; installing anyway "
+                  f"because of --force.{RESET}")
+        return True
+
+    return False
 
 
 def confirm_min_os(record_text, pkg_name, pkg_version, force=False):
@@ -541,6 +607,7 @@ def download_file(url, temp_path, config, input_string, display_name):
     steplog.detail(f"timeout {config['timeout']}s, saving to {temp_path.name}")
 
     download_success = False
+    auto_attempt = 0
     while not download_success:
         try:
             # 超时同时约束「连接」与「两次读取之间」：只给一个数字时 requests 会让
@@ -626,19 +693,38 @@ def download_file(url, temp_path, config, input_string, display_name):
             download_success = True
             break
 
-        except (ConnectionError, Timeout) as e:
-            # 超时或连接失败：每次都询问是否重试，不再直接放弃
-            # 失败原因必须留下（这是错误，不是噪音）；问题本身可以被静默掉，
-            # 因为静默模式下没有人能回答，问出来只会让人以为卡住了。
+        except (ConnectionError, Timeout, ChunkedEncodingError) as e:
+            # 失败原因必须留下（这是错误，不是噪音）。
             print(f"{RED_BOLD}🌊 Download failed: {e}{RESET}")
-            if silent.is_silent():
+
+            # 非交互场景（-s / CI / stdin 不是终端）没有人能回答询问，问出来只会
+            # 让整次安装被一次抖动判死，所以这里自动重试；交互终端保持原来的询问。
+            if silent.is_silent() or not sys.stdin.isatty():
+                auto_attempt += 1
+                if auto_attempt <= AUTO_RETRIES:
+                    # 已经落盘的部分接着下：重新算 Range，别把已下载的几 MB 扔掉。
+                    if temp_path.exists():
+                        current_size = temp_path.stat().st_size
+                        if current_size:
+                            existing_size = current_size
+                            mode = "ab"
+                            request_kwargs["headers"] = {
+                                "Range": f"bytes={existing_size}-"}
+                    delay = AUTO_RETRY_DELAY * auto_attempt
+                    print(f"{YELLOW}🌊 Retrying in {delay}s "
+                          f"({auto_attempt}/{AUTO_RETRIES}){RESET}")
+                    time.sleep(delay)
+                    continue
+
+                print(f"{RED_BOLD}🌊 Error: Failed to download package after "
+                      f"{AUTO_RETRIES} retries{RESET}")
+                sys.exit(1)
+
+            print(f"{RED_BOLD}🌊 Do you want to retry? [y/N]: {RESET}")
+            try:
+                retry = input().strip().lower()
+            except (EOFError, KeyboardInterrupt):
                 retry = ""
-            else:
-                print(f"{RED_BOLD}🌊 Do you want to retry? [y/N]: {RESET}")
-                try:
-                    retry = input().strip().lower()
-                except (EOFError, KeyboardInterrupt):
-                    retry = ""
 
             if retry == 'y':
                 continue
@@ -1055,6 +1141,17 @@ def handle_install(input_string):
             extra=f"got {install_mode!r}",
             hint=['expected "binary" (the default) or "tree"; this is an index data defect, '
                   'please report it to the administrator'])
+
+    # 5.1.2 客户端版本门槛：tree 包在旧客户端上一定装坏（见函数文档）。
+    # 放在 min_os 之前 —— 前者是「装了是坏的」，后者是「装了可能不兼容」。
+    if not confirm_min_client_version(resp.text, ParsePkgName, ParsePkgVersion,
+                                      config["force"]):
+        steplog.fail(
+            f"not installing {ParsePkgName}@{ParsePkgVersion}: it needs a newer MacWave",
+            request=pkg_version_url,
+            hint=["nothing was downloaded or installed",
+                  "run `wave selfupdate` to get the current MacWave, then try again",
+                  "add --force to install it anyway (the result will most likely be broken)"])
 
     # 5.2 实验性：版本记录可以声明 min_os，低于它时警告并问一句（4.3 转正）。
     # 放在下载之前：答复是「不装」时不该先花带宽。

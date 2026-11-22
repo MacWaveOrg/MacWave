@@ -58,10 +58,29 @@ jobs:
           SIG_REQUIRED_FROM="2026-12-01"
 
           # 索引更新之类的非代码 Release 不适用（它们没有 tag 下的源码可附）。
+          #
+          # 过滤必须**三条路径都做**：默认路径下面那句 grep 已经只认 vX.Y.Z，
+          # 但 `release: published` 与手动指定 tag 这两条曾直接把 tag 塞进来 ——
+          # 于是 infosource 每建一个 index* 快照 Release，这里就红一次
+          # （2026-11-19 起 index2026112202、index2026112201… 全红，而 main 的
+          # 定时兜底一直是绿的，红的那条自然被当成噪声）。
+          is_version_tag() {
+            [[ "$1" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          }
+
           if [[ -n "$ONLY_TAG" ]]; then
+            if ! is_version_tag "$ONLY_TAG"; then
+              echo "🌊 $ONLY_TAG 不是版本 Release，跳过（索引快照没有源码资产）"
+              exit 0
+            fi
             tags=("$ONLY_TAG")
           elif [[ "${{ github.event_name }}" == "release" ]]; then
-            tags=("${{ github.event.release.tag_name }}")
+            published="${{ github.event.release.tag_name }}"
+            if ! is_version_tag "$published"; then
+              echo "🌊 $published 不是版本 Release，跳过（索引快照没有源码资产）"
+              exit 0
+            fi
+            tags=("$published")
           else
             mapfile -t tags < <(gh release list --repo "$REPO" --limit 40 \
               --json tagName,isDraft,isPrerelease \
