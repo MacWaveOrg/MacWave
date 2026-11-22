@@ -22,6 +22,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
 PYTHON=${PYTHON:-python3}
 
+# 索引按 arm64 / amd64 分目录，而 CI 的 Linux runner 是 x86_64 —— 写死 arm64
+# 会让产物名与客户端要的对不上（platform.machine() 决定它去要哪个）。按本机选。
+case "$(uname -m)" in
+    arm64|aarch64) ARCH=arm64 ;;
+    *) ARCH=amd64 ;;
+esac
+
 PASSED=0
 FAILED=0
 pass() { echo -e "  ${GREEN}✅ $1${RESET}"; PASSED=$((PASSED + 1)); }
@@ -52,24 +59,24 @@ printf '{"base_dir": "%s"}\n' "$BASE" > "$ROOT/opt/macwave_config/config.json"
 make_pkg() {
     local name="$1" dir
     dir="$WORK/src-$name"
-    mkdir -p "$dir" "$MIRROR/bottle/$name" "$MIRROR/infosource/pkg/pkginfo_arm64/$name"
+    mkdir -p "$dir" "$MIRROR/bottle/$name" "$MIRROR/infosource/pkg/pkginfo_$ARCH/$name"
     printf '#!/bin/sh\necho %s\n' "$name" > "$dir/$name"
     chmod 755 "$dir/$name"
-    tar czf "$MIRROR/bottle/$name/$name@1.0.arm64.tar.gz" -C "$dir" "$name"
+    tar czf "$MIRROR/bottle/$name/$name@1.0.$ARCH.tar.gz" -C "$dir" "$name"
 
     local sha
-    sha=$(shasum -a 256 "$MIRROR/bottle/$name/$name@1.0.arm64.tar.gz" | cut -d' ' -f1)
-    cat > "$MIRROR/infosource/pkg/pkginfo_arm64/$name/_$name@common" <<EOF
+    sha=$(shasum -a 256 "$MIRROR/bottle/$name/$name@1.0.$ARCH.tar.gz" | cut -d' ' -f1)
+    cat > "$MIRROR/infosource/pkg/pkginfo_$ARCH/$name/_$name@common" <<EOF
 bin_name: "$name"
 des: "multi-install probe"
 hom: "https://example.invalid/"
 lic: "MIT"
 aut: "probe"
 EOF
-    cat > "$MIRROR/infosource/pkg/pkginfo_arm64/$name/_$name@1.0" <<EOF
+    cat > "$MIRROR/infosource/pkg/pkginfo_$ARCH/$name/_$name@1.0" <<EOF
 sha256: "$sha"
-file: "${name}_arm64.tar.gz"
-url: "http://127.0.0.1:$PORT/bottle/$name/$name%401.0.arm64.tar.gz"
+file: "${name}_${ARCH}.tar.gz"
+url: "http://127.0.0.1:$PORT/bottle/$name/$name%401.0.$ARCH.tar.gz"
 min_os: "12.0"
 EOF
 }
@@ -86,7 +93,7 @@ SERVER_PID=$!
 sleep 1
 
 if curl -s -o /dev/null -w '%{http_code}' \
-        "http://127.0.0.1:$PORT/infosource/pkg/pkginfo_arm64/versions" | grep -q 200; then
+        "http://127.0.0.1:$PORT/infosource/pkg/pkginfo_$ARCH/versions" | grep -q 200; then
     pass "本地镜像起来了（${PORT}）"
 else
     fail "本地镜像没起来，后面的用例都会误报"

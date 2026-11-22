@@ -69,7 +69,17 @@ else
     fail "16 个包应该是 8 行，实际 $LINES 行"
 fi
 
-BAD=$(printf '%s\n' "$OUT" | awk '{n = gsub(/🌊/, "&"); if (n != 1) print NR": "n" 个"}')
+# 数 🌊 用 python 而不是 awk：Debian 的 mawk 在 C locale 下按字节处理多字节
+# 字符，统计口径与 macOS 的 awk 不一定一致，而这条断言不该取决于跑在哪。
+BAD=$(LIST_OUT="$OUT" "$PYTHON" - <<'PYCOUNT'
+import os
+bad = []
+for number, line in enumerate(os.environ["LIST_OUT"].splitlines(), 1):
+    if line.count("\U0001f30a") != 1:
+        bad.append(f"{number}: {line.count(chr(0x1F30A))} 个")
+print("; ".join(bad))
+PYCOUNT
+)
 if [ -z "$BAD" ]; then
     pass "每行恰好一个 🌊"
 else
