@@ -107,7 +107,7 @@ install_fake "$VER"
 VERSIONED_LINK="$LINKS_DIR/$PKG@$VER"
 python3 "$WAVE_BIN" link "$PKG" </dev/null >/dev/null
 check "link 后 $UNV 存在" "$(link_state "$UNV")" "yes"
-check "linkquery 报告 $PKG@$VER" "$(python3 "$WAVE_BIN" linkquery "$PKG")" "🌊 $PKG@$VER"
+check "linkquery 报告 $PKG => $VER" "$(python3 "$WAVE_BIN" linkquery "$PKG")" "🌊 $PKG => $VER"
 RUN_OUTPUT=$("$UNV")
 check "不带版本号也能跑" "$([[ "$RUN_OUTPUT" == *"Test Successful! (no-extension)"* ]] && echo yes || echo no)" "yes"
 check "带版本号的链接不受影响" "$(link_state "$VERSIONED_LINK")" "yes"
@@ -118,7 +118,7 @@ python3 "$WAVE_BIN" unlink "$PKG" >/dev/null
 check "unlink 后链接消失" "$(link_state "$UNV")" "no"
 python3 "$WAVE_BIN" link "$PKG" >/dev/null
 check "link 后链接恢复" "$(link_state "$UNV")" "yes"
-check "重复 link 不改指向" "$(python3 "$WAVE_BIN" linkquery "$PKG")" "🌊 $PKG@$VER"
+check "重复 link 不改指向" "$(python3 "$WAVE_BIN" linkquery "$PKG")" "🌊 $PKG => $VER"
 
 echo ""
 echo "========== 3. -a / --all =========="
@@ -127,7 +127,7 @@ python3 "$WAVE_BIN" unlink -a >/dev/null
 check "unlink -a 清空无版本号链接" "$(unversioned_count)" "0"
 check "unlink -a 不动带版本号的链接" "$(ls "$LINKS_DIR" | grep -c '@' || true)" "$VERSIONED_BEFORE"
 python3 "$WAVE_BIN" link -a >/dev/null
-check "link -a 后仍指向 $PKG@$VER" "$(python3 "$WAVE_BIN" linkquery "$PKG")" "🌊 $PKG@$VER"
+check "link -a 后仍指向 $PKG => $VER" "$(python3 "$WAVE_BIN" linkquery "$PKG")" "🌊 $PKG => $VER"
 check "link -a 不动带版本号的链接" "$(ls "$LINKS_DIR" | grep -c '@' || true)" "$VERSIONED_BEFORE"
 
 # 造一个同包的更高版本（避免依赖 infosource 里真有 2.0）
@@ -139,9 +139,9 @@ echo ""
 echo "========== 4. 卸载最高版时自动降级 =========="
 make_v2
 python3 "$WAVE_BIN" link "$PKG@2.0" >/dev/null
-check "已链到最高版 2.0" "$(python3 "$WAVE_BIN" linkquery "$PKG")" "🌊 $PKG@2.0"
+check "已链到最高版 2.0" "$(python3 "$WAVE_BIN" linkquery "$PKG")" "🌊 $PKG => 2.0"
 python3 "$WAVE_BIN" uninstall "$PKG@2.0" >/dev/null
-check "卸载 2.0 后降到 $VER" "$(python3 "$WAVE_BIN" linkquery "$PKG")" "🌊 $PKG@$VER"
+check "卸载 2.0 后降到 $VER" "$(python3 "$WAVE_BIN" linkquery "$PKG")" "🌊 $PKG => $VER"
 
 echo ""
 echo "========== 5. uninstall --no-link 不会留下坏链接 =========="
@@ -155,11 +155,11 @@ UNLINK_EXIT=$?
 set -e
 check "删链接指向的版本时拒绝执行" "$UNLINK_EXIT" "1"
 check "被拒绝后版本仍在" "$([[ -d "$BIN_DIR/$PKG@2.0" ]] && echo yes || echo no)" "yes"
-check "被拒绝后链接未被破坏" "$(python3 "$WAVE_BIN" linkquery "$PKG")" "🌊 $PKG@2.0"
+check "被拒绝后链接未被破坏" "$(python3 "$WAVE_BIN" linkquery "$PKG")" "🌊 $PKG => 2.0"
 
 # 5.2 要删的不是链接指向的版本 → 允许，链接继续指向 2.0
 python3 "$WAVE_BIN" uninstall "$PKG@$VER" --no-link >/dev/null
-check "--no-link 后仍指向 2.0" "$(python3 "$WAVE_BIN" linkquery "$PKG")" "🌊 $PKG@2.0"
+check "--no-link 后仍指向 2.0" "$(python3 "$WAVE_BIN" linkquery "$PKG")" "🌊 $PKG => 2.0"
 
 echo ""
 echo "========== 6. 安装器接受 --no-link（离线）=========="
@@ -249,10 +249,10 @@ TREE_ALL_EXIT=$?
 set -e
 check "9.9 linkquery -a 不误报整树包的附属命令" \
     "$([[ "$TREE_ALL" == *"(not linked)"* ]] && echo yes || echo no)" "no"
-# 包多时 -a 会排两列，名字列宽随最长的包变 —— 所以按「名字 + 若干空格 + => 版本」
-# 匹配一行，而不是固定几个空格。
+# 包多时 -a 会排两列，名字与版本之间补多少空格取决于最长的名字 —— 所以分两段
+# 找：某一行同时有这个名字和这个版本，不去数中间的空格。
 check "9.10 linkquery -a 里有 ${PKG} => ${VER}" \
-    "$(printf '%s\n' "$TREE_ALL" | grep -qE "^🌊 ${PKG} + => ${VER}( |$)" && echo yes || echo no)" "yes"
+    "$(printf '%s\n' "$TREE_ALL" | grep -F "${PKG}" | grep -qF "=> ${VER}" && echo yes || echo no)" "yes"
 check "9.11 全部正常时 -a 退出码为 0" "$TREE_ALL_EXIT" "0"
 python3 "$WAVE_BIN" unlink "$PKG" >/dev/null
 check "9.12 unlink 后主命令链接消失" "$(link_state "$UNV")" "no"
