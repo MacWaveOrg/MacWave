@@ -460,7 +460,7 @@ min_os: "12.0"
 | 写法 | 装完长什么样 |
 | --- | --- |
 | 不写 / `install: "binary"` | `bin/{名}@{版本}/{名}`，只有一个可执行文件 |
-| `install: "tree"` | `bin/{名}@{版本}/` 整棵目录（`bin/`、`libexec/`、`share/`…），只链 `bin/{bin_name}` |
+| `install: "tree"` | `bin/{名}@{版本}/` 整棵目录（`bin/`、`libexec/`、`share/`…）；`bin/` 下**每个可执行文件**各链一条 |
 
 **缺省是 `binary`，所以这条字段出现之前写的所有记录一个字都不用改。**
 写错值（既不是 `binary` 也不是 `tree`）客户端会直接拒绝安装，`validate_update_records.py`
@@ -470,6 +470,9 @@ min_os: "12.0"
 它是**给装好之后的逻辑看的**，索引里不写它：
 
 - `linker` 据此把链接指向 `…/bin/{名}@{版本}/bin/{名}`，并从链接反推版本时跳过中间那层 `bin/`
+- `bin/` 下其余可执行文件也各有一条 `links/{命令名}`（`dtc` 的 `fdtget`/`fdtput`、
+  `testdisk` 的 `photorec`、`dpkg` 的 `dpkg-deb`…）。只链主命令等于把包装残：
+  这些命令是同一个包里必须一起用的，`wave unlink` 会把它们一起摘掉
 - `uninstall` / `upgrade` 删的是整个目录，不关心内部结构
 
 两条硬要求：

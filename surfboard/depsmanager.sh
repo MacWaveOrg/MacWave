@@ -456,9 +456,13 @@ mw_assert_inside() {
 # -------------------- 通用安装流程 --------------------
 
 mw_install_package_tree() {
-    # 整树软件包：整棵目录原样落到 bin/{名称}@{版本}/ 下，
-    # 只把 bin/ 里的那个可执行文件链出去，并在安装目录留下 .is_a_tree 标记。
-    # 标记是给安装后的逻辑看的（链接目标、binary_path 显示），索引里对应 install: "tree"。
+    # 整树软件包：整棵目录原样落到 bin/{名称}@{版本}/ 下，并在安装目录留下
+    # .is_a_tree 标记（给安装后的逻辑看：链接目标、binary_path 显示）。
+    # 索引里对应 install: "tree"。
+    #
+    # bin/ 下的**每个可执行文件**都链出去，不只 bin_name：像 dtc 的 fdtget/fdtput、
+    # testdisk 的 photorec、dpkg 的 dpkg-deb 都是同一个包里必须一起用的命令，
+    # 只链一个等于把包装残。主命令（bin_name）必须是其中之一，否则安装失败。
     local tree_dir="$1"
 
     mw_install_tree "$tree_dir" "$MW_TARGET_DIR" "$MW_BIN_NAME"
@@ -473,13 +477,21 @@ mw_install_package_tree() {
     : > "$MW_TARGET_DIR/.is_a_tree"
 
     MW_LINK_PATH="$(mw_create_link "$MW_BASE_DIR" "$MW_RELATIVE_DIR/bin" "$MW_BIN_NAME" "$MW_BIN_NAME" "$MW_VERSION")"
+
+    local entry name
+    for entry in "$MW_TARGET_DIR/bin"/*; do
+        [[ -f "$entry" && -x "$entry" ]] || continue
+        name="$(basename "$entry")"
+        [[ "$name" == "$MW_BIN_NAME" ]] && continue
+        mw_create_link "$MW_BASE_DIR" "$MW_RELATIVE_DIR/bin" "$name" "$name" "$MW_VERSION" >/dev/null
+    done
 }
 
 mw_install_artifact() {
     # 软件包与依赖共用的安装流程，区别只在安装形态：
     #   binary：只取一个可执行文件（软件包）
     #   tree  ：保留整棵解压目录
-    #            - 软件包：整树落在 bin/{名}@{版本}/，只链 bin/ 下那一个可执行文件
+    #            - 软件包：整树落在 bin/{名}@{版本}/，bin/ 下每个可执行文件各链一条
     #            - 依赖：整树落在 deps/...，bin/ 下每个文件都链到 links/
     local info_str="$1"
     local deps_str="$2"

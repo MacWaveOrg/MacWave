@@ -86,13 +86,16 @@ install_fake_tree() {
     mkdir -p "$BIN_DIR/$PKG@$version/bin" "$BIN_DIR/$PKG@$version/share/templates"
     printf '#!/bin/sh\necho "Tree Successful!"\n' > "$BIN_DIR/$PKG@$version/bin/$PKG"
     chmod +x "$BIN_DIR/$PKG@$version/bin/$PKG"
+    # 整树包里除了主命令还会有别的命令（dtc 的 fdtget、testdisk 的 photorec…）
+    printf '#!/bin/sh\necho "Tree Extra!"\n' > "$BIN_DIR/$PKG@$version/bin/$PKG-extra"
+    chmod +x "$BIN_DIR/$PKG@$version/bin/$PKG-extra"
     : > "$BIN_DIR/$PKG@$version/.is_a_tree"
     ln -sfn "../bin/$PKG@$version/bin/$PKG" "$LINKS_DIR/$PKG@$version"
 }
 
 cleanup() {
     rm -rf "$BIN_DIR/$PKG@$VER" "$BIN_DIR/$PKG@2.0"
-    rm -f "$LINKS_DIR/$PKG@$VER" "$LINKS_DIR/$PKG@2.0" "$UNV"
+    rm -f "$LINKS_DIR/$PKG@$VER" "$LINKS_DIR/$PKG@2.0" "$UNV" "$LINKS_DIR/$PKG-extra"
 }
 
 trap cleanup EXIT
@@ -223,8 +226,14 @@ check "9.2 链接指向 bin/ 下那一个可执行文件" \
 RUN_OUTPUT=$("$UNV")
 check "9.3 不带版本号也能跑" "$([[ "$RUN_OUTPUT" == *"Tree Successful!"* ]] && echo yes || echo no)" "yes"
 check "9.4 安装目录仍是 bin/<名>@<版本>" "$([[ -d "$BIN_DIR/$PKG@$VER" ]] && echo yes || echo no)" "yes"
+EXTRA_UNV="$LINKS_DIR/$PKG-extra"
+check "9.5 其余命令也建了不带版本号的链接" "$(link_state "$EXTRA_UNV")" "yes"
+check "9.6 其余命令的链接指向同一个包的 bin/" \
+    "$(readlink "$EXTRA_UNV")" "../bin/$PKG@$VER/bin/$PKG-extra"
+check "9.7 其余命令能跑" "$("$EXTRA_UNV")" "Tree Extra!"
 python3 "$WAVE_BIN" unlink "$PKG" >/dev/null
-check "9.5 unlink 后链接消失" "$(link_state "$UNV")" "no"
+check "9.8 unlink 后主命令链接消失" "$(link_state "$UNV")" "no"
+check "9.9 unlink 后其余命令的链接也消失" "$(link_state "$EXTRA_UNV")" "no"
 
 echo ""
 echo "=========================================="

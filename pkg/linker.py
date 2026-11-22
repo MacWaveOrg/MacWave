@@ -5,6 +5,8 @@
 # 软件包的“不带版本号软链接”管理：
 #   binary -> ../bin/{名称}@{版本号}/{名称}
 #   tree   -> ../bin/{名称}@{版本号}/bin/{名称}   （安装目录里有 .is_a_tree）
+#   tree 的其余命令（dtc 的 fdtget、testdisk 的 photorec…）各链一条：
+#            ../bin/{名称}@{版本号}/bin/{另一个命令}
 # 只处理软件包（bin/ 下的目录），不碰依赖（deps/ 下的整棵树）。
 # 装完软件包后会自动改指到最高版本；早期装的包可以用 `wave link` 补上，
 # 用 `wave unlink` 撤掉。
@@ -89,12 +91,34 @@ def is_tree_package(name, version):
     return (BIN_DIR / f"{name}@{version}" / TREE_MARKER).is_file()
 
 
-def link_target(name, version):
+def link_target(name, version, bin_name=None):
     # 链接应当指向哪个相对路径（相对 links/）。形态由安装目录里的标记决定，
     # 索引里的 install 字段只在安装那一刻用，这里不重新读索引。
+    # bin_name 只在整树包链接「其余命令」时才与包名不同。
+    bin_name = bin_name or name
     if is_tree_package(name, version):
-        return f"../bin/{name}@{version}/bin/{name}"
-    return f"../bin/{name}@{version}/{name}"
+        return f"../bin/{name}@{version}/bin/{bin_name}"
+    return f"../bin/{name}@{version}/{bin_name}"
+
+
+def extra_bin_names(name, version):
+    # 整树包 bin/ 下除主命令之外的可执行文件名。与 surfboard/depsmanager.sh
+    # 装完那一刻做的事保持一致：那边是当场逐条 ln，这边给 `wave link` 补链用。
+    if not is_tree_package(name, version):
+        return []
+
+    bin_dir = BIN_DIR / f"{name}@{version}" / "bin"
+    if not bin_dir.is_dir():
+        return []
+
+    names = []
+    for entry in sorted(bin_dir.iterdir()):
+        if not entry.is_file() or not os.access(entry, os.X_OK):
+            continue
+        if entry.name == name:
+            continue
+        names.append(entry.name)
+    return names
 
 
 def linked_version(name):
@@ -153,7 +177,37 @@ def create_link(name, version):
     # 所以它不可能越界 —— 与「包自带的符号链接必须检查目标」那条规则（见
     # SECURITY.md）是两回事。产物里的链接由解压产生，需要在解压后单独遍历检查。
     link.symlink_to(link_target(name, version))
+
+    # 整树包里的其余命令也各链一条，否则 dtc/testdisk 这类装完只剩主命令可用
+    for extra in extra_bin_names(name, version):
+        extra_link = LINKS_DIR / extra
+        assert_inside_entry(extra_link, LINKS_DIR, "link path")
+        if extra_link.is_symlink() or extra_link.exists():
+            extra_link.unlink()
+        extra_link.symlink_to(link_target(name, version, extra))
+
     return link
+
+
+def linked_bin_names(name):
+    # links/ 下所有指回 {名称}@{版本} 这个包的命令（含主命令与其余命令）
+    if not LINKS_DIR.is_dir():
+        return []
+
+    names = []
+    for entry in LINKS_DIR.iterdir():
+        if not entry.is_symlink() or "@" in entry.name:
+            continue
+        target = os.readlink(entry)
+        if os.path.basename(target) != entry.name:
+            continue
+        for part in reversed(os.path.dirname(target).split(os.sep)):
+            if "@" not in part:
+                continue
+            if part.partition("@")[0] == name:
+                names.append(entry.name)
+            break
+    return sorted(names)
 
 
 def remove_link(name):
@@ -265,8 +319,11 @@ def handle_unlink_command(input_string=""):
     unlinked = 0
     for target in targets:
         name = target.partition("@")[0]
-        if remove_link(name):
-            silent.say(f"🌊 {name}: unlinked")
+        # 整树包的其余命令也一起摘掉，不然 links/ 里会留下没人认领的软链
+        names = [name] + [n for n in linked_bin_names(name) if n != name]
+        removed = [n for n in names if remove_link(n)]
+        if removed:
+            silent.say(f"🌊 {', '.join(removed)}: unlinked")
             unlinked += 1
         else:
             print(f"{YELLOW}🌊 Warning: {name} has no unversioned link, skipping.{RESET}")
