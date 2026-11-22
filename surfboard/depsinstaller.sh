@@ -25,7 +25,7 @@ fi
 # -------------------- 安装依赖本体 --------------------
 
 # 依赖包多为库包，整棵目录保留，bin/ 下的可执行文件由 links/ 提供
-mw_install_artifact "$INPUT_STR" "$DEPS_STR" "tree"
+mw_install_artifact "$INPUT_STR" "$DEPS_STR" "tree" "dependency"
 
 # -------------------- 记录依赖者 --------------------
 

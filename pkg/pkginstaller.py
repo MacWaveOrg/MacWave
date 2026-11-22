@@ -1044,6 +1044,18 @@ def handle_install(input_string):
     # 5.1 解析 deps 字段（写在版本文件里，可能多行），缺失视为无依赖
     dep_refs = get_deps(parse_common_fields(resp.text))
 
+    # 5.1.1 安装形态：缺省 binary（只取一个可执行文件），tree 表示整树软件包。
+    #       两种形态的落盘位置都是 bin/{名}@{版本}/，区别只在于整棵树是否保留。
+    install_fields = parse_common_fields(resp.text).get("install") or ["binary"]
+    install_mode = install_fields[0].strip() or "binary"
+    if install_mode not in ("binary", "tree"):
+        steplog.fail(
+            f"the version record for {ParsePkgName}@{ParsePkgVersion} has an unknown install field",
+            request=pkg_version_url,
+            extra=f"got {install_mode!r}",
+            hint=['expected "binary" (the default) or "tree"; this is an index data defect, '
+                  'please report it to the administrator'])
+
     # 5.2 实验性：版本记录可以声明 min_os，低于它时警告并问一句（4.3 转正）。
     # 放在下载之前：答复是「不装」时不该先花带宽。
     if not confirm_min_os(resp.text, ParsePkgName, ParsePkgVersion, config["force"]):
@@ -1094,6 +1106,7 @@ def handle_install(input_string):
     target_dir = BASE_DIR / "bin" / f"{bin_name}@{ParsePkgVersion}"
     assert_inside(target_dir, BASE_DIR / "bin", "install target")
     steplog.detail(f"target dir {target_dir}")
+    steplog.detail(f"install form {install_mode}")
     pkg_info_string = "\n".join([
         ParsePkgName,
         ParsePkgVersion,
@@ -1103,6 +1116,7 @@ def handle_install(input_string):
         bin_name,
         "",
         original_filename,
+        install_mode,
     ])
     deps_string = "\n".join(dep_refs)
 

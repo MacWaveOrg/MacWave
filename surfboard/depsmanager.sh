@@ -48,6 +48,7 @@ MW_DEPENDER=""
 MW_RELATIVE_DIR=""
 MW_LINK_PATH=""
 MW_ORIGINAL_NAME=""
+MW_INSTALL_MODE="binary"
 
 # -------------------- 拆解长字符串 --------------------
 
@@ -72,11 +73,22 @@ mw_parse_info() {
     MW_BIN_NAME="${lines[5]}"
     MW_DEPENDER="${lines[6]}"
     MW_ORIGINAL_NAME="${lines[7]}"
+    # 第 9 行是安装形态，缺省即普通软件包（只取一个可执行文件），
+    # 老索引与老调用方不写这一行也照旧工作。
+    MW_INSTALL_MODE="${lines[8]:-binary}"
 
     if [[ -z "$MW_NAME" || -z "$MW_VERSION" || -z "$MW_TARGET_DIR" || -z "$MW_BASE_DIR" || -z "$MW_BIN_NAME" ]]; then
         echo -e "${RED_BOLD}🌊 Error: Incomplete install info.${RESET}"
         exit 1
     fi
+
+    case "$MW_INSTALL_MODE" in
+        binary|tree) ;;
+        *)
+            echo -e "${RED_BOLD}🌊 Error: Unknown install mode '$MW_INSTALL_MODE'.${RESET}" >&2
+            exit 1
+            ;;
+    esac
 }
 
 # -------------------- 原文件与校验 --------------------
@@ -443,15 +455,42 @@ mw_assert_inside() {
 
 # -------------------- 通用安装流程 --------------------
 
+mw_install_package_tree() {
+    # 整树软件包：整棵目录原样落到 bin/{名称}@{版本}/ 下，
+    # 只把 bin/ 里的那个可执行文件链出去，并在安装目录留下 .is_a_tree 标记。
+    # 标记是给安装后的逻辑看的（链接目标、binary_path 显示），索引里对应 install: "tree"。
+    local tree_dir="$1"
+
+    mw_install_tree "$tree_dir" "$MW_TARGET_DIR" "$MW_BIN_NAME"
+
+    local bin_file="$MW_TARGET_DIR/bin/$MW_BIN_NAME"
+    if [[ ! -f "$bin_file" ]]; then
+        echo -e "${RED_BOLD}🌊 Error: This is a tree package but it has no bin/${MW_BIN_NAME}.${RESET}" >&2
+        echo -e "${YELLOW}🌊 An install form declared as tree must ship bin/${MW_BIN_NAME}.${RESET}" >&2
+        exit 1
+    fi
+
+    : > "$MW_TARGET_DIR/.is_a_tree"
+
+    MW_LINK_PATH="$(mw_create_link "$MW_BASE_DIR" "$MW_RELATIVE_DIR/bin" "$MW_BIN_NAME" "$MW_BIN_NAME" "$MW_VERSION")"
+}
+
 mw_install_artifact() {
     # 软件包与依赖共用的安装流程，区别只在安装形态：
     #   binary：只取一个可执行文件（软件包）
-    #   tree  ：保留整棵解压目录，并把 bin/ 下的可执行文件软链到 links/（依赖）
+    #   tree  ：保留整棵解压目录
+    #            - 软件包：整树落在 bin/{名}@{版本}/，只链 bin/ 下那一个可执行文件
+    #            - 依赖：整树落在 deps/...，bin/ 下每个文件都链到 links/
     local info_str="$1"
     local deps_str="$2"
-    local install_mode="${3:-binary}"
+    local install_mode="${3:-}"
+    local artifact_kind="${4:-dependency}"
 
     mw_parse_info "$info_str"
+    # 调用方没指定形态时，以索引记录里的 install 字段为准（缺省 binary）
+    if [[ -z "$install_mode" ]]; then
+        install_mode="$MW_INSTALL_MODE"
+    fi
     mw_assert_inside "$MW_TARGET_DIR"
 
     local unzip_script="$MW_BASE_DIR/pkg/pkgunzip.sh"
@@ -474,8 +513,12 @@ mw_install_artifact() {
         local tree_dir
         tree_dir="$(mw_extract_all "$original_file" "$extract_dir" "$unzip_script")"
         mw_assert_no_escaping_links "$tree_dir" "$extract_dir"
-        mw_install_tree "$tree_dir" "$MW_TARGET_DIR" "$MW_BIN_NAME"
-        mw_link_tree_binaries "$MW_BASE_DIR" "$MW_RELATIVE_DIR" "$MW_VERSION" "$MW_TARGET_DIR"
+        if [[ "$artifact_kind" == "package" ]]; then
+            mw_install_package_tree "$tree_dir"
+        else
+            mw_install_tree "$tree_dir" "$MW_TARGET_DIR" "$MW_BIN_NAME"
+            mw_link_tree_binaries "$MW_BASE_DIR" "$MW_RELATIVE_DIR" "$MW_VERSION" "$MW_TARGET_DIR"
+        fi
     else
         local bin_file
         bin_file="$(mw_extract_binary "$original_file" "$extract_dir" "$unzip_script" "$MW_BIN_NAME")"

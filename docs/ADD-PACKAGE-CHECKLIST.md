@@ -444,6 +444,44 @@ url = payload_url(kind, name, filename)      # <BOTTLE_DOMAIN>/<包名>/<文件>
 <包名>/notes.md     实测记录：lipo -archs、min_os、otool -L 输出、跑过的命令
 ```
 
+### 整树软件包：`install: "tree"`
+
+有些工具天生不是一个文件：`git` 要 `libexec/git-core/git-remote-http`（https 远程全靠它）
+和 `share/git-core/templates`，`neovim` / `helix` 要 `runtime/`。这种包在版本记录里多写一行：
+
+```
+sha256: "…"
+file: "git-2.56.1-arm64.tar.xz"
+url: "https://github.com/MacWaveOrg/Ports/releases/download/git/git-2.56.1-arm64.tar.xz"
+install: "tree"
+min_os: "12.0"
+```
+
+| 写法 | 装完长什么样 |
+| --- | --- |
+| 不写 / `install: "binary"` | `bin/{名}@{版本}/{名}`，只有一个可执行文件 |
+| `install: "tree"` | `bin/{名}@{版本}/` 整棵目录（`bin/`、`libexec/`、`share/`…），只链 `bin/{bin_name}` |
+
+**缺省是 `binary`，所以这条字段出现之前写的所有记录一个字都不用改。**
+写错值（既不是 `binary` 也不是 `tree`）客户端会直接拒绝安装，`validate_update_records.py`
+也会拦下。
+
+安装时 `depsmanager.sh` 会在安装目录写一个空文件 `bin/{名}@{版本}/.is_a_tree`。
+它是**给装好之后的逻辑看的**，索引里不写它：
+
+- `linker` 据此把链接指向 `…/bin/{名}@{版本}/bin/{名}`，并从链接反推版本时跳过中间那层 `bin/`
+- `uninstall` / `upgrade` 删的是整个目录，不关心内部结构
+
+两条硬要求：
+
+- **产物里必须有 `bin/{bin_name}`**，否则安装直接失败（不会悄悄退化成「取第一个文件」）。
+- **自动更新器会跳过 `install: "tree"` 的记录**（和 `deps:` 非空一样）。它生成的记录只有
+  `sha256`/`file`/`url`，把整树当单二进制装会立刻坏。
+
+自建包还要额外注意编译期写死的路径：`git` 的 `--libexecdir` 是绝对路径，装到
+`~/.local/macwave/bin/git@…` 就对不上。收法是产物里带一个两行的 wrapper：
+设好 `GIT_EXEC_PATH` / `GIT_TEMPLATE_DIR` 后 `exec` 真正的 `libexec/git-core/git`。
+
 ### 四道闸门（顺序不能换）
 
 **① 构建脚本必须可复现。** 固定上游 tag，不跟 `main`；两个架构分别编（不要

@@ -79,6 +79,17 @@ install_fake() {
     ln -sfn "../bin/$PKG@$version/$PKG" "$LINKS_DIR/$PKG@$version"
 }
 
+# 造一个“已装好”的整树包：bin/<名>@<版本>/bin/<名> + .is_a_tree 标记。
+# 链接目标要比单文件包多一层 bin/，linker 靠标记区分这两种形态。
+install_fake_tree() {
+    local version="$1"
+    mkdir -p "$BIN_DIR/$PKG@$version/bin" "$BIN_DIR/$PKG@$version/share/templates"
+    printf '#!/bin/sh\necho "Tree Successful!"\n' > "$BIN_DIR/$PKG@$version/bin/$PKG"
+    chmod +x "$BIN_DIR/$PKG@$version/bin/$PKG"
+    : > "$BIN_DIR/$PKG@$version/.is_a_tree"
+    ln -sfn "../bin/$PKG@$version/bin/$PKG" "$LINKS_DIR/$PKG@$version"
+}
+
 cleanup() {
     rm -rf "$BIN_DIR/$PKG@$VER" "$BIN_DIR/$PKG@2.0"
     rm -f "$LINKS_DIR/$PKG@$VER" "$LINKS_DIR/$PKG@2.0" "$UNV"
@@ -201,6 +212,19 @@ check "8.2 悬空链接退出码为 1" "$DANGLE_EXIT" "1"
 check "8.3 报出指向的版本已不存在" "$([[ "$DANGLE_OUT" == *"is not installed"* ]] && echo yes || echo no)" "yes"
 python3 "$WAVE_BIN" unlink "$PKG" >/dev/null
 check "8.4 unlink 可以清掉悬空链接" "$(link_state "$UNV")" "no"
+
+echo ""
+echo "========== 9. 整树软件包（.is_a_tree） =========="
+install_fake_tree "$VER"
+python3 "$WAVE_BIN" link "$PKG" >/dev/null
+check "9.1 linkquery 报告 $PKG@$VER" "$(python3 "$WAVE_BIN" linkquery "$PKG")" "🌊 $PKG@$VER"
+check "9.2 链接指向 bin/ 下那一个可执行文件" \
+    "$(readlink "$UNV")" "../bin/$PKG@$VER/bin/$PKG"
+RUN_OUTPUT=$("$UNV")
+check "9.3 不带版本号也能跑" "$([[ "$RUN_OUTPUT" == *"Tree Successful!"* ]] && echo yes || echo no)" "yes"
+check "9.4 安装目录仍是 bin/<名>@<版本>" "$([[ -d "$BIN_DIR/$PKG@$VER" ]] && echo yes || echo no)" "yes"
+python3 "$WAVE_BIN" unlink "$PKG" >/dev/null
+check "9.5 unlink 后链接消失" "$(link_state "$UNV")" "no"
 
 echo ""
 echo "=========================================="

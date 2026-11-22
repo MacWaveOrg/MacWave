@@ -2,7 +2,9 @@
 
 # linker.py
 
-# 软件包的“不带版本号软链接”管理：links/{名称} -> ../bin/{名称}@{版本号}/{名称}
+# 软件包的“不带版本号软链接”管理：
+#   binary -> ../bin/{名称}@{版本号}/{名称}
+#   tree   -> ../bin/{名称}@{版本号}/bin/{名称}   （安装目录里有 .is_a_tree）
 # 只处理软件包（bin/ 下的目录），不碰依赖（deps/ 下的整棵树）。
 # 装完软件包后会自动改指到最高版本；早期装的包可以用 `wave link` 补上，
 # 用 `wave unlink` 撤掉。
@@ -29,6 +31,7 @@ from configpaths import assert_inside_entry, load_base_dir, require_safe_token
 BASE_DIR = load_base_dir()
 BIN_DIR = BASE_DIR / "bin"
 LINKS_DIR = BASE_DIR / "links"
+TREE_MARKER = ".is_a_tree"
 
 
 # -------------------- 版本库 --------------------
@@ -81,6 +84,19 @@ def installed_packages():
     return sorted(names)
 
 
+def is_tree_package(name, version):
+    # 整树软件包的标记：安装时由 depsmanager.sh 写在 bin/{名称}@{版本}/.is_a_tree
+    return (BIN_DIR / f"{name}@{version}" / TREE_MARKER).is_file()
+
+
+def link_target(name, version):
+    # 链接应当指向哪个相对路径（相对 links/）。形态由安装目录里的标记决定，
+    # 索引里的 install 字段只在安装那一刻用，这里不重新读索引。
+    if is_tree_package(name, version):
+        return f"../bin/{name}@{version}/bin/{name}"
+    return f"../bin/{name}@{version}/{name}"
+
+
 def linked_version(name):
     # links/{名称} 当前指向哪个版本；没链接、或指向别的名字时返回 None
     name = require_safe_token(name, "package name")
@@ -89,13 +105,17 @@ def linked_version(name):
         return None
 
     target = os.readlink(link)
-    target_name = os.path.basename(target)
-    directory = os.path.basename(os.path.dirname(target))
-    if target_name != name or "@" not in directory:
+    if os.path.basename(target) != name:
         return None
 
-    dir_name, _, version = directory.partition("@")
-    return version if dir_name == name else None
+    # 从后往前找形如 {名称}@{版本} 的那一段：binary 是 links/x -> ../bin/x@1/x，
+    # 整树是 links/x -> ../bin/x@1/bin/x，中间多一层 bin/。
+    for part in reversed(os.path.dirname(target).split(os.sep)):
+        if "@" not in part:
+            continue
+        dir_name, _, version = part.partition("@")
+        return version if dir_name == name and version else None
+    return None
 
 
 def is_dangling(name):
@@ -132,7 +152,7 @@ def create_link(name, version):
     # 这个链接由我们自己按固定形状生成（相对路径，永远指向 bin/ 下），不来自产物，
     # 所以它不可能越界 —— 与「包自带的符号链接必须检查目标」那条规则（见
     # SECURITY.md）是两回事。产物里的链接由解压产生，需要在解压后单独遍历检查。
-    link.symlink_to(f"../bin/{name}@{version}/{name}")
+    link.symlink_to(link_target(name, version))
     return link
 
 
