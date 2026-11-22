@@ -604,6 +604,18 @@ gh release upload "$TAG" SHA256SUMS SHA256SUMS.asc -R MacWaveOrg/MacWave --clobb
 - **任一为红就停下，不要发版。** CircleCI 只跑离线的子集，定位是「一两分钟给结论」，
   但这不等于它是可选项 —— 它红说明这份代码本身有问题，不能因为 `Format Test` 绿就跳过。
 - **两条都在 push 时触发**，`4.1` 与 `main` 各自都要确认，不能只看一边。
+- **先确认新发布分支在被触发列表里。** 两处白名单都是显式列出来的，不是通配：
+  `.github/workflows/format-test.yml` 的 `on.push.branches` / `on.pull_request.branches`，
+  与 `.circleci/config.yml` 的 `workflows.quick-feedback.jobs.offline-tests.filters.branches.only`。
+  漏一处两份文件里都有注释警告，但**漏了不会有任何提示** —— 推上去只是静静地没有流水线，
+  CircleCI 面板上连记录都不出现。自查：
+
+  ```bash
+  grep -n 'branches: \[' .github/workflows/format-test.yml
+  grep -n -A12 'only:' .circleci/config.yml
+  ```
+
+  2026-11-22 发现 4.4 与 4.5 都不在名单里，所以 4.4 全线的推送从来没跑过这两条流水线。
 - CircleCI 需要 GitHub App 授权才会跑。面板上**看不到 pipeline** 本身就是问题，
   先确认触发，再说「绿」。
 - 合并提交内容零变化时也应重跑一遍确认。
