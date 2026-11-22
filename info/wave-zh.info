@@ -326,11 +326,14 @@ File: wave-zh.info, Node: linkquery, Next: mirror, Prev: unlink, Up: Top
   --all, -a
       对所有已装包生效（不带包名时就是默认行为）
 
+  --raw
+      给脚本用的纯文本：一行一个 名字@版本，不带 🌊，不分列
+
 Examples:
 
      wave linkquery jq
      wave linkquery --all
-     wave linkquery
+     wave linkquery --raw
 
 
 File: wave-zh.info, Node: mirror, Next: latest, Prev: linkquery, Up: Top

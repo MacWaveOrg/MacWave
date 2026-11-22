@@ -369,11 +369,15 @@ package, two columns when the terminal is wide enough.
       Apply to every installed package (the default when no package is
       given)
 
+  --raw
+      Plain output for scripts: one name@version per line, no emoji, no
+      columns
+
 Examples:
 
      wave linkquery jq
      wave linkquery --all
-     wave linkquery
+     wave linkquery --raw
 
 
 File: wave.info, Node: mirror, Next: latest, Prev: linkquery, Up: Top

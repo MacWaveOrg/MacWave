@@ -75,7 +75,8 @@ upgrade = {"-X", "--remove-old-version", "--remove-old-versions", "--rov",
            "-a", "--all", "-F", "--force", "--raw"} | silent
 link = {"-a", "--all"} | silent
 unlink = {"-a", "--all"} | silent
-linkquery = {"-a", "--all"}
+# linkquery 的 --raw 是「完整链接表」：一行一个 名字@版本，无 🌊、不分列
+linkquery = {"-a", "--all", "--raw"}
 # selfupdate 只有 --dry-run 一个专属旗标（时长走 GLOBAL 的 --max-time），
 # 但它是能静默的六条之一，缺了这一项 describe("-s") 会把 selfupdate 漏掉。
 selfupdate = {"--dry-run"} | silent

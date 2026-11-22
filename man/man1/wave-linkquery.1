@@ -3,7 +3,7 @@
 .SH NAME
 wave-linkquery \- Show which version the versionless shortcut points at, as name => version. With no package (or with --all) it lists every installed package, two columns when the terminal is wide enough.
 .SH SYNOPSIS
-.B wave linkquery [<package> | \-\-all]
+.B wave linkquery [<package> | \-\-all] [\-\-raw]
 .SH DESCRIPTION
 Show which version the versionless shortcut points at, as name =>
 version. With no package (or with --all) it lists every installed
@@ -12,12 +12,16 @@ package, two columns when the terminal is wide enough.
 .TP
 .B \-\-all, \-a
 Apply to every installed package (the default when no package is given)
+.TP
+.B \-\-raw
+Plain output for scripts: one name@version per line, no emoji, no
+columns
 
 .SH EXAMPLES
 .nf
 wave linkquery jq
 wave linkquery --all
-wave linkquery
+wave linkquery --raw
 .fi
 .SH SEE ALSO
 wave(1)

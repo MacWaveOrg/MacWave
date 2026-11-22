@@ -388,48 +388,72 @@ def _link_rows(rows):
     return common.fit_columns(cells, prefix_width=LINK_PREFIX_WIDTH)
 
 
-def report_all_links():
+def _link_notice(message, raw, colour):
+    """坏链接的提示。--raw 时进 stderr、不带 🌊 与颜色 —— stdout 要留给可解析的行。"""
+    if raw:
+        print(message, file=sys.stderr)
+    else:
+        print(f"{colour}🌊 {message}{RESET}")
+
+
+def report_all_links(raw=False):
     """`linkquery -a`：按**包名**逐个报，而不是按 links/ 里的条目名。
 
     整树包会给树里的每个可执行文件各建一条链接（git 的 git-upload-pack、
     dtc 的 fdtget…）。拿这些名字去 bin/ 里找 {名字}@{版本} 目录永远找不到，
     于是每台装了 git / dtc / testdisk 的机器上 `linkquery -a` 都会吐一片
     「is not linked」并以 1 退出 —— 而链接其实好得很。名单取自 bin/，才是包。
+
+    `--raw` 给的是**完整链接表**：每一条不带版本号的链接一行 `名字@版本`，
+    含整树包的附属命令，不含没链接的包。与 `wave list --raw` 同一种形状。
     """
     if not unversioned_links():
-        print(f"{YELLOW}🌊 No unversioned links found.{RESET}")
+        if not raw:
+            print(f"{YELLOW}🌊 No unversioned links found.{RESET}")
         sys.exit(0)
 
     # 退出码只表达「有坏链接」：一个装好但没链接的包只是状态，不是错误 ——
     # 用户可以自己决定要不要 link 它，脚本也不该因此判定这台机器有问题。
     missing = 0
     rows = []
+    linked = []
+    packages = set(installed_packages())
+
     for name in installed_packages():
         version = linked_version(name)
         if version is None:
             rows.append((name, NOT_LINKED))
         elif version not in installed_versions(name):
-            print(f"{RED_BOLD}🌊 Error: {name} points to {name}@{version}, which is not installed.{RESET}")
+            _link_notice(f"Error: {name} points to {name}@{version}, which is not installed.",
+                         raw, RED_BOLD)
             missing += 1
         else:
             rows.append((name, version))
-    for line in _link_rows(rows):
-        print(f"🌊 {line}")
+            linked.append((name, version))
 
     # 反过来也要查：链接还在、包目录没了（手删 bin，或卸载漏删链接）。只按包名
     # 走一遍永远发现不了这种 —— 而它正是「昨天还好好的命令今天 command not found」。
-    packages = set(installed_packages())
     for link_name in unversioned_links():
         if link_name in packages:
             continue  # 主命令已经在上面按包报过了
         owner = _link_owner(link_name)
         if owner is None:
-            print(f"{YELLOW}🌊 Warning: links/{link_name} is not a link MacWave made.{RESET}")
+            _link_notice(f"Warning: links/{link_name} is not a link MacWave made.",
+                         raw, YELLOW)
             missing += 1
         elif owner[0] not in packages or owner[1] not in installed_versions(owner[0]):
-            print(f"{RED_BOLD}🌊 Error: {link_name} points to {owner[0]}@{owner[1]}, "
-                  f"which is not installed.{RESET}")
+            _link_notice(f"Error: {link_name} points to {owner[0]}@{owner[1]}, "
+                         f"which is not installed.", raw, RED_BOLD)
             missing += 1
+        else:
+            linked.append((link_name, owner[1]))
+
+    if raw:
+        for link_name, version in linked:
+            print(f"{link_name}@{version}")
+    else:
+        for line in _link_rows(rows):
+            print(f"🌊 {line}")
 
     sys.exit(1 if missing else 0)
 
@@ -437,11 +461,12 @@ def report_all_links():
 def handle_linkquery_command(input_string=""):
     # 查询不带版本号的链接当前指向哪个版本：wave linkquery ffmpeg -> 🌊 ffmpeg => 9.0
     everything, targets = parse_targets(input_string)
+    raw = "--raw" in input_string.split()
 
     # 裸 `wave linkquery` 与 `--all` 同义：这个命令不带参数时，想问的就是「全都
     # 指向哪儿」。报「缺包名」等于让用户再敲一次 -a，没有第二种可能想表达的意思。
     if everything or not targets:
-        report_all_links()
+        report_all_links(raw)
 
     missing = 0
     rows = []
@@ -456,19 +481,25 @@ def handle_linkquery_command(input_string=""):
                 rows.append((name, NOT_LINKED))
                 missing += 1
             elif owner[1] not in installed_versions(owner[0]):
-                print(f"{RED_BOLD}🌊 Error: {name} points to {owner[0]}@{owner[1]}, "
-                      f"which is not installed.{RESET}")
+                _link_notice(f"Error: {name} points to {owner[0]}@{owner[1]}, "
+                             f"which is not installed.", raw, RED_BOLD)
                 missing += 1
             else:
                 rows.append((name, f"{owner[0]}@{owner[1]}"))
         elif version not in installed_versions(name):
-            print(f"{RED_BOLD}🌊 Error: {name} points to {name}@{version}, which is not installed.{RESET}")
+            _link_notice(f"Error: {name} points to {name}@{version}, which is not installed.",
+                         raw, RED_BOLD)
             missing += 1
         else:
             rows.append((name, version))
 
-    for line in _link_rows(rows):
-        print(f"🌊 {line}")
+    if raw:
+        for name, version in rows:
+            if version != NOT_LINKED:
+                print(f"{name}@{version}")
+    else:
+        for line in _link_rows(rows):
+            print(f"🌊 {line}")
 
     sys.exit(1 if missing else 0)
 

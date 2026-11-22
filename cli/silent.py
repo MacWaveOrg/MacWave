@@ -59,7 +59,7 @@ RAW_COMMANDS = {"install", "upgrade"}
 # 这几个命令自己也接受 --raw，但含义不是「机器可读的安装日志」：info 是「按存储
 # 原样打印」，mirror 与 basedir 是「只打值」，list 是「一行一个名字、不分列」。
 # 它们的解析在各自模块里，这里碰都不碰。
-RAW_OWNED_ELSEWHERE = {"info", "mirror", "basedir", "list"}
+RAW_OWNED_ELSEWHERE = {"info", "mirror", "basedir", "list", "linkquery"}
 
 
 def strip(words):
