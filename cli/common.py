@@ -26,6 +26,7 @@
 # 是每条命令的事，而它们**是什么意思**是这里的事。
 
 import os
+import shutil
 import sys
 
 import flags
@@ -250,6 +251,65 @@ def split_operands(tokens):
             if part and part not in out:
                 out.append(part)
     return out
+
+
+# -------------------- 竖列排版 --------------------
+
+# `wave list` 与 `wave linkquery` 都要把若干短条目排成竖列。规则只有一份：
+# 列优先（自上而下填满一列再换下一列，与 `brew list`、`ls` 一致），行尾不补空格。
+#
+# 🌊 在终端占两列宽，但 len("🌊 ") 是 2 —— 宽度计算按 3 列算，别用 len()。
+
+def terminal_width(fallback=80):
+    """当前终端宽度（列）。非 tty 时 shutil 先看 COLUMNS，再回落到 fallback。"""
+    return shutil.get_terminal_size((fallback, 24)).columns
+
+
+def list_columns(entries, columns=2, gap=4):
+    """把条目排成竖列，返回按行切好的字符串（不含行首的 🌊）。"""
+    if not entries:
+        return []
+    columns = max(1, columns)
+    rows = -(-len(entries) // columns)
+    grid = [entries[index * rows:(index + 1) * rows] for index in range(columns)]
+    widths = [max((len(cell) for cell in column), default=0) for column in grid]
+
+    lines = []
+    for row in range(rows):
+        cells = [column[row] if row < len(column) else None for column in grid]
+        parts = []
+        for index, cell in enumerate(cells):
+            if cell is None:
+                continue
+            # 只有后面还有内容才补宽，否则就是行尾空格。
+            if all(later is None for later in cells[index + 1:]):
+                parts.append(cell)
+            else:
+                parts.append(cell.ljust(widths[index] + gap))
+        lines.append("".join(parts).rstrip())
+    return lines
+
+
+def columns_that_fit(entries, gap=4, maximum=2, prefix_width=0, fallback=80):
+    """这个终端宽度下最多能排几列：按最宽的条目算，装不下就减一列。"""
+    if not entries:
+        return 1
+    widest = max(len(entry) for entry in entries)
+    available = terminal_width(fallback)
+    fit = 1
+    for count in range(2, maximum + 1):
+        needed = prefix_width + count * widest + (count - 1) * gap
+        if needed > available:
+            break
+        fit = count
+    return fit
+
+
+def fit_columns(entries, gap=4, maximum=2, prefix_width=0, fallback=80):
+    """按终端宽度自动选列数后排好。窄终端退回一列，宽终端才并排。"""
+    columns = columns_that_fit(entries, gap=gap, maximum=maximum,
+                               prefix_width=prefix_width, fallback=fallback)
+    return list_columns(entries, columns=columns, gap=gap)
 
 
 # -------------------- 副作用 --------------------

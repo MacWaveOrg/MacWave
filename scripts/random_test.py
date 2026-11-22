@@ -1448,15 +1448,15 @@ def predict(cmd, argv, installed, links):
             return 1, ("Nothing to unlink",)
         return 0, ()
     if cmd == "linkquery":
-        if not operands and not everything:
-            return 1, ("Missing package name",)
-        # -a 只报告：装好但没链接的包只打一行「is not linked」，退出码仍是 0 ——
-        # 它表达的是「有没有坏链接」（悬空、指向不存在的版本），而本测试的
-        # link/unlink 流程不会造出坏链接（悬空由 link_test 第 8 节单独钉住）。
-        if operands and not everything:
-            name = operands[0].partition("@")[0]
-            if name not in links:
-                return 1, ("is not linked",)
+        # 裸 `wave linkquery` 与 `--all` 同义（4.5 起）：不带参数时想问的就是「全都
+        # 指向哪儿」。它只报告，退出码表达的是「有没有坏链接」（悬空、指向不存在的
+        # 版本），而本测试的 link/unlink 流程不会造出坏链接 —— 悬空由 link_test 8.x
+        # 单独钉住。装好但没链接的包只打一行「=> (not linked)」，不算失败。
+        if not operands or everything:
+            return 0, ()
+        name = operands[0].partition("@")[0]
+        if name not in links:
+            return 1, ("(not linked)",)
         return 0, ()
     raise AssertionError(cmd)
 

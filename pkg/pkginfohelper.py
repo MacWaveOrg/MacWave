@@ -19,6 +19,7 @@ RESET = '\033[0m'
 # -------------------- 配置加载 --------------------
 
 from configpaths import load_base_dir, require_safe_token
+import common
 import domains
 import flags
 import steplog
@@ -159,33 +160,8 @@ def fetch_version_min_os(pkg_name, arch, version, budget=None):
 
 # -------------------- list --------------------
 
+# 固定两列（与 `brew list` 一致）；排版规则本身在 cli/common.py，与 linkquery 共用。
 LIST_COLUMNS = 2
-LIST_GAP = 4
-
-
-def list_columns(entries, columns=LIST_COLUMNS, gap=LIST_GAP):
-    """把名字排成竖列：自上而下填满一列再换下一列（与 `brew list`、`ls` 一致）。
-
-    行尾不补空格 —— 选中一整行复制时不该带尾巴。
-    """
-    rows = -(-len(entries) // columns)
-    grid = [entries[index * rows:(index + 1) * rows] for index in range(columns)]
-    widths = [max((len(cell) for cell in column), default=0) for column in grid]
-
-    lines = []
-    for row in range(rows):
-        cells = [column[row] if row < len(column) else None for column in grid]
-        parts = []
-        for index, cell in enumerate(cells):
-            if cell is None:
-                continue
-            # 只有后面还有内容才补宽，否则就是行尾空格。
-            if all(later is None for later in cells[index + 1:]):
-                parts.append(cell)
-            else:
-                parts.append(cell.ljust(widths[index] + gap))
-        lines.append("".join(parts).rstrip())
-    return lines
 
 
 def handle_list(budget=None, raw=False):
@@ -210,7 +186,7 @@ def handle_list(budget=None, raw=False):
         print("🌊 No packages installed yet.")
         return
 
-    for line in list_columns(entries):
+    for line in common.list_columns(entries, columns=LIST_COLUMNS):
         print(f"🌊 {line}")
 
 

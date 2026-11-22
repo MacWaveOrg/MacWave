@@ -205,7 +205,7 @@ echo "========== 8. 悬空链接会被发现 =========="
 mkdir -p "$BIN_DIR/$PKG@$VER"
 ln -sfn "../bin/$PKG@$VER/$PKG" "$LINKS_DIR/$PKG@$VER"
 python3 "$WAVE_BIN" link "$PKG" >/dev/null
-check "8.1 链接先正常建立" "$(python3 "$WAVE_BIN" linkquery "$PKG")" "🌊 $PKG@$VER"
+check "8.1 链接先正常建立" "$(python3 "$WAVE_BIN" linkquery "$PKG")" "🌊 $PKG => $VER"
 rm -rf "$BIN_DIR/$PKG@$VER"
 set +e
 DANGLE_OUT=$(python3 "$WAVE_BIN" linkquery "$PKG" 2>&1)
@@ -228,7 +228,7 @@ echo ""
 echo "========== 9. 整树软件包（.is_a_tree） =========="
 install_fake_tree "$VER"
 python3 "$WAVE_BIN" link "$PKG" >/dev/null
-check "9.1 linkquery 报告 $PKG@$VER" "$(python3 "$WAVE_BIN" linkquery "$PKG")" "🌊 $PKG@$VER"
+check "9.1 linkquery 报告 $PKG => $VER" "$(python3 "$WAVE_BIN" linkquery "$PKG")" "🌊 $PKG => $VER"
 check "9.2 链接指向 bin/ 下那一个可执行文件" \
     "$(readlink "$UNV")" "../bin/$PKG@$VER/bin/$PKG"
 RUN_OUTPUT=$("$UNV")
@@ -242,15 +242,17 @@ check "9.7 其余命令能跑" "$("$EXTRA_UNV")" "Tree Extra!"
 # 这一步是回退过的东西：附属命令不是包，拿它的名字去 bin/ 里找 {名}@{版} 永远找不到，
 # 于是 -a 在每台装了整树包的机器上都吐一片「is not linked」并以 1 退出。
 check "9.8 附属命令按包名回答" \
-    "$(python3 "$WAVE_BIN" linkquery "$PKG-extra")" "🌊 $PKG-extra -> $PKG@$VER"
+    "$(python3 "$WAVE_BIN" linkquery "$PKG-extra")" "🌊 $PKG-extra => $PKG@$VER"
 set +e
 TREE_ALL=$(python3 "$WAVE_BIN" linkquery -a 2>&1)
 TREE_ALL_EXIT=$?
 set -e
 check "9.9 linkquery -a 不误报整树包的附属命令" \
-    "$([[ "$TREE_ALL" == *"is not linked"* ]] && echo yes || echo no)" "no"
-check "9.10 linkquery -a 里有 $PKG@$VER" \
-    "$([[ "$TREE_ALL" == *"🌊 $PKG@$VER"* ]] && echo yes || echo no)" "yes"
+    "$([[ "$TREE_ALL" == *"(not linked)"* ]] && echo yes || echo no)" "no"
+# 包多时 -a 会排两列，名字列宽随最长的包变 —— 所以按「名字 + 若干空格 + => 版本」
+# 匹配一行，而不是固定几个空格。
+check "9.10 linkquery -a 里有 ${PKG} => ${VER}" \
+    "$(printf '%s\n' "$TREE_ALL" | grep -qE "^🌊 ${PKG} + => ${VER}( |$)" && echo yes || echo no)" "yes"
 check "9.11 全部正常时 -a 退出码为 0" "$TREE_ALL_EXIT" "0"
 python3 "$WAVE_BIN" unlink "$PKG" >/dev/null
 check "9.12 unlink 后主命令链接消失" "$(link_state "$UNV")" "no"

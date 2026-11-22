@@ -1,19 +1,23 @@
 .TH WAVE-LINKQUERY 1 "" "MacWave" "MacWave Manual"
 
 .SH NAME
-wave-linkquery \- Show which version the versionless shortcut points at.
+wave-linkquery \- Show which version the versionless shortcut points at, as name => version. With no package (or with --all) it lists every installed package, two columns when the terminal is wide enough.
 .SH SYNOPSIS
-.B wave linkquery <package> | wave linkquery \-\-all
+.B wave linkquery [<package> | \-\-all]
 .SH DESCRIPTION
-Show which version the versionless shortcut points at.
+Show which version the versionless shortcut points at, as name =>
+version. With no package (or with --all) it lists every installed
+package, two columns when the terminal is wide enough.
 .SH OPTIONS
 .TP
 .B \-\-all, \-a
-Apply to every installed package
+Apply to every installed package (the default when no package is given)
 
 .SH EXAMPLES
 .nf
 wave linkquery jq
+wave linkquery --all
+wave linkquery
 .fi
 .SH SEE ALSO
 wave(1)

@@ -264,13 +264,18 @@ COMMANDS = (
         takes_input=True,
         listed=True,
         summary="Show which version an unversioned link points to",
-        usage="wave linkquery <package> | wave linkquery --all",
-        desc="Show which version the versionless shortcut points at.",
+        usage="wave linkquery [<package> | --all]",
+        desc="Show which version the versionless shortcut points at, as "
+             "name => version. With no package (or with --all) it lists every "
+             "installed package, two columns when the terminal is wide enough.",
         flags=[
-            ("--all, -a", "Apply to every installed package"),
+            ("--all, -a", "Apply to every installed package (the default when "
+                          "no package is given)"),
         ],
         examples=[
             "wave linkquery jq",
+            "wave linkquery --all",
+            "wave linkquery",
         ],
     ),
     Command(

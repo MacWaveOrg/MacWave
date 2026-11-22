@@ -33,7 +33,10 @@ nothing is compiled on the user's machine.
         date afterwards.
 * unlink::	Remove the versionless shortcut. A later uninstall will not
         re-create it.
-* linkquery::	Show which version the versionless shortcut points at.
+* linkquery::	Show which version the versionless shortcut points at, as
+        name => version. With no package (or with --all) it lists
+        every installed package, two columns when the terminal is
+        wide enough.
 * mirror::	Show the address each kind of data is fetched from,
         including the built-in defaults for anything not overridden
         by an environment variable.
@@ -358,14 +361,19 @@ Examples:
 File: wave.info, Node: linkquery, Next: mirror, Prev: unlink, Up: Top
 
 
-Show which version the versionless shortcut points at.
+Show which version the versionless shortcut points at, as name =>
+version. With no package (or with --all) it lists every installed
+package, two columns when the terminal is wide enough.
 
   --all, -a
-      Apply to every installed package
+      Apply to every installed package (the default when no package is
+      given)
 
 Examples:
 
      wave linkquery jq
+     wave linkquery --all
+     wave linkquery
 
 
 File: wave.info, Node: mirror, Next: latest, Prev: linkquery, Up: Top

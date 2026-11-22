@@ -14,6 +14,7 @@
 import os
 import sys
 
+import common
 import silent
 
 
@@ -348,6 +349,28 @@ def handle_unlink_command(input_string=""):
 
 # -------------------- wave linkquery --------------------
 
+NOT_LINKED = "(not linked)"
+
+# 行首的 "🌊 " 在终端占三列，而 len("🌊 ") 只有 2 —— 算宽度时按 3 来。
+LINK_PREFIX_WIDTH = 3
+
+
+def _link_rows(rows):
+    """把 (名字, 版本) 排成 `名字 => 版本`，按终端宽度自动决定一列还是两列。
+
+    名字与版本各自按本次输出里最长的补齐，`=>` 才对得齐；补出来的尾部空格由
+    common.list_columns 在行尾剪掉。
+    """
+    if not rows:
+        return []
+
+    # "(not linked)" 也占一列版本，否则它会把右边那列顶歪。
+    name_width = max(len(name) for name, _ in rows)
+    version_width = max(len(version) for _, version in rows)
+    cells = [f"{name:<{name_width}} => {version:<{version_width}}" for name, version in rows]
+    return common.fit_columns(cells, prefix_width=LINK_PREFIX_WIDTH)
+
+
 def report_all_links():
     """`linkquery -a`：按**包名**逐个报，而不是按 links/ 里的条目名。
 
@@ -363,15 +386,18 @@ def report_all_links():
     # 退出码只表达「有坏链接」：一个装好但没链接的包只是状态，不是错误 ——
     # 用户可以自己决定要不要 link 它，脚本也不该因此判定这台机器有问题。
     missing = 0
+    rows = []
     for name in installed_packages():
         version = linked_version(name)
         if version is None:
-            print(f"{YELLOW}🌊 {name} is not linked.{RESET}")
+            rows.append((name, NOT_LINKED))
         elif version not in installed_versions(name):
             print(f"{RED_BOLD}🌊 Error: {name} points to {name}@{version}, which is not installed.{RESET}")
             missing += 1
         else:
-            print(f"🌊 {name}@{version}")
+            rows.append((name, version))
+    for line in _link_rows(rows):
+        print(f"🌊 {line}")
 
     # 反过来也要查：链接还在、包目录没了（手删 bin，或卸载漏删链接）。只按包名
     # 走一遍永远发现不了这种 —— 而它正是「昨天还好好的命令今天 command not found」。
@@ -392,17 +418,16 @@ def report_all_links():
 
 
 def handle_linkquery_command(input_string=""):
-    # 查询不带版本号的链接当前指向哪个版本：wave linkquery ffmpeg -> 🌊 ffmpeg@9.0
+    # 查询不带版本号的链接当前指向哪个版本：wave linkquery ffmpeg -> 🌊 ffmpeg => 9.0
     everything, targets = parse_targets(input_string)
 
-    if everything:
+    # 裸 `wave linkquery` 与 `--all` 同义：这个命令不带参数时，想问的就是「全都
+    # 指向哪儿」。报「缺包名」等于让用户再敲一次 -a，没有第二种可能想表达的意思。
+    if everything or not targets:
         report_all_links()
 
-    if not targets:
-        print(f"{RED_BOLD}🌊 Error: Missing package name. Use 'wave linkquery <name>' or 'wave linkquery --all'.{RESET}")
-        sys.exit(1)
-
     missing = 0
+    rows = []
     for target in targets:
         name = target.partition("@")[0]
         version = linked_version(name)
@@ -411,19 +436,22 @@ def handle_linkquery_command(input_string=""):
             # 说它「is not linked」是假话，还会让人以为坏了。
             owner = _link_owner(name)
             if owner is None:
-                print(f"{YELLOW}🌊 {name} is not linked.{RESET}")
+                rows.append((name, NOT_LINKED))
                 missing += 1
             elif owner[1] not in installed_versions(owner[0]):
                 print(f"{RED_BOLD}🌊 Error: {name} points to {owner[0]}@{owner[1]}, "
                       f"which is not installed.{RESET}")
                 missing += 1
             else:
-                print(f"🌊 {name} -> {owner[0]}@{owner[1]}")
+                rows.append((name, f"{owner[0]}@{owner[1]}"))
         elif version not in installed_versions(name):
             print(f"{RED_BOLD}🌊 Error: {name} points to {name}@{version}, which is not installed.{RESET}")
             missing += 1
         else:
-            print(f"🌊 {name}@{version}")
+            rows.append((name, version))
+
+    for line in _link_rows(rows):
+        print(f"🌊 {line}")
 
     sys.exit(1 if missing else 0)
 

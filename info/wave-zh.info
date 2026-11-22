@@ -23,7 +23,9 @@ MacWave 把每个软件包装进安装根目录下、带版本号的独立目录
 * link::	创建一个不带版本号的快捷方式，或把它改指到另一个已安装版本。
         之后的安装与卸载会自动维护它。
 * unlink::	删掉那个不带版本号的快捷方式。之后再卸载也不会重新创建。
-* linkquery::	显示那个不带版本号的快捷方式指向哪个版本。
+* linkquery::	显示那个不带版本号的快捷方式指向哪个版本，格式是 名字 => 版
+        本。不带包名（或加 --all）时列出所有已装包，终端够宽就排成两
+        列。
 * mirror::	显示每一类数据实际获取地址，包括仍在使用内置默认值的项。
 * latest::	将本机已装的版本与索引里的最新版本比较，不下载。
 * basedir::	打印 MacWave 的安装根目录 —— 即 config.json 里的 base_dir，
@@ -318,14 +320,17 @@ Examples:
 File: wave-zh.info, Node: linkquery, Next: mirror, Prev: unlink, Up: Top
 
 
-显示那个不带版本号的快捷方式指向哪个版本。
+显示那个不带版本号的快捷方式指向哪个版本，格式是 名字 => 版本。不带包名
+（或加 --all）时列出所有已装包，终端够宽就排成两列。
 
   --all, -a
-      对所有已装包生效
+      对所有已装包生效（不带包名时就是默认行为）
 
 Examples:
 
      wave linkquery jq
+     wave linkquery --all
+     wave linkquery
 
 
 File: wave-zh.info, Node: mirror, Next: latest, Prev: linkquery, Up: Top
