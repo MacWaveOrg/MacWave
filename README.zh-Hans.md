@@ -355,6 +355,10 @@ wave mirror                        Show the address each source is fetched from
 Installed Packages:
 wave list                          Two columns, one 🌊 per line
 wave list --raw                    One name per line, no 🌊 — for scripts
+wave linkquery                     Where every versionless link points (name => version)
+wave linkquery --raw               The same as name@version lines — for scripts
+                                   (diff it against `wave list --raw` to find
+                                   packages that are installed but not linked)
 
 Info Output:
 wave info <name>                   Show one package in a human-readable form

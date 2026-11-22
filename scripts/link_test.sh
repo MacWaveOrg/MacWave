@@ -262,6 +262,13 @@ check "9.13 unlink 后其余命令的链接也消失" "$(link_state "$EXTRA_UNV"
 install_fake_tree "$VER"
 python3 "$WAVE_BIN" link "$PKG" >/dev/null
 check "9.14 重新装上附属命令的链接还在" "$(link_state "$EXTRA_UNV")" "yes"
+# --raw 是给脚本的完整链接表：一行一个 名字@版本，含附属命令，不含没链接的包。
+RAW_OUT=$(python3 "$WAVE_BIN" linkquery --raw)
+check "9.14b --raw 里有 ${PKG}@${VER}" \
+    "$(printf '%s\n' "$RAW_OUT" | grep -qxF "${PKG}@${VER}" && echo yes || echo no)" "yes"
+check "9.14c --raw 里有附属命令" \
+    "$(printf '%s\n' "$RAW_OUT" | grep -qxF "${PKG}-extra@${VER}" && echo yes || echo no)" "yes"
+check "9.14d --raw 里没有 🌊" "$(printf '%s\n' "$RAW_OUT" | grep -c '🌊')" "0"
 python3 "$WAVE_BIN" uninstall "$PKG@$VER" >/dev/null 2>&1 || true
 check "9.15 卸载后附属命令的链接一起消失" "$(link_state "$EXTRA_UNV")" "no"
 

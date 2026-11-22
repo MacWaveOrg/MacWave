@@ -67,6 +67,16 @@ back to 80 when piped — with the data above, two columns need 73 of those 80.
 `wave linkquery` with no arguments now does the same thing as `--all`: asking "where does
 everything point" is the only thing an argument-free call can mean.
 
+`wave linkquery --raw` is the script form: one `name@version` per line, no 🌊, no
+padding, no columns — every versionless link, including the companion commands of a tree
+package. Packages that are not linked simply do not appear, so
+
+```
+$ diff <(wave list --raw) <(wave linkquery --raw)
+```
+
+is exactly the list of packages that are installed but not linked.
+
 A package that is installed but not linked shows `=> (not linked)` and **does not** make
 the command fail — that is a state, not a fault. A link that points at a version which is
 no longer installed is still a red `Error` and still exits 1.
@@ -163,6 +173,15 @@ $ wave uninstall jq -a
 管道里回落到 80 —— 上面这份数据两列需要 73 列，放得下。
 
 裸 `wave linkquery` 现在与 `--all` 同义：不带参数时，唯一想问的就是「全都指向哪儿」。
+
+`wave linkquery --raw` 是给脚本的形态：一行一个 `名字@版本`，不带 🌊、不补宽、不分列 ——
+每一条不带版本号的链接都在里面，包括整树包的附属命令。没链接的包不会出现，于是
+
+```
+$ diff <(wave list --raw) <(wave linkquery --raw)
+```
+
+差出来的正好就是「装了但没链接」的那些包。
 
 装了但没链接的包显示 `=> (not linked)`，**不影响**退出码 —— 那是状态，不是故障。
 而链接指向一个已经不存在的版本时，仍然是红字 `Error`，仍然退出码 1。
