@@ -508,7 +508,7 @@ yt-dlp           by yt-dlp
 zellij           by zellij-org
 zoxide           by Ajeet D'Souza
 ```
-## 🌊 面向开发者
+## 🌊 参与开发
 
 MacWave 由纯 Python 与 Shell 写成，没有构建步骤 —— 本仓库里的文件就是实际运行的代码。
 内部实现见 [`docs/TECHNICAL-GUIDE.md`](./docs/TECHNICAL-GUIDE.md) 与
