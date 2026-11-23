@@ -257,6 +257,10 @@ def remove_versioned_links(name, version):
     for entry in LINKS_DIR.iterdir():
         if not entry.is_symlink():
             continue
+        # 不带版本号的那一条归 refresh_link 管：还有旧版本时它要降指过去，
+        # 一条不剩时才该消失。在这里删掉会把「卸载 2.0 后降到 1.0」变成「没链接」。
+        if "@" not in entry.name:
+            continue
         target = os.readlink(entry)
         # 链接名去掉 @版本 后缀要与目标文件同名，避免把别的包的同名链接删掉。
         if os.path.basename(target) != entry.name.partition("@")[0]:
