@@ -268,6 +268,14 @@ mw_install_tree() {
     local target_dir="$2"
     local bin_name="$3"
 
+    # 重装、以及「上次装到一半就被打断」这两种情形下，目标目录里还留着旧内容。
+    # 不清掉的话 `mv source/share target/` 会在已存在的非空目录上失败
+    # （Directory not empty），于是这个包从此再也装不上 —— 只能人工删目录。
+    mw_assert_inside "$target_dir"
+    if [[ -e "$target_dir" ]]; then
+        rm -rf "$target_dir"
+    fi
+
     mkdir -p "$target_dir"
 
     if [[ ! -d "$source_dir" ]]; then
