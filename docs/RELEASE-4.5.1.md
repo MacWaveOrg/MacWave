@@ -1,6 +1,6 @@
 # MacWave 4.5.1
 
-Released: 2026-11-23 · build `327A0019` · branch `4.5` ·
+Released: 2026-11-23 · build `327A1339` · branch `4.5` ·
 previous release [4.5.0](RELEASE-4.5.0.md)
 
 4.5.1 is about **handling more than one thing at a time** — several packages in one
@@ -113,7 +113,7 @@ Every source file in this release is attached flat, alongside
 ---
 # MacWave 4.5.1
 
-发布：2026-11-23 · 构建号 `327A0019` · 分支 `4.5` ·
+发布：2026-11-23 · 构建号 `327A1339` · 分支 `4.5` ·
 上一个版本 [4.5.0](RELEASE-4.5.0.md)
 
 4.5.1 讲的是**一次处理不止一样东西** —— 一条命令装多个包、卸同一个包的多个版本，
