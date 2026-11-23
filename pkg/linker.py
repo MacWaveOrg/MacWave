@@ -240,6 +240,39 @@ def remove_package_links(name):
     return removed
 
 
+def remove_versioned_links(name, version):
+    """摘掉 `links/{链接名}@{版本}` 这一类链接 —— 安装时由 depsmanager.sh 建的。
+
+    整树包的每个可执行文件各有一条（`git-upload-pack@2.56.1`），链接名不等于包名，
+    只能靠目标路径里的 `{包名}@{版本}` 段认领。卸载只删主命令那一条会留下这些，
+    random_test 的「links/ 没有残留」就是这么红的。
+    """
+    name = require_safe_token(name, "package name")
+    version = require_safe_token(version, "package version")
+
+    removed = []
+    if not LINKS_DIR.is_dir():
+        return removed
+
+    for entry in LINKS_DIR.iterdir():
+        if not entry.is_symlink():
+            continue
+        target = os.readlink(entry)
+        # 链接名去掉 @版本 后缀要与目标文件同名，避免把别的包的同名链接删掉。
+        if os.path.basename(target) != entry.name.partition("@")[0]:
+            continue
+        for part in reversed(os.path.dirname(target).split(os.sep)):
+            if "@" not in part:
+                continue
+            owner_name, _, owner_version = part.partition("@")
+            if owner_name == name and owner_version == version:
+                assert_inside_entry(entry, LINKS_DIR, "link path")
+                entry.unlink()
+                removed.append(entry.name)
+            break
+    return removed
+
+
 def remove_link(name):
     name = require_safe_token(name, "package name")
     link = LINKS_DIR / name

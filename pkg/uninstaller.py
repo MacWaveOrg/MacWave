@@ -237,6 +237,12 @@ def remove_one(pkg_name, version, installed):
         if link_path.is_symlink() or link_path.exists():
             link_path.unlink()
 
+    # 整树包的每个可执行文件各有一条 links/<名>@<版本>（安装时由 depsmanager.sh 建），
+    # 上面那两条只覆盖了主命令那一条 —— 其余留在这里就成了死链。
+    linker = _import_linker()
+    if linker is not None:
+        linker.remove_versioned_links(pkg_name, version)
+
     # 只有记录版本与删除版本一致时才移除记录，避免误删其他版本
     if record and record.get("version") == version:
         del installed[pkg_name]
