@@ -398,6 +398,7 @@ bash             by Free Software Foundation
 bat              by David Peter
 batt             by charlie0129
 btop             by Aristocratos
+chezmoi          by twpayne
 choma            by opa334
 circleci         by CircleCI
 cloc             by Al Danial
@@ -414,6 +415,7 @@ eza              by Christina Sørensen and the eza community
 fd               by David Peter
 ffmpeg           by FFmpeg Team
 fileicon         by Michael Klement
+flyctl           by superfly
 fx               by antonmedv
 fzf              by Junegunn Choi
 gh               by cli
@@ -431,6 +433,7 @@ jless            by Paul Julius Martinez
 jq               by Stephen Dolan, Nicolas Williams, et al.
 just             by Casey Rodarmor
 k9s              by derailed
+kubeconform      by yannh
 kubectx          by ahmetb
 lazygit          by jesseduffield
 ldid             by Jay Freeman (saurik) / Procursus Team
@@ -439,6 +442,7 @@ mint             by Yonas Kolb
 mise             by jdx
 mkcert           by FiloSottile
 ncdu             by Yoran Heling
+nvim             by neovim
 ollama           by ollama
 palera1n         by palera1n Team
 pandoc           by John MacFarlane
@@ -447,6 +451,7 @@ rclone           by rclone
 restic           by restic
 rg               by Andrew Gallant
 robinsing        by Sha0huaZhang
+ruff             by astral-sh
 scc              by Ben Boyter
 shellcheck       by koalaman
 shfmt            by mvdan
@@ -459,12 +464,15 @@ testdisk         by Christophe Grenier
 tmux             by Nicholas Marriott and contributors
 tofu             by opentofu
 tree             by Steve Baker, Thomas Moore, et al.
+trivy            by aquasecurity
 trollrestore     by JJTech (@JJTech0130)
 typst            by typst
 uv               by astral-sh
 vhs              by charmbracelet
 websocat         by vi
 wget             by GNU Project
+xcbeautify       by cpisciotta
+xclogparser      by MobileNativeFoundation
 xcodegen         by Yonas Kolb
 xh               by ducaale
 yazi             by sxyazi
