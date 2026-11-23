@@ -390,13 +390,16 @@ wave latest --all                  Same, for every installed package
 ```
 
 7zz              by Igor Pavlov
+act              by nektos
 actionlint       by rhysd
 age              by FiloSottile
 aria2c           by Tatsuhiro Tsujikawa
+ast-grep         by ast-grep
 atuin            by atuinsh
 bash             by Free Software Foundation
 bat              by David Peter
 batt             by charlie0129
+btm              by Clement Tsang
 btop             by Aristocratos
 chezmoi          by twpayne
 choma            by opa334
@@ -404,9 +407,11 @@ circleci         by CircleCI
 cloc             by Al Danial
 cloudflared      by cloudflare
 columbula        by Sha0huaZhang
+cosign           by Sigstore
 delta            by dandavison
 difft            by Wilfred Hughes
 direnv           by direnv
+docker-compose   by Docker
 doggo            by mr-karan
 dtc              by Device Tree Compiler contributors
 duckdb           by duckdb
@@ -423,25 +428,36 @@ git              by Git community
 git-lfs          by git-lfs
 gitleaks         by gitleaks
 glow             by charmbracelet
+golangci-lint    by golangci
 gping            by orf
 grpcurl          by fullstorydev
+hadolint         by Hadolint
 helm             by helm
 htop             by Hisham Muhammad and the htop team
+hx               by Helix contributors
 hyperfine        by sharkdp
 ipsw             by blacktop
+jj               by Jujutsu contributors
 jless            by Paul Julius Martinez
 jq               by Stephen Dolan, Nicolas Williams, et al.
 just             by Casey Rodarmor
 k9s              by derailed
+kind             by Kubernetes SIG Testing
+kubecolor        by kubecolor
 kubeconform      by yannh
 kubectx          by ahmetb
+kustomize        by Kubernetes SIG CLI
+lazydocker       by Jesse Duffield
 lazygit          by jesseduffield
 ldid             by Jay Freeman (saurik) / Procursus Team
+lefthook         by Evil Martians
 lsd              by Abin Simon
+macmon           by Vlad Kens
 mint             by Yonas Kolb
 mise             by jdx
 mkcert           by FiloSottile
 ncdu             by Yoran Heling
+nu               by Nushell contributors
 nvim             by neovim
 ollama           by ollama
 palera1n         by palera1n Team
@@ -456,19 +472,26 @@ scc              by Ben Boyter
 shellcheck       by koalaman
 shfmt            by mvdan
 sk               by skim-rs
+sops             by getsops
+spf              by yorukot
 starship         by starship
 stern            by stern
+syncthing        by Syncthing contributors
 tar              by Free Software Foundation
 taskwarrior-tui  by kdheepak
+tectonic         by Tectonic contributors
 testdisk         by Christophe Grenier
+tldr             by tealdeer-rs
 tmux             by Nicholas Marriott and contributors
 tofu             by opentofu
 tree             by Steve Baker, Thomas Moore, et al.
 trivy            by aquasecurity
 trollrestore     by JJTech (@JJTech0130)
+ty               by Astral
 typst            by typst
 uv               by astral-sh
 vhs              by charmbracelet
+watchexec        by Watchexec contributors
 websocat         by vi
 wget             by GNU Project
 xcbeautify       by cpisciotta
