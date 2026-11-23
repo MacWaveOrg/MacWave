@@ -97,6 +97,7 @@ jobs:
             /bin/bash scripts/multi_install_test.sh
             /bin/bash scripts/multi_uninstall_test.sh
             /bin/bash scripts/list_format_test.sh
+            /bin/bash scripts/tree_reinstall_test.sh
 
       - run:
           name: Signature conventions
