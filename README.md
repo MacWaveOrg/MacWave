@@ -428,6 +428,7 @@ eza              by Christina Sørensen and the eza community
 fd               by David Peter
 ffmpeg           by FFmpeg Team
 fileicon         by Michael Klement
+fish             by fish-shell contributors
 flyctl           by superfly
 fx               by antonmedv
 fzf              by Junegunn Choi
