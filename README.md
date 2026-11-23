@@ -390,6 +390,9 @@ when that would leave the link pointing at the version you are removing.
   <img src="images/demo1.gif" alt="wave install ffmpeg running in a terminal" width="80%" style="max-width: 720px;">
 </p>
 
+## 🌊 For Developers
+See [docs.macwave.org](https://docs.macwave.org/)
+
 ## 🌊 Supported Packages
 (Listed in alphabetical order)
 

@@ -382,6 +382,9 @@ wave latest --all                  Same, for every installed package
   <img src="images/demo1.gif" alt="wave install ffmpeg running in a terminal" width="80%" style="max-width: 720px;">
 </p>
 
+## 🌊 面向开发者
+见 [docs.macwave.org](https://docs.macwave.org/)
+
 ## 🌊 支持的软件包
 （按字母顺序排列）
 
