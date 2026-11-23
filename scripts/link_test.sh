@@ -90,12 +90,16 @@ install_fake_tree() {
     printf '#!/bin/sh\necho "Tree Extra!"\n' > "$BIN_DIR/$PKG@$version/bin/$PKG-extra"
     chmod +x "$BIN_DIR/$PKG@$version/bin/$PKG-extra"
     : > "$BIN_DIR/$PKG@$version/.is_a_tree"
+    # 安装时 depsmanager.sh 会给每个可执行文件各建一条 links/<名>@<版本>，
+    # 主命令之外那些在卸载时最容易漏 —— 这里照它的样子造出来。
     ln -sfn "../bin/$PKG@$version/bin/$PKG" "$LINKS_DIR/$PKG@$version"
+    ln -sfn "../bin/$PKG@$version/bin/$PKG-extra" "$LINKS_DIR/$PKG-extra@$version"
 }
 
 cleanup() {
     rm -rf "$BIN_DIR/$PKG@$VER" "$BIN_DIR/$PKG@2.0"
-    rm -f "$LINKS_DIR/$PKG@$VER" "$LINKS_DIR/$PKG@2.0" "$UNV" "$LINKS_DIR/$PKG-extra"
+    rm -f "$LINKS_DIR/$PKG@$VER" "$LINKS_DIR/$PKG@2.0" "$UNV" "$LINKS_DIR/$PKG-extra" \
+        "$LINKS_DIR/$PKG-extra@$VER" "$LINKS_DIR/$PKG-extra@2.0"
 }
 
 trap cleanup EXIT
@@ -271,6 +275,11 @@ check "9.14c --raw 里有附属命令" \
 check "9.14d --raw 里没有 🌊" "$(printf '%s\n' "$RAW_OUT" | grep -c '🌊')" "0"
 python3 "$WAVE_BIN" uninstall "$PKG@$VER" >/dev/null 2>&1 || true
 check "9.15 卸载后附属命令的链接一起消失" "$(link_state "$EXTRA_UNV")" "no"
+# 带版本号的那一套（links/<名>@<版本>）同样要摘掉。它们只覆盖了主命令时，
+# random_test 的「links/ 没有残留」会在装过 dtc / git 的机器上红。
+check "9.16 卸载后附属命令的带版本链接也消失" \
+    "$(link_state "$LINKS_DIR/$PKG-extra@$VER")" "no"
+check "9.17 主命令的带版本链接也没了" "$(link_state "$LINKS_DIR/$PKG@$VER")" "no"
 
 echo ""
 echo "=========================================="
