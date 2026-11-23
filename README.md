@@ -516,7 +516,7 @@ yt-dlp           by yt-dlp
 zellij           by zellij-org
 zoxide           by Ajeet D'Souza
 ```
-## 🌊 Contributing
+## 🌊 Working on MacWave
 
 MacWave is written in plain Python and Shell. There is no build step: the files
 in this repository are the ones that run. Internals are documented in
