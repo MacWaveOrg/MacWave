@@ -223,6 +223,30 @@ jobs:
 
       - name: Run dependency chain test
         run: |
+          # deps_test 走的是**真安装路径**，客户端版本低于记录的 min_client_version
+          # 会被当场拒绝（"it needs a newer MacWave"）。沙箱里那份 VERSION.json 是
+          # 早先随手写的 2.1.0，于是声明了 min_client_version 的包（如 gwget 的 4.5.0）
+          # 一个都装不上 —— 断言还没走到「二进制起不起得来」就红了。
+          # 按索引里出现的最高 min_client_version 写，避免下次再过期。
+          python3 - <<'PY'
+          import json
+          import pathlib
+          import re
+
+          top = (0,)
+          for record in pathlib.Path("infosource-data/pkg").glob("pkginfo_*/*/_*@*"):
+              if record.name.endswith("@common"):
+                  continue
+              match = re.search(r'^min_client_version:\s*"([^"]+)"', record.read_text(), re.M)
+              if not match:
+                  continue
+              parts = tuple(int(p) for p in re.findall(r"\d+", match.group(1)))
+              top = max(top, parts or (0,))
+          version = ".".join(str(p) for p in top) if any(top) else "4.6.0"
+          path = pathlib.Path("/opt/macwave_config/VERSION.json")
+          path.write_text(json.dumps({"version": version}, indent=2) + "\n")
+          print(f"🌊 client version for the dependency test: {version}")
+          PY
           /bin/bash scripts/deps_test.sh --infosource infosource-data
 
       # 离线：假镜像起在 localhost，只验「报错说清楚了该怎么办」
