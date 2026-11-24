@@ -664,6 +664,17 @@ The project requires about **¥349 CNY (about $52 USD)** per month to keep runni
 
 This project is licensed under the **Apache License 2.0** - see the [LICENSE](LICENSE) file for the full text, and [NOTICE](NOTICE) for the attribution note. Packages that MacWave installs keep their own licenses.
 
+License by release:
+
+| Versions | License |
+| :--- | :--- |
+| `1.0.0` – `4.5.2` | MIT |
+| `4.6.0` and later | Apache License 2.0 |
+
+Everything up to and including `4.5.2` was published under the MIT License and stays under it:
+nothing is retroactively relicensed. `4.6.0` is where the Apache-2.0 terms begin, which is also
+why that release asks you to accept the agreement again.
+
 ## 🌊 Contact Us
 
 Email：[hi@macwave.org](mailto:hi@macwave.org)

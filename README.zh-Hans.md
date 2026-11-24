@@ -635,6 +635,16 @@ python3 scripts/audit_deps.py data # 用已装的库审计索引数据
 
 本项目基于 **Apache License 2.0** 发布 —— 全文见 [LICENSE](LICENSE)，署名说明见 [NOTICE](NOTICE)。MacWave 安装的软件包各自保留自己的许可证。
 
+各版本的许可证：
+
+| 版本 | 许可证 |
+| :--- | :--- |
+| `1.0.0` – `4.5.2` | MIT |
+| `4.6.0` 及以后 | Apache License 2.0 |
+
+`4.5.2` 及更早的版本都是按 MIT 发布的，并且继续按 MIT 算 —— 已经发出去的版本不会被追溯
+改协议。Apache-2.0 从 `4.6.0` 开始生效，这一版会重新询问你是否同意协议，原因也在这里。
+
 ## 🌊 联系我们
 
 Email：[hi@macwave.org](mailto:hi@macwave.org)
