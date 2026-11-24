@@ -850,6 +850,35 @@ rsync -a --chown=www:www --chmod=D755,F644 \
 第 3 步最容易漏：`build_versions_index.py` **只登记镜像里真实存在的产物**，
 产物没同步就不会出现在清单里；清单生成了没 rsync，对外又看不到。
 
+### 5) 冒烟：按清单逐条打分
+
+产物齐了不等于客户端能装。客户端是**照着 `update_commands.sh` 里的 `want` 清单
+一个一个下载**的，任何一个路径不是 200，整个更新就失败。2026-11-24 发 4.6.0 时，
+镜像上 360 个文件全在，但 `info/LICENSE` 被 nginx 的「敏感文件」规则挡成 404
+（见 [MIRROR-SETUP 第五步](MIRROR-SETUP.md#宝塔的敏感文件规则会误杀-core-树)），
+用户在最后一个文件上失败，日志看着却像「镜像没同步」。
+
+所以发完镜像必须拿清单当靶子打一遍（替换成实际的版本与站点凭据）：
+
+```bash
+cd /opt/macwaveorg/MacWave
+python3 scripts/build_update_commands.py --version 4.6.0 --branch 4.6 \
+    --ref 4.6 --out /tmp/uc.sh
+grep -E '^[[:space:]]*want[[:space:]]' /tmp/uc.sh | awk '{print $2}' | sort -u > /tmp/mf.txt
+
+while read -r p; do
+    code=$(curl -sS -o /dev/null -w '%{http_code}' -u "$MIRROR_USER:$MIRROR_PASS" \
+        "https://mirror.repohub.top/MacWave/core/4.6/$p")
+    [ "$code" = 200 ] || echo "  ✗ $code $p"
+done < /tmp/mf.txt
+```
+
+一条都不打印才算过。`grep` 里那个 `^[[:space:]]*want` 不能省：生成脚本的**注释**里
+也有一行 `want <仓库内路径> …` 作为格式说明，漏了就白得三条假 404。
+
+有条件的话再补一次真实客户端冒烟（另一个 `MACWAVE_BASE_DIR` 或另一台机器）：
+`wave selfupdate` 走到最后并打印新版本号。
+
 ---
 
 ## 七、一句话版本
@@ -857,7 +886,7 @@ rsync -a --chown=www:www --chmod=D755,F644 \
 ```
 先改 configdata 的 branch → 合并要 merge 不要 force → 生成 update_commands.sh
 → 改 Selfupdate 的 latest.toml → 官网与 Release → 建 tag → 等 CI
-→ 镜像：pull 索引 / 拉产物 / 生成清单 / rsync 清单
+→ 镜像：pull 索引 / 拉产物 / 生成清单 / rsync 清单 / 按清单逐条打分
 ```
 
 安全版本额外两条：**标题按档位加 `[Urgent security update 紧急安全更新]` 或

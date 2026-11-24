@@ -242,6 +242,51 @@ location ~* \.(tar\.gz|tgz|zip|tar\.bz2|tar\.xz|conda)$ {
 > 缓存头解决的是「重复下载不再回源」。**限速、防爆破、以及校园网 NAT 下怎么限才
 > 不误伤自己人**，见后面的[「别被打穿」](#别被打穿限速防爆破与校园网)一节。
 
+### 宝塔的「敏感文件」规则会误杀 `core` 树
+
+宝塔建的 vhost 末尾自带一条按**文件名**一刀切的规则，把 `LICENSE`、`README.md`、
+`pyproject.toml`、`*.log`、`.gitignore`、`go.mod` 之类的名字一律 `return 404`。它防的是
+「误传到站点根目录的源码文件」，但 `MacWave/core/<分支>/` 本来就是**整棵源码树**，
+更新清单会逐文件下载，其中就有 `info/LICENSE`：
+
+```
+🌊 Downloading info/LICENSE...
+curl: (56) The requested URL returned error: 404
+```
+
+2026-11-24 发 4.6.0 时客户端就卡在这一个文件上（`info/LICENSE` 是 4.6 新加进安装树的）。
+症状极具误导性：之前几十个文件都是 200，只有最后一个失败，看着像文件没同步。
+
+放行 `core` 树（**必须用正则 location，且写在按文件名规则之前** —— 正则 location 按
+出现顺序取第一个命中；宝塔的敏感文件规则在 vhost 里靠近末尾，把这段放进
+`/www/server/panel/vhost/nginx/extension/<站点>/*.conf` 就自然排在它前面）：
+
+```nginx
+# /MacWave/core/<分支>/ 是整棵源码树，info/LICENSE 这类名字必须能取到；
+# auth_basic 不写 off，仍然要密码。
+location ~* ^/MacWave/core/[^/]+/ {
+    add_header Cache-Control "public, max-age=300";
+}
+```
+
+`deps/`、`bottle/` 的路径不受影响（它们有自己的 `location` 与后缀规则，且不含这些文件名）。
+改完 `nginx -t && nginx -s reload`，然后**带凭据**抽查三个点：
+
+```bash
+# 1) 被误杀的那个文件：应为 200，字节数与服务器上 ls 一致
+curl -sS -u '<用户>:<密码>' -o /dev/null -w '%{http_code} %{size_download}\n' \
+     https://mirror.repohub.top/MacWave/core/4.6/info/LICENSE
+# 2) 普通代码文件：应为 200
+curl -sS -u '<用户>:<密码>' -o /dev/null -w '%{http_code}\n' \
+     https://mirror.repohub.top/MacWave/core/4.6/cli/silent.py
+# 3) 不带凭据：应为 401（放行不等于公开）
+curl -sS -o /dev/null -w '%{http_code}\n' \
+     https://mirror.repohub.top/MacWave/core/4.6/info/LICENSE
+```
+
+顺手确认敏感名字在**别处**仍然被挡：在站点根目录临时 `touch zz-probe.gitignore`，
+带凭据请求应得 404，验完删掉。
+
 ## 第六步：SSL
 
 宝塔 → 网站 → 设置 → SSL → Let's Encrypt，申请后打开「强制 HTTPS」。
@@ -584,10 +629,11 @@ def python_archive_url(version, filename):
 镜像要同时服务两种 Mac），逐字节校验，**验不过就丢弃**：宁可少一个文件，也不要
 在镜像里留一份校验不符的。
 
-### 必须记住的五点
+### 必须记住的几点
 
 | 点 | 为什么 |
 | --- | --- |
+| **nginx 的「敏感文件」规则会误杀 `core` 树** | 宝塔自带的规则按 basename 一律 404（`LICENSE`、`README.md`、`pyproject.toml`…），而 `core/<分支>/` 是整棵源码树，更新清单里就有 `info/LICENSE`。必须用正则 location 提前放行，见[第五步](#宝塔的敏感文件规则会误杀-core-树)。2026-11-24 发 4.6.0 时客户端就死在这一个文件上 |
 | **`versions` 不能跟着 `--delete` 消失** | 它是本地生成的，上游没有。rsync 里 `--exclude versions` 保它，第 5 步再重建 |
 | **`infosource/.git` 不该留在站点里** | 索引是 `git clone` 来的，`.git` 会一并被服务；nginx 的 `location ~ /\.` 挡住它，但没必要留。同步末尾直接删 |
 | **同步失败时不能清理旧分支目录** | 发布线刚切到 `4.5`、而 `4.5` 分支还没建时，清理会把仍在服务的 `4.1` 删掉 —— 一次上游打嗝变成镜像全站不可用。脚本里只要有一个 core 分支没同步成功就跳过清理 |
