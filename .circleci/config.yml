@@ -98,6 +98,8 @@ jobs:
             /bin/bash scripts/multi_uninstall_test.sh
             /bin/bash scripts/list_format_test.sh
             /bin/bash scripts/tree_reinstall_test.sh
+            /bin/bash scripts/transfer_test.sh
+            /bin/bash scripts/basedir_set_test.sh
 
       - run:
           name: Signature conventions

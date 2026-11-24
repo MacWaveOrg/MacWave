@@ -170,6 +170,16 @@ jobs:
         run: |
           /bin/bash scripts/minos_test.sh
 
+      # 重定位：产物改成 @loader_path 之后，安装期不再改字节；旧的仍要能迁移。
+      - name: Check Mach-O relocation
+        run: |
+          /bin/bash scripts/transfer_test.sh
+
+      # basedir --set：会复制整棵树并改写 config.json，三段确认用 pty 驱动。
+      - name: Check basedir --set
+        run: |
+          /bin/bash scripts/basedir_set_test.sh
+
       # 版本比较只有一份实现（lib/versioncompare.py）。预发布排在正式版之下、
       # 两段与三段等价、社区后缀归一化 —— 这几条错在别处都看不出来。
       - name: Check version comparison

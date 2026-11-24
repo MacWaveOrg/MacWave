@@ -628,6 +628,8 @@ Each script runs end to end and reports `PASS` or `FAIL`:
 /bin/bash scripts/link_test.sh          # versionless links
 /bin/bash scripts/upgrade_test.sh       # wave upgrade, offline
 /bin/bash scripts/selfupdate_test.sh    # self-update; ends by updating for real
+/bin/bash scripts/transfer_test.sh      # Mach-O relocation (macOS only)
+/bin/bash scripts/basedir_set_test.sh   # wave basedir --set, confirmations via a pty
 python3 scripts/random_test.py     # randomised end-to-end regression, needs network
 python3 scripts/audit_deps.py data # audit the index against the installed libraries
 ```
