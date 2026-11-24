@@ -150,6 +150,15 @@ Warning: 1 library reference(s) exist in this installation but could not be link
   **教训**：查符号别只看主库，`nm -g <dir>/*.dylib` 全扫一遍。
 - `ncdu` 引用 `@rpath/libz.1.dylib` 但只声明了 `ncurses` + `zstd` —— `libz` 是
   **zlib** 提供的，漏声明了。
+- **两个架构的依赖版本不能照抄**。`gwget@1.25.0-1` 的 amd64 记录一度照搬 arm64 的
+  `libidn2@2.3.8` + `libunistring@1.3`，可是 defaults 渠道的 `osx-64` 只出到 libidn2
+  2.3.4；conda-forge 那份 2.3.8 要 `libiconv.2` **compat 10**（索引里 amd64 的 1.16 是
+  compat 9）而且链的是 `libunistring.2`（0.9.x），硬装也加载不起来。
+  amd64 上 ABI 完全对得上的是 `libidn2@2.3.4` + `libunistring@0.9.10`：
+  `libidn2.0.dylib` 的 compat/current 是 **4.0.0 / 4.8.0**，与 `gwget-bin` 里写的
+  那行逐字相同。**判据是 `otool -L` 的 compat 版本与 `nm -gU` 的符号，不是版本号谁大**；
+  两侧都能实测（Intel 用 Rosetta：`arch -x86_64 bin/gwget-bin --version`，
+  IDN 走 `LC_ALL=en_US.UTF-8 bin/gwget-bin --spider http://bücher.de` 看它转不转 `xn--`）。
 - **卸载必须给 `bin_name`，不是包名**：安装目录是 `bin/<bin_name>@<版本>`，
   两者可能不同（如包 `choma` → `bin_name` `ChOma`）。
 - 依赖数据按 `<名字>@<最高版本>` 取，包里 `_<名字>@common` 里才有 `bin_name`。
