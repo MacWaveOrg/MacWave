@@ -360,6 +360,80 @@ else
         || fail "第二次跑仍有输出：$(printf '%.160s' "$OUT")"
 fi
 
+echo "========== 9. 带版本号的 dylib 名（libx.dylib.1.7.2）也要认成库 =========="
+
+# 按扩展名判断"这是不是 dylib"会漏掉 `libfdt.dylib.1.7.2` 这种名字：ID 永远停在
+# `libfdt.dylib.1`，`wave transfer` 每次都说 needs transfer，`basedir --set` 也就
+# 一直拒绝搬（它要求整棵树已经是位置无关的）。判据换成 Mach-O 的 filetype。
+VER="$WORK/versioned"
+mkdir -p "$VER/deps/foo/foo@1.0/lib" "$VER/bin/bar@1.0/bin"
+printf 'int foo(void) { return 9; }\n' > "$VER/foo.c"
+printf '#include <stdio.h>\nint foo(void);\nint main(void){printf("ok %%d\\n",foo());return 0;}\n' \
+    > "$VER/main.c"
+clang -dynamiclib -install_name "libfoo.dylib.1" \
+    -Wl,-headerpad_max_install_names \
+    -o "$VER/deps/foo/foo@1.0/lib/libfoo.dylib.1.0" "$VER/foo.c" 2> /dev/null
+ln -sf libfoo.dylib.1.0 "$VER/deps/foo/foo@1.0/lib/libfoo.dylib.1"
+ln -sf libfoo.dylib.1 "$VER/deps/foo/foo@1.0/lib/libfoo.dylib"
+clang -o "$VER/bin/bar@1.0/bin/bar" "$VER/main.c" \
+    -L"$VER/deps/foo/foo@1.0/lib" -lfoo \
+    -Wl,-rpath,@loader_path/../../../deps/foo/foo@1.0/lib \
+    -Wl,-headerpad_max_install_names 2> /dev/null
+
+transfer --relative "$VER/deps/foo/foo@1.0" "$VER"
+[[ "$(id_of "$VER/deps/foo/foo@1.0/lib/libfoo.dylib.1.0")" == "@rpath/libfoo.dylib.1.0" ]] \
+    && pass "带版本号的 dylib 的 ID 也改成了 @rpath/<文件名>" \
+    || fail "ID 没改：$(id_of "$VER/deps/foo/foo@1.0/lib/libfoo.dylib.1.0")"
+
+transfer --check "$VER/deps/foo/foo@1.0" "$VER"
+[[ "$RC" -eq 0 ]] && pass "改完 --check 返回 0（它自己那条自引用也跟着改了）" \
+    || fail "--check 仍然报绝对路径：$(printf '%.160s' "$OUT")"
+
+transfer --relative "$VER/deps/foo/foo@1.0" "$VER"
+[[ -z "$OUT" ]] && pass "再跑一次零改动（自引用没有悬空）" \
+    || fail "再跑一次仍有输出：$(printf '%.160s' "$OUT")"
+# 不在这里断言"能运行"：夹具里可执行文件引用的是**裸文件名** libfoo.dylib.1
+# （clang 按 install name 记的），那不是真实老产物的形态（真实产物写绝对路径）。
+# 这一段只钉两件事：ID 要按 filetype 认出来并改成 @rpath/<名>，改完 --check 要绿。
+
+echo "========== 10. 用系统 libiconv 的产物不能被换成 conda 那份 =========="
+
+# 判据是**符号名**：`iconv*` 走系统那份，只有 `libiconv*` 才需要 conda 的。
+# 2026-11-24 我按文件名一刀切，把 git（用 _iconv/_iconv_open）改到了 conda 的
+# libiconv 上 —— conda 那份不导出不带前缀的那组，git 直接
+#   Symbol not found: _iconv
+ICONV="$WORK/iconv"
+mkdir -p "$ICONV/deps/libiconv/libiconv@1.0/lib" "$ICONV/bin/bar@1.0/bin"
+# 系统那份 libiconv 在 dyld 共享缓存里，磁盘上没有实体文件，不能直接 cp。
+# 造一个 install name 恰好是 /usr/lib/libiconv.2.dylib 的桩库来当"链接目标"，
+# 于是可执行文件记下的引用就是 /usr/lib/libiconv.2.dylib（真实老产物的形态），
+# 而它导入的符号是不带 lib 前缀的那组。
+printf 'typedef void *iconv_t;\niconv_t iconv_open(const char *a, const char *b) { (void)a; (void)b; return (iconv_t)-1; }\nint iconv_close(iconv_t c) { (void)c; return 0; }\n' \
+    > "$ICONV/stub.c"
+clang -dynamiclib -install_name /usr/lib/libiconv.2.dylib \
+    -Wl,-headerpad_max_install_names \
+    -o "$ICONV/deps/libiconv/libiconv@1.0/lib/libiconv.dylib" "$ICONV/stub.c" 2> /dev/null
+printf '#include <stdio.h>\ntypedef void *iconv_t;\nextern iconv_t iconv_open(const char *, const char *);\nextern int iconv_close(iconv_t);\nint main(void){ iconv_t c = iconv_open("UTF-8","UTF-8"); printf("%%d\\n", c == (iconv_t)-1); if (c != (iconv_t)-1) iconv_close(c); return 0; }\n' \
+    > "$ICONV/main.c"
+clang -o "$ICONV/bin/bar@1.0/bin/bar" "$ICONV/main.c" \
+    -L"$ICONV/deps/libiconv/libiconv@1.0/lib" -liconv \
+    -Wl,-headerpad_max_install_names 2> /dev/null
+
+before_iconv="$(otool -L "$ICONV/bin/bar@1.0/bin/bar" | awk 'NR>1 && /iconv/ {print $1}')"
+if [[ "$before_iconv" == "/usr/lib/libiconv.2.dylib" ]] && \
+   nm -u "$ICONV/bin/bar@1.0/bin/bar" | grep -qx "_iconv_open"; then
+    pass "夹具是「引用系统 libiconv + 用 iconv* 符号」"
+    transfer --relative "$ICONV/bin/bar@1.0" "$ICONV"
+    after_iconv="$(otool -L "$ICONV/bin/bar@1.0/bin/bar" | awk 'NR>1 && /iconv/ {print $1}')"
+    [[ "$after_iconv" == "/usr/lib/libiconv.2.dylib" ]] \
+        && pass "用 iconv* 的产物留在系统那份上（没被换成 conda 的）" \
+        || fail "被换成了 $after_iconv"
+    "$ICONV/bin/bar@1.0/bin/bar" > /dev/null 2>&1
+    [[ $? -eq 0 ]] && pass "仍能运行" || fail "运行失败"
+else
+    echo "  ·  跳过：夹具没能引用到系统 libiconv（before=$before_iconv）"
+fi
+
 echo
 echo "=========================================="
 echo -e "🌊 Passed: $PASSED"
