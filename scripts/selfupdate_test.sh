@@ -414,17 +414,21 @@ spec.loader.exec_module(module)
 recorded = {}
 module.recorded_agreement = lambda: recorded.get('id', '')
 
+# 表的形状跟着 AGREEMENT_INTRODUCED_IN 走，不写死「4.4.1 之后就不问」——
+# 那个写法在 2026-11-24（4.6.0 换成 Apache-2.0，判据抬到 4.6.0）当天就过期了，
+# 4.5.x 的用户明明该被问一次，表里却写着 False。
 cases = [
     # (已装版本, 已记录的协议号, 该不该问)
-    ('4.3.4',      '',                True),   # 装得比 4.4.0 早：必问
-    ('4.4.0',      '',                True),   # 就是带新协议那一版：也要问一次
-    ('4.4.0-beta2','',                True),   # beta 走不到这里（前面就拒了），但判定要一致
-    ('4.4.1',      '',                False),  # 装的是更新的版本：安装器已经问过
-    ('4.5.0',      '',                False),
-    ('4.3.4',      module.AGREEMENT_ID, False),  # 已经同意过这一版
-    ('4.4.0',      module.AGREEMENT_ID, False),
-    ('4.3.4',      '2026-01-01',      True),   # 记的是旧协议：还要问
-    (None,         '',                False),  # 没有安装记录：交给安装器
+    ('4.3.4',       '',                          True),   # 比引入版早：必问
+    ('4.4.0',       '',                          True),
+    ('4.5.2',       '',                          True),   # 4.6.0 改了许可证：4.5.x 升级必问
+    (module.AGREEMENT_INTRODUCED_IN, '',          True),   # 引入版本身也问一次
+    ('9.9.9',       '',                          False),  # 比引入版新：install.sh 已经问过
+    ('4.3.4',       module.AGREEMENT_ID,         False),  # 已经同意过这一版
+    ('4.5.2',       module.AGREEMENT_ID,         False),
+    ('9.9.9',       module.AGREEMENT_ID,         False),
+    ('4.3.4',       '2026-01-01',                True),   # 记的是旧协议：还要问
+    (None,          '',                          False),  # 没有安装记录：交给安装器
 ]
 for current, recorded_id, expected in cases:
     recorded['id'] = recorded_id

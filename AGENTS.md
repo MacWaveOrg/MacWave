@@ -444,8 +444,14 @@ git push origin 4.1
   `AGREEMENT_ID`，两边日期不一致的后果是「问的是新协议、记下的却是旧标识」，下次再问一遍。
   `AGREEMENT_INTRODUCED_IN` 是「第一版带上这份协议的版本」（现行文本是 4.6.0，
   之前是 4.4.0）：装得比它早、或正是它的，自更新时问一次；同意与否记在配置目录的
-  `AGREEMENT.json`，不同意就中止。每次改协议只改这一个常量 —— 判据是「比它新的安装
-  一定来自问过新协议的安装器」，与具体是第几版无关。
+  `AGREEMENT.json`，不同意就中止。
+  **但 `lib/selfupdate.py` 里那道判断只对「已经带着新常量的客户端」有效**：升级时跑的
+  是**已装那一版**的 `selfupdate.py`，它的常量永远是旧的，于是「记录里就是这一版」
+  直接放行 —— 2026-11-24 的 4.5.2 → 4.6.0 就是这么漏掉提问的（新协议一次都没被问到）。
+  真正生效的闸门在 `scripts/update_commands.template.sh` 的 `agreement_gate()`：那份脚本
+  由客户端从**目标分支**拉下来执行，协议标识由生成器从 `<ref>:lib/selfupdate.py` 抄进
+  生成物（`AGREEMENT_ID` 仍只有一处来源）。改协议时因此**不必**改生成器或模板，但必须
+  重新生成该版本的 `update_commands.sh` 并重签 `latest.toml`，否则老客户端还是不会问。
   **4.6.0 起项目许可证是 Apache-2.0**（`LICENSE` + `NOTICE`，随 `info/` 一起下发到
   安装树）。许可证的变更会影响使用者手里的权利，所以它算协议变更：改许可证必须
   同时换 `AGREEMENT_ID`（官网落款日期）与 `AGREEMENT_INTRODUCED_IN`。

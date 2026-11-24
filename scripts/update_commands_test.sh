@@ -48,8 +48,12 @@ expect_absent() {  # expect_absent 描述 实际 不该出现的子串
 
 gen() {  # gen 输出文件 [额外参数...]
     local out=$1; shift
+    # 默认不带协议常量（--agreement-id ""，写在调用方参数之前，调用方给了就以
+    # 调用方为准）：协议闸门单独在第 13 段测，别的段落只关心清单、自愈和迁移。
+    # 不这么写的话，凡是从「已装某版本」出发的用例都会先被闸门拦住，问一句
+    # 没人回答的协议，然后在第一条断言上红掉。
     # stderr 落到 GEN_ERR 指定的文件（默认 err.txt）。调用方要看报告时先改它。
-    "$PYTHON" "$BUILDER" --version 9.9.9 --branch main --out "$out" "$@" 2>"${GEN_ERR:-$WORK/err.txt}"
+    "$PYTHON" "$BUILDER" --version 9.9.9 --branch main --agreement-id "" --out "$out" "$@" 2>"${GEN_ERR:-$WORK/err.txt}"
 }
 
 wants() {  # 打印清单里所有 want 的路径
@@ -485,6 +489,104 @@ if command -v python3 >/dev/null 2>&1; then
     wait "$server4" 2>/dev/null || true
 else
     echo "  ·  跳过：没有 python3 起本地服务"
+fi
+
+# ==========================================================
+echo "========== 13. 协议闸门（判据必须是目标版本的协议）=========="
+# 2026-11-24 的实测：4.5.2 升 4.6.0 时用户没被问到新协议。原因是闸门长在客户端
+# 的 lib/selfupdate.py 里，而跑的是**旧客户端**那一份 —— 常量还是
+# ID=2026-11-17 / INTRODUCED_IN=4.4.0，于是「记录里就是这一版」直接放行。
+# 闸门因此搬到本脚本（由客户端从目标分支拉下来执行），用目标版本的常量判定。
+#
+# 这一段全程离线：闸门在第一次下载之前就决定了走不走，所以把 CORE_URL 指向一个
+# 连不上的端口，只看「问没问、记没记、有没有继续往下走」。
+AGREE_HOME="$WORK/agree"
+mkdir -p "$AGREE_HOME/.config/macwave_config" "$AGREE_HOME/inst/lib"
+printf '{"base_dir": "%s"}\n' "$AGREE_HOME/inst" > "$AGREE_HOME/.config/macwave_config/config.json"
+printf 'w\n' > "$AGREE_HOME/inst/lib/wave.py"
+AGREE_RECORD="$AGREE_HOME/.config/macwave_config/AGREEMENT.json"
+
+gen "$WORK/agree.sh" --files lib/wave.py --agreement-id 2026-11-24 >/dev/null 2>&1
+
+agree() {  # agree <记录里的 id | 空> <当前版本> <回答> [MACWAVE_SILENT]
+    if [ -n "$1" ]; then
+        printf '{\n  "agreement": "%s"\n}\n' "$1" > "$AGREE_RECORD"
+    else
+        rm -f "$AGREE_RECORD"
+    fi
+    printf '%s\n' "$3" | env -u MACWAVE_SILENT HOME="$AGREE_HOME" \
+        MACWAVE_INSTALL_DIR="$AGREE_HOME/inst" \
+        MACWAVE_CORE_URL="http://127.0.0.1:9" \
+        MACWAVE_BRANCH=main \
+        MACWAVE_CURRENT_VERSION="$2" \
+        MACWAVE_FILE_TIMEOUT=1 \
+        MACWAVE_LANG=en \
+        ${4:+MACWAVE_SILENT=1} \
+        /bin/bash "$WORK/agree.sh" 2>&1
+}
+
+recorded() { sed -n 's/.*"agreement"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$AGREE_RECORD" 2>/dev/null | head -n 1; }
+
+# A) 记录是旧协议 + 答 y → 必须问、必须记下来，然后继续往下走
+out=$(agree 2026-11-17 4.5.2 y)
+expect "记录了旧协议时必须问一次" "$out" "user agreement has been updated (2026-11-24)"
+expect "提问要指向协议正文" "$out" "https://macwave.org/#agreement"
+expect "同意后要回显已接受" "$out" "Agreement accepted (2026-11-24)"
+if [[ "$(recorded)" == "2026-11-24" ]]; then
+    pass "同意后记录被更新"
+else
+    fail "同意后记录没有更新（实际：$(recorded)）"
+fi
+
+# B) 答 n → 中止，且一个文件都不该动
+out=$(agree 2026-11-17 4.5.2 n)
+expect "答 n 要说明没做改动" "$out" "was not accepted; nothing was changed"
+expect_absent "答 n 之后不该开始下载" "$out" "Downloading"
+if [[ "$(recorded)" == "2026-11-17" ]]; then
+    pass "拒绝不写记录"
+else
+    fail "拒绝却写了记录（实际：$(recorded)）"
+fi
+
+# C) 空回答 = 拒绝（与 install.sh 的 [Y/n] 相反，这里默认值是 N）
+out=$(agree 2026-11-17 4.5.2 "")
+expect "空回答按拒绝处理" "$out" "was not accepted"
+
+# D) 记录已经是这一版 → 不打扰，直接往下走（闸门放行后必须真的开始装）
+out=$(agree 2026-11-24 4.5.2 y)
+expect_absent "记录已是本版协议时不该问" "$out" "user agreement has been updated"
+expect "闸门放行后照常进入下载" "$out" "Downloading"
+
+# E) 全新安装（当前版本为空）→ 交给 install.sh 自己问，这里不重复问
+out=$(agree 2026-11-17 "" y)
+expect_absent "全新安装不在更新脚本里问协议" "$out" "user agreement has been updated"
+
+# F) 静默模式不能代答：不读输入、不记录、按失败退出
+out=$(agree 2026-11-17 4.5.2 y silent)
+if [[ "$(recorded)" == "2026-11-17" ]]; then
+    pass "静默模式没有代答，记录保持原样"
+else
+    fail "静默模式替用户同意了（记录：$(recorded)）"
+fi
+expect_absent "静默模式下不该开始下载" "$out" "Downloading"
+
+# G) 老 ref 生成的脚本（常量空）→ 闸门自动放行，不能把老版本卡死
+gen "$WORK/agree-empty.sh" --files lib/wave.py --agreement-id "" >/dev/null 2>&1
+rm -f "$AGREE_RECORD"
+out=$(printf 'n\n' | env HOME="$AGREE_HOME" MACWAVE_INSTALL_DIR="$AGREE_HOME/inst" \
+    MACWAVE_CORE_URL="http://127.0.0.1:9" MACWAVE_BRANCH=main \
+    MACWAVE_CURRENT_VERSION=4.5.2 MACWAVE_FILE_TIMEOUT=1 MACWAVE_LANG=en \
+    /bin/bash "$WORK/agree-empty.sh" 2>&1)
+expect_absent "没带协议信息的脚本不问也不拦" "$out" "user agreement has been updated"
+expect "没带协议信息的脚本照常安装" "$out" "Downloading"
+
+# H) 生成器没读到常量时必须喊一声（发布时有空值等于这一版不会被问到）
+GEN_ERR="$WORK/gen-agree-err.txt"
+gen "$WORK/agree-gen.sh" --files lib/wave.py --agreement-id "" >/dev/null 2>&1
+if grep -q 'no AGREEMENT_ID' "$WORK/gen-agree-err.txt"; then
+    pass "生成器在缺协议常量时发出警告"
+else
+    fail "生成器默默生成了一个没有协议闸门的脚本"
 fi
 
 # ==========================================================
