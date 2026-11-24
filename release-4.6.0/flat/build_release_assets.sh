@@ -79,7 +79,8 @@ for dir in "${COMPONENTS[@]}"; do
 done
 
 # 给人读的那份也进 flat/（不要另建 archive/：里面那份 selfupdate.sh 会和 flat 撞名）
-cp PROJECT_CONTEXT.md "$OUT/flat/PROJECT_CONTEXT.md"
+# MacWave 把它放在 docs/ 下；LinuxWave 在仓库根 —— 这一行是两边唯一的路径差异。
+cp docs/PROJECT_CONTEXT.md "$OUT/flat/PROJECT_CONTEXT.md"
 
 # -------------------- 源码树归档 --------------------
 
