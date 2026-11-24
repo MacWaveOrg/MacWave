@@ -55,7 +55,9 @@ SILENT_COMMANDS = {"install", "reinstall", "transfer", "upgrade", "uninstall",
 
 # `--raw` 由本模块接管的命令（`--raw` 在别的命令上含义完全不同，见下面
 # RAW_OWNED_ELSEWHERE）。它只对「有下载进度、输出要进日志」的命令有意义。
-RAW_COMMANDS = {"install", "upgrade"}
+# reinstall 也是「装一遍」：日志里要的是同样的无 emoji、井号刻度进度条。
+# （它的旗标里本来就写着 --raw，此前却会被这里挡下 —— 说明与实际不一致。）
+RAW_COMMANDS = {"install", "reinstall", "upgrade"}
 
 # 这几个命令自己也接受 --raw，但含义不是「机器可读的安装日志」：info 是「按存储
 # 原样打印」，mirror 与 basedir 是「只打值」，list 是「一行一个名字、不分列」。
