@@ -256,6 +256,31 @@ is_system_path() {
 
 is_position_independent() {
     # 构建时重定位过的产物：引用是相对形式，与 BASE_DIR 无关，因此不需要改写。
+    #
+    # 注意 `@rpath/*` **不能**无条件算数：4.6 之前的产物普遍是「引用写 @rpath/<名>
+    # + LC_RPATH 指向 @loader_path/../lib」，而那个 `../lib` 是相对**包自己**的
+    # 老布局 —— 依赖其实装在 deps/<依赖>/<依赖>@<版本>/lib 下，靠安装期改写才对得上。
+    # 2026-11-24 把 @rpath 一律当成已重定位，结果 htop / ncdu / tmux 装完就
+    # "Library not loaded: @rpath/libncursesw.6.dylib"（deps_test 抓到的）。
+    # 所以 @rpath 要看它**在这个文件身上能不能解析**，见 rpath_target_resolves。
+    case "$1" in
+        @loader_path/*|@executable_path/*)
+            return 0
+            ;;
+        @rpath/*)
+            rpath_target_resolves "$2" "${1#@rpath/}"
+            return $?
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+is_position_independent_id() {
+    # install name（LC_ID_DYLIB）是"别人加载我时用的名字"，不参与本次加载路径的
+    # 解析 —— `@rpath/<文件名>` 本来就是位置无关产物的惯例写法，不需要能解析到。
+    # 引用那边才要查解析（见 rpath_target_resolves）。
     case "$1" in
         @loader_path/*|@executable_path/*|@rpath/*)
             return 0
@@ -264,6 +289,28 @@ is_position_independent() {
             return 1
             ;;
     esac
+}
+
+rpath_target_resolves() {
+    # rpath_target_resolves <文件> <库文件名>：<文件> 的 LC_RPATH 里有没有一条能解析到它。
+    #
+    # 只认 @loader_path 形式的 rpath（相对<文件>自身，本地可判定）与绝对路径 rpath。
+    # @executable_path 的 rpath 取决于谁加载我，静态判断会误判，当作"解析得到"放行 ——
+    # 那种产物是 4.6 之后构建的新形态，改写反而会把对的改错。
+    local file="$1" base="$2" rpath expanded
+    [ -n "$base" ] || return 1
+    while IFS= read -r rpath; do
+        case "$rpath" in
+            @loader_path/*) expanded="$(dirname "$file")/${rpath#@loader_path/}" ;;
+            @executable_path/*) return 0 ;;
+            /*) expanded="$rpath" ;;
+            *) continue ;;
+        esac
+        [[ -e "$expanded/$base" ]] && return 0
+    done <<< "$(otool -l "$file" 2> /dev/null | awk '
+        $1 == "cmd" && $2 == "LC_RPATH" { want = 1; next }
+        want && $1 == "path" { print $2; want = 0 }')"
+    return 1
 }
 
 position_independent_target_exists() {
@@ -339,6 +386,7 @@ PY
 # -------------------- 逐个 Mach-O 替换 --------------------
 
 CHANGED=0
+SIGNED=0
 
 while IFS= read -r file; do
     if ! otool_output="$(otool -L "$file" 2>/dev/null)"; then
@@ -351,6 +399,15 @@ while IFS= read -r file; do
 
     modified=0
 
+    # `otool -L` 对 dylib 会把**它自己的 install name** 也列成第一条（缩进的）。
+    # 那条不是引用，改写它只会空转：install_name_tool 报成功、字节没变，却把
+    # modified 置 1 → 白重签一次，`wave transfer` 第二次跑还会报 "Relocated 1"。
+    # ID 由下面那段单独处理。
+    self_id=""
+    if [[ "$file" == *.dylib ]]; then
+        self_id="$(otool -D "$file" 2>/dev/null | sed -n '2p' || true)"
+    fi
+
     while IFS= read -r ref_line; do
         # otool -L 里只有缩进行是库引用（首行是文件名）
         if [[ "$ref_line" != [[:space:]]* ]]; then
@@ -362,11 +419,32 @@ while IFS= read -r file; do
             continue
         fi
 
-        if is_system_path "$old_path"; then
+        if [[ -n "$self_id" && "$old_path" == "$self_id" ]]; then
             continue
         fi
 
-        if is_position_independent "$old_path"; then
+        if is_system_path "$old_path"; then
+            # 系统库一般不动。但有例外：`/usr/lib/libiconv.2.dylib` 有一批产物是
+            # 对着 conda 的 libiconv 编的 —— 它们用 `libiconv`/`libiconv_open`
+            # 这种带 lib 前缀的符号名，而 Apple 系统那份只导出 `iconv*`。
+            # 真的去链系统那份，症状是装完立刻
+            #   "Symbol not found: _libiconv"（2026-11-24 的 gwget / libidn2）。
+            # 判据不看名字看**依赖树里有没有同名的库**：依赖记录声明了 libiconv，
+            # 就说明作者要的是那一份；没声明（libSystem 这类）照旧跳过。
+            # 只对这一个名字开例外，不是"所有系统库都查一遍依赖树"：
+            # 全查会把整棵依赖树的索引建起来，位置无关的树就失去"零成本"这个前提
+            # （transfer_test 第 4 节钉的就是这条）。
+            case "$old_path" in
+                /usr/lib/libiconv.2.dylib)
+                    map_lookup "${old_path##*/}" || continue
+                    ;;
+                *)
+                    continue
+                    ;;
+            esac
+        fi
+
+        if is_position_independent "$old_path" "$file"; then
             # 构建时已经重定位过：不改写、不重签，只核对 @loader_path 指向的目标在不在。
             if ! position_independent_target_exists "$file" "$old_path"; then
                 echo "$file|$old_path" >> "$UNRESOLVED_FILE"
@@ -418,7 +496,7 @@ while IFS= read -r file; do
     # MH_BUNDLE 类型，本来没有 id，install_name_tool 也设不上，硬设会每次空改一遍。
     if [[ "$file" == *.dylib ]]; then
         current_id="$(otool -D "$file" 2>/dev/null | sed -n '2p' || true)"
-        if [[ -n "$current_id" ]] && ! is_position_independent "$current_id"; then
+        if [[ -n "$current_id" ]] && ! is_position_independent_id "$current_id"; then
             if [[ "$CHECK_ONLY" -eq 1 ]]; then
                 echo "$file|(install name) $current_id" >> "$ABSOLUTE_FILE"
             else
@@ -446,6 +524,17 @@ while IFS= read -r file; do
             echo -e "${YELLOW}🌊 Warning: Failed to re-sign: $file${RESET}"
         fi
         CHANGED=$((CHANGED + 1))
+    elif [[ "$CHECK_ONLY" -eq 0 ]] && ! codesign --verify "$file" >/dev/null 2>&1; then
+        # 没改写 ≠ 能用。conda 的依赖库普遍**没有签名**，而 arm64 上 dyld 拒绝加载
+        # 未签名的 Mach-O —— 症状是 `Symbol not found: _libiconv`，而且它会把符号
+        # 解析到系统里同名的另一份库上（2026-11-24 的 gwget / libiconv 就是这样：
+        # 依赖树里明明有 libiconv，dyld 却去找 /usr/lib 那份，然后找不到 `_libiconv`）。
+        # 只对这种"本来就没签名"的文件补一个 ad-hoc 签名，不动它的字节结构。
+        if codesign --force --sign - "$file" >/dev/null 2>&1; then
+            SIGNED=$((SIGNED + 1))
+        else
+            echo -e "${YELLOW}🌊 Warning: Failed to sign: $file${RESET}"
+        fi
     fi
 done < <(list_macho_files "$TARGET_DIR")
 
@@ -468,6 +557,11 @@ if [[ "$CHANGED" -gt 0 ]]; then
     else
         echo "🌊 Relocated $CHANGED Mach-O file(s) in ${TARGET_DIR#"$BASE_DIR"/}"
     fi
+fi
+
+if [[ "$SIGNED" -gt 0 ]]; then
+    # 与"重定位"分开报：这两种动作的原因完全不同，混在一起会让人以为字节被改了。
+    echo "🌊 Signed $SIGNED unsigned Mach-O file(s) in ${TARGET_DIR#"$BASE_DIR"/}"
 fi
 
 if [[ -s "$FAILED_FILE" ]]; then
