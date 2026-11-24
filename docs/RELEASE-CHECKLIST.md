@@ -289,9 +289,13 @@ RC 探针建议也签，否则 `wave selfupdate` 在 RC 上会打「这份数据
 
 ```bash
 cd ~/Projects/MacWaveOrg/Pages
-grep -n '"version.block"' i18n.js          # 每条都应是本次版本号
-grep -rn '4\.5\.2\|2026-11-23' index.html i18n.js   # 旧版本/旧日期残留，应为空
+python3 scripts/check_version.py          # 直接跑闸门，与 CI 同一条命令
 ```
+
+**这一步现在有 CI 兜底**：`Pages` 仓库的 `Website version check` 会读 Selfupdate 的
+`macwavedata/latest.toml`，逐条比对 `i18n.js` 的全部 `version.block` 与
+`index.html` 的两行兜底；每日还会定时跑一次，所以「发版了但官网没动」也会红。
+本地用同一条命令复现：`python3 scripts/check_version.py`。
 
 - GitHub Release：正文用 `docs/RELEASE-<版本>.md`
 
