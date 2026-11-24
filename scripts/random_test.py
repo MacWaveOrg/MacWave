@@ -316,8 +316,16 @@ def setup_environment(layout):
     layout.created_config = True
     (layout.config_dir / "config.json").write_text(
         json.dumps({"base_dir": str(layout.base_dir)}, indent=2))
+    # build_number 必须一起写：探针里带了构建号，而 selfupdate 的「有没有新版」
+    # 是「版本优先、版本相同再看构建号」。只写 version 时，同版本不同构建号会被
+    # 判成「有新版」，于是随机测试真的去更新安装树 —— 4.6.0 起那一步还会撞上
+    # 用户协议提问（沙箱里没人回答，直接按拒绝退出），用例就红在 exit=1 上。
+    installed_version, installed_build = installed_version_for_selfupdate()
+    version_record = {"version": installed_version}
+    if installed_build:
+        version_record["build_number"] = installed_build
     (layout.config_dir / "VERSION.json").write_text(
-        json.dumps({"version": installed_version_for_selfupdate()}, indent=2))
+        json.dumps(version_record, indent=2))
 
     print(f"🌊 deployed scripts into {layout.base_dir}")
 
@@ -354,15 +362,20 @@ def installed_version_for_selfupdate():
 
     版本号必须取自**被测代码自己会读的那个源**。此前固定读 configdata，于是 4.0
     代码把 3.2.x 当成「已安装版本」，误判有新版本并真的去更新，整个用例随即失败。
+
+    返回 (版本, 构建号)。构建号同样要照抄探针里的值：只给版本时，「同版本、不同
+    构建号」仍会被判成「有新版」。
     """
     url, pattern = latest_version_source()
-    match = re.search(pattern, _fetch_text(url), re.M)
+    text = _fetch_text(url)
+    match = re.search(pattern, text, re.M)
     if match:
-        return match.group(1)
+        build = re.search(r'^\s*build_number\s*=\s*"([^"]*)"', text, re.M)
+        return match.group(1), (build.group(1) if build else "")
 
     # 取不到就别猜一个小版本号——那会让 selfupdate 判定「该升级」并真的动安装目录。
     # 用一个远高于真实的版本，让它走「已是最新」的短路分支。
-    return "999.999.999"
+    return "999.999.999", ""
 
 
 def cleanup(layout, keep=False):
