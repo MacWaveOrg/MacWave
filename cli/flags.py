@@ -93,9 +93,15 @@ basedir = {"--raw"}
 list = {"--raw"}
 # manual 的 --color 只给手册上色；--zh 在 EARLY 里（它不参与分发）。
 manual = {"--color"}
+# reinstall 复用 install 的白名单（它最后就是调 install），只多一个 -a/--all
+reinstall = {"-a", "--all", "-F", "--force", "--raw"} | set(NO_LINK) | silent
+# transfer 不改版本、不下载，只有「全部」与「只看不动」两个自己的旗标
+transfer = {"-a", "--all", "-n", "--dry-run"} | silent
 
 COMMAND_FLAGS = {
     "install": install,
+    "reinstall": reinstall,
+    "transfer": transfer,
     "uninstall": uninstall,
     "upgrade": upgrade,
     "link": link,

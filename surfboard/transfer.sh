@@ -121,7 +121,7 @@ index_tree() {
 
 list_tree_names() {
     # 只登记文件名，用于分辨“我们的树里有但没接上”与“根本不属于我们的库”
-    # 同上：file 必须 local，否则覆盖主循环的 $file。
+    # 同上：file 必须 local，否则覆盖主循环的 ${file}。
     local root="$1" out="$2" file
     while IFS= read -r file; do
         if [[ -f "$file" ]]; then

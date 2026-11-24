@@ -285,6 +285,8 @@ Usage:
 Commands:
   install     Install one or more packages (Latest Version)
   upgrade     Install a package at the latest version
+  reinstall   Reinstall the version(s) already installed
+  transfer    Make installed packages independent of the install directory
   uninstall   Uninstall a package
   list        List installed packages (two columns; --raw for scripts)
   search      Search for a package in the index

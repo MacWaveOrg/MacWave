@@ -173,8 +173,8 @@ if owners != set(silent.SILENT_COMMANDS):
     add(f"-s 的命令清单与 SILENT_COMMANDS 不一致: "
         f"清单={sorted(owners)} 代码={sorted(silent.SILENT_COMMANDS)}")
 
-expected = "-s only applies to wave install, wave link, wave selfupdate, " \
-           "wave uninstall, wave unlink, wave upgrade"
+expected = "-s only applies to wave install, wave link, wave reinstall, wave selfupdate, " \
+           "wave transfer, wave uninstall, wave unlink, wave upgrade"
 if flags.describe("-s") != expected:
     add(f"describe(-s) 变了: {flags.describe('-s')!r}")
 if flags.describe("-S") != expected.replace("-s only", "-S only", 1):

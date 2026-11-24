@@ -121,6 +121,63 @@ COMMANDS = (
         ],
     ),
     Command(
+        name="reinstall",
+        module="reinstaller",
+        handler="handle_reinstall",
+        takes_input=True,
+        listed=True,
+        summary="Reinstall the version(s) you already have",
+        usage="wave reinstall <package>[@<version>] [, ...] | wave reinstall --all",
+        desc="Download and install the same version again, replacing what is on disk. "
+             "Useful when a package was rebuilt under the same version number (4.6 "
+             "relocated Mach-O files to @loader_path), when files were damaged, or to "
+             "pin a package back to the version already installed instead of upgrading.",
+        flags=[
+            ("-a, --all", "Reinstall every installed package"),
+            ("-C, --continue", "Resume an interrupted download"),
+            ("--proxy <string>", "HTTP/HTTPS proxy (e.g. http://127.0.0.1:8080)"),
+            ("--skip-ssl", "Skip SSL certificate verification (insecure)"),
+            ("--limit-rate <string>", "Limit download speed (e.g. 200K, 1M, 5M; a bare number means bytes)"),
+            ("--max-time <string>", "Maximum total time for one request (40s, 1min, 1min20s, 2h; a bare number means seconds)"),
+            ("--connect-timeout <string>", "Maximum time for the handshake"),
+            ("--content-time <string>", "Maximum time to receive data"),
+            ("--no-link", "Do not touch the unversioned link (the old name --unlink "
+                          "still works)"),
+            ("-F, --force", "Install anyway when the running macOS is older than the package declares"),
+            ("--raw", "Plain output for logs and scripts: no emoji, no colours, ASCII progress bar"),
+        ],
+        examples=[
+            "wave reinstall jq",
+            "wave reinstall jq@1.8.2",
+            "wave reinstall jq, yq",
+            "wave reinstall --all",
+        ],
+    ),
+    Command(
+        name="transfer",
+        module="transferrer",
+        handler="handle_transfer",
+        takes_input=True,
+        listed=True,
+        summary="Make installed packages independent of the install directory",
+        usage="wave transfer <package>[@<version>] [, ...] | wave transfer --all",
+        desc="Rewrite the Mach-O references of already installed packages so they no "
+             "longer name an absolute install path, then ad-hoc sign them again. "
+             "Packages that are already position-independent are detected and skipped, "
+             "so the command is safe to repeat. Dependencies used by the named packages "
+             "are transferred too, otherwise the tree still could not be moved.",
+        flags=[
+            ("-a, --all", "Transfer every installed package and dependency"),
+            ("-n, --dry-run", "Only report which packages would be transferred"),
+        ],
+        examples=[
+            "wave transfer jq",
+            "wave transfer ffmpeg@6.1",
+            "wave transfer jq, yq",
+            "wave transfer --all --dry-run",
+        ],
+    ),
+    Command(
         name="uninstall",
         module="uninstaller",
         handler="handle_uninstall",
