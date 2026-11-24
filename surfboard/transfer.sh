@@ -14,6 +14,10 @@
 #
 # 只处理 Mach-O；系统库（/usr/lib、/System、/Library/Apple）不动。
 # 改过的文件会重新做 ad-hoc 签名——Apple Silicon 上这是必须的，否则无法运行。
+#
+# 4.6 起：产物如果已经是**位置无关**的形式（构建时就用 @loader_path 相对引用
+# 重定位过），这里不再改写、也不再重签，只做一次"目标是否存在"的核对。
+# 这样同一份字节在任意 BASE_DIR 下都成立，安装时零改写；见 docs/RELOCATION.md。
 
 set -e
 
@@ -26,12 +30,28 @@ RESET='\033[0m'
 
 # -------------------- 参数与检查 --------------------
 
-TARGET_DIR="$1"
-BASE_DIR="$2"
+# --relative：把引用写成 @loader_path 相对形式（而不是 BASE_DIR 下的绝对路径）。
+# 用途有两个，都不是"每次安装必做"：
+#   1. 把已装的老树（绝对路径）迁移成位置无关，之后整棵树可以搬走；
+#   2. 兼容期里让老产物也直接落到相对形式。
+# 从任意位置取走，剩下的按位置参数解释。
+RELATIVE=0
+CHECK_ONLY=0
+POSITIONAL=()
+for arg in "$@"; do
+    case "$arg" in
+        --relative|-r) RELATIVE=1 ;;
+        --check) CHECK_ONLY=1 ;;
+        *) POSITIONAL+=("$arg") ;;
+    esac
+done
+
+TARGET_DIR="${POSITIONAL[0]:-}"
+BASE_DIR="${POSITIONAL[1]:-}"
 # 可选：多个 target 共用的兜底索引目录。统一收尾会连续处理几十个 target，
 # 若每个都重建"全部依赖"的索引就是 O(n²)（实测 18 个依赖要跑 5 分钟）。
 # 调用方给一个目录，这里建一次、其余复用。
-SHARED_INDEX_DIR="${3:-}"
+SHARED_INDEX_DIR="${POSITIONAL[2]:-}"
 
 if [[ -z "$TARGET_DIR" || -z "$BASE_DIR" ]]; then
     echo -e "${RED_BOLD}🌊 Error: Missing target directory or base directory.${RESET}"
@@ -43,12 +63,20 @@ if [[ ! -d "$TARGET_DIR" ]]; then
     exit 1
 fi
 
-for tool in otool install_name_tool codesign; do
-    if ! command -v "$tool" >/dev/null 2>&1; then
-        echo -e "${YELLOW}🌊 Warning: '$tool' not found, skipping path transfer.${RESET}"
-        exit 0
+if [[ "$CHECK_ONLY" -eq 1 ]]; then
+    # 只读检查：不改字节、不重签，所以只要 otool。缺了它才真的没法判断。
+    if ! command -v otool >/dev/null 2>&1; then
+        echo -e "${RED_BOLD}🌊 Error: 'otool' not found, cannot inspect Mach-O files.${RESET}"
+        exit 1
     fi
-done
+else
+    for tool in otool install_name_tool codesign; do
+        if ! command -v "$tool" >/dev/null 2>&1; then
+            echo -e "${YELLOW}🌊 Warning: '$tool' not found, skipping path transfer.${RESET}"
+            exit 0
+        fi
+    done
+fi
 
 # -------------------- 库索引（名字 -> 绝对路径） --------------------
 
@@ -66,9 +94,11 @@ MISSING_FILE="$(mktemp "${TMPDIR:-/tmp}/macwave-missing.XXXXXX")"
 EXTERNAL_FILE="$(mktemp "${TMPDIR:-/tmp}/macwave-external.XXXXXX")"
 FAILED_FILE="$(mktemp "${TMPDIR:-/tmp}/macwave-failed.XXXXXX")"
 ERROR_FILE="$(mktemp "${TMPDIR:-/tmp}/macwave-error.XXXXXX")"
+# --check 用：发现仍然写死绝对路径的引用/ID，一个都不改，只报告。
+ABSOLUTE_FILE="$(mktemp "${TMPDIR:-/tmp}/macwave-absolute.XXXXXX")"
 
 cleanup() {
-    rm -f "$MAP_FILE" "$TREE_FILE" "$UNRESOLVED_FILE" "$MISSING_FILE" "$EXTERNAL_FILE" "$FAILED_FILE" "$ERROR_FILE"
+    rm -f "$MAP_FILE" "$TREE_FILE" "$UNRESOLVED_FILE" "$MISSING_FILE" "$EXTERNAL_FILE" "$FAILED_FILE" "$ERROR_FILE" "$ABSOLUTE_FILE"
 }
 trap cleanup EXIT
 
@@ -79,7 +109,9 @@ index_tree() {
     # 文件时这两项就是主要瓶颈。
     # 软链接也要收（conda 的 libc++.1.dylib 常是指向 libc++.1.0.dylib 的链接），
     # [[ -f ]] 会把悬空链接滤掉（macOS 的 find 不支持 -xtype）。
-    local root="$1" out="$2"
+    # file 必须 local：这个函数会在主循环里被惰性调用（ensure_index），
+    # 不声明就会把主循环的 $file 覆盖成"最后一个被索引的文件"。
+    local root="$1" out="$2" file
     while IFS= read -r file; do
         if [[ -f "$file" ]]; then
             printf '%s|%s\n' "${file##*/}" "$file"
@@ -89,7 +121,8 @@ index_tree() {
 
 list_tree_names() {
     # 只登记文件名，用于分辨“我们的树里有但没接上”与“根本不属于我们的库”
-    local root="$1" out="$2"
+    # 同上：file 必须 local，否则覆盖主循环的 $file。
+    local root="$1" out="$2" file
     while IFS= read -r file; do
         if [[ -f "$file" ]]; then
             printf '%s\n' "${file##*/}"
@@ -130,9 +163,15 @@ build_fallback_index() {
     fi
 }
 
+MAP_RESULT=""
+
 map_lookup() {
-    # 命中则输出绝对路径，否则返回 1。先查本 target 自己的索引（_DEPS 优先），
-    # 再查共享兜底索引。
+    # 命中则把绝对路径写进 MAP_RESULT 并返回 0，否则返回 1。先查本 target
+    # 自己的索引（_DEPS 优先），再查共享兜底索引。
+    #
+    # 用全局变量而不是 `$(...)` 输出：命令替换会开子 shell，ensure_index 的
+    # 惰性初始化就带不回来，索引会被反复重建（依赖树有上万文件）。
+    ensure_index
     local name="$1" line
     line="$(grep -m1 -F "$name|" "$MAP_FILE" 2>/dev/null || true)"
 
@@ -144,44 +183,61 @@ map_lookup() {
         return 1
     fi
 
-    echo "${line#*|}"
+    MAP_RESULT="${line#*|}"
 }
 
 name_in_tree() {
     # 名字是否出现在"我们自己的树"里（含共享兜底索引）
+    ensure_index
     local name="$1"
     grep -qxF "$name" "$TREE_FILE" 2>/dev/null && return 0
     [[ -n "$SHARED_TREE" ]] && grep -qxF "$name" "$SHARED_TREE" 2>/dev/null && return 0
     return 1
 }
 
-# 1. 目标目录自身
-index_tree "$TARGET_DIR" "$MAP_FILE"
-list_tree_names "$TARGET_DIR" "$TREE_FILE"
+build_index() {
+    local line ref dep_name dep_version DEPS_FILE
 
-# 2. _DEPS 列出的依赖（优先于其它同名库）
-DEPS_FILE="$TARGET_DIR/_DEPS"
-if [[ -f "$DEPS_FILE" ]]; then
-    while IFS= read -r line; do
-        ref="${line//\"/}"
-        ref="${ref// /}"
+    # 1. 目标目录自身
+    index_tree "$TARGET_DIR" "$MAP_FILE"
+    list_tree_names "$TARGET_DIR" "$TREE_FILE"
 
-        if [[ -z "$ref" || "$ref" != *@* ]]; then
-            continue
-        fi
+    # 2. _DEPS 列出的依赖（优先于其它同名库）
+    DEPS_FILE="$TARGET_DIR/_DEPS"
+    if [[ -f "$DEPS_FILE" ]]; then
+        while IFS= read -r line; do
+            ref="${line//\"/}"
+            ref="${ref// /}"
 
-        dep_name="${ref%@*}"
-        dep_version="${ref##*@}"
-        index_tree "$BASE_DIR/deps/$dep_name/$dep_name@$dep_version" "$MAP_FILE"
-    done < "$DEPS_FILE"
-fi
+            if [[ -z "$ref" || "$ref" != *@* ]]; then
+                continue
+            fi
 
-# 3. 其余已安装依赖（兜底）：整棵树都进索引，不能只扫 lib/ ——
-#    依赖的解压目录未必是标准布局（例如 libcxx 的包只有 lib/ 一个顶层目录，
-#    会被当成包装目录下沉一层，库文件就落在版本目录根下而不是 lib/ 里）。
-#    这些名字同时记进"我们的树"，用于后续分流未解析引用。
-#    这一步是 O(依赖数)，统一收尾时借助共享索引只做一次。
-build_fallback_index
+            dep_name="${ref%@*}"
+            dep_version="${ref##*@}"
+            index_tree "$BASE_DIR/deps/$dep_name/$dep_name@$dep_version" "$MAP_FILE"
+        done < "$DEPS_FILE"
+    fi
+
+    # 3. 其余已安装依赖（兜底）：整棵树都进索引，不能只扫 lib/ ——
+    #    依赖的解压目录未必是标准布局（例如 libcxx 的包只有 lib/ 一个顶层目录，
+    #    会被当成包装目录下沉一层，库文件就落在版本目录根下而不是 lib/ 里）。
+    #    这些名字同时记进"我们的树"，用于后续分流未解析引用。
+    #    这一步是 O(依赖数)，统一收尾时借助共享索引只做一次。
+    build_fallback_index
+}
+
+INDEX_READY=0
+
+ensure_index() {
+    # 惰性建索引：位置无关的产物（4.6 起构建时重定位好的那些）一个引用都不需要
+    # 改写，也就永远走不到这里 —— 安装时省掉整棵依赖树的扫描。
+    if [[ "$INDEX_READY" -eq 1 ]]; then
+        return 0
+    fi
+    build_index
+    INDEX_READY=1
+}
 
 # -------------------- 辅助函数 --------------------
 
@@ -194,6 +250,60 @@ is_system_path() {
             return 1
             ;;
     esac
+}
+
+is_position_independent() {
+    # 构建时重定位过的产物：引用是相对形式，与 BASE_DIR 无关，因此不需要改写。
+    case "$1" in
+        @loader_path/*|@executable_path/*|@rpath/*)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+position_independent_target_exists() {
+    # 只对 @loader_path 判断：它相对"发起这次加载的文件"，本地可解析。
+    # @executable_path / @rpath 的解析依赖加载者，静态判断会误报，一律当作存在。
+    local file="$1" ref="$2" rel
+    case "$ref" in
+        @loader_path/*) rel="${ref#@loader_path/}" ;;
+        *) return 0 ;;
+    esac
+    [[ -e "$(dirname "$file")/$rel" ]]
+}
+
+relative_path() {
+    # 从目录 $1 到绝对路径 $2 的相对路径。纯 bash：macOS 没有
+    # `realpath --relative-to`（那是 GNU coreutils），而这里不能靠外部工具。
+    local from="$1" to="$2"
+    local IFS=/
+    local -a from_parts to_parts
+    local i=0 out="" part
+
+    read -r -a from_parts <<< "${from#/}"
+    read -r -a to_parts <<< "${to#/}"
+
+    while [[ $i -lt ${#from_parts[@]} && $i -lt ${#to_parts[@]} \
+             && "${from_parts[$i]}" == "${to_parts[$i]}" ]]; do
+        i=$((i + 1))
+    done
+
+    local j=$i
+    while [[ $j -lt ${#from_parts[@]} ]]; do
+        out="${out}../"
+        j=$((j + 1))
+    done
+    while [[ $i -lt ${#to_parts[@]} ]]; do
+        out="${out}${to_parts[$i]}/"
+        i=$((i + 1))
+    done
+
+    out="${out%/}"
+    # 目标是目录本身时没有剩余分量；这种情况对引用没有意义，保持原样。
+    printf '%s' "${out:-.}"
 }
 
 list_macho_files() {
@@ -254,7 +364,31 @@ while IFS= read -r file; do
             continue
         fi
 
-        new_path="$(map_lookup "${old_path##*/}" || true)"
+        if is_position_independent "$old_path"; then
+            # 构建时已经重定位过：不改写、不重签，只核对 @loader_path 指向的目标在不在。
+            if ! position_independent_target_exists "$file" "$old_path"; then
+                echo "$file|$old_path" >> "$UNRESOLVED_FILE"
+            fi
+            continue
+        fi
+
+        if [[ "$CHECK_ONLY" -eq 1 ]]; then
+            # 检查只看"还有没有绝对路径"，不建索引（省掉整棵依赖树的扫描）。
+            echo "$file|$old_path" >> "$ABSOLUTE_FILE"
+            continue
+        fi
+
+        if map_lookup "${old_path##*/}"; then
+            if [[ "$RELATIVE" -eq 1 ]]; then
+                # 位置无关：从引用者所在目录算到目标的相对路径。
+                # 这样同一份字节在任意 BASE_DIR 下都成立，装完还能整棵树搬走。
+                new_path="@loader_path/$(relative_path "$(dirname "$file")" "$MAP_RESULT")"
+            else
+                new_path="$MAP_RESULT"
+            fi
+        else
+            new_path=""
+        fi
 
         if [[ "$new_path" == "$old_path" ]]; then
             # 已经指向正确位置
@@ -282,11 +416,25 @@ while IFS= read -r file; do
     # MH_BUNDLE 类型，本来没有 id，install_name_tool 也设不上，硬设会每次空改一遍。
     if [[ "$file" == *.dylib ]]; then
         current_id="$(otool -D "$file" 2>/dev/null | sed -n '2p' || true)"
-        if [[ -n "$current_id" && "$current_id" != "$file" ]]; then
-            if install_name_tool -id "$file" "$file" 2>"$ERROR_FILE"; then
-                modified=1
+        if [[ -n "$current_id" ]] && ! is_position_independent "$current_id"; then
+            if [[ "$CHECK_ONLY" -eq 1 ]]; then
+                echo "$file|(install name) $current_id" >> "$ABSOLUTE_FILE"
             else
-                echo "$file|(install name)|$(head -n 1 "$ERROR_FILE")" >> "$FAILED_FILE"
+                if [[ "$RELATIVE" -eq 1 ]]; then
+                    # ID 是"别人加载我时用的名字"，@loader_path 会相对**加载者**
+                    # 解析，语义是错的。位置无关产物的惯例是 @rpath/<文件名>；
+                    # 本地引用已全部写成显式 @loader_path，ID 不参与实际加载。
+                    new_id="@rpath/${file##*/}"
+                else
+                    new_id="$file"
+                fi
+                if [[ "$current_id" != "$new_id" ]]; then
+                    if install_name_tool -id "$new_id" "$file" 2>"$ERROR_FILE"; then
+                        modified=1
+                    else
+                        echo "$file|(install name)|$(head -n 1 "$ERROR_FILE")" >> "$FAILED_FILE"
+                    fi
+                fi
             fi
         fi
     fi
@@ -301,8 +449,23 @@ done < <(list_macho_files "$TARGET_DIR")
 
 # -------------------- 输出 --------------------
 
+if [[ "$CHECK_ONLY" -eq 1 ]]; then
+    # 只报告，不修改。$ABSOLUTE_FILE 非空就说明这个产物还是"绑死在某个前缀"的老形态。
+    if [[ -s "$ABSOLUTE_FILE" ]]; then
+        count="$(wc -l < "$ABSOLUTE_FILE" | tr -d ' ')"
+        echo "🌊 absolute: $count reference(s)/identifier(s) still name an absolute path in ${TARGET_DIR#"$BASE_DIR"/}"
+        exit 1
+    fi
+    echo "🌊 relative: ${TARGET_DIR#"$BASE_DIR"/}"
+    exit 0
+fi
+
 if [[ "$CHANGED" -gt 0 ]]; then
-    echo "🌊 Relocated $CHANGED Mach-O file(s) in ${TARGET_DIR#"$BASE_DIR"/}"
+    if [[ "$RELATIVE" -eq 1 ]]; then
+        echo "🌊 Relocated $CHANGED Mach-O file(s) to @loader_path in ${TARGET_DIR#"$BASE_DIR"/}"
+    else
+        echo "🌊 Relocated $CHANGED Mach-O file(s) in ${TARGET_DIR#"$BASE_DIR"/}"
+    fi
 fi
 
 if [[ -s "$FAILED_FILE" ]]; then
