@@ -258,6 +258,108 @@ wave transfer -a bar
 wave transfer bar -s
 [[ -z "$OUT" && "$RC" -eq 0 ]] && pass "-s 一个字节都不输出" || fail "-s 仍有输出"
 
+echo "========== 7. 老产物写 @rpath + LC_RPATH：仍要改写（2026-11-24 回归） =========="
+
+# 4.6 之前的一大批产物（htop / ncdu / tmux …）不是绝对路径引用，而是
+#   引用 @rpath/libfoo.dylib + LC_RPATH=@loader_path/../lib —— 那个 ../lib 是
+#   "包自己旁边"的老布局，而依赖实际在 deps/<依赖>/<依赖>@<版本>/lib 下。
+# 2026-11-24 把 @rpath 一律当成"已重定位"跳过，于是装完 htop 立刻
+#   "Library not loaded: @rpath/libncursesw.6.dylib"。判据必须是"这条 @rpath
+#   在这个文件身上解析得到吗"，解析不到就得照老规矩改写。
+
+build_rpath_legacy() {  # build_rpath_legacy <工作目录> <rpath>
+    local root="$1" rpath="$2" stage="$1/stage"
+    mkdir -p "$stage/deps/foo/foo@1.0/lib" "$stage/bin/bar@1.0/bin"
+    printf 'int foo(void) { return 7; }\n' > "$root/foo.c"
+    printf '#include <stdio.h>\nint foo(void);\nint main(void){printf("ok %%d\\n",foo());return 0;}\n' \
+        > "$root/main.c"
+    clang -dynamiclib -install_name @rpath/libfoo.dylib \
+        -Wl,-headerpad_max_install_names \
+        -o "$stage/deps/foo/foo@1.0/lib/libfoo.dylib" "$root/foo.c" 2> /dev/null
+    clang -o "$stage/bin/bar@1.0/bin/bar" "$root/main.c" \
+        -L"$stage/deps/foo/foo@1.0/lib" -lfoo \
+        -Wl,-rpath,"$rpath" -Wl,-headerpad_max_install_names 2> /dev/null
+}
+
+# A) 老布局（rpath 指 @loader_path/../lib，解析不到）→ 必须改写，且要能跑
+RPATH1="$WORK/rpath-legacy"
+build_rpath_legacy "$RPATH1" "@loader_path/../lib"
+[[ "$(ref_of "$RPATH1/stage/bin/bar@1.0/bin/bar")" == "@rpath/libfoo.dylib" ]] \
+    && pass "夹具是「@rpath + 老 rpath」形态" || fail "夹具没造出 @rpath 引用"
+transfer --relative "$RPATH1/stage/bin/bar@1.0" "$RPATH1/stage"
+case "$(ref_of "$RPATH1/stage/bin/bar@1.0/bin/bar")" in
+    @loader_path/*) pass "解析不到的 @rpath 被改写成 @loader_path" ;;
+    *) fail "解析不到的 @rpath 没被改写：$(ref_of "$RPATH1/stage/bin/bar@1.0/bin/bar")" ;;
+esac
+"$RPATH1/stage/bin/bar@1.0/bin/bar" > /dev/null 2>&1
+[[ $? -eq 0 ]] && pass "改写后能运行" || fail "改写后仍加载不到库"
+
+# B) 同一个夹具再跑一次：一个字节都不该动（ID 那行不能被当成引用空转）
+BEFORE=$(sum_of "$RPATH1/stage/bin/bar@1.0/bin/bar")
+transfer --relative "$RPATH1/stage/bin/bar@1.0" "$RPATH1/stage"
+# transfer.sh 在"零改动"时什么都不打印（"already relative N" 是 Python CLI 层的
+# 汇总），所以判据是"没有 Relocated"。
+[[ "$OUT" != *"Relocated"* ]] && pass "第二次跑不再改写（零改动时不输出）" \
+    || fail "第二次跑仍在改写：$(printf '%.160s' "$OUT")"
+[[ "$(sum_of "$RPATH1/stage/bin/bar@1.0/bin/bar")" == "$BEFORE" ]] \
+    && pass "第二次跑不改字节" || fail "第二次跑改了字节"
+
+# C) 新形态：rpath 指向依赖树里的真实位置（解析得到）→ 不能动它
+RPATH2="$WORK/rpath-new"
+build_rpath_legacy "$RPATH2" "@loader_path/../../../deps/foo/foo@1.0/lib"
+BEFORE=$(sum_of "$RPATH2/stage/bin/bar@1.0/bin/bar")
+transfer --relative "$RPATH2/stage/bin/bar@1.0" "$RPATH2/stage"
+[[ "$OUT" != *"Relocated"* ]] \
+    && pass "能解析到的 @rpath 被当作已重定位（不白改）" \
+    || fail "能解析到的 @rpath 仍被改写：$(printf '%.160s' "$OUT")"
+[[ "$(sum_of "$RPATH2/stage/bin/bar@1.0/bin/bar")" == "$BEFORE" ]] \
+    && pass "能解析到的产物字节未变（也没重签）" || fail "能解析到的产物被改了字节"
+"$RPATH2/stage/bin/bar@1.0/bin/bar" > /dev/null 2>&1
+[[ $? -eq 0 ]] && pass "新形态仍能运行" || fail "新形态运行失败"
+
+echo "========== 8. 未签名的 Mach-O 要补 ad-hoc 签名（arm64 才加载得动） =========="
+
+# conda 的依赖库普遍没有签名，而 arm64 上 dyld 拒绝加载未签名的 Mach-O：症状是
+#   Symbol not found: _libiconv   Expected in: /usr/lib/libiconv.2.dylib
+# —— 依赖树里明明有那份库，dyld 却退到系统里同名的那份去找符号（2026-11-24 的
+# gwget）。判据不能是"改没改字节"，得看它本来有没有签名。
+SIGN="$WORK/unsigned"
+mkdir -p "$SIGN/deps/foo/foo@1.0/lib" "$SIGN/bin/bar@1.0/bin"
+printf 'int foo(void) { return 5; }\n' > "$SIGN/foo.c"
+printf '#include <stdio.h>\nint foo(void);\nint main(void){printf("ok %%d\\n",foo());return 0;}\n' \
+    > "$SIGN/main.c"
+clang -dynamiclib -install_name @rpath/libfoo.dylib \
+    -Wl,-headerpad_max_install_names \
+    -o "$SIGN/deps/foo/foo@1.0/lib/libfoo.dylib" "$SIGN/foo.c" 2> /dev/null
+clang -o "$SIGN/bin/bar@1.0/bin/bar" "$SIGN/main.c" \
+    -L"$SIGN/deps/foo/foo@1.0/lib" -lfoo \
+    -Wl,-rpath,@loader_path/../../../deps/foo/foo@1.0/lib \
+    -Wl,-headerpad_max_install_names 2> /dev/null
+codesign --remove-signature "$SIGN/deps/foo/foo@1.0/lib/libfoo.dylib" > /dev/null 2>&1
+if codesign --verify "$SIGN/deps/foo/foo@1.0/lib/libfoo.dylib" > /dev/null 2>&1; then
+    fail "夹具没去掉签名（环境不允许 remove-signature？）"
+else
+    pass "夹具是一份未签名的 dylib"
+
+    # 安装时 transfer 是**按产物逐个**跑的（软件包一次、每个依赖各一次），
+    # 所以依赖目录要自己走一遍 —— 只跑 bin/ 的话，依赖库根本不在遍历范围里。
+    transfer --relative "$SIGN/deps/foo/foo@1.0" "$SIGN"
+    [[ "$OUT" == *"Signed 1 unsigned Mach-O"* ]] \
+        && pass "未签名的那份被补签" || fail "没有补签名：$(printf '%.160s' "$OUT")"
+    [[ "$OUT" != *"Relocated"* ]] \
+        && pass "补签名不假装成重定位" || fail "把补签名报成了重定位"
+    codesign --verify "$SIGN/deps/foo/foo@1.0/lib/libfoo.dylib" > /dev/null 2>&1 \
+        && pass "补签后签名有效" || fail "补签后签名仍然无效"
+
+    transfer --relative "$SIGN/bin/bar@1.0" "$SIGN"
+    "$SIGN/bin/bar@1.0/bin/bar" > /dev/null 2>&1
+    [[ $? -eq 0 ]] && pass "补签后能运行" || fail "补签后仍跑不起来"
+
+    transfer --relative "$SIGN/deps/foo/foo@1.0" "$SIGN"
+    [[ -z "$OUT" ]] && pass "第二次跑零改动、零输出（幂等）" \
+        || fail "第二次跑仍有输出：$(printf '%.160s' "$OUT")"
+fi
+
 echo
 echo "=========================================="
 echo -e "🌊 Passed: $PASSED"
