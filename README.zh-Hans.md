@@ -407,6 +407,7 @@ batt             by charlie0129
 btm              by Clement Tsang
 btop             by Aristocratos
 chezmoi          by twpayne
+checkra1n        by checkra1n team
 choma            by opa334
 circleci         by CircleCI
 cloc             by Al Danial
