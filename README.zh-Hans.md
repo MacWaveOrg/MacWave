@@ -401,7 +401,6 @@ age              by FiloSottile
 aria2c           by Tatsuhiro Tsujikawa
 ast-grep         by ast-grep
 atuin            by atuinsh
-bash             by Free Software Foundation
 bat              by David Peter
 batt             by charlie0129
 btm              by Clement Tsang
@@ -429,14 +428,18 @@ fish             by fish-shell contributors
 flyctl           by superfly
 fx               by antonmedv
 fzf              by Junegunn Choi
+gbash            by Free Software Foundation
 gh               by cli
 git              by Git community
 git-lfs          by git-lfs
 gitleaks         by gitleaks
 glow             by charmbracelet
 golangci-lint    by golangci
+gpatch           by Free Software Foundation
 gping            by orf
 grpcurl          by fullstorydev
+gtar             by Free Software Foundation
+gwget            by GNU Project
 hadolint         by Hadolint
 helm             by helm
 htop             by Hisham Muhammad and the htop team
@@ -468,7 +471,6 @@ nvim             by neovim
 ollama           by ollama
 palera1n         by palera1n Team
 pandoc           by John MacFarlane
-patch            by Free Software Foundation
 rclone           by rclone
 restic           by restic
 rg               by Andrew Gallant
@@ -483,7 +485,6 @@ spf              by yorukot
 starship         by starship
 stern            by stern
 syncthing        by Syncthing contributors
-tar              by Free Software Foundation
 taskwarrior-tui  by kdheepak
 tectonic         by Tectonic contributors
 testdisk         by Christophe Grenier
@@ -499,7 +500,6 @@ uv               by astral-sh
 vhs              by charmbracelet
 watchexec        by Watchexec contributors
 websocat         by vi
-wget             by GNU Project
 xcbeautify       by cpisciotta
 xclogparser      by MobileNativeFoundation
 xcodegen         by Yonas Kolb
