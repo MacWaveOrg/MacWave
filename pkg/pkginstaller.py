@@ -1064,6 +1064,10 @@ def _install_single(input_string):
     """安装一个包，并在整段过程里持有安装树的锁（见 lib/lock.py）。"""
     from lock import tree_lock
     with tree_lock("install"):
+        # 拿到锁才敢打扫：downloads/tmp 里可能有另一个 wave 正在写的 .partial
+        # （见 lib/lock.py 的说明）。放在下载之前，顺手腾出的空间正好给这次用。
+        from downloads import sweep_stale_partials
+        sweep_stale_partials()
         return _install_single_locked(input_string)
 
 

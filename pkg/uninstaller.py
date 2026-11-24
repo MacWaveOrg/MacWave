@@ -279,6 +279,10 @@ def uninstall_versions(pkg_name, versions, keep_link=False):
 
     from lock import tree_lock
     with tree_lock(f"uninstall {pkg_name}"):
+        # 卸载不下载，但它是用户清空间的时刻：顺手把放太久的 .partial 收掉，
+        # 免得「我明明卸了那么多包，磁盘怎么还是满的」。
+        from downloads import sweep_stale_partials
+        sweep_stale_partials()
         for version in versions:
             remove_one(pkg_name, version)
     if keep_link:
