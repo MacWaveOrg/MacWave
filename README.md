@@ -469,6 +469,7 @@ lazydocker       by Jesse Duffield
 lazygit          by jesseduffield
 ldid             by Jay Freeman (saurik) / Procursus Team
 lefthook         by Evil Martians
+linuxwave        by Orhun Parmaksız
 lsd              by Abin Simon
 macmon           by Vlad Kens
 mint             by Yonas Kolb
