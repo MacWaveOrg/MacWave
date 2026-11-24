@@ -23,23 +23,48 @@ if [[ ! -f "$WAVE_BIN" ]]; then
     exit 1
 fi
 
-# 配置目录：系统级优先，其次用户级
-if [[ -f /opt/macwave_config/config.json ]]; then
-    CONFIG_DIR="/opt/macwave_config"
-elif [[ -f "$HOME/.config/macwave_config/config.json" ]]; then
-    CONFIG_DIR="$HOME/.config/macwave_config"
-else
-    echo -e "${RED_BOLD}🌊 Error: MacWave not installed (config not found).${RESET}"
-    exit 1
+# ==========================================
+# 隔离：这个测试会**真的**跑一次 selfupdate（下载文件、落盘、写 VERSION.json 与
+# AGREEMENT.json），所以它必须在自己的沙箱里跑。
+#
+# 2026-11-24 之前它用的是真实配置目录与真实安装树，于是「跑一次测试」=
+# 「把现有安装刷成测试版本」：`/opt/macwave_config/VERSION.json` 被写成
+# 4.0.1/TEST、AGREEMENT.json 被写成"已同意"，真实安装树也被换成了 4.0.1。
+# AGENTS.md 里那条「会改动系统的测试必须先设 MACWAVE_TEST」说的就是这件事。
+#
+# MACWAVE_TEST 会让 configpaths 把测试根当 /：配置目录变成
+# <root>/opt/macwave_config（系统级优先），组件也从 <root>/opt/macwave 下找，
+# 所以这里先把组件**拷**进去（不是软链 —— 自更新会往这棵树里写文件，
+# 软链会把改动写回仓库）。
+# ==========================================
+
+SU_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/selfupdate_test.XXXXXX")"
+export MACWAVE_TEST="$SU_ROOT"
+
+CONFIG_DIR="$SU_ROOT/opt/macwave_config"
+SANDBOX_BASE="$SU_ROOT/opt/macwave"
+mkdir -p "$CONFIG_DIR" "$SANDBOX_BASE"
+
+for component in $(components) man info Keys; do
+    [[ -d "$REPO_DIR/$component" ]] || continue
+    mkdir -p "$SANDBOX_BASE/$component"
+    cp -R "$REPO_DIR/$component"/. "$SANDBOX_BASE/$component"/ 2>/dev/null || true
+done
+
+printf '{"base_dir": "%s"}\n' "$SANDBOX_BASE" > "$CONFIG_DIR/config.json"
+printf '{\n  "version": "4.0.0"\n}\n' > "$CONFIG_DIR/VERSION.json"
+
+# 协议记录也要先放一份"已接受本版协议"的：这个测试的版本数据是假的（4.0.1），
+# 而生成的 update_commands.sh 里带着仓库当前的 AGREEMENT_ID —— 不放的话，端到端
+# 那一步会先被协议闸门拦下来（读不到 stdin，按拒绝退出），测的就不是自更新了。
+# 协议本身的行为由专门的几段覆盖，这里只是让沙箱像一台"已经同意过"的机器。
+AGREEMENT_ID_NOW="$(sed -n 's/^AGREEMENT_ID = "\([^"]*\)"$/\1/p' "$SELFUPDATE_PY" | head -n 1)"
+if [[ -n "$AGREEMENT_ID_NOW" ]]; then
+    printf '{\n  "agreement": "%s"\n}\n' "$AGREEMENT_ID_NOW" > "$CONFIG_DIR/AGREEMENT.json"
 fi
 
 CONFIG_FILE="$CONFIG_DIR/config.json"
 VERSION_FILE="$CONFIG_DIR/VERSION.json"
-
-if [[ ! -f "$VERSION_FILE" ]]; then
-    echo -e "${RED_BOLD}🌊 Error: MacWave not installed (VERSION.json not found).${RESET}"
-    exit 1
-fi
 
 FAILED=0
 
@@ -54,7 +79,7 @@ FAILED=0
 # 这样测试既离线、又不依赖线上已发布的版本号（线上换版本不会让这里变红）。
 
 SU_WORK="$(mktemp -d)"
-trap 'rm -rf "$SU_WORK"' EXIT
+trap 'rm -rf "$SU_WORK" "$SU_ROOT"' EXIT
 
 SU_VERSION="4.0.1"
 SU_BRANCH="4.0"

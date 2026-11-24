@@ -631,8 +631,19 @@ else
 fi
 
 print_dir_menu() {
-    echo "1. ~/.local/macwave"
-    echo "2. /opt/macwave"
+    # 顺序即推荐程度：/opt/macwave 排第一，是 macOS 上的默认。
+    #
+    # 为什么默认是它（而不是 ~/.local/macwave）：
+    #   - 依赖只有一份：deps/ 动辄几百 MB，多个用户各装一份 ~/.local 就是 N 份；
+    #   - 与 Homebrew（/opt/homebrew）同一套心智，Intel 与 Apple Silicon 可以
+    #     写同一个路径，文档与帮助不必分两套；
+    #   - 不受 HOME 影响：搬机、改用户名、用 sudo 跑脚本都不会打偏；
+    #   - 权限模型干净：root:<管理员组> 775（目录 setgid），管理员组成员装包不用
+    #     sudo，其他用户只读，任何本地用户都不能替换 links/ 里的二进制。
+    # 代价：安装要一次管理员密码；树是共享状态（同机多个管理员时才会互相影响）。
+    # 拿不到管理员密码、或者只想给自己装的，选 ~/.local/macwave。
+    echo "1. /opt/macwave"
+    echo "2. ~/.local/macwave"
     if [[ "$CUSTOM_OPTION" == "4" ]]; then
         echo "3. /usr/local/macwave"
     fi
@@ -1390,8 +1401,15 @@ if [[ -n "$CLI_DIR_OPTION" ]]; then
     choice="$CLI_DIR_OPTION"
     mw_say "🌊 Directory option: $choice (from --dir-option)" "🌊 目录选项：${choice}（来自 --dir-option）"
 elif [[ "$CLI_CI" == "true" ]]; then
-    choice="1"
-    mw_say "🌊 --ci: using the default directory option 1." "🌊 --ci：使用默认目录选项 1。"
+    # --ci 是无人值守：这时候不该反过来要管理员密码，所以它默认装用户级目录，
+    # 而交互式默认是第一项（/opt/macwave）。两者不同是**故意的**：
+    # 「没人看着」与「有人能输密码」是两种处境。想让它装到 /opt，就显式给
+    # --dir-option=1（并要求免密 sudo，否则它会明确报错退出）。
+    choice="2"
+    mw_say "🌊 --ci: installing into ~/.local/macwave (unattended, so no administrator password is requested)." \
+        "🌊 --ci：装到 ~/.local/macwave（无人值守，不会去要管理员密码）。"
+    mw_say "🌊       pass --dir-option=1 for /opt/macwave if this machine has passwordless sudo." \
+        "🌊       要装到 /opt/macwave，加 --dir-option=1（需要免密 sudo）。"
 else
     mw_say "${YELLOW}Where do you want to install MacWave? (Enter the number)${RESET}" "${YELLOW}要把 MacWave 安装到哪里？（输入编号）${RESET}"
     print_dir_menu
@@ -1403,10 +1421,10 @@ fi
 
 case "$choice" in
     1)
-        BASE_DIR="$HOME/.local/macwave"
+        BASE_DIR="$SYS_ROOT/opt/macwave"
         ;;
     2)
-        BASE_DIR="$SYS_ROOT/opt/macwave"
+        BASE_DIR="$HOME/.local/macwave"
         ;;
     3)
         if [[ "$CUSTOM_OPTION" == "3" ]]; then
@@ -1419,8 +1437,8 @@ case "$choice" in
         resolve_custom_dir
         ;;
     *)
-        mw_say "${RED_BOLD}🌊 Invalid choice. Using default: ~/.local/macwave${RESET}" "${RED_BOLD}🌊 选择无效，改用默认目录：~/.local/macwave${RESET}"
-        BASE_DIR="$HOME/.local/macwave"
+        mw_say "${RED_BOLD}🌊 Invalid choice. Using the default: /opt/macwave${RESET}" "${RED_BOLD}🌊 选择无效，改用默认目录：/opt/macwave${RESET}"
+        BASE_DIR="$SYS_ROOT/opt/macwave"
         ;;
 esac
 
@@ -1681,6 +1699,20 @@ hand_over_system_install() {
     # 只给目录加 setgid：文件上的 setgid 是另一种含义（强制锁），不该乱设。
     as_privileged find "$dir" -type d -exec chmod g+s {} + || return 1
     return 0
+}
+
+# 配置目录/文件的权限：系统级安装要**组可写**。
+#
+# 为什么不是 install.sh 早先的 755/644：系统级安装会把树交给 root:<管理员组> 775，
+# 管理员组成员因此不用 sudo 就能装包；可自更新写的是配置目录里的 VERSION.json，
+# 755/644 的配置目录会让它每次都退回去要密码（2026-11-24 在 /opt 上实测）。
+# 让管理员组写配置目录不扩大权限面 —— 他们本来就能改整棵树。
+config_dir_mode() {
+    if [[ "$SYSTEM_INSTALL" == "true" ]]; then echo 2775; else echo 755; fi
+}
+
+config_file_mode() {
+    if [[ "$SYSTEM_INSTALL" == "true" ]]; then echo 664; else echo 644; fi
 }
 
 # 「系统级安装」与「这次要不要提权」是**两件事**，这里分开存。
@@ -2005,7 +2037,11 @@ run_cmd mkdir -p "$KEYS_DIR"
 run_cmd mkdir -p "$DEPS_DIR"
 run_cmd mkdir -p "$DOWNLOAD_DIR"
 run_cmd mkdir -p "$CONFIG_DIR"
-run_cmd chmod 755 "$CONFIG_DIR"
+run_cmd chmod "$(config_dir_mode)" "$CONFIG_DIR"
+if [[ "$SYSTEM_INSTALL" == "true" ]]; then
+    # sudo 建的目录属主是 root:wheel，管理员组写不进去 —— 得显式交给管理员组。
+    run_cmd chown "root:$(admin_group)" "$CONFIG_DIR"
+fi
 
 # ==========================================
 # 写入配置文件
@@ -2033,8 +2069,8 @@ if [[ "$NEED_SUDO" == "true" ]]; then
     lend_tree_to_user "$BASE_DIR"
 fi
 
-run_cmd chmod 755 "$CONFIG_DIR"
-run_cmd chmod 644 "$CONFIG_FILE"
+run_cmd chmod "$(config_dir_mode)" "$CONFIG_DIR"
+run_cmd chmod "$(config_file_mode)" "$CONFIG_FILE"
 
 if mw_dry_run; then
     mw_plan "🌊 Dry run: would write $CONFIG_FILE (base_dir), then $VERSION_FILE (version $MACWAVE_VERSION) once every file is in place." \
@@ -2141,7 +2177,7 @@ $( [[ -n "$BUILD_NUMBER" ]] && printf '  "build_number": "%s",\n' "$BUILD_NUMBER
   }
 }
 EOF
-    run_cmd chmod 644 "$VERSION_FILE"
+    run_cmd chmod "$(config_file_mode)" "$VERSION_FILE"
     if [[ "$NEED_HANDOVER" == "true" ]]; then
         hand_over_system_install "$CONFIG_DIR"
     fi
@@ -2686,7 +2722,7 @@ record_agreement() {
         mw_say "${YELLOW}🌊 Note: could not record the agreement in $AGREEMENT_FILE.${RESET}" \
             "${YELLOW}🌊 注意：未能把同意写进 ${AGREEMENT_FILE}。${RESET}"
     fi
-    run_cmd chmod 644 "$AGREEMENT_FILE" > /dev/null 2>&1 || true
+    run_cmd chmod "$(config_file_mode)" "$AGREEMENT_FILE" > /dev/null 2>&1 || true
     return 0
 }
 

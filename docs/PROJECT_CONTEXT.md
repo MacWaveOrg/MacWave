@@ -108,7 +108,7 @@ MacWave 的配置只有这一处：**用哪些环境变量、默认值是什么�
 
 ## 三、安装后的运行时目录
 
-`BASE_DIR` 取自生效的 `config.json` 的 `base_dir`（系统级 `/opt/macwave_config` 优先，其次用户级 `~/.config/macwave_config`；默认安装 `~/.local/macwave`）。
+`BASE_DIR` 取自生效的 `config.json` 的 `base_dir`（系统级 `/opt/macwave_config` 优先，其次用户级 `~/.config/macwave_config`；**4.6.1 起交互式默认装 `/opt/macwave`**，`--ci` 仍默认 `~/.local/macwave` —— 无人值守时不向用户要管理员密码）。
 
 配置目录的归属由安装位置决定：装到 **`$HOME` 之外**（`/opt/macwave`、`/usr/local/macwave`、外置卷上的自定义路径）→ `/opt/macwave_config`；装到 `$HOME` 之内（`~/.local/macwave`、家目录下的自定义路径）→ `~/.config/macwave_config`。两处都存在时程序一律先用系统级。
 

@@ -212,10 +212,12 @@ lib/innocent.dylib -> /Users/someone/.ssh/id_rsa
 - **不要从外面 `export MACWAVE_TEST` 再跑整套脚本**：它会盖住这些脚本自己的隔离，
   把本来能过的测试打成一串红。实测 `export MACWAVE_TEST=…` 后跑 `message_test.sh`，
   11 项全部失败，而报错完全看不出是环境问题。
-- **目前只有这四个会动真实安装**：`format_test.sh`、`deps_test.sh`、`link_test.sh`、
-  `selfupdate_test.sh`（这是一份**短名单**，故意只写风险项；发现新的就补进来）。
-  它们读 `/opt/macwave_config` 或 `~/.config/macwave_config` 里的 `base_dir`，并在其中真装、真卸、真改。**跑之前先确认 `base_dir` 指向哪里**，
-  或照 CI 的做法让 `/opt/macwave_config` 指向一个临时安装。
+- **会真装真卸的测试必须自带沙箱**：`format_test.sh`、`deps_test.sh`、`link_test.sh`、
+  `selfupdate_test.sh` 都用 `scripts/components.sh` 里的 `sandbox_install_tree` 造一棵
+  隔离的安装树 + 配置目录，并 `export MACWAVE_TEST` —— 绝不读真实安装的 `base_dir`。
+  （2026-11-24 之前它们读真的，`selfupdate_test.sh` 跑一次就把 `/opt/macwave_config`
+  的 `VERSION.json` 写成 `4.0.1/TEST`、把树刷成测试版本。）
+  新写这类测试时照抄同一套：**不要**图省事去读 `/opt/macwave_config`。
 
 ### 只为 CI 加的旁路，必须用边界注释标出来
 

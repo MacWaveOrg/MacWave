@@ -69,9 +69,35 @@ mw_say_err() {
 # 一律传空，selfupdate.sh 传的是本机已装版本。
 
 agreement_config_dir() {
-    # 与 config/configpaths.py 同一套规则：系统级安装写 /opt/macwave_config，
-    # 用户级安装写 $HOME/.config/macwave_config；读取时系统级优先。
-    local system="/opt/macwave_config" user="$HOME/.config/macwave_config"
+    # 与 config/configpaths.py 同一套规则（系统级优先、其次用户级），外加两条：
+    #
+    #   1. MACWAVE_TEST 指向测试根时，只认测试根里的那两份 —— 否则测试会去读**真实**
+    #      安装的协议记录（2026-11-24：沙箱里明明已经"同意过"，闸门却读到了
+    #      /opt/macwave_config 里那份旧记录，于是把无人值守的端到端测试拦了下来）。
+    #   2. 优先 `base_dir` 与这次安装目录一致的那份配置。同一台机器上既有系统级又有
+    #      用户级安装时，"系统级优先"会读到另一台安装的记录。
+    local system user candidate base
+    if [ -n "${MACWAVE_TEST:-}" ]; then
+        system="$MACWAVE_TEST/opt/macwave_config"
+        user="$MACWAVE_TEST${HOME}/.config/macwave_config"
+    else
+        system="/opt/macwave_config"
+        user="$HOME/.config/macwave_config"
+    fi
+
+    for candidate in "$system" "$user"; do
+        [ -f "$candidate/config.json" ] || continue
+        base="$(python3 -c 'import json,sys
+try:
+    print(json.load(open(sys.argv[1])).get("base_dir", ""))
+except Exception:
+    pass' "$candidate/config.json" 2>/dev/null || true)"
+        if [ -n "$base" ] && [ -n "${MACWAVE_INSTALL_DIR:-}" ] && [ "$base" = "$MACWAVE_INSTALL_DIR" ]; then
+            printf '%s' "$candidate"
+            return 0
+        fi
+    done
+
     if [ -f "$system/config.json" ]; then printf '%s' "$system"; return 0; fi
     if [ -f "$user/config.json" ]; then printf '%s' "$user"; return 0; fi
     if [ "${MACWAVE_NEED_SUDO:-}" = "1" ]; then printf '%s' "$system"; else printf '%s' "$user"; fi

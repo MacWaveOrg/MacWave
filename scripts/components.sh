@@ -57,3 +57,40 @@ component_paths() {
 MACWAVE_COMPONENT_PATHS="$(component_paths)"
 MACWAVE_COMPONENT_NAMES="$(components)"
 export MACWAVE_COMPONENT_PATHS MACWAVE_COMPONENT_NAMES
+
+# ==========================================
+# 会"真装真卸"的测试用的沙箱
+# ==========================================
+#
+# 有一类测试必须跑真实的安装流程（下载、落盘、写 VERSION.json、级联删依赖），
+# 它们以前直接读 /opt/macwave_config 或 ~/.config/macwave_config 里的 base_dir，
+# 于是「跑一次测试」= 「把现有安装改一遍」。2026-11-24 就是这么把一台机器的
+# VERSION.json 写成了 4.0.1/TEST（selfupdate_test），所以这类测试必须在自己的
+# 树里跑。
+#
+# 用法：
+#   source "$SCRIPT_DIR/components.sh"
+#   sandbox_install_tree "$(mktemp -d)/root" 4.0.0
+#   # 之后用 $SANDBOX_BASE / $SANDBOX_CONFIG_FILE / $SANDBOX_VERSION_FILE
+#
+# 组件是**拷**进去的，不是软链：这些测试会往树里写文件，软链会把改动写回仓库。
+sandbox_install_tree() {
+    local root="$1" version="${2:-4.0.0}" component
+    SANDBOX_BASE="$root/opt/macwave"
+    SANDBOX_CONFIG_DIR="$root/opt/macwave_config"
+    mkdir -p "$SANDBOX_BASE" "$SANDBOX_CONFIG_DIR"
+
+    for component in $(components) $(assets); do
+        [ -d "$COMPONENT_REPO/$component" ] || continue
+        mkdir -p "$SANDBOX_BASE/$component"
+        cp -R "$COMPONENT_REPO/$component"/. "$SANDBOX_BASE/$component"/ 2>/dev/null || true
+    done
+
+    SANDBOX_CONFIG_FILE="$SANDBOX_CONFIG_DIR/config.json"
+    SANDBOX_VERSION_FILE="$SANDBOX_CONFIG_DIR/VERSION.json"
+    printf '{"base_dir": "%s"}\n' "$SANDBOX_BASE" > "$SANDBOX_CONFIG_FILE"
+    printf '{\n  "version": "%s"\n}\n' "$version" > "$SANDBOX_VERSION_FILE"
+
+    # MACWAVE_TEST 让 configpaths 把 root 当 /：配置目录、安装目录都落在里面。
+    export MACWAVE_TEST="$root"
+}

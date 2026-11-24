@@ -22,17 +22,12 @@ if [[ ! -f "$WAVE_BIN" ]]; then
     exit 1
 fi
 
-# 配置目录：系统级优先，其次用户级
-if [[ -f /opt/macwave_config/config.json ]]; then
-    CONFIG_FILE="/opt/macwave_config/config.json"
-elif [[ -f "$HOME/.config/macwave_config/config.json" ]]; then
-    CONFIG_FILE="$HOME/.config/macwave_config/config.json"
-else
-    echo -e "${RED_BOLD}🌊 Error: MacWave not installed (config not found).${RESET}"
-    exit 1
-fi
-
-BASE_DIR=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE'))['base_dir'])")
+# 沙箱：这个测试会真装真卸，必须在自己的树里跑。以前它读的是**真实**安装的
+# base_dir，跑一次就把现有安装改一遍（2026-11-24 的教训）。
+SANDBOX_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/link_test.XXXXXX")"
+sandbox_install_tree "$SANDBOX_ROOT" "1.0"
+CONFIG_FILE="$SANDBOX_CONFIG_FILE"
+BASE_DIR="$SANDBOX_BASE"
 BIN_DIR="$BASE_DIR/bin"
 LINKS_DIR="$BASE_DIR/links"
 
@@ -100,6 +95,8 @@ cleanup() {
     rm -rf "$BIN_DIR/$PKG@$VER" "$BIN_DIR/$PKG@2.0"
     rm -f "$LINKS_DIR/$PKG@$VER" "$LINKS_DIR/$PKG@2.0" "$UNV" "$LINKS_DIR/$PKG-extra" \
         "$LINKS_DIR/$PKG-extra@$VER" "$LINKS_DIR/$PKG-extra@2.0"
+    # 整个沙箱一起删：这个测试现在跑在自己的安装树里，不再碰真实安装。
+    rm -rf "$SANDBOX_ROOT"
 }
 
 trap cleanup EXIT

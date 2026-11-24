@@ -91,13 +91,14 @@ count_in() {
 case "$(uname -m)" in
     x86_64|amd64)
         CUSTOM_OPTION=4
-        SYSTEM_LEVEL_ROWS="2 /opt/macwave /opt/macwave_config /opt/macwave
+        # 菜单顺序 4.6.1 起：1=/opt、2=~/.local、3=/usr/local、4=自定义
+        SYSTEM_LEVEL_ROWS="1 /opt/macwave /opt/macwave_config /opt/macwave
 3 /usr/local/macwave /opt/macwave_config /usr/local/macwave
 4=/opt/macwave_custom /opt/macwave_custom /opt/macwave_config /opt/macwave_custom"
         ;;
     *)
         CUSTOM_OPTION=3
-        SYSTEM_LEVEL_ROWS="2 /opt/macwave /opt/macwave_config /opt/macwave
+        SYSTEM_LEVEL_ROWS="1 /opt/macwave /opt/macwave_config /opt/macwave
 3=/opt/macwave_custom /opt/macwave_custom /opt/macwave_config /opt/macwave_custom"
         ;;
 esac
@@ -128,12 +129,13 @@ base_dir_for_args() {
     local arg value
     for arg in "$@"; do
         case "$arg" in
-            --dir-option=1) echo "$FAKE_HOME/.local/macwave"; return 0 ;;
-            --dir-option=2) echo "${SYS_ROOT}/opt/macwave"; return 0 ;;
+            # 菜单顺序 4.6.1 起是 /opt 第一、用户级第二（推荐顺序即菜单顺序）
+            --dir-option=1) echo "$SANDBOX_DIR/opt/macwave"; return 0 ;;
+            --dir-option=2) echo "$FAKE_HOME/.local/macwave"; return 0 ;;
             --dir-option=3)
                 # 第 3 项在 Intel 上是 /usr/local/macwave，在 Apple 芯片上是自定义项
                 if [[ "$(uname -m)" == "x86_64" || "$(uname -m)" == "amd64" ]]; then
-                    echo "${SYS_ROOT}/usr/local/macwave"
+                    echo "$SANDBOX_DIR/usr/local/macwave"
                 fi
                 return 0 ;;
             --dir-option=*)

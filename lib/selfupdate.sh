@@ -389,11 +389,30 @@ resolve_config_dir() {
     CONFIG_FILE="$CONFIG_DIR/config.json"
     VERSION_FILE="$CONFIG_DIR/VERSION.json"
 
-    if [[ "$CONFIG_DIR" == "$HOME"* ]]; then
+    # 判据是「这个目录**写不写得动**」，不是「它在不在 $HOME 下面」。
+    # 原来的 HOME 判据把系统级安装（/opt/macwave_config）一律当成需要提权，
+    # 而 install.sh 早就把树交给 root:<管理员组> 775 了 —— 结果是：装包不需要密码，
+    # 每次 `wave selfupdate` 却都跳出来要一次（2026-11-24 在 /opt 上实测到
+    # "Requesting temporary administrator access for the update..."）。
+    # 系统级配置目录现在也是组可写（2775），所以写探测就能给出正确答案；
+    # 真的写不动（root:wheel 755 的老安装、单用户机器上的 /opt）才退回 sudo。
+    if mw_config_writable; then
         CONFIG_NEED_SUDO=false
     else
         CONFIG_NEED_SUDO=true
     fi
+}
+
+mw_config_writable() {
+    # 与 install.sh 的 mw_write_state 同一套做法：真去写一个临时文件。
+    # 只看权限位不够 —— ACL、只读挂载、SIP 保护的路径都会骗过 [[ -w ]]。
+    local probe="$CONFIG_DIR/.macwave-write-probe.$$"
+    if ( : > "$probe" ) 2>/dev/null; then
+        rm -f "$probe" 2>/dev/null
+        return 0
+    fi
+    rm -f "$probe" 2>/dev/null
+    return 1
 }
 
 resolve_config_dir
@@ -478,7 +497,24 @@ CONFIG_CODE_DIR="$BASE_DIR/config"
 
 CURRENT_USER=$(whoami)
 
-if [[ "$BASE_DIR" == "$HOME"* ]]; then
+# 「系统级安装」与「这次写不写得动」是两件事，别合成一个变量（install.sh 里
+# 那条注释讲的是同一个道理）。判据必须是**写探测**，不是「在不在 $HOME 下」：
+# install.sh 会把系统级安装的树交给 root:<管理员组> 775，管理员组成员本来就写得动，
+# 那次 selfupdate 不该再要密码（2026-11-24 在 /opt 上实测到的就是这个）。
+mw_tree_writable() {
+    local probe="$BASE_DIR/.macwave-write-probe.$$"
+    if ( : > "$probe" ) 2>/dev/null; then
+        rm -f "$probe" 2>/dev/null
+        return 0
+    fi
+    rm -f "$probe" 2>/dev/null
+    return 1
+}
+
+SYSTEM_INSTALL=false
+[[ "$BASE_DIR" == "$HOME"* ]] || SYSTEM_INSTALL=true
+
+if mw_tree_writable; then
     NEED_SUDO=false
 else
     NEED_SUDO=true
@@ -531,11 +567,22 @@ admin_group() {
 }
 
 hand_over_system_install() {
-    local dir="$1" group
+    local dir="$1" group owner
     # 用户级安装（在家目录下）本来就是自己的，不需要也不该改动。
-    [[ "$NEED_SUDO" == "true" ]] || return 0
+    [[ "$SYSTEM_INSTALL" == "true" ]] || return 0
     [[ -n "$dir" ]] || return 0
     [[ -d "$dir" ]] || return 0
+
+    # 已经收尾过（属主是 root）就不用再动 —— 组可写的树现在 NEED_SUDO 是 false，
+    # 光看它会把「老安装仍归安装者所有」这种情况漏掉：那次正是要让 root 接手，
+    # 否则 links/ 里的二进制对该用户可写，而它会被别人执行。
+    owner="$(stat -f '%Su' "$dir" 2>/dev/null || stat -c '%U' "$dir" 2>/dev/null)"
+    if [[ "$owner" == "root" ]] && [[ "$NEED_SUDO" != "true" ]]; then
+        return 0
+    fi
+    if [[ "$owner" != "root" && "$NEED_SUDO" != "true" && "$(id -u)" != "0" ]]; then
+        echo -e "${YELLOW}🌊 This is a system-wide install still owned by '$owner'; fixing that needs administrator access.${RESET}"
+    fi
     group="$(admin_group)"
     sudo chown -R "root:$group" "$dir" || return 1
     sudo chmod -R u+rwX,g+rwX,o+rX,o-w "$dir" || return 1
