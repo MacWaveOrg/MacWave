@@ -277,8 +277,10 @@ def uninstall_versions(pkg_name, versions, keep_link=False):
             print(f"{RED_BOLD}🌊 Drop {NO_LINK_CANONICAL} (the link then falls back to the next installed version), or run 'wave unlink {pkg_name}' first.{RESET}")
             sys.exit(1)
 
-    for version in versions:
-        remove_one(pkg_name, version)
+    from lock import tree_lock
+    with tree_lock(f"uninstall {pkg_name}"):
+        for version in versions:
+            remove_one(pkg_name, version)
     if keep_link:
         silent.say(f"🌊 Left the unversioned link for {pkg_name} untouched")
     else:

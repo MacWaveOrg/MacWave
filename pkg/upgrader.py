@@ -213,6 +213,12 @@ def upgrade_everything(words, remove_old):
 
 
 def handle_upgrade(input_string, assume_yes=False):
+    from lock import tree_lock
+    with tree_lock("upgrade"):
+        return _handle_upgrade_locked(input_string, assume_yes)
+
+
+def _handle_upgrade_locked(input_string, assume_yes=False):
     import common
     from depsinstaller import get_field
     from pkginstaller import (

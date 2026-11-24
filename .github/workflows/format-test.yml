@@ -180,6 +180,11 @@ jobs:
         run: |
           /bin/bash scripts/basedir_set_test.sh
 
+      # 安装树的互斥锁：两个 wave 同时改树会把 bin/、links/、.depped_* 写坏。
+      - name: Check install tree locking
+        run: |
+          /bin/bash scripts/lock_test.sh
+
       # 版本比较只有一份实现（lib/versioncompare.py）。预发布排在正式版之下、
       # 两段与三段等价、社区后缀归一化 —— 这几条错在别处都看不出来。
       - name: Check version comparison

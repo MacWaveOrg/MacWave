@@ -1061,6 +1061,13 @@ def handle_install(input_string):
 
 
 def _install_single(input_string):
+    """安装一个包，并在整段过程里持有安装树的锁（见 lib/lock.py）。"""
+    from lock import tree_lock
+    with tree_lock("install"):
+        return _install_single_locked(input_string)
+
+
+def _install_single_locked(input_string):
     # 参数解析
     steplog.reset()
     steplog.plan(INSTALL_STEPS)

@@ -170,6 +170,12 @@ def absolute_artifacts():
 
 def handle_transfer(input_string):
     """`wave transfer <package>[@<version>] [, ...]` 与 `wave transfer --all`。"""
+    from lock import tree_lock
+    with tree_lock("transfer"):
+        return _handle_transfer_locked(input_string)
+
+
+def _handle_transfer_locked(input_string):
     words = input_string.split()
     operands = [word for word in words[2:] if not word.startswith("-")]
     flag_words = {word for word in words[2:] if word.startswith("-")}

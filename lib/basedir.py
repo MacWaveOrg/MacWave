@@ -189,7 +189,7 @@ def switch_base_dir(argument, dry_run=False):
     `--dry-run` 只走校验与预检，把"会复制多少、会改哪个配置文件"打出来就返回。
     它**不提问**：预览的意义是能在脚本里跑，提问等于把人挡在外面。
     """
-    from confirm import NotConfirmed, confirm_basedir_switch
+    from lock import tree_lock
 
     old = load_base_dir()
     new = _resolve_target(argument)
@@ -200,6 +200,14 @@ def switch_base_dir(argument, dry_run=False):
     problem, hints = _check_target(str(old), new)
     if problem:
         return _error(problem, hints)
+
+    # 从这里开始到搬完都要独占安装树：别人同时在装包的话，复制出来的树是半截的。
+    with tree_lock("basedir --set"):
+        return _switch_base_dir_locked(argument, old, new, dry_run)
+
+
+def _switch_base_dir_locked(argument, old, new, dry_run):
+    from confirm import NotConfirmed, confirm_basedir_switch
 
     # 预检：还留着绝对路径的产物搬走就加载不到库，先要求把它们迁移成相对形式。
     import transferrer

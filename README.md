@@ -630,6 +630,7 @@ Each script runs end to end and reports `PASS` or `FAIL`:
 /bin/bash scripts/selfupdate_test.sh    # self-update; ends by updating for real
 /bin/bash scripts/transfer_test.sh      # Mach-O relocation (macOS only)
 /bin/bash scripts/basedir_set_test.sh   # wave basedir --set, confirmations via a pty
+/bin/bash scripts/lock_test.sh           # one writer at a time on the install tree
 python3 scripts/random_test.py     # randomised end-to-end regression, needs network
 python3 scripts/audit_deps.py data # audit the index against the installed libraries
 ```

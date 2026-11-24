@@ -456,6 +456,17 @@ def handle_selfupdate(input_string=""):
         print(f"{RED_BOLD}🌊 Error: MacWave is not installed. Run lib/install.sh first.{RESET}")
         sys.exit(1)
 
+    # 自更新会替换安装树里的程序文件：与装包/卸载互斥，否则两边同时写 pkg/ 与 lib/。
+    # --dry-run 只看不动，不占锁。
+    if wants_dry_run(input_string):
+        return _handle_selfupdate_locked(input_string)
+    from lock import tree_lock
+    with tree_lock("selfupdate"):
+        return _handle_selfupdate_locked(input_string)
+
+
+def _handle_selfupdate_locked(input_string=""):
+
     # 先看本机装的是什么，再决定要不要联网 —— 判断渠道不需要网络，
     # 早退一步就少一次「Fetching the latest version...」之后的失败。
     #
