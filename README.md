@@ -662,7 +662,7 @@ The project requires about **¥349 CNY (about $52 USD)** per month to keep runni
 
 ## 🌊 License
 
-This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the **Apache License 2.0** - see the [LICENSE](LICENSE) file for the full text, and [NOTICE](NOTICE) for the attribution note. Packages that MacWave installs keep their own licenses.
 
 ## 🌊 Contact Us
 

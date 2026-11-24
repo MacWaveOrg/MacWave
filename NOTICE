@@ -1,0 +1,10 @@
+MacWave
+Copyright 2026 MacWave Team
+
+This product is licensed under the Apache License, Version 2.0.
+See the LICENSE file for the full text.
+
+MacWave installs and redistributes third-party software. Each package keeps
+its own license; the license of a package is not covered by the Apache License
+above. `wave info <package>` and the upstream project's own release notes
+describe it.

@@ -304,7 +304,7 @@ MACWAVE_PYTHON_DOMAIN=https://mirror.repohub.top/MacWave/python \
 上面这条命令会停在 `curl` 那一步 —— 而 `MACWAVE_*_DOMAIN` 只管 MacWave 自己发的
 请求，管不到外层的 `curl`。三条出路，按推荐顺序：
 
-1. **给这一条路径开匿名只读**（推荐）。`install.sh` 是 MIT 的公开代码，挡它没有
+1. **给这一条路径开匿名只读**（推荐）。`install.sh` 是 Apache-2.0 的公开代码，挡它没有
    意义；二进制与索引继续要认证即可：
 
    ```nginx

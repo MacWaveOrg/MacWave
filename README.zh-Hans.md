@@ -633,7 +633,7 @@ python3 scripts/audit_deps.py data # 用已装的库审计索引数据
 
 ## 🌊 许可证
 
-本项目基于 **MIT 许可证** 发布 —— 详见 [LICENSE](LICENSE) 文件。
+本项目基于 **Apache License 2.0** 发布 —— 全文见 [LICENSE](LICENSE)，署名说明见 [NOTICE](NOTICE)。MacWave 安装的软件包各自保留自己的许可证。
 
 ## 🌊 联系我们
 
