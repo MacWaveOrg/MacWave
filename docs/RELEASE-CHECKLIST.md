@@ -197,6 +197,19 @@ grep -E 'want (lib/(install|uninstall)\.sh|.*__pycache__|.*\.pyc)' /tmp/update_c
 
 推到 `Selfupdate/macwavedata/<新版本>/update_commands.sh`。
 
+生成器会从 `<ref>:lib/selfupdate.py` 里抄 `AGREEMENT_ID` 写进脚本（
+`AGREEMENT_ID="…"` 那行），这是用户协议闸门的判据。抄不到时它会打印
+`no AGREEMENT_ID` 的警告 —— **看到这条就别推**，空值等于这一版不会被任何人问到协议。
+
+协议闸门为什么必须在生成物里、而不是客户端里：升级时跑的是**已装那一版**的
+`lib/selfupdate.py`，它的常量永远是旧的（4.5.2 → 4.6.0 就是这么漏掉的，
+2026-11-24 实测）。所以：
+
+- 改协议（含改许可证）只需要改 `lib/selfupdate.py` 的两个常量与官网落款，
+  **不必**碰生成器或模板；
+- 但**已经发布出去的版本**，如果当时生成的脚本里没有闸门或闸门里的标识是旧的，
+  就得重跑本步 + 第 5 步（换 `update_commands_sha256`）并重签，老客户端才会被问。
+
 ### 第 5 步：更新 `Selfupdate` 的 `latest.toml`
 
 > 4.4 起 `latest.toml` 多一个字段，用来钉住「即将被 bash 执行的那个脚本」：

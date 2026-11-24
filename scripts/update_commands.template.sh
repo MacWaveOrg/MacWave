@@ -50,8 +50,104 @@ mw_say_err() {
 }
 : "${MACWAVE_BRANCH:?MACWAVE_BRANCH is required}"
 
+# ==========================================
+# 用户协议闸门
+# ==========================================
+#
+# 为什么闸门在这里，而不是在客户端：判据必须是**目标版本**的协议，而运行中的
+# 客户端的 lib/selfupdate.py 属于它自己那一版，常量永远是旧的。2026-11-24 的
+# 实测形态：4.5.2 升 4.6.0，跑的是 4.5.2 的 selfupdate.py，读到的是
+# ID=2026-11-17 / INTRODUCED_IN=4.4.0，于是「记录里就是这一版」直接放行 ——
+# 4.6.0 换成 Apache-2.0 之后重新落款的新协议一次都没被问到。
+#
+# 本脚本由客户端从**目标分支**拉下来执行，还被 latest.toml 里的
+# update_commands_sha256 钉住，常量与本版一致 —— 所以任何年龄的客户端都会在
+# 这里被拦一次，而不必等用户升级到「带新常量」的那一版客户端。
+#
+# 全新安装不问：install.sh 自己在装完前有一道提问（`Have you read and agreed`），
+# 两边都问会连问两次。判据是 MACWAVE_CURRENT_VERSION 是否为空 —— install.sh
+# 一律传空，selfupdate.sh 传的是本机已装版本。
+
+agreement_config_dir() {
+    # 与 config/configpaths.py 同一套规则：系统级安装写 /opt/macwave_config，
+    # 用户级安装写 $HOME/.config/macwave_config；读取时系统级优先。
+    local system="/opt/macwave_config" user="$HOME/.config/macwave_config"
+    if [ -f "$system/config.json" ]; then printf '%s' "$system"; return 0; fi
+    if [ -f "$user/config.json" ]; then printf '%s' "$user"; return 0; fi
+    if [ "${MACWAVE_NEED_SUDO:-}" = "1" ]; then printf '%s' "$system"; else printf '%s' "$user"; fi
+}
+
+agreement_recorded_id() {
+    # 与 lib/selfupdate.py 的 recorded_agreement() 读同一个文件、同一种格式。
+    [ -f "$1" ] || return 0
+    sed -n 's/.*"agreement"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$1" 2>/dev/null | head -n 1
+}
+
+agreement_say_tty() {
+    # 静默模式下 fd 1、2 都指向 /dev/null，提示只能直接写终端设备。
+    # 没有终端（CI、管道）时什么都不写 —— 退出码是唯一的信号。
+    if [[ "$MW_LANG" == "zh" ]]; then
+        { printf '%b\n' "$(mw_strip_item "$2")" > /dev/tty; } 2>/dev/null
+    else
+        { printf '%b\n' "$(mw_strip_item "$1")" > /dev/tty; } 2>/dev/null
+    fi
+}
+
+agreement_gate() {
+    [ -n "$AGREEMENT_ID" ] || return 0
+    [ -n "${MACWAVE_CURRENT_VERSION:-}" ] || return 0
+
+    local dir file recorded answer
+    dir="$(agreement_config_dir)"
+    file="$dir/AGREEMENT.json"
+    recorded="$(agreement_recorded_id "$file")"
+    [ "$recorded" = "$AGREEMENT_ID" ] && return 0
+
+    mw_say "🌊 MacWave's user agreement has been updated ($AGREEMENT_ID)." \
+        "🌊 MacWave 的用户协议已更新（${AGREEMENT_ID}）。"
+    mw_say "🌊 Read it here: https://macwave.org/#agreement" \
+        "🌊 协议正文：https://macwave.org/#agreement"
+
+    if [ "${MACWAVE_SILENT:-}" = "1" ]; then
+        # 静默模式不能替用户同意，也不该挂在读取上等人 —— 按「没有同意」退出。
+        agreement_say_tty "🌊 Error: the user agreement ($AGREEMENT_ID) must be accepted, and silent mode cannot accept it." \
+            "🌊 错误：需要接受用户协议（${AGREEMENT_ID}），静默模式不能代答。"
+        agreement_say_tty "🌊 Next      run wave selfupdate without -s, read it, then accept." \
+            "🌊 下一步    不带 -s 再跑一次 wave selfupdate，阅读后接受。"
+        return 1
+    fi
+
+    mw_say "🌊 Do you accept it? [y/N]" "🌊 你是否接受？[y/N]"
+    answer=""
+    read -r answer || answer=""
+    answer=$(printf '%s' "$answer" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+    case "$answer" in
+        y|yes) ;;
+        *)
+            mw_say_err "🌊 Error: the updated user agreement was not accepted; nothing was changed." \
+                "🌊 错误：未接受更新后的用户协议，未做任何改动。"
+            return 1
+            ;;
+    esac
+
+    # 记法与 install.sh / lib/selfupdate.py 完全一致，三处读的是同一个文件。
+    run mkdir -p "$dir" > /dev/null 2>&1 || true
+    if ! printf '{\n  "agreement": "%s"\n}\n' "$AGREEMENT_ID" | run tee "$file" > /dev/null 2>&1; then
+        # 记不下来不该让更新失败 —— 代价只是下次再问一遍，比「更新到一半退出」轻。
+        mw_say "🌊 Warning: could not record the agreement in $file" \
+            "🌊 警告：未能把同意写进 ${file}"
+    fi
+    run chmod 644 "$file" > /dev/null 2>&1 || true
+    mw_say "🌊 Agreement accepted ($AGREEMENT_ID)." "🌊 已接受用户协议（${AGREEMENT_ID}）。"
+    return 0
+}
+
+
 VERSION="@@VERSION@@"
 BRANCH="@@BRANCH@@"
+# 这一版的用户协议标识。由生成器从 lib/selfupdate.py 抄来（那里是唯一来源）。
+# 空 = 这一版没带协议信息，闸门自动放行 —— 老 ref 生成的脚本就是这种状态。
+AGREEMENT_ID="@@AGREEMENT_ID@@"
 FILE_TIMEOUT="${MACWAVE_FILE_TIMEOUT:-60}"
 ATTEMPTS=3
 
@@ -241,6 +337,11 @@ tree_complete() {
 }
 
 main() {
+    # 协议闸门在最前面：同意是「做这次更新」的前提，先于任何下载与写入。
+    if ! agreement_gate; then
+        return 1
+    fi
+
     # 「已经是这个版本」也要先确认树是完整的。VERSION.json 只证明「上次跑完过」，
     # 不证明文件还在 —— 只信版本号的话，一棵坏树会永远停在 "Already at"，
     # 无论跑多少次都不会修好（这正是 2026-11-15 那次的形态）。

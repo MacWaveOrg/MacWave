@@ -29,6 +29,7 @@
 
 import argparse
 import hashlib
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -182,6 +183,30 @@ def list_lines(paths):
     return "\n".join(paths)
 
 
+def agreement_id(ref):
+    """这一版的用户协议标识，从 `<ref>:lib/selfupdate.py` 读 —— 唯一来源仍是那里。
+
+    生成器不自己抄一份日期：两份日期迟早会不一致，后果是「问的是新协议、记下的
+    却是旧标识」，于是下次再问一遍（AGENTS.md 里那条规矩说的是同一件事）。
+
+    读不到（老 ref 里没有这个常量）就返回空 —— 生成的脚本会自动放行闸门，
+    与「这一版没带协议信息」等价，不会把老版本卡死。
+    """
+    text = ""
+    if ref:
+        result = subprocess.run(["git", "-C", str(REPO_DIR), "show", f"{ref}:lib/selfupdate.py"],
+                                capture_output=True, text=True)
+        if result.returncode == 0:
+            text = result.stdout
+    if not text:
+        try:
+            text = (REPO_DIR / "lib/selfupdate.py").read_text()
+        except OSError:
+            text = ""
+    match = re.search(r'^AGREEMENT_ID = "([^"]*)"$', text, re.MULTILINE)
+    return match.group(1) if match else ""
+
+
 TEMPLATE = open(Path(__file__).resolve().parent / "update_commands.template.sh").read()
 
 
@@ -196,6 +221,9 @@ def main():
     parser.add_argument("--new", nargs="*", default=None,
                         help="files that did not exist in the previous release; emitted first so a "
                              "half-finished update still has every module it imports")
+    parser.add_argument("--agreement-id", default=None,
+                        help="override the agreement id baked into the script "
+                             "(default: read AGREEMENT_ID from --ref's lib/selfupdate.py)")
     parser.add_argument("--out", required=True, type=Path)
     args = parser.parse_args()
 
@@ -258,8 +286,17 @@ def main():
         # 没有哈希 = 这一行不校验。发布时静默漏掉几个，等于签名只覆盖一半。
         print(f"🌊 Warning: no sha256 for {len(missing)} file(s): {missing}", file=sys.stderr)
 
+    baked_agreement = args.agreement_id
+    if baked_agreement is None:
+        baked_agreement = agreement_id(None if source == "--files" else args.ref)
+    if not baked_agreement:
+        # 空着等于闸门放行。发布时静默漏掉，就等于这一版不会被任何人问到协议。
+        print("🌊 Warning: no AGREEMENT_ID for this ref; the agreement gate in the "
+              "generated script will let every update through.", file=sys.stderr)
+
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(TEMPLATE
+                        .replace("@@AGREEMENT_ID@@", baked_agreement)
                         .replace("@@VERSION@@", args.version)
                         .replace("@@BRANCH@@", branch)
                         .replace("@@FULL@@", want_lines(files, digests))
