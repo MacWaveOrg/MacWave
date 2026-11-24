@@ -15,7 +15,7 @@
 | --- | --- | --- |
 | `MacWaveOrg/Selfupdate` 的 `macwavedata/latest.toml` | **4.x 客户端** | 4.x 的 `wave selfupdate` 据此知道该升到哪个版本 |
 | `MacWaveOrg/configdata` 的 `versiondata/latest_version` | **3.x 客户端** | 3.x 的旧 `selfupdate.sh` 据此判断「有新版本」，并读 `update_command` |
-| `MacWaveOrg/Pages` 的 `index.html` | 人 | 官网显示的版本号与安装说明 |
+| `MacWaveOrg/Pages` 的 `index.html` + `i18n.js` | 人 | 官网显示的版本号、安装说明与支持包清单 |
 
 外加按版本冻结的一份脚本：
 
@@ -276,7 +276,23 @@ RC 探针建议也签，否则 `wave selfupdate` 在 RC 上会打「这份数据
 
 ### 第 6 步：更新官网版本号与 Release 正文
 
-- `Pages/index.html`：中英两处版本号
+官网的版本号**不在 `index.html` 里，主要在 `i18n.js`**，而且有 9 处。只改
+`index.html` 是 2026-11-24 那次 4.6.0 发版漏掉的地方（站上一直显示 4.5.2）：
+
+| 文件 | 位置 | 处数 |
+| --- | --- | --- |
+| `Pages/index.html` | `.version-block` 里的静态兜底 `<span class="v-line">` | 2 行（版本 + 日期） |
+| `Pages/i18n.js` | 每种语言的 `'version.block'` | **8 处**（zh-Hans / zh-Hant / fr / ja / ko / ru / de / es） |
+| `Pages/i18n.js` | 每种语言的 `'agreement.notice'` 落款日期与版本 | 8 处，与协议的 `AGREEMENT_ID` / 生效日期保持一致 |
+
+改完必须做这两条校验（第二条输出为空才算过）：
+
+```bash
+cd ~/Projects/MacWaveOrg/Pages
+grep -n '"version.block"' i18n.js          # 每条都应是本次版本号
+grep -rn '4\.5\.2\|2026-11-23' index.html i18n.js   # 旧版本/旧日期残留，应为空
+```
+
 - GitHub Release：正文用 `docs/RELEASE-<版本>.md`
 
 #### 正文必须双语，英文在前
