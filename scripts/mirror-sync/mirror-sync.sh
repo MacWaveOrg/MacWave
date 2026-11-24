@@ -52,7 +52,11 @@ fi
 SRC=${SRC:-/root/mirror-src}
 GH=${GH:-https://github.com}
 ORG=${ORG:-MacWaveOrg}
-KEEP_BRANCHES=${KEEP_BRANCHES-4.0}
+# 发布线由 configdata/versiondata/latest_version 的 branch 字段决定（见第 1 步）。
+# 这里额外保留 N-1 与 N-2 两条退路：第 3 步会删掉「不在 当前发布线+KEEP_BRANCHES
+# 里」的 core 分支，而老客户端的 update_command 还指着自己那一版的分支 ——
+# 只留 4.0 的话，4.6 一发布就会把 core/4.5 删掉，停在 4.5.x 的用户再也升不上来。
+KEEP_BRANCHES=${KEEP_BRANCHES-"4.5 4.0"}
 JOBS=${JOBS:-4}
 OWNER=${OWNER:-www:www}
 
