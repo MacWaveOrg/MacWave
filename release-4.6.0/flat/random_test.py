@@ -1,0 +1,1926 @@
+#!/usr/bin/env python3
+
+# random_test.py
+# 随机化端到端回归（CI 用）。设计要点：
+#
+#   1. 每次随机挑一个「安装目录方案」（含 33% 概率的自定义方案 ~/test dir），
+#      自己把脚本部署进去，跑完无论成败都清理干净。
+#   2. 从 infosource 的 pkginfo_<arch> 里随机抽 10~20 个软件包（必含 wget），
+#      下载体积超过 200MB 的包重抽；逐个 install → 校验 → uninstall。
+#   3. 指定版本号 / 不指定版本号各占一半，但两组都必须落在 [5, 15] 内，否则重抽。
+#      指定版本号的包里，1~2 个给「不存在的版本」，1~2 个给「非法版本」，其余正常。
+#   4. 三种特殊模式各至少一次：-C 断点续传（随机打断 0~3 次，含进度条渲染）、
+#      --skip-ssl（提示 + 正常下载）、--limit-rate（全程限速监测 + 结尾复核平均速度）。
+#   4b. 每个普通安装另有 5% 概率在 Mach-O 重定向（surfboard/transfer.sh）中途被 SIGINT 打断，
+#       只要求「不崩 + 再装一次能收敛到正确状态」。打断会真的杀掉 install_name_tool，
+#       所以有可能留下半改写的 Mach-O——这正是要观察的。
+#   5. 固定命令覆盖：list / search / info / selfupdate / link / linkquery / unlink
+#      各 5 次；4.1 新增的 latest 与 mirror 同样各 5 次。
+#   6. 5 个非法命令；裸 -h/--help/-V/--version 以及它们带非法参数的形式。
+#   7. 任何命令都可能有 10% 概率被插入非法参数；install 与 selfupdate 另有 25% 概率
+#      带上 --max-time，数值形式（纯数字 / s / min / min+s / h / 小数 / ms）等概率抽取，
+#      `--max-time=值` 与 `--max-time 值` 两种写法各占一半。各形式的接受与拒绝由阶段 6 兜底。
+#   8. 等效参数的长/短形式随机（-h/--help、-V/--version、-a/--all、-C/--continue、-v/--verbose）。
+#   9. 随机池排除 test_* 测试夹具；单个产物体积上限 200MB。
+#  10. 4.x 新增的参数（`-s`/`-S`、`-X` 四种写法、`--all`、`--json/--yaml/--toml/--raw`、
+#      `--only-set`/`--show-password`/`--hide-user`、`--proxy`、
+#      以及未发布的 `--connect-timeout`/`--content-time`）都会跑到：会改系统的命令上按
+#      SILENT_PROBABILITY 随机带静默旗标，其余由阶段 7 的离线矩阵逐个覆盖。
+#
+# 安全约束：只清理本次运行亲手创建的目录；已存在的配置目录（可能是一份真实安装）
+# 与已存在的非空安装目录一律拒绝覆盖并直接报错。
+#
+# 用法：
+#   python3 scripts/random_test.py [--dry-run] [--keep] [--seed N] [--count N]
+#                                  [--packages a,b,c] [--infosource DIR] [--limit-rate 400K]
+#
+# --dry-run 只做选择与参数生成并把计划打出来，不碰网络、不执行 wave（本地自测用）。
+
+import argparse
+import json
+import os
+import pty
+import random
+import re
+import select
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+from pathlib import Path
+
+try:
+    import requests
+except ImportError:
+    requests = None
+
+
+# -------------------- 可调参数 --------------------
+
+PKG_COUNT_MIN = 10
+PKG_COUNT_MAX = 20
+MAX_ARTIFACT_MB = 200                        # 单个产物体积上限（MB）
+MAX_ARTIFACT_BYTES = MAX_ARTIFACT_MB * 1024 * 1024   # 超过这个体积的包重抽
+SPECIFIED_MIN = 5                            # 「指定版本号」的包数下限
+SPECIFIED_MAX = 15                           # 「指定版本号」的包数上限
+CUSTOM_DIR_PROBABILITY = 0.33                # 抽到 `~/test dir` 的概率
+ILLEGAL_ARG_PROBABILITY = 0.10               # 任何命令插入非法参数的概率
+ALWAYS_PACKAGES = ("wget",)
+COMMAND_BATTERY = {
+    "list": 5,
+    "search": 5,
+    "info": 5,
+    "selfupdate": 5,
+    "link": 5,
+    "linkquery": 5,
+    "unlink": 5,
+    # 4.1 新增的两条只读命令：latest 要联网（只报告不下载），mirror 完全不联网
+    "latest": 5,
+    "mirror": 5,
+}
+ILLEGAL_COMMAND_COUNT = 5
+HELP_VERSION_CASES = 8
+BOGUS_VERSION_COUNT = (1, 2)                 # 不存在 / 非法版本各 1~2 个
+
+NONEXISTENT_VERSIONS = ("999.999.999", "0.0.0-does-not-exist", "12345.6789.0")
+ILLEGAL_VERSIONS = ("not-a-version", "1.0.0-!!!", "..%2f..%2fetc%2fpasswd", "v1.2.3@beta")
+
+ILLEGAL_FLAGS = ("--bogus", "-Z", "--no-such-flag", "-Q", "--definitely-not-a-flag")
+
+# 会按白名单校验旗标的命令；不在名单里的对未知旗标是静默忽略的（见 predict 的说明）。
+FLAG_VALIDATING_COMMANDS = {"install", "upgrade", "info", "mirror", "latest"}
+
+# 4.x 新增的参数。比例按代价定：离线的、只读的多跑，联网的、会改系统的少跑。
+# 归属以 docs/RELEASE-4.0.0.md ~ RELEASE-4.1.4.md 为准；`--connect-timeout` /
+# `--content-time` 还没发布（在 v4.1.4 之后），一并覆盖，免得发版时才发现没测。
+SILENT_PROBABILITY = 0.20            # 安装/卸载时带上静默旗标的概率
+# 这几个真的一个字节都不输出。不要写成 wave.py 注释里那个 `-CsX` —— 那是 **upgrade**
+# 的例子，`X` 在 install 上属于非法旗标，会以 rc=1 静默失败（错误被 -s 吞掉）。
+SILENT_FORMS = ("-s", "--silent", "-Cs")
+SHOW_ERROR_FORMS = ("-S", "--show-error")          # 只让错误仍打出来，本身不静默
+# -sS 单独一档：它压掉一切正常输出，只留错误，且错误不带 🌊（输出给脚本读）
+INFO_FORMAT_PROBABILITY = 0.30       # info 带 --json/--yaml/--toml/--raw 的概率
+MIRROR_FORMAT_PROBABILITY = 0.40     # mirror 带输出格式旗标的概率
+MIRROR_EXTRA_PROBABILITY = 0.25      # mirror 再带一个修饰旗标的概率
+REMOVE_OLD_FLAGS = ("-X", "--remove-old-version", "--remove-old-versions", "--rov")
+INFO_FORMAT_FLAGS = ("--json", "--yaml", "--toml", "--raw")
+# 刻意不含 --show-password：随机测试会把命令与输出一起写进日志，而镜像地址里
+# 可能带着密码（~/.zshrc 里的 MACWAVE_*_DOMAIN）。默认的六个星号才是要验的东西。
+MIRROR_EXTRA_FLAGS = ("--only-set", "--hide-user")
+# 三档超时同源（net/timeouts.py 的 FLAG_FIELDS），写法也同一套
+TIMEOUT_FLAGS = ("--max-time", "--connect-timeout", "--content-time")
+# -s 只对会改系统的命令生效，给只读命令会被明确拒绝（4.1.4）
+READ_ONLY_COMMANDS = ("list", "search", "info", "latest", "mirror")
+
+# --max-time：安装与自更新都支持。25% 的命令会带上它，数值的每种形式等概率抽。
+# 各形式折算后都是 60 秒上下，既覆盖「纯数字 / s / min / min+s 组合 / h / 小数 / ms」
+# 每一种写法，又不会小到让真实下载必然超时（250ms 那种虽然合法，但装上必失败）。
+MAX_TIME_PROBABILITY = 0.25
+MAX_TIME_FORMS = ("90", "90s", "2min", "1min30s", "1h", "1.5min", "90000ms")
+MAX_TIME_ILLEGAL_FORMS = ("abc", "1x", "-5")
+
+# 限速校验容差。瞬时值按「至少 1 秒的窗口」计算：单次 0.2s 采样差值会被 token
+# bucket 的突发放大（实测 400K 上限下曾读到 873K/s），那不是持续超速；窗口化以后
+# 突发被摊平，仍有 x2 余量。全程平均速度另有严格判定，超速仍然跑不掉。
+LIMIT_RATE_WINDOW_SECONDS = 1.0
+LIMIT_RATE_INSTANT_TOLERANCE = 2.0
+LIMIT_RATE_OVERALL_TOLERANCE = 1.25
+
+RESUME_INTERRUPT_ROUNDS = (0, 3)             # -C 的随机打断次数范围
+RESUME_MIN_SECONDS = 2.0                     # 至少下这么久才允许打断（避开元数据阶段）
+TRANSFER_INTERRUPT_PROBABILITY = 0.05        # Mach-O 重定向中途打断的概率
+RESUME_MIN_BYTES = 512 * 1024                # 断点续传：至少下了这么多才打断
+RESUME_RATE_LIMIT = "300K"                   # 断点续传时故意限速，否则下载太快根本来不及打断
+
+SIZE_PROBE_TIMEOUT = 8                       # 单次 HEAD 超时
+SIZE_PROBE_BUDGET_SECONDS = 60               # 探体积总预算；用尽就按「体积未知」放行
+HEARTBEAT_SECONDS = 30                       # 长命令心跳间隔
+PTY_FEED_SECONDS = 2.0                       # pty 里定期喂空行，避免 wave 的 input() 没人应答而挂死
+RESUME_MIN_ARTIFACT = 5 * 1024 * 1024        # 断点续传挑体积够大的包
+SKIP_SSL_MAX_ARTIFACT = 3 * 1024 * 1024      # --skip-ssl 挑小包，跑两遍不拖时间
+LIMIT_RATE_MAX_ARTIFACT = 20 * 1024 * 1024   # --limit-rate 挑中小包：上限放宽到 200MB 后，
+                                             # 400K 的限速下大包一个用例就要十分钟以上
+LIMIT_RATE_MIN_ARTIFACT = 2 * 1024 * 1024    # 限速测试挑够大的包才测得出速度
+
+REPO_DIR = Path(__file__).resolve().parent.parent
+
+# 运行时组件目录的唯一来源，与安装清单、lib/wave.py 的 sys.path 共用。
+COMPONENTS = [line.split("#", 1)[0].strip()
+              for line in (REPO_DIR / "scripts" / "components.txt")
+              .read_text(encoding="utf-8").splitlines()]
+COMPONENTS = [name for name in COMPONENTS if name]
+ARCH_MAP = {"aarch64": "arm64", "arm64": "arm64", "x86_64": "amd64", "amd64": "amd64"}
+
+SELFUPDATE_LATEST_URL = "https://raw.githubusercontent.com/MacWaveOrg/Selfupdate/HEAD/macwavedata/latest.toml"
+CONFIGDATA_LATEST_URL = "https://raw.githubusercontent.com/MacWaveOrg/configdata/HEAD/versiondata/latest_version"
+
+
+# -------------------- 结果记录 --------------------
+
+class Report:
+    def __init__(self):
+        self.passed = 0
+        self.failed = []
+        self.warned = []
+        self.skipped = []
+
+    def ok(self, label):
+        self.passed += 1
+        print(f"  PASS  {label}")
+
+    def fail(self, label, detail=""):
+        self.failed.append((label, detail))
+        print(f"  FAIL  {label}" + (f"  <- {detail}" if detail else ""))
+
+    def warn(self, label, detail=""):
+        self.warned.append((label, detail))
+        print(f"  WARN  {label}" + (f"  <- {detail}" if detail else ""))
+
+    def skip(self, label, detail=""):
+        self.skipped.append((label, detail))
+        print(f"  SKIP  {label}" + (f"  <- {detail}" if detail else ""))
+
+    def check(self, label, condition, detail=""):
+        if condition:
+            self.ok(label)
+        else:
+            self.fail(label, detail)
+        return bool(condition)
+
+
+def banner(text):
+    print("")
+    print(f"===== {text} =====")
+
+
+# -------------------- 安装目录方案 --------------------
+
+MARKER_NAME = ".macwave-random-test"
+
+
+class Layout:
+    """一次运行使用的安装目录 + 配置目录，以及需要清理的东西。
+
+    created_* 只在 setup_environment 真正创建了对应目录时才置位；
+    cleanup 只删自己创建的东西，绝不碰已存在的目录（这条曾经踩过坑）。
+    """
+
+    def __init__(self, name, base_dir, home_dir, config_dir):
+        self.name = name
+        self.base_dir = base_dir
+        self.home_dir = home_dir          # 传给子进程的 HOME（配置目录就在它下面）
+        self.config_dir = config_dir
+        self.created_base = False
+        self.created_config = False
+        self.created_home = False
+
+    @property
+    def env(self):
+        env = dict(os.environ)
+        env["HOME"] = str(self.home_dir)
+        return env
+
+    @property
+    def version_file(self):
+        return self.config_dir / "VERSION.json"
+
+    @property
+    def partial_dir(self):
+        return self.base_dir / "downloads" / "tmp"
+
+
+def choose_layout(rng, config_dir_override=None):
+    """随机挑一种安装目录方案；自定义方案（~/test dir）占 33%。"""
+    home = Path(os.path.expanduser("~"))
+    runner_temp = Path(os.environ.get("RUNNER_TEMP", tempfile.gettempdir()))
+    token = f"{rng.randrange(16**8):08x}"
+
+    standard = [
+        # 1. 常规随机：候选父目录里随机挑一个，拼随机目录名
+        ("random-user-local", home / ".local" / f"macwave-{token}", home),
+        ("random-runner-temp", runner_temp / f"macwave-{token}", home),
+        ("random-tmp", Path(tempfile.gettempdir()) / f"macwave-{token}", home),
+        # 2. 安装目录 + 配置目录都随机（换个 HOME 就换了 ~/.config/macwave_config）
+        ("random-home-and-base", home / ".macwave-{token}".replace("{token}", token),
+         Path(tempfile.gettempdir()) / f"mwhome-{token}"),
+        # 3. 难缠路径：带空格、带中文、深层嵌套
+        ("path-with-space", home / f"macwave test {token}", home),
+        ("path-with-unicode", home / f"macwave 测试 {token}" / "deep" / "deeper" / "base", home),
+    ]
+
+    if rng.random() < CUSTOM_DIR_PROBABILITY:
+        name, base, home_dir = "custom-test-dir", home / "test dir", home
+    else:
+        name, base, home_dir = rng.choice(standard)
+
+    config_dir = (Path(config_dir_override).expanduser() if config_dir_override
+                  else home_dir / ".config" / "macwave_config")
+    print(f"🌊 layout: {name}")
+    print(f"🌊   base_dir   = {base}")
+    print(f"🌊   HOME       = {home_dir}")
+    if home_dir != home:
+        print("🌊   （配置目录随 HOME 一起随机）")
+    return Layout(name, base, home_dir, config_dir)
+
+
+def setup_environment(layout):
+    """把仓库脚本部署到随机安装目录，并写好 config.json / VERSION.json。
+
+    安全约束（务必要守住，否则会删掉用户自己或真实安装目录里的东西）：
+      - 已存在的配置目录一律不碰：那可能是一份真实安装，直接报错让调用方换地方。
+      - 安装目录已存在且非空、又不带本测试的标记文件时，拒绝删除。
+    """
+    system_config = Path("/opt/macwave_config")
+    if system_config.exists():
+        raise RuntimeError(
+            f"{system_config} 存在，系统级配置会盖住随机配置；请先移除它再跑本测试")
+
+    if layout.config_dir.exists() and any(layout.config_dir.iterdir()):
+        raise RuntimeError(
+            f"{layout.config_dir} 已存在且非空，可能是一份真实安装，拒绝覆盖。"
+            f"请用 --config-dir 指向一个空目录，或使用随机 HOME 的目录方案")
+
+    if layout.base_dir.exists():
+        if any(layout.base_dir.iterdir()) and not (layout.base_dir / MARKER_NAME).exists():
+            raise RuntimeError(
+                f"{layout.base_dir} 已存在且不是本测试创建的目录，拒绝清空它")
+
+    real_home = Path(os.path.expanduser("~"))
+    if layout.home_dir != real_home:
+        layout.home_dir.mkdir(parents=True, exist_ok=True)
+        layout.created_home = True
+
+    shutil.rmtree(layout.base_dir, ignore_errors=True)
+    for name in ("bin", "links", *COMPONENTS, "deps", "downloads/tmp"):
+        (layout.base_dir / name).mkdir(parents=True, exist_ok=True)
+    (layout.base_dir / MARKER_NAME).write_text("created by scripts/random_test.py\n")
+    layout.created_base = True
+
+    for name in COMPONENTS:
+        src, dst = REPO_DIR / name, layout.base_dir / name
+        for item in src.iterdir():
+            if item.suffix in (".py", ".sh"):
+                shutil.copy2(item, dst / item.name)
+
+    shutil.copy2(REPO_DIR / "lib" / "wave.py", layout.base_dir / "lib" / "wave")
+
+    executables = [item for name in COMPONENTS
+                   for item in list((layout.base_dir / name).glob("*"))]
+    for target in executables + [layout.base_dir / "lib" / "wave"]:
+        target.chmod(0o755)
+
+    layout.config_dir.mkdir(parents=True, exist_ok=True)
+    layout.created_config = True
+    (layout.config_dir / "config.json").write_text(
+        json.dumps({"base_dir": str(layout.base_dir)}, indent=2))
+    (layout.config_dir / "VERSION.json").write_text(
+        json.dumps({"version": installed_version_for_selfupdate()}, indent=2))
+
+    print(f"🌊 deployed scripts into {layout.base_dir}")
+
+
+def _fetch_text(url):
+    try:
+        if requests is not None:
+            return requests.get(url, timeout=20).text
+        import urllib.request
+        with urllib.request.urlopen(url, timeout=20) as response:
+            return response.read().decode()
+    except Exception:
+        return ""
+
+
+def latest_version_source():
+    # 「最新版本」从哪个仓库读，由被测代码决定，不按分支名猜：
+    #   4.0 起 selfupdate 读 Selfupdate 仓库的 macwavedata/latest.toml；
+    #   3.x 读 configdata 的 versiondata/latest_version。
+    # 以 net/domains.py 里有没有 selfupdate_latest_url 作为判据。
+    try:
+        domains_py = (REPO_DIR / "net" / "domains.py").read_text()
+    except OSError:
+        return CONFIGDATA_LATEST_URL, r'version:\s*"([^"]+)"'
+    if "def selfupdate_latest_url" in domains_py:
+        return SELFUPDATE_LATEST_URL, r'^\s*version\s*=\s*"([^"]+)"'
+    return CONFIGDATA_LATEST_URL, r'version:\s*"([^"]+)"'
+
+
+def installed_version_for_selfupdate():
+    """让 selfupdate 走「已是最新」的短路分支，避免随机测试真的去更新安装目录。
+
+    真的自更新由 scripts/selfupdate_test.sh 专门覆盖；这里只关心命令的反应。
+
+    版本号必须取自**被测代码自己会读的那个源**。此前固定读 configdata，于是 4.0
+    代码把 3.2.x 当成「已安装版本」，误判有新版本并真的去更新，整个用例随即失败。
+    """
+    url, pattern = latest_version_source()
+    match = re.search(pattern, _fetch_text(url), re.M)
+    if match:
+        return match.group(1)
+
+    # 取不到就别猜一个小版本号——那会让 selfupdate 判定「该升级」并真的动安装目录。
+    # 用一个远高于真实的版本，让它走「已是最新」的短路分支。
+    return "999.999.999"
+
+
+def cleanup(layout, keep=False):
+    """只删本次 setup_environment 亲手创建的东西；没创建过就一个字节都不动。"""
+    if keep:
+        print(f"🌊 --keep: 保留 {layout.base_dir}")
+        return
+    if layout.created_base and layout.base_dir.exists():
+        shutil.rmtree(layout.base_dir, ignore_errors=True)
+        print(f"🌊 removed {layout.base_dir}")
+    if layout.created_config and layout.config_dir.exists():
+        shutil.rmtree(layout.config_dir, ignore_errors=True)
+        print(f"🌊 removed {layout.config_dir}")
+    if layout.created_home and layout.home_dir.exists():
+        shutil.rmtree(layout.home_dir, ignore_errors=True)
+        print(f"🌊 removed {layout.home_dir}")
+
+
+# -------------------- infosource 数据 --------------------
+
+
+def locate_infosource(explicit):
+    candidates = []
+    if explicit:
+        candidates.append(Path(explicit))
+    if os.environ.get("INFOSOURCE_DIR"):
+        candidates.append(Path(os.environ["INFOSOURCE_DIR"]))
+    candidates += [REPO_DIR / "infosource-data", REPO_DIR / "infosource"]
+    for candidate in candidates:
+        if (candidate / "pkg").is_dir():
+            return candidate
+    raise RuntimeError("找不到 infosource 数据（试过 --infosource、$INFOSOURCE_DIR、"
+                       "infosource-data/、infosource/）")
+
+
+def detect_arch():
+    machine = os.uname().machine.lower()
+    if machine not in ARCH_MAP:
+        raise RuntimeError(f"未知架构: {machine}")
+    return ARCH_MAP[machine]
+
+
+def load_catalog(source, arch):
+    """{包名: {版本: (url, sha256, bin_name, deps)}}，从本地 infosource 检出读。"""
+    root = source / "pkg" / f"pkginfo_{arch}"
+    if not root.is_dir():
+        raise RuntimeError(f"{root} 不存在")
+
+    catalog = {}
+    for pkg_dir in sorted(p for p in root.iterdir() if p.is_dir()):
+        name = pkg_dir.name
+        common = pkg_dir / f"_{name}@common"
+        if not common.is_file():
+            continue
+        fields = parse_fields(common.read_text())
+        bin_name = first(fields, "bin_name")
+        if not bin_name:
+            continue
+
+        versions = {}
+        for entry in sorted(pkg_dir.glob(f"_{name}@*")):
+            version = entry.name.split("@", 1)[1]
+            if version == "common":
+                continue
+            version_fields = parse_fields(entry.read_text())
+            url = first(version_fields, "url")
+            if not url:
+                continue
+            versions[version] = (url, first(version_fields, "sha256") or "", bin_name,
+                                 get_deps(version_fields))
+        if versions:
+            catalog[name] = versions
+    return catalog
+
+
+def parse_fields(text):
+    """与 surfboard/depsinstaller.py 的 DSL 规则一致。"""
+    fields = {}
+    current_key = None
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        head = line.split('"', 1)[0]
+        if ':' in head:
+            current_key = head.split(':', 1)[0].strip()
+            fields.setdefault(current_key, [])
+            value_text = line[len(head):]
+        else:
+            if current_key is None:
+                continue
+            value_text = line
+        for value in re.findall(r'"([^"]*)"', value_text):
+            fields[current_key].append(value)
+    return fields
+
+
+def first(fields, key, default=None):
+    values = fields.get(key)
+    return values[0] if values else default
+
+
+def get_deps(fields):
+    return [value for value in fields.get("depends", fields.get("deps", [])) if value.strip()]
+
+
+def max_version(versions):
+    """复用仓库自己的版本排序，避免在这里另造一套规则。"""
+    added = [str(REPO_DIR / name) for name in COMPONENTS]
+    sys.path[:0] = added
+    try:
+        from versioncompare import get_max_version
+        return get_max_version(list(versions))
+    finally:
+        del sys.path[:len(added)]
+
+
+class Tee:
+    """同时写原 stdout 与日志文件；CI 里靠它把整轮日志落盘给 artifact 上传。"""
+
+    def __init__(self, *streams):
+        self.streams = streams
+
+    def write(self, data):
+        for stream in self.streams:
+            stream.write(data)
+            stream.flush()
+        return len(data)
+
+    def flush(self):
+        for stream in self.streams:
+            stream.flush()
+
+    def isatty(self):
+        return False
+
+
+def start_heartbeat(label, interval=HEARTBEAT_SECONDS):
+    """长命令期间定期打点，避免 CI 日志出现无法解释的长时间空白。"""
+    stop = threading.Event()
+    started = time.monotonic()
+
+    def beat():
+        while not stop.wait(interval):
+            print(f"  … still running: {label} ({time.monotonic() - started:.0f}s)", flush=True)
+
+    thread = threading.Thread(target=beat, daemon=True)
+    thread.start()
+    return stop
+
+
+class SizeProber:
+    """HEAD 探体积，带缓存、短超时和总预算。
+
+    预算用尽或探测失败都返回 None（按「体积未知」放行）——宁可跑慢一点，
+    也不能像最初那样在 CI 里静默等几十分钟。
+    """
+
+    def __init__(self, timeout=SIZE_PROBE_TIMEOUT, budget=SIZE_PROBE_BUDGET_SECONDS):
+        self.timeout = timeout
+        self.budget = budget
+        self.spent = 0.0
+        self.cache = {}
+        self.exhausted = False
+
+    def size(self, url, label=""):
+        if url in self.cache:
+            return self.cache[url]
+
+        if self.spent >= self.budget:
+            if not self.exhausted:
+                self.exhausted = True
+                print(f"🌊 探体积预算 {self.budget:.0f}s 用尽，剩余包按「体积未知」放行", flush=True)
+            self.cache[url] = None
+            return None
+
+        started = time.monotonic()
+        size = self._probe(url)
+        elapsed = time.monotonic() - started
+        self.spent += elapsed
+        self.cache[url] = size
+        shown = f"{size / 1048576:.1f}MB" if size is not None else "未知"
+        print(f"🌊 probing {label or url}: {shown} ({elapsed:.1f}s)", flush=True)
+        return size
+
+    def _probe(self, url):
+        try:
+            if requests is not None:
+                response = requests.head(url, allow_redirects=True, timeout=self.timeout)
+                length = response.headers.get("Content-Length")
+                if length is None or response.status_code >= 400:
+                    return None
+                return int(length)
+            import urllib.request
+            request = urllib.request.Request(url, method="HEAD")
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                length = response.headers.get("Content-Length")
+                return int(length) if length else None
+        except Exception:
+            return None
+
+
+# -------------------- 计划（选择 + 参数生成） --------------------
+
+
+class PackagePlan:
+    def __init__(self, name, bin_name, versions, mode="normal"):
+        self.name = name
+        self.bin_name = bin_name
+        self.versions = versions
+        self.mode = mode               # normal / resume / skip-ssl / limit-rate
+        self.specified = False         # 是否在命令行里指定版本号
+        self.version = None            # 指定时用哪个版本
+        self.bogus = None              # None / "nonexistent" / "illegal"
+        self.artifact_bytes = None
+
+    @property
+    def token(self):
+        return f"{self.name}@{self.version}" if self.specified else self.name
+
+
+def select_packages(rng, catalog, report, count_override=None, explicit=None,
+                    prober=None, include_test=False):
+    """抽 10~20 个包，必含 wget，超过 200MB 的重抽。
+
+    test_* 是 format_test.sh 的测试夹具，默认不进随机池。
+    """
+    pool = sorted(name for name in catalog
+                  if include_test or not name.startswith("test"))
+    if explicit:
+        wanted = [name for name in explicit if name in catalog]
+        missing = [name for name in explicit if name not in catalog]
+        if missing:
+            raise RuntimeError(f"指定的包不在数据里: {', '.join(missing)}")
+        target = len(wanted)
+    else:
+        target = count_override or rng.randint(PKG_COUNT_MIN, PKG_COUNT_MAX)
+        wanted = []
+
+    for name in ALWAYS_PACKAGES:
+        if name in catalog and name not in wanted:
+            wanted.append(name)
+
+    candidates = [name for name in pool if name not in wanted]
+    rng.shuffle(candidates)
+
+    plans = []
+    for name in wanted:
+        plans.append(make_plan(name, catalog[name]))
+
+    attempts = 0
+    max_attempts = max(4 * target, 40)
+    while len(plans) < target and candidates and attempts < max_attempts:
+        name = candidates.pop()
+        attempts += 1
+        plan = make_plan(name, catalog[name])
+        url = plan.versions[max_version(plan.versions)][0]
+        size = prober.size(url, label=name) if prober else None
+        plan.artifact_bytes = size
+        if size is not None and size > MAX_ARTIFACT_BYTES:
+            report.skip(f"package {name}", f"{size / 1048576:.1f}MB > {MAX_ARTIFACT_MB}MB，重抽")
+            continue
+        plans.append(plan)
+
+    if not (count_override or explicit) and len(plans) < PKG_COUNT_MIN:
+        raise RuntimeError(f"可用包不足：只凑到 {len(plans)} 个")
+    return plans
+
+
+def make_plan(name, versions):
+    return PackagePlan(name, versions[max_version(versions)][2], versions)
+
+
+def assign_versions(rng, plans, report):
+    """指定/不指定版本号各占一半，但两组都必须落在 [5, 15] 内。"""
+    count = len(plans)
+    low = max(SPECIFIED_MIN, count - SPECIFIED_MAX)
+    high = min(SPECIFIED_MAX, count - SPECIFIED_MIN)
+    if low > high:
+        raise RuntimeError(f"{count} 个包无法满足「指定/不指定各 {SPECIFIED_MIN}~{SPECIFIED_MAX}」")
+    specified = rng.randint(low, high)
+
+    chosen = rng.sample(plans, specified)
+    for plan in plans:
+        plan.specified = plan in chosen
+        # 无论是否在命令行里写版本号，都要记下「预期装出来的版本」：
+        # 不指定时安装器取的就是最高版本，后续校验目录名要用它。
+        plan.version = max_version(plan.versions)
+
+    # 指定版本号的包里：1~2 个不存在的版本、1~2 个非法版本，其余正常
+    order = chosen[:]
+    rng.shuffle(order)
+    low, high = BOGUS_VERSION_COUNT
+    nonexistent = order[:rng.randint(low, high)]
+    illegal = order[len(nonexistent):len(nonexistent) + rng.randint(low, high)]
+    for plan in nonexistent:
+        plan.bogus = "nonexistent"
+        plan.version = rng.choice(NONEXISTENT_VERSIONS)
+    for plan in illegal:
+        plan.bogus = "illegal"
+        plan.version = rng.choice(ILLEGAL_VERSIONS)
+
+    print(f"🌊 {count} 个包：指定版本号 {specified} 个"
+          f"（其中不存在 {len(nonexistent)}、非法 {len(illegal)}），不指定 {count - specified} 个")
+    return plans
+
+
+def assign_modes(rng, plans, prober):
+    """三种特殊模式各至少一次，各自挑合适的包。体积走 prober 的缓存，不会重复探测。"""
+    remaining = [plan for plan in plans if not plan.bogus]
+    rng.shuffle(remaining)
+
+    def take(predicate, mode, description):
+        for plan in remaining:
+            size = plan.artifact_bytes
+            if size is None and prober is not None:
+                size = prober.size(plan.versions[max_version(plan.versions)][0], label=plan.name)
+                plan.artifact_bytes = size
+            if size is not None and predicate(size):
+                plan.mode = mode
+                remaining.remove(plan)
+                print(f"🌊 {mode}: {plan.name} ({size / 1048576:.1f}MB)")
+                return True
+        print(f"🌊 跳过特殊模式 {mode}：{description}", flush=True)
+        return False
+
+    take(lambda size: size >= RESUME_MIN_ARTIFACT, "resume", "没有 ≥5MB 的包可做断点续传")
+    take(lambda size: size <= SKIP_SSL_MAX_ARTIFACT, "skip-ssl", "没有 ≤3MB 的包可做 --skip-ssl")
+    take(lambda size: size >= LIMIT_RATE_MIN_ARTIFACT, "limit-rate", "没有 ≥2MB 的包可做 --limit-rate")
+    return plans
+
+
+# -------------------- wave 调用 --------------------
+
+
+class TimeBudgetExhausted(Exception):
+    """本轮时间预算用尽：不再发起新命令，让脚本正常收尾并汇总。"""
+
+
+DEADLINE = None      # 由 --time-budget 设置；None 表示不限时
+
+
+def out_of_time():
+    return DEADLINE is not None and time.monotonic() >= DEADLINE
+
+
+class Wave:
+    def __init__(self, layout, report, limit_rate):
+        self.layout = layout
+        self.report = report
+        self.limit_rate = limit_rate
+        self.entry = REPO_DIR / "lib" / "wave.py"
+        self.commands = 0
+
+    def _begin(self, argv):
+        # 每条命令都从这儿走：预算用尽就不再发起新命令，交给 main 正常汇总收尾。
+        # 靠 CI 的 timeout 兜底是会"杀死"整个 job 的，那时只能得到一个失败结论。
+        if out_of_time():
+            raise TimeBudgetExhausted("--time-budget 已用尽")
+        self.commands += 1
+        label = f"wave {' '.join(argv)}"
+        print(f"▶ [{self.commands}] {label}", flush=True)
+        return label
+
+    def _end(self, label, returncode, started, output=""):
+        mark = "✔" if returncode == 0 else "✘"
+        print(f"{mark} {label} rc={returncode} ({time.monotonic() - started:.1f}s)", flush=True)
+        if returncode != 0 and output:
+            tail = " | ".join(line.strip() for line in output.splitlines() if line.strip())[-300:]
+            print(f"    输出尾部: {tail}", flush=True)
+
+    def run(self, argv, timeout=1800, stdin=None, env_extra=None):
+        label = self._begin(argv)
+        env = self.layout.env
+        if env_extra:
+            env.update(env_extra)
+        started = time.monotonic()
+        stop = start_heartbeat(label)
+        try:
+            result = subprocess.run(
+                [sys.executable, str(self.entry), *argv],
+                input=stdin, capture_output=True, text=True, timeout=timeout, env=env)
+        except subprocess.TimeoutExpired:
+            print(f"  ✘ {label} 超时（{timeout}s）", flush=True)
+            raise
+        finally:
+            stop.set()
+        self._end(label, result.returncode, started, (result.stdout or "") + (result.stderr or ""))
+        return result
+
+    def partial_path(self, url):
+        return self.layout.partial_dir / (url.split("/")[-1] + ".partial")
+
+    def run_inline(self, argv, timeout=30):
+        label = f"binary {Path(argv[0]).name} {' '.join(argv[1:])}".strip()
+        started = time.monotonic()
+        result = subprocess.run(argv, capture_output=True, text=True, timeout=timeout,
+                                env=self.layout.env)
+        self._end(label, result.returncode, started, (result.stdout or "") + (result.stderr or ""))
+        return result
+
+    def run_in_pty(self, argv, timeout=1800, on_tick=None, tick=0.25, interrupt_when=None):
+        """在 pty 里跑 wave，这样 rich 的进度条才会真正渲染；可中途发 SIGINT。
+
+        期间定期往 pty 喂一个空行：wave 在下载失败时会 input() 问是否重试，
+        pty 里没人应答会一直阻塞到 timeout，那是最难排查的一种"挂死"。
+        """
+        label = self._begin(argv)
+        started = time.monotonic()
+        stop = start_heartbeat(label)
+        master, slave = pty.openpty()
+        env = self.layout.env
+        env["COLUMNS"] = "100"
+        proc = subprocess.Popen([sys.executable, str(self.entry), *argv],
+                                stdin=slave, stdout=slave, stderr=slave,
+                                env=env, start_new_session=True, close_fds=True)
+        os.close(slave)
+        chunks = []
+        deadline = started + timeout
+        next_tick = time.monotonic()
+        next_feed = time.monotonic() + PTY_FEED_SECONDS
+        interrupted = False
+        try:
+            while True:
+                if time.monotonic() > deadline:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                    break
+                readable, _, _ = select.select([master], [], [], 0.05)
+                if readable:
+                    try:
+                        data = os.read(master, 65536)
+                    except OSError:
+                        data = b""
+                    chunks.append(data.decode("utf-8", "replace"))
+                now = time.monotonic()
+                if on_tick and now >= next_tick:
+                    try:
+                        on_tick()
+                    except Exception:
+                        pass
+                    next_tick = now + tick
+                if now >= next_feed:
+                    try:
+                        os.write(master, b"\n")
+                    except OSError:
+                        pass
+                    next_feed = now + PTY_FEED_SECONDS
+                if interrupt_when and proc.poll() is None and interrupt_when():
+                    os.killpg(proc.pid, signal.SIGINT)
+                    interrupted = True
+                    interrupt_when = None
+                if proc.poll() is not None:
+                    # 进程退出后再把缓冲区读干净
+                    while select.select([master], [], [], 0.05)[0]:
+                        try:
+                            data = os.read(master, 65536)
+                        except OSError:
+                            break
+                        if not data:
+                            break
+                        chunks.append(data.decode("utf-8", "replace"))
+                    break
+        finally:
+            os.close(master)
+            stop.set()
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                os.killpg(proc.pid, signal.SIGKILL)
+                proc.wait()
+
+        output = "".join(chunks)
+        self._end(label, proc.returncode or 0, started, output)
+        return PtyResult(output, proc.returncode or 0,
+                         bool(PROGRESS_PATTERN.search(output)), interrupted)
+
+
+# -------------------- 断言辅助 --------------------
+
+
+TRACEBACK = "Traceback (most recent call last)"
+# 这些标记说明是 api.github.com 的问题（未认证 60 次/小时），不是 MacWave 的 bug
+API_FAILURE_MARKERS = ("API rate limit exceeded", "rate limit", "HTTP 403", "HTTP 429",
+                       "Cannot fetch package list")
+
+
+def no_traceback(output):
+    return TRACEBACK not in output
+
+
+def is_rate_limited(result):
+    """接受 CompletedProcess / PtyResult / 字符串，判断是不是 GitHub API 侧的问题。"""
+    if isinstance(result, str):
+        text = result
+    elif hasattr(result, "as_result"):
+        text = result.as_result.stdout or ""
+    else:
+        text = (getattr(result, "stdout", "") or "") + (getattr(result, "stderr", "") or "")
+    lowered = text.lower()
+    return any(marker.lower() in lowered for marker in API_FAILURE_MARKERS)
+
+
+def describe(result):
+    text = (result.stdout or "") + (result.stderr or "")
+    return " | ".join(line.strip() for line in text.splitlines() if line.strip())[:300]
+
+
+def expect(checks, result, rc, label, must_contain=(), must_not_contain=()):
+    """统一断言：退出码 + 关键输出 + 不许抛栈。"""
+    out = (result.stdout or "") + (result.stderr or "")
+    checks.check(f"{label}: exit={rc}", result.returncode == rc,
+                 f"实际 {result.returncode} :: {describe(result)}")
+    checks.check(f"{label}: 无 Python 栈回溯", no_traceback(out), describe(result))
+    for needle in must_contain:
+        checks.check(f"{label}: 输出含 {needle!r}", needle in out, describe(result))
+    for needle in must_not_contain:
+        checks.check(f"{label}: 输出不含 {needle!r}", needle not in out, describe(result))
+
+
+# -------------------- 阶段 0：旗标假设自检 --------------------
+
+
+def phase_flag_sanity(wave, checks):
+    """用「缺包名 / 包不存在」这种离线失败，反证假定的每组旗标真的被命令接受。
+
+    起因：把 `lib/wave.py` 注释里 **upgrade** 的 `-CsX` 照搬成了 install 的静默写法。
+    `X` 在 install 上属于 upgrade 专属，于是 install 以 rc=1 静默失败 —— 而静默正好把
+    「illegal option -X」这句证据吞掉了，只有随机种子恰好抽中才暴露。
+
+    做法：给每个旗标再加一个 `--show-error`，让错误重新可见；合法旗标一定会走到
+    「缺包名 / 包不存在」，非法旗标则不会。这样一次离线运行就能证伪整张表。
+    """
+    banner("阶段 0：旗标假设自检（离线）")
+
+    for form in SILENT_FORMS + SHOW_ERROR_FORMS:
+        expect(checks, wave.run(["install", form, "--show-error"], timeout=60), 1,
+               f"install {form} --show-error（缺包名）",
+               must_contain=("no package name",))
+
+    for form in SILENT_FORMS + SHOW_ERROR_FORMS:
+        expect(checks,
+               wave.run(["uninstall", "no_such_package_mw", form, "--show-error"], timeout=60),
+               1, f"uninstall no_such_package_mw {form} --show-error",
+               must_contain=("is not installed",))
+
+
+# -------------------- 阶段 1：随机包的安装循环 --------------------
+
+
+def install_token(plan):
+    return plan.token
+
+
+def random_flag(rng, short, long):
+    return rng.choice((short, long))
+
+
+def maybe_silent(rng):
+    """随机决定这条命令要不要静默，返回 (旗标或 None, 是否真的一个字节都不输出)。
+
+    -s / --silent / -sS / -CsX 通过把 fd 1 与 fd 2 指向 /dev/null 实现，成功时
+    输出为空；-S / --show-error 只是让失败信息仍然打出来，本身并不静默。
+    """
+    if rng.random() >= SILENT_PROBABILITY:
+        return None, False
+    flag = rng.choice(SILENT_FORMS + SHOW_ERROR_FORMS)
+    return flag, flag in SILENT_FORMS
+
+
+def maybe_info_format(rng):
+    """info 的四种输出格式（4.1.1 起）。它们互斥，所以一次最多给一个。"""
+    if rng.random() >= INFO_FORMAT_PROBABILITY:
+        return []
+    return [rng.choice(INFO_FORMAT_FLAGS)]
+
+
+def maybe_mirror_args(rng):
+    """mirror 的输出格式与修饰旗标（4.1.0 起）。四种格式互斥，最多给一个。"""
+    args = []
+    if rng.random() < MIRROR_FORMAT_PROBABILITY:
+        args.append(rng.choice(INFO_FORMAT_FLAGS))
+    if rng.random() < MIRROR_EXTRA_PROBABILITY:
+        args.append(rng.choice(MIRROR_EXTRA_FLAGS))
+    return args
+
+
+def maybe_illegal_arg(rng):
+    return rng.choice(ILLEGAL_FLAGS) if rng.random() < ILLEGAL_ARG_PROBABILITY else None
+
+
+def maybe_max_time(rng):
+    """按 MAX_TIME_PROBABILITY 给命令追加 --max-time，返回参数片段（可能是空列表）。
+
+    数值形式与写法都随机：`--max-time=1min` 与 `--max-time 1min` 两种都要能用，
+    数值则从 MAX_TIME_FORMS 里等概率抽 —— 纯数字、s、min、min+s 组合、h、小数、ms。
+    这里只负责「合法值」；非法值由 phase_max_time_validation 单独覆盖。
+    """
+    if rng.random() >= MAX_TIME_PROBABILITY:
+        return []
+    value = rng.choice(MAX_TIME_FORMS)
+    if rng.random() < 0.5:
+        return [f"--max-time={value}"]
+    return ["--max-time", value]
+
+
+def uninstall_token(plan):
+    """卸载要用 bin_name：安装目录是 bin/<bin_name>@<版本>，
+    包名和 bin_name 不一定相同（例如 choma -> ChOma）。"""
+    return f"{plan.bin_name}@{plan.version}" if plan.specified else plan.bin_name
+
+
+def phase_install_cycle(wave, rng, plans, checks):
+    banner("阶段 1：随机软件包 install → 校验")
+    installed = []
+    for plan in plans:
+        label = f"install {install_token(plan)}"
+        argv = install_args(install_token(plan))
+
+        if plan.mode == "limit-rate":
+            argv += ["--limit-rate", wave.limit_rate]
+        elif plan.mode == "skip-ssl":
+            argv += ["--skip-ssl"]
+        elif plan.mode == "resume":
+            argv += [random_flag(rng, "-C", "--continue")]
+
+        max_time_args = maybe_max_time(rng)
+        argv += max_time_args
+
+        illegal = maybe_illegal_arg(rng)
+        if illegal:
+            argv.append(illegal)
+
+        if plan.bogus:
+            # 负向用例：不存在的版本 / 非法版本都必须干净失败
+            result = wave.run(argv)
+            if is_rate_limited(result):
+                checks.skip(label, "GitHub API 侧失败（限流/403），跳过断言")
+                continue
+            checks.check(f"{label}（{plan.bogus}）: 退出码非 0", result.returncode != 0,
+                         describe(result))
+            checks.check(f"{label}（{plan.bogus}）: 无 Python 栈回溯",
+                         no_traceback((result.stdout or "") + (result.stderr or "")),
+                         describe(result))
+            continue
+
+        if illegal:
+            result = wave.run(argv)
+            expect(checks, result, 1, f"{label} + 非法参数 {illegal}",
+                   must_contain=("illegal",))
+            continue
+
+        if plan.mode == "resume":
+            ok = run_resume_case(wave, rng, plan, checks)
+        elif plan.mode == "skip-ssl":
+            ok = run_skip_ssl_case(wave, plan, checks)
+        elif plan.mode == "limit-rate":
+            ok = run_limit_rate_case(wave, plan, checks)
+        elif rng.random() < TRANSFER_INTERRUPT_PROBABILITY:
+            ok = run_transfer_interrupt_case(wave, plan, checks)
+        else:
+            # 静默旗标只加在普通安装这条路上：续传 / 限速 / 跳过证书那几个用例
+            # 各自要读进度与提示，静默会把它们的断言全废掉。
+            silent_flag, silent = maybe_silent(rng)
+            extra = list(max_time_args)
+            if silent_flag:
+                extra.append(silent_flag)
+            ok = run_plain_install(wave, plan, checks, extra, silent=silent)
+
+        if ok:
+            installed.append(plan)
+
+    return installed
+
+
+def install_args(token, *extra):
+    """构造 install 命令行，并强制放行 min_os 询问。
+
+    随机抽到的包可能在声明上要求更高的系统版本（ipsw 声明 27.2、ollama 26.2，
+    而 runner 是 26.x）。非交互下读不到答复会按中止处理，于是「这个包没装上」
+    被记成失败 —— 但这里测的是安装链路本身，不是版本兼容性。询问与拒绝的语义
+    由 scripts/minos_test.sh 专门覆盖（49 条断言）。
+
+    -F 放在包名之后、其它旗标之前：它是这个测试的固有前提，不是被测对象。
+    """
+    return ["install", token, "-F", *extra]
+
+
+def run_plain_install(wave, plan, checks, extra_args=(), silent=False):
+    label = " ".join(["install", plan.token, *extra_args])
+    result = wave.run(install_args(plan.token, *extra_args))
+    if is_rate_limited(result):
+        checks.skip(label, "GitHub API 侧失败（限流/403），跳过断言")
+        return False
+    if silent:
+        # -s 的语义就是「成败只看退出码」，所以这里不要求任何输出，
+        # 反而要求一个字节都没有 —— 那是它区别于 -v 的地方。
+        expect(checks, result, 0, label)
+        checks.check(f"{label}: 静默时没有任何输出",
+                     not ((result.stdout or "") + (result.stderr or "")), describe(result))
+    else:
+        expect(checks, result, 0, label,
+               must_contain=("Successfully installed",),
+               must_not_contain=("Server does not support resume",))
+    return verify_installed(wave, plan, checks, label)
+
+
+def verify_installed(wave, plan, checks, label):
+    """装完之后的硬断言：目录、软链接、SHA256 校验、二进制能跑、list 能看到。"""
+    bin_dir = wave.layout.base_dir / "bin" / f"{plan.bin_name}@{plan.version}"
+    link = wave.layout.base_dir / "links" / plan.bin_name
+
+    ok = True
+    ok &= checks.check(f"{label}: 目录 {bin_dir.name} 存在", bin_dir.is_dir(), str(bin_dir))
+    ok &= checks.check(f"{label}: 不带版本号的链接存在", link.is_symlink(), str(link))
+
+    listed = wave.run(["list"])
+    ok &= checks.check(f"{label}: list 里有它", f"{plan.bin_name}@{plan.version}" in listed.stdout,
+                       describe(listed))
+
+    ok &= binary_runs(wave, plan, checks, label)
+    return bool(ok)
+
+
+def binary_runs(wave, plan, checks, label):
+    """二进制至少要能起来；dyld 报错说明路径替换没做对，必须失败。"""
+    link = wave.layout.base_dir / "links" / plan.bin_name
+    if not link.exists():
+        return True
+    for extra in ("--version", "-V", "--help"):
+        try:
+            result = wave.run_inline([str(link), extra], timeout=30)
+        except Exception as error:
+            checks.warn(f"{label}: 执行 {plan.bin_name} {extra} 失败", str(error))
+            continue
+        text = result.stdout + result.stderr
+        if has_dyld_error(text):
+            mismatch = dependency_symbol_mismatch(text)
+            if mismatch:
+                symbol, library = mismatch
+                checks.warn(f"{label}: {plan.bin_name} 缺符号 {symbol}（{library} 没导出，"
+                            "疑似 infosource 包数据不匹配，非路径重定向问题）", text[:200])
+                return True
+            checks.fail(f"{label}: {plan.bin_name} 有未解析的动态库", text[:200])
+            return False
+        if result.returncode == 0:
+            checks.ok(f"{label}: {plan.bin_name} {extra} 可执行")
+            return True
+    checks.warn(f"{label}: 没找到可用的 --version/-V/--help 调用方式（不算失败）")
+    return True
+
+
+def run_transfer_interrupt_case(wave, plan, checks):
+    """Mach-O 重定向（transfer.sh）中途打断：允许留半成品，但必须能再装一次收敛。
+
+    打断会连 install_name_tool 一起杀掉，所以可能留下半改写的 Mach-O。
+    这里不判定「半成品」本身是失败（只 WARN 记录），硬性要求是：
+      - 进程干净退出（无栈回溯）
+      - 重新 install 能装到完整正确（SHA256 通过、二进制能跑、list 能看到）
+    """
+    label = f"install {plan.token}（重定向中打断）"
+    banner(f"Mach-O 重定向中途打断：{plan.name}")
+
+    result = wave.run_in_pty(install_args(plan.token), interrupt_when=transfer_watcher(),
+                             timeout=1800)
+    if not result.interrupted:
+        checks.warn(f"{label}: 没抓到 transfer.sh 的窗口，本轮按普通安装校验")
+        expect(checks, result.as_result, 0, f"install {plan.token}",
+               must_contain=("Successfully installed",))
+        return verify_installed(wave, plan, checks, f"install {plan.token}")
+
+    checks.check(f"{label}: 退出码非 0", result.returncode != 0, f"实际 {result.returncode}")
+    checks.check(f"{label}: 无 Python 栈回溯", no_traceback(result.output),
+                 describe_text(result.output))
+    if "Operation cancelled by user." not in result.output and result.returncode != 130:
+        checks.warn(f"{label}: 没看到取消提示", describe_text(result.output))
+
+    # 打断后的残留：现状会留下半个 bin/ 目录且被 `wave list` 显示出来，先记录不判定
+    half_dir = wave.layout.base_dir / "bin" / f"{plan.bin_name}@{plan.version}"
+    listed = wave.run(["list"])
+    half_listed = f"{plan.bin_name}@{plan.version}" in listed.stdout
+    if half_dir.exists() or half_listed:
+        checks.warn(f"{label}: 打断后留下半装状态",
+                    f"bin 目录={half_dir.exists()} list 可见={half_listed}")
+
+    # 恢复：再装一次必须完全正确
+    recovery = wave.run(install_args(plan.token))
+    if is_rate_limited(recovery):
+        checks.skip(f"{label} → 重新 install", "GitHub API 侧失败（限流/403）")
+        return False
+    expect(checks, recovery, 0, f"{label} → 重新 install",
+           must_contain=("Successfully installed",))
+    return verify_installed(wave, plan, checks, f"{label} → 重新 install")
+
+
+def transfer_watcher(interval=1.0):
+    """节流过的 transfer.sh 观察器：run_in_pty 每 50ms 会问一次，别每次都去 ps。"""
+    state = {"next": 0.0}
+
+    def watch():
+        now = time.monotonic()
+        if now < state["next"]:
+            return False
+        state["next"] = now + interval
+        return transfer_running()
+
+    return watch
+
+
+def transfer_running():
+    """surfboard/transfer.sh 是否正在跑（用进程表判断，transfer.sh 自己不打进度）。"""
+    try:
+        listing = subprocess.run(["ps", "-Ao", "command="],
+                                 capture_output=True, text=True, timeout=10).stdout
+    except Exception:
+        return False
+    return "transfer.sh" in listing
+
+
+def run_resume_case(wave, rng, plan, checks):
+    """-C 断点续传：随机打断 0~3 次，每次都要接着上次的字节继续，最后完整装好。"""
+    rounds = rng.randint(*RESUME_INTERRUPT_ROUNDS)
+    flag = random_flag(rng, "-C", "--continue")
+    label = f"install {plan.token} {flag}"
+    banner(f"-C 断点续传：{plan.name}（计划打断 {rounds} 次）")
+
+    url = plan.versions[plan.version][0]
+    partial = wave.partial_path(url)
+    interrupted_bytes = 0
+    actual_rounds = 0
+
+    for index in range(rounds):
+        start_size = partial.stat().st_size if partial.exists() else 0
+        started = time.monotonic()
+        # 打断轮故意限速：不限速时 12MB 的包不到 1 秒就下完了，根本来不及打断
+        # （上一轮 CI 就是这样，计划打断 1 次，实际 0 次）。
+        result = wave.run_in_pty(
+            install_args(plan.token, flag, "--limit-rate", RESUME_RATE_LIMIT),
+            interrupt_when=lambda: (partial.exists()
+                                    and partial.stat().st_size >= start_size + RESUME_MIN_BYTES
+                                    and time.monotonic() - started >= RESUME_MIN_SECONDS),
+            timeout=1800)
+        if not result.interrupted:
+            # 还没轮到打断就已经装完了（包小或网快），后面不必再打断
+            break
+        actual_rounds += 1
+        checks.check(f"-C 第 {actual_rounds} 次打断: 退出码非 0", result.returncode != 0,
+                     f"实际 {result.returncode}")
+        checks.check(f"-C 第 {actual_rounds} 次打断: 无 Python 栈回溯",
+                     no_traceback(result.output), describe_text(result.output))
+        checks.check(f"-C 第 {actual_rounds} 次打断: 进度条有渲染", result.progress_rendered,
+                     f"pty 输出里没看到百分比：{result.output[-200:]}")
+        if not partial.exists():
+            checks.fail(f"-C 第 {actual_rounds} 次打断: .partial 应保留", str(partial))
+            return False
+        size = partial.stat().st_size
+        checks.check(f"-C 第 {actual_rounds} 次打断: .partial 未回退（{size} ≥ {interrupted_bytes}）",
+                     size >= interrupted_bytes,
+                     f"回退了 {interrupted_bytes - size} 字节（服务器不支持 Range？）")
+        interrupted_bytes = size
+
+    watched = {"min_size": interrupted_bytes}
+
+    def watch():
+        if partial.exists():
+            watched["min_size"] = min(watched["min_size"], partial.stat().st_size)
+
+    result = wave.run_in_pty(install_args(plan.token, flag), on_tick=watch, timeout=1800)
+    text = result.output
+    checks.check("-C 续传没有重头开始（.partial 从未回退）",
+                 watched["min_size"] >= interrupted_bytes,
+                 f"最小 {watched['min_size']} < 打断时 {interrupted_bytes}（服务器不支持 Range？）")
+    checks.check("-C 没有出现“服务器不支持续传”提示",
+                 "Server does not support resume" not in text, describe_text(text))
+    checks.check("-C 续传进度条有渲染", result.progress_rendered, text[-200:])
+    expect(checks, result.as_result, 0, f"{label}（续传）",
+           must_contain=("Successfully installed",))
+    if actual_rounds == 0:
+        checks.warn(f"{label}: 实际打断 0 次（本轮只验证了 -C 的正常下载）")
+    return verify_installed(wave, plan, checks, label)
+
+
+def run_skip_ssl_case(wave, plan, checks):
+    """--skip-ssl：安全提示是**白名单**语义 —— 只有 y/Y 继续，其余一律中止。
+
+    这里钉两件事：
+      answer=y  → 真的跳过校验、装成功
+      answer≠y  → 退出码 1，**什么都没装**（以前是「照装一份带校验的」，于是用户
+                  明明写了 --skip-ssl 却拿到一个 SSL 错误，看起来像旗标没生效）
+
+    非 y 的答复挑几个典型的：n、直接回车（空串）、以及一个像肯定但不是 y 的词。
+    """
+    banner(f"--skip-ssl：{plan.name}")
+
+    label = f"install {plan.token} --skip-ssl (answer=y)"
+    result = wave.run(install_args(plan.token, "--skip-ssl"), stdin="y\n")
+    expect(checks, result, 0, label, must_contain=("You selected --skip-ssl",))
+    ok = verify_installed(wave, plan, checks, label)
+    wave.run(["uninstall", uninstall_token(plan)])
+
+    bin_dir = wave.layout.base_dir / "bin" / f"{plan.bin_name}@{plan.version}"
+    for answer in ("n", "", "yes"):
+        shown = "⏎" if answer == "" else answer
+        label = f"install {plan.token} --skip-ssl (answer={shown})"
+        result = wave.run(install_args(plan.token, "--skip-ssl"), stdin=f"{answer}\n")
+        expect(checks, result, 1, label,
+               must_contain=("You selected --skip-ssl", "confirmation was declined"))
+        # 中止必须是「什么都没发生」，不能只是换个退出码
+        checks.check(f"{label}: 中止后没装任何东西", not bin_dir.exists(), str(bin_dir))
+    return ok
+
+
+def run_limit_rate_case(wave, plan, checks):
+    """--limit-rate：全程采样看是否超速，结尾再用 体积/时间 复核全程平均速度。"""
+    banner(f"--limit-rate {wave.limit_rate}：{plan.name}")
+    url = plan.versions[plan.version][0]
+    partial = wave.partial_path(url)
+    limit = parse_rate(wave.limit_rate)
+
+    samples = []
+    watched = {"last_size": 0, "last_time": None}
+
+    def sample():
+        if not partial.exists():
+            return
+        now = time.monotonic()
+        size = partial.stat().st_size
+        if watched["last_time"] is None:
+            watched["last_time"] = now
+            watched["last_size"] = size
+            return
+        delta_t = now - watched["last_time"]
+        if delta_t < 0.2:
+            return
+        samples.append((now, size, (size - watched["last_size"]) / delta_t))
+        watched["last_time"] = now
+        watched["last_size"] = size
+
+    started = time.monotonic()
+    result = wave.run_in_pty(install_args(plan.token, "--limit-rate", wave.limit_rate),
+                             on_tick=sample, tick=0.2, timeout=1800)
+    elapsed = time.monotonic() - started
+    total_bytes = plan.artifact_bytes or 0
+
+    expect(checks, result.as_result, 0, f"install {plan.token} --limit-rate",
+           must_contain=("Successfully installed",))
+
+    # 安装没成功时，下面两处「体积 ÷ 耗时」算的是「失败前到的那点字节 ÷ 失败耗时」，
+    # 会得出远高于限速的假速度，把一次连接被重置写成「限速没生效」——2026-11-21
+    # 就是这么误导的（真因是 ConnectionResetError 54，14.6 MB 下到一半断了）。
+    # 失败已经由上面那条断言记录过，这里不再制造第二条错结论。
+    if result.as_result.returncode != 0:
+        checks.warn(f"--limit-rate {wave.limit_rate}: install 没成功"
+                    f"（rc={result.as_result.returncode}），跳过速度断言")
+        return
+
+    if limit and samples:
+        points = [(stamp, size) for stamp, size, rate in samples]
+        peak = peak_window_rate(points, LIMIT_RATE_WINDOW_SECONDS)
+        checks.check(
+            f"--limit-rate {wave.limit_rate}: 瞬时未超速（{LIMIT_RATE_WINDOW_SECONDS:.0f}s 窗口峰值 "
+            f"{peak / 1024:.0f}K/s，容差 x{LIMIT_RATE_INSTANT_TOLERANCE}）",
+            peak <= limit * LIMIT_RATE_INSTANT_TOLERANCE,
+            f"峰值 {peak / 1024:.0f}K/s > {limit * LIMIT_RATE_INSTANT_TOLERANCE / 1024:.0f}K/s")
+
+    if limit and total_bytes and elapsed > 1:
+        average = total_bytes / elapsed
+        checks.check(
+            f"--limit-rate {wave.limit_rate}: 全程平均未超速"
+            f"（{total_bytes / 1048576:.1f}MB / {elapsed:.1f}s = {average / 1024:.0f}K/s）",
+            average <= limit * LIMIT_RATE_OVERALL_TOLERANCE,
+            f"{average / 1024:.0f}K/s > {limit * LIMIT_RATE_OVERALL_TOLERANCE / 1024:.0f}K/s")
+    else:
+        checks.warn("--limit-rate: 缺少体积信息，跳过全程平均速度校验")
+
+    return verify_installed(wave, plan, checks, f"install {plan.token} --limit-rate")
+
+
+def parse_rate(text):
+    text = text.strip().upper()
+    multipliers = {"K": 1024, "M": 1024 ** 2, "G": 1024 ** 3}
+    try:
+        if text[-1] in multipliers:
+            return float(text[:-1]) * multipliers[text[-1]]
+        return float(text)
+    except (ValueError, IndexError):
+        return None
+
+
+def peak_window_rate(points, window):
+    """samples 为 [(t, 已下载字节)]；返回所有 >= window 秒窗口里的最大平均速率。
+
+    用窗口而不是单次采样差值，是因为采样间隔本身会抖动：两个相邻采样点之间若
+    恰好跨过一次 token bucket 突发，裸差值会把 8KB 的瞬时尖峰算成几百 K/s。
+    """
+    if len(points) < 2:
+        return 0.0
+    best = 0.0
+    start = 0
+    for end in range(1, len(points)):
+        while start + 1 <= end and points[end][0] - points[start + 1][0] >= window:
+            start += 1
+        span = points[end][0] - points[start][0]
+        if span >= window:
+            best = max(best, (points[end][1] - points[start][1]) / span)
+    return best
+
+
+# -------------------- 阶段 2：固定命令覆盖 --------------------
+
+
+def predict(cmd, argv, installed, links):
+    """按实测行为预测 (退出码, 必须包含的输出)。
+
+    installed 是已安装的名字集合，links 是当前存在「不带版本号链接」的名字集合。
+    预测必须跟着链接状态走，否则 unlink 之后 linkquery 会被误判成失败。
+    """
+    words = argv[1:]
+    if "-h" in words or "--help" in words:
+        return 0, ("usage:",)
+
+    # 只有校验旗标白名单的命令会因非法旗标失败。事实是实测出来的：
+    #   install / upgrade / info / mirror / latest  → 拒绝（措辞不同，但都含 "option"）
+    #   list / search / link / unlink / linkquery / selfupdate / uninstall → 静默忽略
+    # 按「一律失败」建模会让被忽略的那些误判成失败，反过来漏掉又会让拒绝的误判成成功。
+    if cmd in FLAG_VALIDATING_COMMANDS and any(word in ILLEGAL_FLAGS for word in words):
+        return 1, ("option",)
+
+    if cmd == "list":
+        return 0, ()
+    if cmd == "search":
+        if not words:
+            return 1, ("Missing search query.",)
+        return 0, ()
+    if cmd == "info":
+        # info 只认这四种输出格式。给它别的选项（例如从 install 那边串过来的
+        # --all）会走「unknown option」分支，而不是「缺包名」——两者是完全不同的
+        # 错误，预测要分开，否则模糊测试会把正确的行为判成失败。
+        known_info = {"--json", "--yaml", "--toml", "--raw", "-h", "--help"}
+        if any(w.startswith("-") and w.split("=")[0] not in known_info for w in words):
+            return 1, ("unknown option",)
+        operands = [w for w in words if not w.startswith("-")]
+        if not operands or not operands[0].partition("@")[0]:
+            return 1, ("Missing package name.",)
+        return 0, ()
+    if cmd == "selfupdate":
+        return 0, ()
+
+    if cmd == "mirror":
+        # 四种输出格式互斥；--only-set / --show-password / --hide-user 只改排版
+        formats = [w.split("=")[0] for w in words if w.split("=")[0] in INFO_FORMAT_FLAGS]
+        if len(set(formats)) > 1:
+            return 1, ("mutually exclusive",)
+        # --only-set 只对 --raw 有意义。显式选了别的格式会被拒；一个格式都不给时
+        # 默认就是表格，--only-set 只是不生效，仍然成功 —— 这两种必须分开预测。
+        if "--only-set" in words and formats and formats[0] != "--raw":
+            return 1, ("only applies to --raw",)
+        # --show-password 是合法旗标，但生成器绝不给它（会把口令打进日志），
+        # 所以它只进「合法集合」，不进 MIRROR_EXTRA_FLAGS。
+        known = (set(INFO_FORMAT_FLAGS) | set(MIRROR_EXTRA_FLAGS)
+                 | {"--show-password", "-h", "--help"})
+        if any(w.startswith("-") and w.split("=")[0] not in known for w in words):
+            return 1, ("unknown option",)
+        return 0, ()
+    if cmd == "latest":
+        # --all 与包名互斥，两者都不给是「缺包名」；给了 --all 就只是报告，永远成功
+        everything = any(w in ("-a", "--all") for w in words)
+        operands = [w for w in words if not w.startswith("-")]
+        if everything and operands:
+            return 1, ("not both",)
+        if not everything and not operands:
+            return 1, ("Missing package name",)
+        return 0, ()
+
+    operands = [w for w in words if not w.startswith("-")]
+    everything = any(w in ("-a", "--all") for w in words)
+
+    if cmd == "link":
+        if not operands and not everything:
+            return 1, ("Nothing to link",)
+        return 0, ()
+    if cmd == "unlink":
+        if not operands and not everything:
+            return 1, ("Nothing to unlink",)
+        return 0, ()
+    if cmd == "linkquery":
+        # 裸 `wave linkquery` 与 `--all` 同义（4.5 起）：不带参数时想问的就是「全都
+        # 指向哪儿」。它只报告，退出码表达的是「有没有坏链接」（悬空、指向不存在的
+        # 版本），而本测试的 link/unlink 流程不会造出坏链接 —— 悬空由 link_test 8.x
+        # 单独钉住。装好但没链接的包只打一行「=> (not linked)」，不算失败。
+        if not operands or everything:
+            return 0, ()
+        name = operands[0].partition("@")[0]
+        if name not in links:
+            return 1, ("(not linked)",)
+        return 0, ()
+    raise AssertionError(cmd)
+
+
+def installed_bin_names(wave):
+    """bin/ 下真实装着的包名（目录名形如 <bin_name>@<版本号>）。"""
+    bin_dir = wave.layout.base_dir / "bin"
+    names = set()
+    if bin_dir.is_dir():
+        for entry in bin_dir.iterdir():
+            name, sep, version = entry.name.partition("@")
+            if sep and version:
+                names.add(name)
+    return names
+
+
+def linked_names(wave):
+    """links/ 下真实存在的不带版本号的链接名。"""
+    links_dir = wave.layout.base_dir / "links"
+    names = set()
+    if links_dir.is_dir():
+        for entry in links_dir.iterdir():
+            if entry.is_symlink() and "@" not in entry.name:
+                names.add(entry.name)
+    return names
+
+
+def phase_command_battery(wave, rng, checks):
+    """list/search/info/selfupdate/link/linkquery/unlink 各 5 次。install/uninstall 不在此处。
+
+    每轮都按 bin/ 与 links/ 的真实内容重算状态：link/unlink 互相影响，
+    静态快照跑几轮之后必然对不上（实测 wget 在 install 阶段就被 --skip-ssl
+    用例卸掉了，快照却一直认为它装着）。
+    """
+    banner("阶段 2：固定命令覆盖（各 5 次）")
+    for cmd, times in COMMAND_BATTERY.items():
+        for _ in range(times):
+            installed = installed_bin_names(wave)
+            links = linked_names(wave)
+            names = sorted(installed) or ["wget"]
+            argv = [cmd]
+            if cmd == "search":
+                argv.append(rng.choice(names))
+            elif cmd in ("info", "link", "linkquery", "unlink"):
+                if rng.random() < 0.25:
+                    argv.append(random_flag(rng, "-a", "--all"))
+                else:
+                    target = rng.choice(names)
+                    argv.append(f"{target}{rng.choice(('', '@latest'))}")
+                    if cmd == "info":
+                        argv += maybe_info_format(rng)
+            elif cmd == "mirror":
+                argv += maybe_mirror_args(rng)
+            elif cmd == "latest":
+                # --all 是 4.1.1 新增的写法，只报告不下载，比指定包名更稳
+                argv.append(random_flag(rng, "-a", "--all"))
+            elif cmd == "selfupdate":
+                # selfupdate 也接受 --max-time，取值来源与安装一致
+                argv += maybe_max_time(rng)
+            illegal = maybe_illegal_arg(rng)
+            if illegal:
+                argv.append(illegal)
+
+            expected_rc, must_contain = predict(cmd, argv, installed, links)
+            label = f"wave {' '.join(argv)}"
+            result = wave.run(argv, timeout=300)
+            if is_rate_limited(result):
+                checks.skip(label, "GitHub API 侧失败（限流/403），跳过断言")
+                continue
+            expect(checks, result, expected_rc, label, must_contain=must_contain)
+
+
+# -------------------- 阶段 3：卸载循环 --------------------
+
+
+def phase_uninstall_cycle(wave, rng, installed_plans, checks):
+    banner("阶段 3：随机软件包 uninstall")
+    for plan in installed_plans:
+        argv = ["uninstall", uninstall_token(plan)]
+        if rng.random() < 0.3:
+            argv.append(random_flag(rng, "-v", "--verbose"))
+        illegal = maybe_illegal_arg(rng)
+        if illegal:
+            argv.append(illegal)
+        # 故意不跟非法参数混：静默会把「非法参数」的报错一起吞掉，那条断言就废了
+        silent_flag, silent = (None, False) if illegal else maybe_silent(rng)
+        if silent_flag:
+            argv.append(silent_flag)
+        label = f"uninstall {plan.token}"
+        result = wave.run(argv)
+        if silent:
+            expect(checks, result, 0, label)
+            checks.check(f"{label}: 静默时没有任何输出",
+                         not ((result.stdout or "") + (result.stderr or "")), describe(result))
+        else:
+            expect(checks, result, 0, label, must_contain=("Successfully uninstalled",))
+
+        bin_dir = wave.layout.base_dir / "bin" / f"{plan.bin_name}@{plan.version}"
+        link = wave.layout.base_dir / "links" / plan.bin_name
+        checks.check(f"{label}: 目录已删除", not bin_dir.exists(), str(bin_dir))
+        checks.check(f"{label}: 不带版本号的链接已删除", not link.exists(), str(link))
+
+
+def phase_global_invariants(wave, checks):
+    """全局残留检查。前面已经失败过时降级为 WARN，避免一个失败引出一串假失败。"""
+    banner("阶段 4：全局不变量")
+    strict = not checks.failed
+
+    def verify(label, ok, detail=""):
+        if ok:
+            checks.ok(label)
+        elif strict:
+            checks.fail(label, detail)
+        else:
+            checks.warn(label, f"{detail}（前面已有失败，可能是它留下的）")
+
+    deps_left = [p for p in (wave.layout.base_dir / "deps").glob("*/*") if p.is_dir()]
+    verify("依赖被级联清干净", not deps_left, ", ".join(str(p) for p in deps_left[:5]))
+
+    downloads = [p for p in wave.layout.partial_dir.glob("*") if p.is_file()]
+    verify("下载临时目录没有残留", not downloads,
+           ", ".join(p.name for p in downloads[:5]))
+
+    links = list((wave.layout.base_dir / "links").glob("*"))
+    verify("links/ 没有残留", not links, ", ".join(p.name for p in links[:5]))
+
+    bins = list((wave.layout.base_dir / "bin").glob("*"))
+    verify("bin/ 没有残留", not bins, ", ".join(p.name for p in bins[:5]))
+
+
+# -------------------- 阶段 5：非法命令与帮助 --------------------
+
+
+def phase_illegal_and_help(wave, rng, checks):
+    banner("阶段 5：非法命令 / -h / -V（含非法参数）")
+    junk = ["frobnicate", "--frobnicate", "installx", "@", "linkquery!!", "uninstall!"]
+    for command in rng.sample(junk, ILLEGAL_COMMAND_COUNT):
+        label = f"wave {command}"
+        result = wave.run([command], timeout=120)
+        expect(checks, result, 1, label, must_contain=("Unknown command",))
+
+    cases = [("-h", "usage:"), ("--help", "usage:"), ("-V", "MacWave"), ("--version", "MacWave")]
+    for flag, needle in cases[:HELP_VERSION_CASES // 2]:
+        label = f"wave {flag}"
+        result = wave.run([flag], timeout=120)
+        expect(checks, result, 0, label, must_contain=(needle,))
+    for flag, needle in cases[:HELP_VERSION_CASES // 2]:
+        illegal = rng.choice(ILLEGAL_FLAGS)
+        label = f"wave {flag} {illegal}"
+        result = wave.run([flag, illegal], timeout=120)
+        expect(checks, result, 0, label, must_contain=(needle,))
+
+
+def phase_max_time_forms(wave, checks):
+    """--max-time 的每一种数值写法都必须被接受，非法写法必须干净拒绝。
+
+    这里刻意用「缺包名」的 install 调用：它在解析完旗标、任何网络请求之前就退出，
+    所以既能证明取值被接受（报的是包名问题，而不是取值问题），又完全不联网。
+    带空格那种写法（`--max-time 1min`）在这种调用里会被当成包名，所以交给阶段 1
+    的随机用例去证 —— 那是真的装成功，比这里更有说服力。
+    """
+    banner("阶段 6：--max-time 的写法覆盖（离线）")
+    for form in MAX_TIME_FORMS:
+        label = f"wave install --max-time={form}（缺包名）"
+        result = wave.run(["install", f"--max-time={form}"], timeout=60)
+        expect(checks, result, 1, label, must_contain=("no package name",),
+               must_not_contain=("cannot parse", "Traceback"))
+
+    for form in MAX_TIME_ILLEGAL_FORMS:
+        label = f"wave install jq --max-time={form}（非法取值）"
+        result = wave.run(["install", "jq", f"--max-time={form}"], timeout=60)
+        expect(checks, result, 1, label, must_contain=("cannot parse --max-time",),
+               must_not_contain=("Traceback",))
+
+    label = "wave install jq --max-time=（空值）"
+    result = wave.run(["install", "jq", "--max-time="], timeout=60)
+    expect(checks, result, 1, label, must_contain=("--max-time needs a value",),
+           must_not_contain=("Traceback",))
+
+
+# -------------------- 阶段 7：4.x 新参数矩阵（离线） --------------------
+
+
+def phase_flag_matrix(wave, rng, checks):
+    """4.0 到未发布版本的每个新参数，都在「不联网、不改系统」的前提下过一遍。
+
+    全部调用都在解析阶段就退出：缺包名、缺值、格式冲突、用错命令 —— 一个请求都不发。
+    与阶段 1 / 3 的随机静默用例互补：那边证明「真装上、真卸掉，且静默时一个字节不输出」，
+    这里证明「每种写法都被接受，每种误用都说清原因」。
+    """
+    banner("阶段 7：4.x 新参数矩阵（离线）")
+
+    # 1) wave mirror（4.1.0）：四种输出格式、修饰旗标、格式互斥
+    expect(checks, wave.run(["mirror"], timeout=60), 0, "wave mirror",
+           must_contain=("Mirror configuration",))
+    for flag in INFO_FORMAT_FLAGS:
+        expect(checks, wave.run(["mirror", flag], timeout=60), 0, f"wave mirror {flag}")
+    expect(checks, wave.run(["mirror", "--raw", "--only-set"], timeout=60), 0,
+           "wave mirror --raw --only-set", must_contain=("# MacWave mirror",))
+    for flag in MIRROR_EXTRA_FLAGS:
+        expect(checks, wave.run(["mirror", flag], timeout=60), 0, f"wave mirror {flag}")
+    expect(checks, wave.run(["mirror", "--json", "--yaml"], timeout=60), 1,
+           "wave mirror --json --yaml（互斥）", must_contain=("mutually exclusive",))
+    for flag in [f for f in INFO_FORMAT_FLAGS if f != "--raw"]:
+        expect(checks, wave.run(["mirror", flag, "--only-set"], timeout=60), 1,
+               f"wave mirror {flag} --only-set（--only-set 只对 --raw 有意义）",
+               must_contain=("only applies to --raw",))
+
+    # 2) wave info（4.1.1）的四种输出格式：用「缺包名」证明格式旗标本身被接受
+    for flag in INFO_FORMAT_FLAGS:
+        expect(checks, wave.run(["info", flag], timeout=60), 1,
+               f"wave info {flag}（缺包名）", must_contain=("Missing package name",))
+
+    # 3) -s 只对会改系统的命令生效；给只读命令必须明确拒绝
+    for cmd in READ_ONLY_COMMANDS:
+        expect(checks, wave.run([cmd, "-s"], timeout=60), 1, f"wave {cmd} -s（只读命令）",
+               must_contain=("only applies to",))
+
+    # 4) 静默三态：-s / -sS 一个字节都不输出，-S 仍把错误打出来
+    for flag in SILENT_FORMS:
+        label = f"wave install {flag}（缺包名，静默）"
+        result = wave.run(["install", flag], timeout=60)
+        expect(checks, result, 1, label)
+        checks.check(f"{label}: 一个字节都不输出",
+                     not ((result.stdout or "") + (result.stderr or "")), describe(result))
+    for flag in SHOW_ERROR_FORMS:
+        expect(checks, wave.run(["install", flag], timeout=60), 1,
+               f"wave install {flag}（缺包名）", must_contain=("no package name",))
+    # -sS 留下错误，但输出要给脚本读，所以不带 🌊
+    expect(checks, wave.run(["install", "-sS"], timeout=60), 1, "wave install -sS",
+           must_contain=("no package name",), must_not_contain=("🌊",))
+
+    # 5) 静默不改变退出码：卸载一个不存在的包照样是失败
+    result = wave.run(["uninstall", "no_such_package_mw", "-s"], timeout=60)
+    expect(checks, result, 1, "wave uninstall no_such_package_mw -s")
+    checks.check("wave uninstall no_such_package_mw -s: 一个字节都不输出",
+                 not ((result.stdout or "") + (result.stderr or "")), describe(result))
+    expect(checks, wave.run(["uninstall", "no_such_package_mw", "-sS"], timeout=60), 1,
+           "wave uninstall no_such_package_mw -sS",
+           must_contain=("no_such_package_mw",), must_not_contain=("🌊",))
+
+    # 6) upgrade 专属的 -X 四种等价写法，用错命令时要说清「属于谁」
+    for flag in REMOVE_OLD_FLAGS:
+        expect(checks, wave.run(["install", "jq", flag], timeout=60), 1,
+               f"wave install jq {flag}（upgrade 专属）",
+               must_contain=("only applies to `wave upgrade`",))
+
+    # 7) wave upgrade --all（4.1.4）的三条离线错误分支
+    expect(checks, wave.run(["upgrade"], timeout=60), 1, "wave upgrade（缺包名）",
+           must_contain=("Missing package name",))
+    for flag in ("--all", "-a"):
+        expect(checks, wave.run(["upgrade", flag, "jq"], timeout=60), 1,
+               f"wave upgrade {flag} jq（互斥）", must_contain=("drop the package name",))
+    expect(checks, wave.run(["upgrade", "jq@1.0"], timeout=60), 1,
+           "wave upgrade jq@1.0（升级不接受版本）",
+           must_contain=("always targets the latest version",))
+
+    # 8) 三档超时（后两档尚未发布）：每种写法都被接受，非法值干净拒绝
+    for flag in TIMEOUT_FLAGS:
+        for form in MAX_TIME_FORMS:
+            expect(checks, wave.run(["install", f"{flag}={form}"], timeout=60), 1,
+                   f"wave install {flag}={form}（缺包名）",
+                   must_contain=("no package name",), must_not_contain=("cannot parse",))
+        for form in MAX_TIME_ILLEGAL_FORMS:
+            expect(checks, wave.run(["install", "jq", f"{flag}={form}"], timeout=60), 1,
+                   f"wave install jq {flag}={form}（非法取值）",
+                   must_contain=(f"cannot parse {flag}",))
+        expect(checks, wave.run(["install", f"{flag}="], timeout=60), 1,
+               f"wave install {flag}=（空值）", must_contain=(f"{flag} needs a value",))
+
+    # 9) 代理缺值不该被当成「未知旗标」
+    expect(checks, wave.run(["install", "--proxy"], timeout=60), 1,
+           "wave install --proxy（缺值）", must_not_contain=("Traceback",))
+
+    # 9b) --install-from-source 已下线：它现在是一条**非法旗标**，不是「缺包名」。
+    # 这条断言故意盯住「下线之后仍然是干净拒绝」，而不是被静默忽略 ——
+    # 静默忽略会让用户以为上游直取生效了，实际走的还是存储。
+    expect(checks, wave.run(["install", "jq", "--install-from-source"], timeout=60), 1,
+           "wave install jq --install-from-source（已下线）",
+           must_contain=("illegal option",), must_not_contain=("Traceback",))
+
+
+# -------------------- pty 执行 --------------------
+
+
+class PtyResult:
+    def __init__(self, output, returncode, progress_rendered, interrupted=False):
+        self.output = output
+        self.returncode = returncode
+        self.progress_rendered = progress_rendered
+        self.interrupted = interrupted
+
+    @property
+    def as_result(self):
+        return subprocess.CompletedProcess([], self.returncode, self.output, "")
+
+
+PROGRESS_PATTERN = re.compile(r"\d+\s*%")
+
+
+def describe_text(text):
+    return " | ".join(line.strip() for line in text.splitlines() if line.strip())[:300]
+
+
+# dyld 的报错有固定形状。不能只搜 "dyld"：像 ipsw 这种工具自带 dyld 子命令，
+# 它的 --help 输出里就有这个词，会把正常安装误判成"未解析动态库"。
+DYLD_ERROR_MARKERS = ("Library not loaded:", "Reason: image not found", "Symbol not found:",
+                      "not loaded from")
+
+
+def has_dyld_error(text):
+    if any(marker in text for marker in DYLD_ERROR_MARKERS):
+        return True
+    return any(line.startswith("dyld:") or line.startswith("dyld[")
+               for line in text.splitlines())
+
+
+def dependency_symbol_mismatch(text):
+    """dyld 报「符号找不到」、且缺符号的库来自 deps/ 时，判定为包数据不匹配。
+
+    库确实被装好、也指对了（否则报的是 image not found），只是它没导出那个符号：
+    例如 tmux 需要 ncurses 的新符号，而 @common 里声明的依赖版本没有它。
+    这属于 infosource 的数据问题，不是 MacWave 的路径重定向出错，所以记为警告。
+    """
+    symbol = library = None
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line.startswith("dyld") and "Symbol not found:" in line:
+            symbol = line.split("Symbol not found:", 1)[1].strip()
+        elif line.startswith("Expected in:"):
+            rest = line.split("Expected in:", 1)[1].strip()
+            # 形如 "<UUID> /path/to/lib.dylib"，路径里可能有空格，所以只剥掉 UUID
+            if rest.startswith("<") and ">" in rest:
+                rest = rest.split(">", 1)[1].strip()
+            library = rest
+    if symbol and library and "/deps/" in library:
+        return symbol, library
+    return None
+
+
+# -------------------- 主流程 --------------------
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="MacWave 随机化端到端回归")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="只做包选择与参数生成并把计划打出来，不执行任何 wave 命令"
+                             "（仍会 HEAD 探体积，除非再加 --no-size-probe）")
+    parser.add_argument("--keep", action="store_true", help="跑完保留安装目录（调试用）")
+    parser.add_argument("--seed", type=int, help="随机种子（复现用）")
+    parser.add_argument("--count", type=int, help="覆盖 10~20 的包数（调试用）")
+    parser.add_argument("--packages", help="指定包名（逗号分隔，调试用）")
+    parser.add_argument("--infosource", help="infosource 检出目录")
+    parser.add_argument("--config-dir", help="覆盖配置目录（默认随 HOME 走）")
+    parser.add_argument("--include-test-packages", action="store_true",
+                        help="把 test_* 测试夹具也放进随机池")
+    parser.add_argument("--no-size-probe", action="store_true",
+                        help="跳过 HEAD 探体积（离线自测用，体积上限失效）")
+    parser.add_argument("--log-file", help="把整轮日志同时写一份到该文件（CI 用它上传 artifact）")
+    parser.add_argument("--limit-rate", default="400K", help="--limit-rate 用的速率")
+    parser.add_argument("--time-budget", type=float, default=0,
+                        help="本轮最多跑多少分钟（0=不限）；用尽后停止发起新命令并正常汇总")
+    parser.add_argument("--transfer-interrupt-probability", type=float,
+                        default=TRANSFER_INTERRUPT_PROBABILITY,
+                        help="Mach-O 重定向中途打断的概率（默认 0.05；调试可设 1）")
+    return parser.parse_args()
+
+
+def print_plan(plans):
+    banner("计划")
+    for plan in plans:
+        version = plan.version if plan.specified else "(latest)"
+        size = f"{plan.artifact_bytes / 1048576:.1f}MB" if plan.artifact_bytes else "?"
+        bogus = f" [{plan.bogus}]" if plan.bogus else ""
+        print(f"  {plan.name:<14} {str(version):<24} {size:>8}  mode={plan.mode:<10}{bogus}",
+              flush=True)
+
+
+def main():
+    args = parse_args()
+    global TRANSFER_INTERRUPT_PROBABILITY
+    TRANSFER_INTERRUPT_PROBABILITY = args.transfer_interrupt_probability
+
+    original_stdout = sys.stdout
+    log_handle = None
+    if args.log_file:
+        log_handle = open(args.log_file, "a", buffering=1, encoding="utf-8")
+        sys.stdout = Tee(original_stdout, log_handle)
+
+    seed = args.seed if args.seed is not None else random.randrange(2 ** 31)
+    rng = random.Random(seed)
+    print(f"🌊 MacWave random regression (seed={seed})", flush=True)
+    print(f"🌊 复现：--seed {seed}", flush=True)
+
+    checks = Report()
+    layout = choose_layout(rng, config_dir_override=args.config_dir)
+    try:
+        source = locate_infosource(args.infosource)
+        arch = detect_arch()
+        print(f"🌊 infosource: {source} (arch: {arch})", flush=True)
+        catalog = load_catalog(source, arch)
+        print(f"🌊 候选包 {len(catalog)} 个", flush=True)
+
+        prober = None if args.no_size_probe else SizeProber()
+        explicit = args.packages.split(",") if args.packages else None
+        plans = select_packages(rng, catalog, checks, args.count, explicit,
+                                prober=prober, include_test=args.include_test_packages)
+        assign_versions(rng, plans, checks)
+        if not args.dry_run:
+            assign_modes(rng, plans, prober)
+        print_plan(plans)
+
+        if args.dry_run:
+            print(f"🌊 dry-run 结束：{len(plans)} 个包，未执行任何 wave 命令", flush=True)
+            return 0
+
+        setup_environment(layout)
+        global DEADLINE
+        if args.time_budget > 0:
+            DEADLINE = time.monotonic() + args.time_budget * 60
+        wave = Wave(layout, checks, args.limit_rate)
+
+        phase_flag_sanity(wave, checks)
+        installed = phase_install_cycle(wave, rng, plans, checks)
+        # --skip-ssl / -C 那几个用例装完就把包卸掉了，所以按 bin/ 的实际内容重新算
+        # 「现在还装着什么」，否则后面 link / linkquery / uninstall 的预测全部错位。
+        installed = [plan for plan in installed if plan.bin_name in installed_bin_names(wave)]
+        phase_command_battery(wave, rng, checks)
+        phase_uninstall_cycle(wave, rng, installed, checks)
+        phase_global_invariants(wave, checks)
+        phase_illegal_and_help(wave, rng, checks)
+        phase_max_time_forms(wave, checks)
+        phase_flag_matrix(wave, rng, checks)
+        print_summary(seed, layout, checks)
+    except TimeBudgetExhausted:
+        # 预算用尽是"这轮没跑完"，不是"回归失败"：标注清楚后照常汇总
+        print("🌊 时间预算用尽：停止发起新命令，直接汇总本轮已跑过的用例", flush=True)
+        checks.skip("time-budget", "本轮未跑完，剩余用例没有执行")
+    except Exception as error:
+        print(f"🌊 Error: 随机回归无法继续：{error}", flush=True)
+        checks.fail("run", str(error))
+        print_summary(seed, layout, checks)
+    finally:
+        cleanup(layout, keep=args.keep)
+        if log_handle is not None:
+            sys.stdout.flush()
+            sys.stdout = original_stdout
+            log_handle.close()
+
+    return 1 if checks.failed else 0
+
+
+def print_summary(seed, layout, checks):
+    banner("结果")
+    print(f"🌊 seed={seed}  layout={layout.name}", flush=True)
+    print(f"🌊 PASS {checks.passed} / FAIL {len(checks.failed)} / "
+          f"WARN {len(checks.warned)} / SKIP {len(checks.skipped)}", flush=True)
+    for label, detail in checks.failed:
+        print(f"  ✗ {label}" + (f"  <- {detail}" if detail else ""), flush=True)
+    for label, detail in checks.warned:
+        print(f"  ! {label}" + (f"  <- {detail}" if detail else ""), flush=True)
+    for label, detail in checks.skipped:
+        print(f"  - {label}" + (f"  <- {detail}" if detail else ""), flush=True)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

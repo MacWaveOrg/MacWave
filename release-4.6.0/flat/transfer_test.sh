@@ -1,0 +1,268 @@
+#!/bin/bash
+
+# transfer_test.sh
+# 重定位（Mach-O → 位置无关）的回归：检查口径、改写结果、幂等、搬移、CLI 行为。
+#
+# 为什么需要它：4.6 起产物分成两种形态 ——
+#   - 构建时重定位好的（引用是 @loader_path 相对形式，与 base_dir 无关）；
+#   - 4.6 之前装的（引用写死绝对路径）。
+# 安装时要能区分这两种（对新形态不改字节、不重签），`wave transfer` 要能把旧的
+# 迁移成新的，而且必须幂等。任何一条走散，症状都是"运行时 dyld 加载不到库"，
+# 而这在测试里看不出来 —— 所以这里把每条断言都钉住。
+#
+# 全程离线：测试自己用 clang 造最小的 dylib + 可执行文件，不下载任何东西。
+
+set -u
+# 关掉 -e：本脚本故意执行会失败的命令（--check 期望 rc=1）。
+set +e
+
+RED_BOLD='\033[1;31m'
+GREEN='\033[32m'
+RESET='\033[0m'
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(dirname "$SCRIPT_DIR")"
+TRANSFER="$REPO_DIR/surfboard/transfer.sh"
+
+WORK=$(mktemp -d "${TMPDIR:-/tmp}/transfer_test.XXXXXX")
+# 规范成真实路径：$TMPDIR 常以 / 结尾，mktemp 会得到 ".../T//transfer_test.X"，
+# 而 clang 会把双斜杠去掉 —— 于是断言里的路径与 otool 输出差一个斜杠。
+WORK=$(cd "$WORK" && pwd -P)
+trap 'rm -rf "$WORK"' EXIT
+
+PASSED=0
+FAILED=0
+
+pass() { echo -e "${GREEN}🌊 PASS: $1${RESET}"; PASSED=$((PASSED + 1)); }
+fail() { echo -e "${RED_BOLD}🌊 FAIL: $1${RESET}"; FAILED=$((FAILED + 1)); }
+
+# ==================== 以下至「CI-ONLY END」专为 CI 而加 ====================
+# 重定位是 Mach-O 的事：otool / install_name_tool / codesign 只在 Darwin 上有。
+# 非 macOS 上这些断言**一条都不执行**，输出 SKIP —— 看到 SKIP 就代表这一节
+# 本次没有被验证，不要把「Linux 绿」读成「跨平台都验过」。
+if [[ "$(uname -s)" != "Darwin" ]]; then
+    echo "SKIP: 非 macOS，Mach-O 重定位不适用"
+    exit 0
+fi
+# ==================== CI-ONLY END（下面这段是 macOS 上真正跑的断言）====================
+
+for tool in clang otool install_name_tool codesign; do
+    if ! command -v "$tool" > /dev/null 2>&1; then
+        echo "SKIP: '$tool' 不存在，无法造 Mach-O 夹具"
+        exit 0
+    fi
+done
+
+# 造一份"4.6 之前"的产物：引用与 install name 都是绝对路径。
+# build_legacy <工作目录>：产出 <工作目录>/stage/{bin/bar@1.0/bin/bar,deps/foo/foo@1.0/lib/libfoo.dylib}
+build_legacy() {
+    local root="$1" stage="$1/stage" bump="$2"
+    mkdir -p "$stage/deps/foo/foo@1.0/lib" "$stage/bin/bar@1.0/bin"
+    printf 'int foo(void) { return %s; }\n' "$bump" > "$root/foo.c"
+    printf '#include <stdio.h>\nint foo(void);\nint main(void){printf("ok %%d\\n",foo());return 0;}\n' \
+        > "$root/main.c"
+    # headerpad 是必需前提：没有它 install_name_tool 装不下更长的路径（真实产物
+    # 里由上游的 -headerpad_max_install_names 提供，缺了只能重新构建）。
+    clang -dynamiclib \
+        -install_name "$stage/deps/foo/foo@1.0/lib/libfoo.dylib" \
+        -Wl,-headerpad_max_install_names \
+        -o "$stage/deps/foo/foo@1.0/lib/libfoo.dylib" "$root/foo.c" 2> /dev/null
+    clang -o "$stage/bin/bar@1.0/bin/bar" "$root/main.c" \
+        -L"$stage/deps/foo/foo@1.0/lib" -lfoo \
+        -Wl,-headerpad_max_install_names 2> /dev/null
+}
+
+transfer() {  # transfer <参数...>；输出放进 OUT，退出码放进 RC
+    OUT=$(/bin/bash "$TRANSFER" "$@" 2>&1)
+    RC=$?
+}
+
+ref_of() {  # ref_of <可执行文件>：第一条依赖引用（跳过首行的文件名）
+    otool -L "$1" 2> /dev/null | sed -n '2p' | awk '{print $1}'
+}
+
+id_of() {  # id_of <dylib>：LC_ID_DYLIB
+    otool -D "$1" 2> /dev/null | sed -n '2p'
+}
+
+sum_of() {  # sum_of <文件>：内容指纹，用来断言"一个字节都没动"
+    shasum -a 256 "$1" 2> /dev/null | awk '{print $1}'
+}
+
+echo "========== 1. --check 只读：报告绝对路径，不改字节 =========="
+
+LEGACY="$WORK/legacy"
+build_legacy "$LEGACY" 7
+PKG="$LEGACY/stage/bin/bar@1.0"
+DEP="$LEGACY/stage/deps/foo/foo@1.0"
+BASE="$LEGACY/stage"
+
+BEFORE=$(sum_of "$PKG/bin/bar")
+transfer --check "$PKG" "$BASE"
+[[ "$RC" -eq 1 ]] && pass "老形态：--check 返回 1" \
+    || fail "--check 应返回 1（实际 rc=${RC}）：$(printf '%.160s' "$OUT")"
+[[ "$(sum_of "$PKG/bin/bar")" == "$BEFORE" ]] && pass "--check 不改动可执行文件" \
+    || fail "--check 改动了可执行文件"
+
+BEFORE_DEP=$(sum_of "$DEP/lib/libfoo.dylib")
+transfer --check "$DEP" "$BASE"
+[[ "$RC" -eq 1 ]] && pass "老形态的 dylib：--check 返回 1" \
+    || fail "dylib 的 --check 应返回 1（实际 rc=${RC}）"
+[[ "$(sum_of "$DEP/lib/libfoo.dylib")" == "$BEFORE_DEP" ]] && pass "--check 不改动 dylib" \
+    || fail "--check 改动了 dylib"
+
+# 这里曾经有个真 bug：检查分支只打了一行就往下走，new_id 未赋值，
+# install_name_tool -id "" 把 ID 清空 —— 文件被改坏，而退出码还是 1。
+[[ "$(id_of "$DEP/lib/libfoo.dylib")" == "$BASE/deps/foo/foo@1.0/lib/libfoo.dylib" ]] \
+    && pass "--check 之后 install name 原样保留" \
+    || fail "install name 被改成了 $(id_of "$DEP/lib/libfoo.dylib")"
+
+echo "========== 2. --relative：引用与 ID 都变成位置无关 =========="
+
+transfer --relative "$DEP" "$BASE"
+[[ "$RC" -eq 0 ]] && pass "dylib 迁移成功" || fail "dylib 迁移失败：$(printf '%.160s' "$OUT")"
+[[ "$(id_of "$DEP/lib/libfoo.dylib")" == "@rpath/libfoo.dylib" ]] \
+    && pass "dylib 的 ID 变成 @rpath/libfoo.dylib" \
+    || fail "dylib 的 ID 是 $(id_of "$DEP/lib/libfoo.dylib")"
+
+transfer --relative "$PKG" "$BASE"
+[[ "$RC" -eq 0 ]] && pass "可执行文件迁移成功" || fail "可执行文件迁移失败：$(printf '%.160s' "$OUT")"
+
+REF=$(ref_of "$PKG/bin/bar")
+case "$REF" in
+    @loader_path/*) pass "引用变成 @loader_path 相对形式（${REF}）" ;;
+    *) fail "引用仍是 ${REF}" ;;
+esac
+
+# 相对层数必须正确：bin/bar@1.0/bin/bar → 上升三级才到 base_dir
+[[ "$REF" == "@loader_path/../../../deps/foo/foo@1.0/lib/libfoo.dylib" ]] \
+    && pass "相对路径的层数正确" || fail "相对层数不对：$REF"
+
+[[ "$(ref_of "$DEP/lib/libfoo.dylib")" != /* ]] \
+    && pass "dylib 自身也不再带绝对引用" \
+    || fail "dylib 里还有绝对引用：$(ref_of "$DEP/lib/libfoo.dylib")"
+
+echo "========== 3. 迁移后可运行、可搬移、且幂等 =========="
+
+"$PKG/bin/bar" > /dev/null 2>&1
+[[ $? -eq 0 ]] && pass "迁移后可直接运行" || fail "迁移后运行失败"
+
+# links/ 是符号链接（../bin/x@v/x）：dyld 拿到的是真实路径，@loader_path 仍然成立
+mkdir -p "$BASE/links"
+ln -sfn ../bin/bar@1.0/bin/bar "$BASE/links/bar"
+"$BASE/links/bar" > /dev/null 2>&1
+[[ $? -eq 0 ]] && pass "走 links/ 符号链接也能运行" || fail "走符号链接运行失败"
+
+MOVED="$WORK/moved"
+mv "$BASE" "$MOVED"
+"$MOVED/bin/bar@1.0/bin/bar" > /dev/null 2>&1
+[[ $? -eq 0 ]] && pass "整棵树搬走后仍能运行" || fail "搬走后运行失败"
+"$MOVED/links/bar" > /dev/null 2>&1
+[[ $? -eq 0 ]] && pass "搬走后走符号链接仍能运行" || fail "搬走后符号链接运行失败"
+
+BEFORE=$(sum_of "$MOVED/bin/bar@1.0/bin/bar")
+transfer --check "$MOVED/bin/bar@1.0" "$MOVED"
+[[ "$RC" -eq 0 ]] && pass "迁移后 --check 返回 0" \
+    || fail "迁移后 --check 仍返回 ${RC}：$(printf '%.160s' "$OUT")"
+transfer --relative "$MOVED/bin/bar@1.0" "$MOVED"
+[[ "$(sum_of "$MOVED/bin/bar@1.0/bin/bar")" == "$BEFORE" ]] \
+    && pass "对已迁移的产物再跑 --relative 不改字节（幂等）" \
+    || fail "重复迁移改动了字节"
+
+echo "========== 4. 位置无关的树不建依赖索引 =========="
+
+# 安装时对新产物要"零成本"：如果还去扫整棵依赖树，装包会慢在看不到的地方。
+IDX="$WORK/idx"
+mkdir -p "$IDX"
+transfer --relative "$MOVED/bin/bar@1.0" "$MOVED" "$IDX"
+if [[ -z "$(ls -A "$IDX" 2> /dev/null)" ]]; then
+    pass "已相对 + 零改写的目标不建共享索引"
+else
+    fail "共享索引被建了：$(ls -A "$IDX" | tr '\n' ' ')"
+fi
+
+echo "========== 5. 不带 --relative（安装期兼容路径）仍写绝对路径 =========="
+
+COMPAT="$WORK/compat"
+build_legacy "$COMPAT" 3
+transfer "$COMPAT/stage/bin/bar@1.0" "$COMPAT/stage"
+[[ "$RC" -eq 0 ]] && pass "兼容改写成功" || fail "兼容改写失败：$(printf '%.160s' "$OUT")"
+COMPAT_REF=$(ref_of "$COMPAT/stage/bin/bar@1.0/bin/bar")
+[[ "$COMPAT_REF" == "$COMPAT/stage/deps/foo/foo@1.0/lib/libfoo.dylib" ]] \
+    && pass "兼容路径指向 BASE_DIR 下的实际位置" \
+    || fail "兼容路径不对：$COMPAT_REF"
+"$COMPAT/stage/bin/bar@1.0/bin/bar" > /dev/null 2>&1
+[[ $? -eq 0 ]] && pass "兼容改写后能运行" || fail "兼容改写后运行失败"
+
+echo "========== 6. wave transfer（CLI）：自动检测新旧、带动依赖、幂等 =========="
+
+# 造一个隔离安装树：配置目录 + base_dir，组件目录用符号链接指回仓库
+TESTROOT="$WORK/cli"
+BASEDIR="$TESTROOT/opt/macwave"
+mkdir -p "$TESTROOT/opt/macwave_config" "$BASEDIR"
+printf '{"base_dir": "%s"}' "$BASEDIR" > "$TESTROOT/opt/macwave_config/config.json"
+for component in cli config lib net pkg surfboard; do
+    ln -sfn "$REPO_DIR/$component" "$BASEDIR/$component"
+done
+
+build_legacy "$TESTROOT/fixture" 11
+cp -R "$TESTROOT/fixture/stage/." "$BASEDIR/"
+echo "foo@1.0" > "$BASEDIR/bin/bar@1.0/_DEPS"
+
+wave() {  # wave <参数...>：始终在测试根里跑，绝不碰真实安装
+    OUT=$(MACWAVE_TEST="$TESTROOT" python3 "$REPO_DIR/lib/wave.py" "$@" 2>&1)
+    RC=$?
+}
+
+CLI_PKG="$BASEDIR/bin/bar@1.0/bin/bar"
+CLI_DEP="$BASEDIR/deps/foo/foo@1.0/lib/libfoo.dylib"
+
+BEFORE_PKG=$(sum_of "$CLI_PKG")
+BEFORE_DEP=$(sum_of "$CLI_DEP")
+wave transfer bar --dry-run
+[[ "$RC" -eq 0 ]] && pass "--dry-run 成功" || fail "--dry-run 失败：$(printf '%.200s' "$OUT")"
+[[ "$(sum_of "$CLI_PKG")" == "$BEFORE_PKG" && "$(sum_of "$CLI_DEP")" == "$BEFORE_DEP" ]] \
+    && pass "--dry-run 不改动任何文件" || fail "--dry-run 改动了文件"
+
+wave transfer bar
+[[ "$RC" -eq 0 ]] && pass "wave transfer <包> 成功" \
+    || fail "wave transfer 失败：$(printf '%.200s' "$OUT")"
+case "$(ref_of "$CLI_PKG")" in
+    @loader_path/*) pass "CLI 迁移后引用是相对形式" ;;
+    *) fail "CLI 迁移后引用是 $(ref_of "$CLI_PKG")" ;;
+esac
+[[ "$(id_of "$CLI_DEP")" == "@rpath/libfoo.dylib" ]] \
+    && pass "CLI 迁移把 _DEPS 里列出的依赖也一起迁移了" \
+    || fail "依赖没被迁移（ID 是 $(id_of "$CLI_DEP")）"
+
+"$CLI_PKG" > /dev/null 2>&1
+[[ $? -eq 0 ]] && pass "CLI 迁移后可运行" || fail "CLI 迁移后运行失败"
+
+wave transfer bar
+[[ "$RC" -eq 0 ]] && pass "重复执行成功（幂等）" \
+    || fail "重复执行失败：$(printf '%.200s' "$OUT")"
+if [[ "$OUT" == *"already relative 2"* ]]; then
+    pass "重复执行把两个目标都判成 already relative"
+else
+    fail "重复执行的统计不对：$(printf '%.200s' "$OUT")"
+fi
+
+wave transfer --all
+[[ "$RC" -eq 0 ]] && pass "--all 成功" || fail "--all 失败：$(printf '%.200s' "$OUT")"
+
+# 参数校验：报错要指出下一步，不能静默成功
+wave transfer nosuch
+[[ "$RC" -eq 1 ]] && pass "未安装的包返回 1" || fail "未安装的包返回 $RC"
+wave transfer -a bar
+[[ "$RC" -eq 1 ]] && pass "-a 与包名混用被拒绝" || fail "-a 与包名混用返回 $RC"
+wave transfer bar -s
+[[ -z "$OUT" && "$RC" -eq 0 ]] && pass "-s 一个字节都不输出" || fail "-s 仍有输出"
+
+echo
+echo "=========================================="
+echo -e "🌊 Passed: $PASSED"
+echo -e "🌊 Failed: $FAILED"
+echo "=========================================="
+
+[[ "$FAILED" -eq 0 ]] || exit 1
+echo -e "${GREEN}🌊 All relocation tests passed${RESET}"

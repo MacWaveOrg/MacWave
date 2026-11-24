@@ -1,0 +1,398 @@
+#!/usr/bin/env python3
+"""
+MacWave Help Module
+负责展示命令行帮助信息（简版和详细版）。
+"""
+
+import json
+import re
+
+import commands as commands_module
+from configpaths import VERSION_FILE
+
+# 颜色定义
+RED = '\033[31m'
+GREEN = '\033[32m'
+YELLOW = '\033[33m'
+CYAN = '\033[36m'
+RESET = '\033[0m'
+BOLD = '\033[1m'
+PURPLE = '\033[35m'
+ORANGE = '\033[38;5;197m'
+
+
+# -------------------- 排版 --------------------
+#
+# 原先靠手数空格对齐，标签长度一改就错位（实测各块描述起始列从 34 到 52 都有）。
+# 改成每块先量出最宽的标签再统一补空格，加多少条都不用重新数。
+#
+# 颜色也统一成一条规则，避免同是旗标却一处 GREEN 一处 CYAN：
+#   命令名 / 程序名   → GREEN
+#   旗标             → CYAN
+#   <值> 占位符       → YELLOW
+
+_VALUE_RE = re.compile(r'^(?P<name>.*?)\s*(?P<value><[^>]+>)$')
+
+
+def _label(*segments):
+    """segments 是 (文本, 颜色或 None)，返回 (纯文本, 上色文本)。"""
+    plain = "".join(text for text, _ in segments)
+    colored = "".join(f"{color}{text}{RESET}" if color else text for text, color in segments)
+    return plain, colored
+
+
+def _command(name, *rest):
+    return [(name, GREEN)] + list(rest)
+
+
+def _flag(name, value=None):
+    segments = [(name, CYAN)]
+    if value:
+        segments.append((f" {value}", YELLOW))
+    return segments
+
+
+def _flag_spec(spec):
+    # "(-C, --continue)" 这类写法直接用；"--proxy <string>" 把值和旗标分开上色。
+    match = _VALUE_RE.match(spec)
+    if match:
+        return _flag(match.group("name"), match.group("value"))
+    return _flag(spec)
+
+
+def _print_section(title, rows, indent=2, gap=2):
+    """rows 是 [(segments, 描述)]，描述列按本块最宽标签对齐。"""
+    if not rows:
+        return
+    labels = [_label(*segments) for segments, _ in rows]
+    width = max(len(plain) for plain, _ in labels)
+    print()
+    print(f"{PURPLE}{title}:{RESET}")
+    for (plain, colored), (_, desc) in zip(labels, rows):
+        print(" " * indent + colored + " " * (width - len(plain) + gap) + desc)
+
+
+def _print_note(text, indent=2):
+    print(" " * indent + text)
+
+
+def get_project_version():
+    """从 VERSION.json 获取主程序版本号"""
+    if VERSION_FILE.exists():
+        try:
+            with open(VERSION_FILE, 'r') as f:
+                data = json.load(f)
+                return data.get("version", "unknown")
+        except Exception:
+            pass
+    return "unknown"
+
+
+# 「全局旗标」这一节的唯一来源：`wave -h` 与 man/info 手册都从它生成。
+# 每条是 (写法, 说明)。写法里若带 `<值>`，上色时值那一段会用另一种颜色。
+GLOBAL_FLAGS_TITLE = "Global Flags (can be used with any command)"
+GLOBAL_FLAGS = [
+    ("-s, --silent", "Print nothing at all; the exit code is the signal (beats -v; install / upgrade / uninstall / link / unlink / selfupdate)"),
+    ("-S, --show-error", "With -s, still print the error when a command fails "
+                         "(without the \U0001F30A, so scripts can parse it)"),
+    ("-C, --continue", "Resume an interrupted download"),
+    ("--proxy <string>", "HTTP/HTTPS proxy (e.g. http://127.0.0.1:8080)"),
+    ("--skip-ssl", "Skip SSL certificate verification (insecure)"),
+    ("--limit-rate <string>", "Limit download speed (e.g. 200K, 1M, 5M; a bare number means bytes)"),
+    ("--max-time <string>",
+     "Maximum total time for one request (40s, 1min, 1min20s, 2h; a bare number means seconds)"),
+    ("--connect-timeout <string>", "Maximum time for the handshake"),
+    ("--content-time <string>", "Maximum time to receive data"),
+    ("--ver <string>", "Install a specific version (install only; --ver=1.0 works too)"),
+    ("-F, --force", "Install anyway when the running macOS is older than the package declares"),
+    ("--install-python-from-source",
+                "Fetch the bundled Python from its upstream URL instead of MacWave's own repository"),
+    ("MACWAVE_PIP_INDEX", "Env var. pip index for the Python deps; default pypi.org/simple"),
+    ("MACWAVE_CACERT", "Env var. PEM file with extra root certificates for corporate TLS "
+                       "inspection or a private-CA mirror (unset = system trust store)"),
+]
+
+
+# 「`wave -h` 里那几节」的唯一来源：英文在这里，中文在 cli/help_zh.py，
+# 手册（man/info）也从这两份生成。
+#
+# 每节 {"id", "title", "rows": [(kind, 写法, 说明)]}，kind 决定上什么色：
+#   command  绿色命令名 + 黄色占位符（"wave link <name>"）
+#   flag     青色旗标 + 黄色占位符（"-s, --silent"、"MACWAVE_PIP_INDEX"）
+#
+# `id` 是给中文表当锚点用的 —— 中文只提供「标题 + 每条说明」，结构照英文走，
+# 所以两边不可能出现「英文有一节、中文少一节」。scripts/docs_test.sh 逐项比对。
+OVERVIEW = [
+    {
+        # 命令这一节**从 cli/commands.py 生成**，不再手写：手写的那份曾经把
+        # 一条 1.x 就删掉的命令一直列到 2.3.1。枚举 registry 就不会有僵尸条目 ——
+        # 删命令只删一处，帮助、手册、分发同时消失。
+        "id": "commands",
+        "title": "Commands",
+        "rows": [("command", command.name, command.summary)
+                 for command in commands_module.listed()],
+    },
+    {
+        "id": "flags",
+        "title": "Flags",
+        "rows": [
+            ("flag", "-h, --help", "Show help for any command"),
+            ("flag", "-V, --version", "Print version information"),
+            ("flag", "-v, --verbose", "Enable verbose output (show detailed logs)"),
+        ],
+    },
+    {
+        "id": "global",
+        "title": GLOBAL_FLAGS_TITLE,
+        "rows": [("flag", spec, desc) for spec, desc in GLOBAL_FLAGS],
+    },
+    {
+        "id": "special",
+        "title": "Special Flags",
+        "rows": [
+            ("command", "wave install <pkgname>@<version>", "Download certain version(s) of a package"),
+            ("flag", "--no-link",
+             "Leave the unversioned link alone (install / uninstall; the old name --unlink works too)"),
+            # 只列规范写法；单数的 --remove-old-version 与 --rov 仍然接受，但不再宣传
+            ("flag", "-X, --remove-old-versions", "Remove the older versions as part of the upgrade"),
+            ("flag", "--all, -a", "Apply to every installed package (upgrade / link / unlink / linkquery)"),
+        ],
+    },
+    {
+        "id": "links",
+        "title": "Unversioned Links",
+        "rows": [
+            ("command", "wave link <name>", "Link a package to its highest installed version"),
+            ("command", "wave linkquery <name>", "Show what <name> is linked to (e.g. 🌊 ffmpeg@9.0)"),
+            ("command", "wave unlink <name>", "Remove that link"),
+        ],
+    },
+]
+
+OVERVIEW_NOTES = {
+    "links": "Links are created on install and re-pointed on uninstall; "
+             "--no-link never leaves one broken.",
+}
+
+OVERVIEW_FOOTER = {"en": "For more details, visit: https://macwave.org",
+                   "zh": "更多说明见 https://macwave.org"}
+
+USAGE_LINE = {"en": "wave <command> [package] [flags]",
+              "zh": "wave <命令> [软件包] [旗标]"}
+
+TAGLINE = {"en": "A package manager for macOS software developers.",
+           "zh": "macOS 开发者用的软件包管理器。"}
+
+# 子命令帮助里那两句固定文案（`wave install --help` 的抬头与结尾）。
+COMMAND_HELP_LABELS = {
+    "en": {"usage": "usage:", "flags": "Flags", "examples": "Examples",
+           "all_commands": "All commands"},
+    "zh": {"usage": "用法：", "flags": "旗标", "examples": "示例",
+           "all_commands": "全部命令"},
+}
+
+
+def _row_segments(kind, spec):
+    """把一条写法变成上色的若干段；与既有的 -h 输出逐字对应。"""
+    if kind == "command":
+        match = re.match(r"^(.*?)( <.*)$", spec)
+        if match:
+            return [(match.group(1), GREEN), (match.group(2), YELLOW)]
+        return [(spec, GREEN)]
+    return _flag_spec(spec)
+
+
+def overview_for(lang="en"):
+    """返回 (标题表, 说明表) —— 英文来自本文件，中文来自 cli/help_zh.py。"""
+    if lang == "en":
+        sections = OVERVIEW
+        notes = OVERVIEW_NOTES
+    else:
+        import help_zh
+        sections = help_zh.overview()
+        notes = help_zh.OVERVIEW_NOTES
+    return sections, notes
+
+
+def print_custom_help(lang="en"):
+    """简版帮助：与 README 的 Command Reference 保持一致"""
+    version = get_project_version()
+    print(f"{PURPLE}usage: {ORANGE}{USAGE_LINE[lang]}{RESET}")
+    print()
+    print(f"MacWave {version} 🌊")
+    print(TAGLINE[lang])
+
+    sections, notes = overview_for(lang)
+    for section in sections:
+        rows = [(_row_segments(kind, spec), desc) for kind, spec, desc in section["rows"]]
+        _print_section(section["title"], rows)
+        if section["id"] in notes:
+            _print_note(notes[section["id"]])
+
+    print()
+    print(OVERVIEW_FOOTER[lang])
+
+
+# -------------------- 子命令帮助 --------------------
+#
+# `wave <command> -h|--help` 用这张表。只列该命令真正接受的旗标
+# （依据各 handler 的旗标白名单），避免承诺做不到的事。
+
+COMMAND_HELP = {
+    # 每条命令的用法 / 说明 / 旗标 / 示例都来自 cli/commands.py —— 那张表同时
+    # 决定这条命令能不能被分发。这里保留字典形状，是因为 manual.py 与
+    # scripts/build_docs.py 都按 {usage, desc, flags, examples} 取值。
+    command.name: {
+        "usage": command.usage,
+        "desc": command.desc,
+        "flags": list(command.flags),
+        "examples": list(command.examples),
+    }
+    for command in commands_module.all()
+}
+
+
+def command_text(command, lang="en"):
+    """某条命令的 (说明, [(旗标, 说明)]) —— 中文来自 cli/help_zh.py。"""
+    entry = COMMAND_HELP[command]
+    if lang == "en":
+        return entry["desc"], list(entry["flags"])
+    import help_zh
+    translated = help_zh.COMMANDS_ZH[command]
+    return translated["desc"], list(translated["flags"].items())
+
+
+def print_command_help(command, lang="en"):
+    """`wave <command> --help`：打印该命令自己的用法"""
+    entry = COMMAND_HELP.get(command)
+    if entry is None:
+        print_custom_help(lang)
+        return
+
+    labels = COMMAND_HELP_LABELS[lang]
+    desc, flags = command_text(command, lang)
+
+    print(f"{PURPLE}{labels['usage']} {ORANGE}{entry['usage']}{RESET}")
+    print()
+    print(desc)
+
+    _print_section(labels["flags"], [(_flag_spec(name), text) for name, text in flags])
+
+    print()
+    print(f"{PURPLE}{labels['examples']}:{RESET}")
+    for example in entry["examples"]:
+        _print_note(example)
+
+    print()
+    print(f"{labels['all_commands']}: {GREEN}wave --help{RESET}")
+
+
+# -------------------- 版本与错误提示 --------------------
+
+def print_version():
+    """输出当前 MacWave 的版本号"""
+    version = get_project_version()
+    print(f"🌊 MacWave {version}")
+
+
+def _caret_line(prefix, words, bad_index):
+    """prefix 是原文行在词前面的固定前缀，bad_index 是要指的词下标。"""
+    before = " ".join(words[:bad_index])
+    offset = len(prefix) + (len(before) + 1 if before else 0)
+    return f"{RED}" + " " * offset + "^" * len(words[bad_index]) + f"{RESET}"
+
+
+def _hit_index(words, suggestion, unknown_flags):
+    """挑出这一行里最该被指住的那个词。
+
+    优先级：建议里的错词 → 不属于任何命令的旗标 → 第一个非旗标词（命令本身）。
+
+    **没有建议时同样要指。** 命令名拼得太离谱、猜不出该敲什么的时候，以前整段
+    输出里没有任何定位信息，用户只能自己盯着命令行找；现在至少能指出是哪个词
+    出的问题，哪怕还猜不到正确的写法。
+    """
+    if suggestion:
+        wrong = suggestion[1]
+        for index, word in enumerate(words):
+            if word == wrong:
+                return index
+    if unknown_flags:
+        import flags as flags_module
+        wanted = set(unknown_flags)
+        for index, word in enumerate(words):
+            if word.startswith("-") and set(flags_module.split(word)) & wanted:
+                return index
+    for index, word in enumerate(words):
+        if not word.startswith("-"):
+            return index
+    return None
+
+
+def _print_command_line(words, bad_index, prefix="   wave "):
+    """命令行原样回显，只把出错的那个词标红，下一行用 ^ 指住它。"""
+    shown = " ".join(
+        f"{RED}{word}{RESET}" if index == bad_index else word
+        for index, word in enumerate(words))
+    print(prefix + shown)
+    print(_caret_line(prefix, words, bad_index))
+    print()
+
+
+def print_error_help(suggestion=None, unknown_flags=None, argv=None):
+    """未知命令或参数时：先回显命令行并指出错在哪个词，能猜到就给出改法。
+
+    suggestion 由 wave.py 传入（打错的词表与命令清单都只在那里一份，这里不重复维护）。
+    unknown_flags 是「不属于任何命令」的旗标：命令名错了时它们轮不到校验，
+    不单独报出来就会被一起吞掉，而下面那句建议会把它原样抄进去。
+
+    回显命令行这件事与「猜不猜得到」无关：猜得到时它能让人看清错的是哪个词，
+    猜不到时它是唯一能定位的信息。
+
+    **任何情况下都不输出整篇帮助。** 那五六十行会在终端里滚过一整屏，把真正
+    有用的那两行（错在哪个词、该敲什么）推到看不见的地方 —— 而真想知道全部
+    命令的人，自己会去敲 `wave -h`。所以这里只留一条指向它的提示。
+    """
+    print(f"{BOLD}{RED}🌊 Error: Unknown command or argument.{RESET}")
+
+    words = list(argv[1:]) if argv else []
+    bad_index = _hit_index(words, suggestion, unknown_flags) if words else None
+    if bad_index is not None:
+        _print_command_line(words, bad_index)
+
+    if unknown_flags:
+        listed = ", ".join(unknown_flags)
+        print(f"{BOLD}{RED}🌊 Error: Unknown flag{'s' if len(unknown_flags) > 1 else ''}: "
+              f"{listed}{RESET}")
+
+    if suggestion:
+        fixed, wrong, right = suggestion
+        # 逐词上色而不是字符串 replace：right 落在末尾时（`wave updat` → 修正成
+        # `wave upgrade`）带空格的写法匹配不上，改法就整句都不绿了。
+        fixed_shown = " ".join(
+            f"{GREEN}{word}{RESET}" if word == right else word
+            for word in fixed.split())
+        print(f"{BOLD}🌊 Did you mean:{RESET} {fixed_shown}")
+        print(f"   {YELLOW}{wrong}{RESET} is not a command. "
+              f"The one you want is {GREEN}{right}{RESET}.")
+        print()
+        print(f"   For the full list: {GREEN}wave -h{RESET}")
+        return
+
+    # 猜不到也要说清去哪里看 —— 但不再把整篇帮助倒进终端。
+    # _print_command_line 已经补了一个空行，没回显命令行时才需要自己补。
+    if bad_index is None:
+        print()
+    if unknown_flags:
+        print("   `wave --help` lists the global flags; "
+              "`wave <command> --help` lists the rest.")
+    else:
+        print(f"   For the full list: {GREEN}wave -h{RESET}")
+
+
+def main():
+    """直接运行 python3 help.py 时，预览帮助信息"""
+    print_custom_help()
+
+
+if __name__ == "__main__":
+    main()

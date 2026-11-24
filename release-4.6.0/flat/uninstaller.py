@@ -1,0 +1,468 @@
+#!/usr/bin/env python3
+
+# uninstaller.py
+
+import os
+import sys
+import shutil
+import subprocess
+from pathlib import Path
+
+
+# -------------------- 颜色定义 --------------------
+
+RED_BOLD = '\033[1;31m'
+GREEN = '\033[32m'
+YELLOW = '\033[33m'
+RESET = '\033[0m'
+
+
+# -------------------- 配置加载 --------------------
+
+from configpaths import (assert_inside, assert_inside_entry, load_base_dir, require_safe_token,
+                         to_tilde)
+import silent
+
+# 只取「任何命令都接受」的那一组；模块名不用 flags ——
+# 这个函数里已经有个局部变量叫 flags（argv 里剥出来的旗标集合）。
+from flags import GLOBAL as GLOBAL_FLAGS, NO_LINK, NO_LINK_CANONICAL, describe as describe_flag
+import common
+
+
+BASE_DIR = load_base_dir()
+BIN_DIR = BASE_DIR / "bin"
+LINKS_DIR = BASE_DIR / "links"
+TAGGER_SCRIPT = Path(__file__).resolve().parent.parent / "surfboard" / "tagger.sh"
+
+
+# -------------------- 依赖库检查 --------------------
+
+try:
+    from versioncompare import get_max_version, sort_versions
+except ModuleNotFoundError as error:
+    if error.name == "versioncompare":
+        print(f"{RED_BOLD}🌊 Error: 'versioncompare' module is not available.{RESET}")
+    else:
+        print(f"{RED_BOLD}🌊 Error: Missing Python dependency '{error.name}'.{RESET}")
+        print(f"{RED_BOLD}🌊 Install the required packages and try again:{RESET}")
+        print(f"{YELLOW}   python3 -m pip install --user requests packaging rich{RESET}")
+        print(f"{YELLOW}   (Homebrew's Python needs --break-system-packages){RESET}")
+    sys.exit(1)
+
+try:
+    from querier import dep_dir, parse_dep_ref
+except ImportError as error:
+    print(f"{RED_BOLD}🌊 Error: 'surfboard' module is not available ({error}).{RESET}")
+    sys.exit(1)
+
+
+# -------------------- 辅助函数 --------------------
+
+def find_installed_versions(pkg_name):
+    # 扫描 bin 目录（2.2 起为 <包名>@<版本号> 目录），
+    # 返回该包所有已安装版本（降序，排除 .bak 备份）
+    pkg_name = require_safe_token(pkg_name, "package name")
+    if not BIN_DIR.exists():
+        return []
+    prefix = f"{pkg_name}@"
+    versions = []
+    for entry in BIN_DIR.iterdir():
+        name = entry.name
+        if not name.startswith(prefix):
+            continue
+        version = name[len(prefix):]
+        if not version or version.endswith(".bak"):
+            continue
+        versions.append(version)
+    return sort_versions(versions)
+
+
+# -------------------- 删除动作 --------------------
+
+def read_deps_file(artifact_dir):
+    # 读取 _DEPS，返回依赖引用列表（每行形如 "a@1.0"）
+    deps_file = artifact_dir / "_DEPS"
+    if not deps_file.exists():
+        return []
+
+    refs = []
+    try:
+        with open(deps_file, 'r') as f:
+            for line in f:
+                ref = line.strip().strip('"').strip()
+                if ref:
+                    refs.append(ref)
+    except Exception:
+        return []
+    return refs
+
+
+def run_tagger(*args):
+    return subprocess.run(
+        ['bash', str(TAGGER_SCRIPT), *args],
+        capture_output=True, text=True
+    )
+
+
+def delete_depender_tag(dep_path, depender_kind, depender_name, depender_version):
+    action = "delete-pkg" if depender_kind == "pkg" else "delete-dep"
+    result = run_tagger(action, str(dep_path), depender_name, depender_version)
+
+    if result.returncode != 0:
+        if result.stdout.strip():
+            print(result.stdout.strip())
+        if result.stderr.strip():
+            print(result.stderr.strip())
+        sys.exit(result.returncode)
+
+
+def has_depender_tag(dep_path):
+    return run_tagger("has-marks", str(dep_path)).returncode == 0
+
+
+def remove_dep_links(dep_path):
+    # 依赖包保留了整棵目录，bin/ 下可能有多个可执行文件，
+    # 因此按软链接指向反查，清掉所有指向该依赖目录的链接。
+    if not LINKS_DIR.is_dir():
+        return
+
+    resolved_dep = dep_path.resolve()
+
+    for link in LINKS_DIR.iterdir():
+        if not link.is_symlink():
+            continue
+        try:
+            target = (link.parent / os.readlink(link)).resolve()
+        except OSError:
+            continue
+        if target == resolved_dep or resolved_dep in target.parents:
+            link.unlink()
+
+
+def remove_dependency(artifact_dir, depender_kind, depender_name, depender_version, visited=None):
+    # 递归清理：删除自己的依赖者标记，没有其他依赖者时连同其依赖一起删除。
+    # visited 记录本轮已处理过的依赖目录，避免循环依赖（A→B→A）导致无限递归
+    if visited is None:
+        visited = set()
+
+    for ref in read_deps_file(artifact_dir):
+        dep_name, dep_version = parse_dep_ref(ref)
+        dep_path = dep_dir(dep_name, dep_version)
+
+        if not dep_path.is_dir():
+            continue
+
+        delete_depender_tag(dep_path, depender_kind, depender_name, depender_version)
+
+        if has_depender_tag(dep_path):
+            continue
+
+        resolved_dep = dep_path.resolve()
+        if resolved_dep in visited:
+            continue
+        visited.add(resolved_dep)
+
+        # 已无任何依赖者：先清软链接与它自己的依赖，再删除目录
+        silent.say(f"🌊 Removing orphan dependency {dep_name}@{dep_version}...")
+
+        remove_dep_links(dep_path)
+
+        remove_dependency(dep_path, "dep", dep_name, dep_version, visited)
+        shutil.rmtree(dep_path)
+
+        owner_dir = dep_path.parent
+        if owner_dir.is_dir() and not any(owner_dir.iterdir()):
+            owner_dir.rmdir()
+
+
+def remove_one(pkg_name, version):
+    # 删除单个 <包名>@<版本号>（bin 下的目录 + links 下的软链接，含 .bak）
+    pkg_name = require_safe_token(pkg_name, "package name")
+    version = require_safe_token(version, "package version")
+
+    target = BIN_DIR / f"{pkg_name}@{version}"
+    backup = BIN_DIR / f"{pkg_name}@{version}.bak"
+    link = LINKS_DIR / f"{pkg_name}@{version}"
+    backup_link = LINKS_DIR / f"{pkg_name}@{version}.bak"
+
+    # 要递归删除的路径必须先确认落在安装目录里
+    for path, root in ((target, BIN_DIR), (backup, BIN_DIR)):
+        assert_inside(path, root, "uninstall path")
+
+    # 软链接只删链接本身，不能跟到 bin/ 里的目标去
+    for path, root in ((link, LINKS_DIR), (backup_link, LINKS_DIR)):
+        assert_inside_entry(path, root, "uninstall path")
+
+    silent.say(f"🌊 Deleting {to_tilde(target)}...")
+
+    if target.is_dir():
+        # 先按 _DEPS 清理依赖标记与孤立依赖，再删除整个目录
+        remove_dependency(target, "pkg", pkg_name, version)
+        shutil.rmtree(target)
+    elif target.exists():
+        target.unlink()
+
+    if backup.is_dir():
+        shutil.rmtree(backup)
+    elif backup.exists():
+        backup.unlink()
+
+    # 软链接可能是悬空的，用 is_symlink 判断
+    for link_path in (link, backup_link):
+        if link_path.is_symlink() or link_path.exists():
+            link_path.unlink()
+
+    # 整树包的每个可执行文件各有一条 links/<名>@<版本>（安装时由 depsmanager.sh 建），
+    # 上面那两条只覆盖了主命令那一条 —— 其余留在这里就成了死链。
+    linker = _import_linker()
+    if linker is not None:
+        linker.remove_versioned_links(pkg_name, version)
+
+    return True
+
+
+# -------------------- 软件包链接联动 --------------------
+
+def _import_linker():
+    # linker.py 与 uninstaller.py 同在 pkg/ 下；缺了也不影响卸载本身
+    try:
+        import linker
+        return linker
+    except ImportError:
+        return None
+
+
+def refresh_link(pkg_name):
+    # 卸载后同步不带版本号的软链接：还有别的版本就改指最高的，一个不剩就删掉。
+    # 本来就没链接过的（用户手动 unlink 过）不重新建。
+    # 链接已经是悬空的（指向被删掉的版本）时，也会在这里被治好。
+    linker = _import_linker()
+    if linker is None:
+        return
+
+    if linker.linked_version(pkg_name) is None:
+        return
+
+    versions = linker.installed_versions(pkg_name)
+    if versions:
+        version = get_max_version(versions)
+        linker.create_link(pkg_name, version)
+        silent.say(f"🌊 Unversioned link now points to {pkg_name}@{version}")
+    else:
+        # 整树包的附属命令链接也得一起摘 —— 只删主链接会把 git-upload-pack、
+        # fdtdump 这类留在 links/ 里，指向已经删掉的目录。
+        linker.remove_package_links(pkg_name)
+        silent.say(f"🌊 Removed the unversioned link for {pkg_name}")
+
+
+def broken_link_target(pkg_name, versions):
+    # --no-link 会把不带版本号的链接留在「指向已卸载版本」的坏状态上吗？
+    # 是则返回那个版本号。链接只能指向存在的版本，否则宁可报错让用户自己决定。
+    linker = _import_linker()
+    if linker is None:
+        return None
+
+    target = linker.linked_version(pkg_name)
+    if target is not None and target in versions:
+        return target
+    return None
+
+
+def uninstall_versions(pkg_name, versions, keep_link=False):
+    if keep_link:
+        broken = broken_link_target(pkg_name, versions)
+        if broken:
+            print(f"{RED_BOLD}🌊 Error: links/{pkg_name} points to {pkg_name}@{broken}, which is being uninstalled.{RESET}")
+            print(f"{RED_BOLD}🌊 {NO_LINK_CANONICAL} would leave that link broken, so nothing was uninstalled.{RESET}")
+            print(f"{RED_BOLD}🌊 Drop {NO_LINK_CANONICAL} (the link then falls back to the next installed version), or run 'wave unlink {pkg_name}' first.{RESET}")
+            sys.exit(1)
+
+    from lock import tree_lock
+    with tree_lock(f"uninstall {pkg_name}"):
+        # 卸载不下载，但它是用户清空间的时刻：顺手把放太久的 .partial 收掉，
+        # 免得「我明明卸了那么多包，磁盘怎么还是满的」。
+        from downloads import sweep_stale_partials
+        sweep_stale_partials()
+        for version in versions:
+            remove_one(pkg_name, version)
+    if keep_link:
+        silent.say(f"🌊 Left the unversioned link for {pkg_name} untouched")
+    else:
+        refresh_link(pkg_name)
+    for version in versions:
+        silent.say(f"{GREEN}🌊 Successfully uninstalled {pkg_name}@{version}.{RESET}")
+
+
+# -------------------- 交互式选择 --------------------
+
+def select_versions(pkg_name, versions):
+    # 静默模式下没人能回答「删哪几个」，而这里没有安全的默认值 ——
+    # 猜一个版本可能删错。所以明确拒绝，让用户自己写出 @<版本>。
+    if silent.is_silent():
+        print(f"{RED_BOLD}🌊 Error: {pkg_name} has {len(versions)} installed versions "
+              f"({', '.join(versions)}).{RESET}")
+        print(f"{RED_BOLD}🌊 --silent cannot ask which to remove; name one: "
+              f"wave uninstall {pkg_name}@<version>{RESET}")
+        sys.exit(1)
+
+    print(f"🌊 Multiple versions found for '{pkg_name}':")
+    for index, version in enumerate(versions, start=1):
+        print(f"🌊 - {index}. {version}")
+    print("🌊 Enter the number(s) to uninstall (separate by @ or space):")
+
+    try:
+        choice = input().strip()
+    except (EOFError, KeyboardInterrupt):
+        silent.say("🌊 Operation cancelled by user.")
+        sys.exit(130)
+
+    selected = []
+    for token in choice.replace('@', ' ').split():
+        if not token.isdigit() or not (1 <= int(token) <= len(versions)):
+            print(f"{RED_BOLD}🌊 Error: Invalid selection '{token}'.{RESET}")
+            sys.exit(1)
+        selected.append(versions[int(token) - 1])
+
+    if not selected:
+        print("🌊 Nothing selected.")
+        sys.exit(0)
+
+    return selected
+
+
+# -------------------- 命令入口 --------------------
+
+def _uninstall_spec(spec, keep_link, all_versions):
+    """卸掉一个条目：`名字`、`名字@版本`、`名字@版本@版本`，或 `名字@all`。"""
+    if "@" not in spec:
+        pkg_name = spec
+        versions = find_installed_versions(pkg_name)
+        if not versions:
+            print(f"{RED_BOLD}🌊 Error: Package '{pkg_name}' is not installed.{RESET}")
+            sys.exit(1)
+        if all_versions:
+            uninstall_versions(pkg_name, versions, keep_link)
+            return
+        if len(versions) == 1:
+            uninstall_versions(pkg_name, versions, keep_link)
+            return
+        uninstall_versions(pkg_name, select_versions(pkg_name, versions), keep_link)
+        return
+
+    pkg_name, *raw_versions = spec.split("@")
+    raw_versions = [version for version in raw_versions if version]
+
+    if not raw_versions:
+        print(f"{RED_BOLD}🌊 Error: Missing version number.{RESET}")
+        print(f"{RED_BOLD}🌊 Try: wave uninstall {pkg_name}@<version>, "
+              f"or wave uninstall {pkg_name} -a to remove every version.{RESET}")
+        sys.exit(1)
+
+    # `@all` 是 4.5 起的主写法；`@*` 是它以前的名字，继续认。
+    if all(version in ("all", "*") for version in raw_versions):
+        versions = find_installed_versions(pkg_name)
+        if not versions:
+            print(f"{RED_BOLD}🌊 Error: Package '{pkg_name}' is not installed.{RESET}")
+            sys.exit(1)
+        uninstall_versions(pkg_name, versions, keep_link)
+        return
+
+    installed_versions = find_installed_versions(pkg_name)
+    targets = [version for version in raw_versions if version in installed_versions]
+    missing = [version for version in raw_versions if version not in installed_versions]
+
+    if not targets:
+        print(f"{RED_BOLD}🌊 Error: Package '{pkg_name}' is not installed.{RESET}")
+        sys.exit(1)
+
+    for version in missing:
+        print(f"{YELLOW}🌊 Warning: {pkg_name}@{version} is not installed, skipping.{RESET}")
+
+    uninstall_versions(pkg_name, targets, keep_link)
+
+
+def handle_uninstall(input_string):
+    parts = input_string.split()
+
+    # 先剥出 flag：--no-link（旧名 --unlink）表示“不动这个包不带版本号的链接”
+    flags = {word for word in parts[2:] if word.startswith("-")}
+    operands = [word for word in parts[2:] if not word.startswith("-")]
+    keep_link = bool(set(NO_LINK) & flags)
+    all_versions = bool({"-a", "--all"} & flags)
+
+    # `-C` / `-v` / `--proxy` 这些在帮助里写着「can be used with any command」，
+    # 却在这里被当成未知旗标告警 —— 于是 `wave uninstall x -sv` 在静默模式下
+    # 也会漏出一行，而那句话本身还是错的。帮助是承诺，这里按承诺放行。
+    tolerated = set(NO_LINK) | {"-a", "--all"} | GLOBAL_FLAGS
+    for unknown in sorted(flags - tolerated):
+        # 「属于别的命令」与「拼错了」是两种错，说法要分开：
+        # 前者提示去用对命令，后者才提示拼写。
+        description = describe_flag(unknown)
+        if description:
+            print(f"{YELLOW}🌊 Warning: {description}; ignored.{RESET}")
+        else:
+            print(f"{YELLOW}🌊 Warning: unknown flag '{unknown}' ignored.{RESET}")
+
+    common.reject_fullwidth_comma(input_string)
+    specs = common.split_operands(operands)
+
+    if not specs:
+        print(f"{RED_BOLD}🌊 Error: Missing package name.{RESET}")
+        print(f"{RED_BOLD}🌊 Try: wave uninstall <package>, or "
+              f"wave uninstall <package>, <package>.{RESET}")
+        sys.exit(1)
+
+    # -a 与显式版本说不清谁说了算，直接拒绝，别猜。
+    if all_versions:
+        conflicting = [spec for spec in specs if "@" in spec]
+        if conflicting:
+            print(f"{RED_BOLD}🌊 Error: -a/--all cannot be combined with a version "
+                  f"({', '.join(conflicting)}).{RESET}")
+            print(f"{RED_BOLD}🌊 Use wave uninstall <package> -a for every version, "
+                  f"or name the versions one by one.{RESET}")
+            sys.exit(1)
+
+    total = len(specs)
+    removed = []
+    failed = []
+
+    for index, spec in enumerate(specs, 1):
+        if total > 1:
+            silent.say(f"🌊 [{index}/{total}] {spec}")
+        try:
+            _uninstall_spec(spec, keep_link, all_versions)
+            removed.append(spec)
+        except SystemExit as exit_error:
+            code = exit_error.code
+            if code in (None, 0):
+                removed.append(spec)
+            else:
+                failed.append(spec)
+
+    if total == 1:
+        # 单个条目时不需要汇总，但失败必须让退出码说出来：
+        # 上面把 SystemExit 接住了，错误码就只剩这一个出口。
+        if failed:
+            sys.exit(1)
+        return
+
+    silent.say(f"🌊 Uninstalled {len(removed)} of {total} package(s)")
+    for spec in removed:
+        silent.say(f"🌊   ok     {spec}")
+    for spec in failed:
+        silent.say(f"🌊   failed {spec}")
+
+    if failed:
+        print(f"{RED_BOLD}🌊 Error: {len(failed)} of {total} package(s) could not be "
+              f"uninstalled: {', '.join(failed)}{RESET}")
+        print(f"{RED_BOLD}🌊 The ones marked ok above are already gone.{RESET}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    try:
+        input_string = " ".join(sys.argv[1:])
+        handle_uninstall(input_string)
+    except KeyboardInterrupt:
+        print("🌊 Operation cancelled by user.")
+        sys.exit(130)

@@ -1,0 +1,244 @@
+#!/bin/bash
+
+# docs_test.sh
+# 手册（man/ 与 info/）与它们的来源之间不许走散。
+#
+# 三类断言：
+#
+#   1. 生成物是最新的：重跑 scripts/build_docs.py --check，任何一个文件落后就红。
+#      手写的 man 页不会报错，只会在某次加旗标之后悄悄过时 —— 读者照着敲，
+#      得到的是 "unknown option"。
+#   2. 中英不脱节：命令集合、每条命令的旗标写法、全局旗标写法、`wave -h` 的每一节
+#      都必须两边成套。少一条的表现是「中文手册里那一行没有解释」，
+#      多一条则是「英文那边早改了名，这边留着幽灵」。
+#   3. 生成出来的是干净文本：不许含 ANSI 转义（`info wave > notes.txt` 要能读），
+#      info 文件必须有合法节点头，man 页第一行必须是 .TH。
+#
+# 全程离线，秒级。
+
+set -u
+
+RED_BOLD='\033[1;31m'
+GREEN='\033[32m'
+RESET='\033[0m'
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(dirname "$SCRIPT_DIR")"
+PYTHON=${PYTHON:-python3}
+
+PASSED=0
+FAILED=0
+pass() { echo -e "  ${GREEN}✅ $1${RESET}"; PASSED=$((PASSED + 1)); }
+fail() { echo -e "  ${RED_BOLD}❌ $1${RESET}"; FAILED=$((FAILED + 1)); }
+
+echo "========== 1. 生成物是最新的 =========="
+if OUT=$("$PYTHON" "$SCRIPT_DIR/build_docs.py" --check 2>&1); then
+    pass "man/ 与 info/ 都是当前源码生成的"
+else
+    fail "生成物落后了：$(printf '%s' "$OUT" | tr '\n' ' ')"
+fi
+
+echo "========== 2. 中英不脱节 =========="
+PROBLEMS=$("$PYTHON" - "$REPO_DIR" <<'PYEOF'
+import sys
+from pathlib import Path
+
+repo = Path(sys.argv[1])
+sys.path.insert(0, str(repo / "scripts"))
+from components import paths as component_paths
+
+sys.path[:0] = [str(path) for path in component_paths(repo)]
+
+import help as help_en
+import help_zh
+
+problems = []
+
+if set(help_en.COMMAND_HELP) != set(help_zh.COMMANDS_ZH):
+    problems.append("命令集合不一致：缺 %s，多 %s" % (
+        sorted(set(help_en.COMMAND_HELP) - set(help_zh.COMMANDS_ZH)),
+        sorted(set(help_zh.COMMANDS_ZH) - set(help_en.COMMAND_HELP))))
+
+for name, entry in help_en.COMMAND_HELP.items():
+    if name not in help_zh.COMMANDS_ZH:
+        continue
+    en = {spec for spec, _ in entry["flags"]}
+    cn = set(help_zh.COMMANDS_ZH[name]["flags"])
+    if en != cn:
+        problems.append("%s 的旗标说明不一致：缺 %s，多 %s"
+                        % (name, sorted(en - cn), sorted(cn - en)))
+
+en_global = {spec for spec, _ in help_en.GLOBAL_FLAGS}
+cn_global = set(help_zh.GLOBAL_FLAGS_ZH)
+if en_global != cn_global:
+    problems.append("全局旗标不一致：缺 %s，多 %s"
+                    % (sorted(en_global - cn_global), sorted(cn_global - en_global)))
+
+for section in help_en.OVERVIEW:
+    section_id = section["id"]
+    if section_id not in help_zh.OVERVIEW_TITLES:
+        problems.append("中文缺这一节的标题：%s" % section_id)
+    for _kind, spec, _desc in section["rows"]:
+        if spec not in help_zh.OVERVIEW_DESC.get(section_id, {}):
+            problems.append("中文缺这一条的说明：%s / %s" % (section_id, spec))
+
+for problem in problems:
+    print(problem)
+PYEOF
+)
+
+if [ -z "$PROBLEMS" ]; then
+    pass "命令、旗标、总帮助三处的中英文都对得上"
+else
+    while IFS= read -r line; do
+        [ -n "$line" ] && fail "$line"
+    done <<< "$PROBLEMS"
+fi
+
+echo "========== 3. 命令表、帮助、分发同一份数据 =========="
+# 4.4 起这三件事都从 cli/commands.py 生成（`wave -h`、`wave <cmd> --help`、
+# wave.py 的分发），所以这里验证的是「生成确实发生了」而不是两份手写清单对得上。
+# 历史教训：help.py 里一条 1.x 就删掉的命令一直列到 2.3.1；manual 进了 help
+# 却没进分发表，敲下去是 unknown command。前者靠生成不可能再发生，后者由
+# scripts/commands_test.sh 的「模块与处理函数存在」那条盯住。
+MISSING=$("$PYTHON" - "$REPO_DIR" <<'PYEOF'
+import sys
+from pathlib import Path
+
+repo = Path(sys.argv[1])
+sys.path.insert(0, str(repo / "scripts"))
+from components import paths as component_paths
+
+sys.path[:0] = [str(path) for path in component_paths(repo)]
+
+import commands
+import help as help_en
+
+problems = []
+
+if set(help_en.COMMAND_HELP) != set(command.name for command in commands.all()):
+    problems.append("COMMAND_HELP 与 cli/commands.py 的命令集合不一致")
+
+rows = [(kind, spec) for section in help_en.OVERVIEW if section["id"] == "commands"
+        for kind, spec, _desc in section["rows"]]
+expected = [("command", command.name) for command in commands.listed()]
+if rows != expected:
+    problems.append("`wave -h` 的 Commands 一节与 cli/commands.py 不一致：%s"
+                    % [spec for _kind, spec in rows])
+
+for command in commands.all():
+    entry = help_en.COMMAND_HELP.get(command.name, {})
+    if entry.get("usage") != command.usage or entry.get("desc") != command.desc:
+        problems.append("%s: 帮助页不是从元数据生成的" % command.name)
+
+for problem in problems:
+    print(problem)
+PYEOF
+)
+if [ -z "$MISSING" ]; then
+    pass "命令表、帮助、分发同一份数据（cli/commands.py）"
+else
+    while IFS= read -r line; do
+        [ -n "$line" ] && fail "$line"
+    done <<< "$MISSING"
+fi
+
+echo "========== 4. 生成物是干净的文本 =========="
+ESCAPES=$(grep -rlP '\x1b\[' "$REPO_DIR/man" "$REPO_DIR/info" 2>/dev/null | wc -l | tr -d ' ')
+if [ "$ESCAPES" = "0" ]; then
+    pass "man/ 与 info/ 里没有 ANSI 转义码"
+else
+    fail "有 ${ESCAPES} 个生成文件含 ANSI 转义码（重定向到文件会变成乱码）"
+fi
+
+BAD_TH=$(for page in "$REPO_DIR"/man/man1/*.1; do
+    head -n 1 "$page" | grep -q '^\.TH ' || echo "$page"
+done)
+if [ -z "$BAD_TH" ]; then
+    pass "每个 man 页都以 .TH 开头"
+else
+    fail "这些 man 页缺少 .TH：${BAD_TH}"
+fi
+
+BAD_INFO=$(for page in "$REPO_DIR"/info/*.info; do
+    head -n 2 "$page" | grep -q '^File: ' || echo "$page"
+done)
+if [ -z "$BAD_INFO" ]; then
+    pass "每个 info 文件都有节点头"
+else
+    fail "这些 info 文件缺少节点头：${BAD_INFO}"
+fi
+
+EN_PAGES=$(ls "$REPO_DIR"/man/man1/*.1 2>/dev/null | grep -vc -- '-zh\.1$')
+ZH_PAGES=$(ls "$REPO_DIR"/man/man1/*-zh.1 2>/dev/null | wc -l | tr -d ' ')
+if [ "$ZH_PAGES" -gt 0 ] && [ "$EN_PAGES" = "$ZH_PAGES" ]; then
+    pass "中文 man 页与英文一一对应（各 ${EN_PAGES} 页）"
+else
+    fail "中文 man 页 ${ZH_PAGES} 页、英文 ${EN_PAGES} 页，应当一一对应"
+fi
+
+# 折行的收尾：中文不允许有以标点开头的行（`…旧版` / `。` 那种）。
+# 这是 build_docs.wrap 的 NO_BREAK_BEFORE 在守，但它是生成期的事 ——
+# 生成物里再查一遍，改折行算法时才不会悄悄退回去。
+ORPHANS=$(python3 - "$REPO_DIR" <<'PYEOF'
+import sys
+from pathlib import Path
+
+repo = Path(sys.argv[1])
+cjk = "。，、；：！？）」』】》〉”’"
+found = []
+for page in sorted((repo / "man" / "man1").glob("*.1")) + sorted((repo / "info").glob("*.info")):
+    for number, line in enumerate(page.read_text(encoding="utf-8").splitlines(), 1):
+        if line[:1] and line[0] in cjk:
+            found.append(f"{page.name}:{number}")
+print(" ".join(found))
+PYEOF
+)
+if [ -z "$ORPHANS" ]; then
+    pass "没有以标点开头的折行（中文排版）"
+else
+    fail "这些行以标点开头，读起来像断错行：${ORPHANS}"
+fi
+
+# 折行算法的边界行为：句号正好落在列边界时必须粘在前一行，不能单独成行。
+# 上面那条查的是「当前的文字恰好没踩到边界」，这条才真的把规则本身钉住 ——
+# 拿一个 40 列 + 句号的构造串，不依赖语料。
+WRAP_EDGE=$(python3 - "$REPO_DIR" <<'PYEOF'
+import importlib.util
+import sys
+from pathlib import Path
+
+repo = Path(sys.argv[1])
+spec = importlib.util.spec_from_file_location("build_docs", repo / "scripts" / "build_docs.py")
+build_docs = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(build_docs)
+
+# 20 个全角字 = 40 列，句号要占 2 列，正好越过 41 列的边界
+lines = build_docs.wrap("一" * 20 + "。" + "尾", 41)
+problems = []
+if any(line[:1] == "。" for line in lines):
+    problems.append("句号被挤到了新行")
+if not lines[0].endswith("。"):
+    problems.append("句号没有粘在前一行末尾")
+print("；".join(problems))
+PYEOF
+)
+if [ -z "$WRAP_EDGE" ]; then
+    pass "折行边界：句号不会单独成行"
+else
+    fail "折行边界不对 —— ${WRAP_EDGE}"
+fi
+
+if [ -f "$REPO_DIR/info/wave-zh.info" ]; then
+    pass "info wave-zh 的文件在（info 按文件名找它）"
+else
+    fail "info/wave-zh.info 缺失：`info wave-zh` 会找不到手册"
+fi
+
+echo
+echo "=========================================="
+echo -e "🌊 Passed: $PASSED"
+echo -e "🌊 Failed: $FAILED"
+echo "=========================================="
+[[ "$FAILED" -eq 0 ]] || exit 1
+echo -e "${GREEN}🌊 Documentation is consistent${RESET}"

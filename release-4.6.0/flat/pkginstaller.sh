@@ -1,0 +1,48 @@
+#!/bin/bash
+
+# pkginstaller.sh
+# 软件包安装入口：接收 pkginstaller.py 传来的长字符串与依赖列表，
+# 把软件包安装到 BASE_DIR/bin/{可执行文件名}@{版本号}/，
+# 创建软链接、写入 _DEPS。
+# 具体安装动作复用 surfboard/depsmanager.sh（与依赖安装共用同一套逻辑）。
+
+set -e
+
+# -------------------- 颜色定义 --------------------
+
+RED_BOLD='\033[1;31m'
+GREEN='\033[32m'
+YELLOW='\033[33m'
+RESET='\033[0m'
+
+# -------------------- 引入通用安装核心 --------------------
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEPSMANAGER_SCRIPT="$(dirname "$SCRIPT_DIR")/surfboard/depsmanager.sh"
+
+if [[ ! -f "$DEPSMANAGER_SCRIPT" ]]; then
+    echo -e "${RED_BOLD}🌊 Error: depsmanager.sh not found.${RESET}"
+    exit 1
+fi
+
+source "$DEPSMANAGER_SCRIPT"
+
+# -------------------- 拆解参数 --------------------
+
+INPUT_STR="$1"
+DEPS_STR="$2"
+
+# -------------------- 安装软件包本体 --------------------
+
+# 安装形态来自索引版本记录的 install 字段（缺省 binary），依赖走 tree 模式
+# （见 surfboard/depsinstaller.sh）。整树软件包整棵落到 bin/{名}@{版本}/。
+mw_install_artifact "$INPUT_STR" "$DEPS_STR" "" "package"
+
+# -------------------- 输出成功 --------------------
+
+echo -e "${GREEN}🌊 Successfully installed ${MW_NAME}@${MW_VERSION}${RESET}"
+DISPLAY_DIR="${MW_TARGET_DIR/$HOME/~}"
+DISPLAY_LINK="${MW_LINK_PATH/$HOME/~}"
+echo "🌊 Binary installed to: $DISPLAY_DIR/$MW_BIN_NAME"
+echo "🌊 Link created at: $DISPLAY_LINK"
+exit 0
