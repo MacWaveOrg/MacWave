@@ -69,3 +69,6 @@ LOCAL-*
 
 # ========== 忽略配置文件 ==========
 *_config
+
+# 发版资产（scripts/build_release_assets.sh 的产物）
+release-*/
