@@ -391,15 +391,20 @@ COMMANDS = (
         takes_input=True,
         listed=True,
         summary="Print the directory MacWave is installed into",
-        usage="wave basedir [--raw]",
-        desc="Print MacWave's install root -- the base_dir in config.json, which is where the binaries, the links and the dependencies live. A path under your home directory is shown with ~. With --raw it prints the absolute path as-is and nothing else.",
+        usage="wave basedir [--raw] | wave basedir --set <path>",
+        desc="Print MacWave's install root -- the base_dir in config.json, which is where the binaries, the links and the dependencies live. A path under your home directory is shown with ~. With --raw it prints the absolute path as-is and nothing else. With --set it copies the whole tree to a new location and rewrites base_dir; that needs three typed confirmations, and every installed artifact must already be position-independent (run wave transfer --all first).",
         flags=[
             ("--raw", "Print the absolute path as-is, with no emoji or colour (for scripts)"),
+            ("--set <path>", "Move the whole install tree to <path> and update base_dir"),
+            ("-n, --dry-run", "With --set: report what would be copied and which "
+                              "config file would change, then stop"),
         ],
         examples=[
             "wave basedir",
             "wave basedir --raw",
             "cd \"$(wave basedir --raw)\"",
+            "wave basedir --set ~/apps/macwave",
+            "wave basedir --set ~/apps/macwave --dry-run",
         ],
     ),
     Command(

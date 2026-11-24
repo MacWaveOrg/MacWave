@@ -121,8 +121,8 @@ def _package_dirs(specs):
     return targets, problems
 
 
-def _all_dirs():
-    """--all：所有已装软件包 + 所有已装依赖。"""
+def all_installed_dirs():
+    """所有已装软件包 + 所有已装依赖：[(标签, 目录)]。--all 与 basedir 预检共用。"""
     targets = []
 
     if os.path.isdir(str(BIN_DIR)):
@@ -152,6 +152,22 @@ def _relative_label(path):
         return path
 
 
+def is_position_independent(artifact_dir):
+    """这个产物目录是不是已经是位置无关的形式。
+
+    用 `transfer.sh --check` 判断 —— 那是唯一的口径（同一个脚本负责改写），
+    在这里另写一份 Mach-O 解析只会和它走散。只读、不建索引。
+    """
+    code, _output = _run_transfer(["--check", str(artifact_dir), str(BASE_DIR)])
+    return code == 0
+
+
+def absolute_artifacts():
+    """还写着绝对路径的产物：[(标签, 目录)]。空列表 = 整棵树可以搬走。"""
+    return [(label, path) for label, path in all_installed_dirs()
+            if not is_position_independent(path)]
+
+
 def handle_transfer(input_string):
     """`wave transfer <package>[@<version>] [, ...]` 与 `wave transfer --all`。"""
     words = input_string.split()
@@ -172,7 +188,7 @@ def handle_transfer(input_string):
                   "combined with package names.")
             print("🌊 Use wave transfer --all, or name the packages without -a.")
             sys.exit(1)
-        targets = _all_dirs()
+        targets = all_installed_dirs()
         if not targets:
             print("🌊 No packages installed yet.")
             return 0

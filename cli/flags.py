@@ -87,7 +87,7 @@ latest = {"--all", "-a"}
 info = {"--json", "--yaml", "--toml", "--raw"}
 mirror = {"--show-password", "--hide-user", "--only-set", "--raw"}
 # basedir 的 --raw 是「只打值」，与 mirror 同义；它不接 -s/--silent（见 lib/basedir.py）
-basedir = {"--raw"}
+basedir = {"--raw", "--set", "-n", "--dry-run"}
 # list 的 --raw 是「一行一个名字、无 🌊、不对齐」（见 pkginfohelper.handle_list），
 # 给脚本吃。它同样不接 -s：-s 会把列表本身也吞掉。
 list = {"--raw"}
