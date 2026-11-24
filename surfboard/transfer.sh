@@ -291,6 +291,18 @@ is_position_independent_id() {
     esac
 }
 
+is_dylib_file() {
+    # MH_DYLIB 才是"别人会加载的库"。看 otool -hv 的 filetype 列，比扩展名可靠：
+    # libfoo.dylib.1.2.3 / libfoo.1.dylib / libfoo.dylib 都算。
+    otool -hv "$1" 2> /dev/null | awk 'NR > 1 && $5 == "DYLIB" { found = 1 } END { exit !found }'
+}
+
+needs_conda_libiconv() {
+    # 判据是**符号名**，不是文件名：`libiconv`/`libiconv_open`/`libiconv_close`
+    # 只有 conda 那一份导出；`iconv`/`iconv_open`/`iconv_close` 两组都该走系统那份。
+    nm -u "$1" 2> /dev/null | grep -qE '^_libiconv(_open|_close|_open_into)?$'
+}
+
 rpath_target_resolves() {
     # rpath_target_resolves <文件> <库文件名>：<文件> 的 LC_RPATH 里有没有一条能解析到它。
     #
@@ -404,7 +416,7 @@ while IFS= read -r file; do
     # modified 置 1 → 白重签一次，`wave transfer` 第二次跑还会报 "Relocated 1"。
     # ID 由下面那段单独处理。
     self_id=""
-    if [[ "$file" == *.dylib ]]; then
+    if is_dylib_file "$file"; then
         self_id="$(otool -D "$file" 2>/dev/null | sed -n '2p' || true)"
     fi
 
@@ -436,6 +448,11 @@ while IFS= read -r file; do
             # （transfer_test 第 4 节钉的就是这条）。
             case "$old_path" in
                 /usr/lib/libiconv.2.dylib)
+                    # 只有真的用 `libiconv*` 这组**带 lib 前缀**符号的产物才需要换。
+                    # 反过来，用 `iconv*` 的（多数包）必须留在系统那份上：conda 的
+                    # libiconv 不导出不带前缀的那组，换了就是
+                    #   Symbol not found: _iconv（2026-11-24 的 git 被我这么改坏过）。
+                    needs_conda_libiconv "$file" || continue
                     map_lookup "${old_path##*/}" || continue
                     ;;
                 *)
@@ -494,7 +511,11 @@ while IFS= read -r file; do
     # dylib 自身的 install name 也要指向实际位置。
     # 只有本来就有 LC_ID_DYLIB 的文件才改：engines/ossl-modules 里的插件是
     # MH_BUNDLE 类型，本来没有 id，install_name_tool 也设不上，硬设会每次空改一遍。
-    if [[ "$file" == *.dylib ]]; then
+    # 判据是 Mach-O 的 filetype，不是扩展名：`libfdt.dylib.1.7.2` 这种带版本号的
+    # 名字并不以 .dylib 结尾，按扩展名判断会漏掉它 —— 结果 ID 一直停在
+    # `libfdt.dylib.1`（非位置无关），`wave transfer` 每次都说它 needs transfer，
+    # 装完挪个位置又找不到库。
+    if is_dylib_file "$file"; then
         current_id="$(otool -D "$file" 2>/dev/null | sed -n '2p' || true)"
         if [[ -n "$current_id" ]] && ! is_position_independent_id "$current_id"; then
             if [[ "$CHECK_ONLY" -eq 1 ]]; then
@@ -511,6 +532,10 @@ while IFS= read -r file; do
                 if [[ "$current_id" != "$new_id" ]]; then
                     if install_name_tool -id "$new_id" "$file" 2>"$ERROR_FILE"; then
                         modified=1
+                        # 有些库把自己也当成一条依赖记着（`libfdt.dylib.1` 就是：
+                        # 它有一条引用指向自己的旧 ID）。ID 换了以后那条引用就悬空，
+                        # `wave transfer` 会一直说它 needs transfer。顺手改成新 ID。
+                        install_name_tool -change "$current_id" "$new_id" "$file" 2>/dev/null || true
                     else
                         echo "$file|(install name)|$(head -n 1 "$ERROR_FILE")" >> "$FAILED_FILE"
                     fi
