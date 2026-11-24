@@ -152,20 +152,33 @@ def _relative_label(path):
         return path
 
 
-def is_position_independent(artifact_dir):
-    """这个产物目录是不是已经是位置无关的形式。
+def position_independence(artifact_dir):
+    """True / False / None（None = 判断不了，例如没有 otool）。
 
     用 `transfer.sh --check` 判断 —— 那是唯一的口径（同一个脚本负责改写），
     在这里另写一份 Mach-O 解析只会和它走散。只读、不建索引。
+    退出码：0 = 已是相对形式，1 = 还有绝对路径，2 = 无法检查。
     """
     code, _output = _run_transfer(["--check", str(artifact_dir), str(BASE_DIR)])
-    return code == 0
+    if code == 0:
+        return True
+    if code == 1:
+        return False
+    return None
+
+
+def is_position_independent(artifact_dir):
+    return position_independence(artifact_dir) is True
 
 
 def absolute_artifacts():
-    """还写着绝对路径的产物：[(标签, 目录)]。空列表 = 整棵树可以搬走。"""
+    """还写着绝对路径的产物：[(标签, 目录)]。空列表 = 整棵树可以搬走。
+
+    「判断不了」不算在内：把未知当成"坏"，会让 `basedir --set` 在缺 otool 的环境里
+    永远拒绝搬家。
+    """
     return [(label, path) for label, path in all_installed_dirs()
-            if not is_position_independent(path)]
+            if position_independence(path) is False]
 
 
 def handle_transfer(input_string):

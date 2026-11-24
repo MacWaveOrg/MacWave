@@ -292,6 +292,11 @@ OUT=$(drive_set ok 2>&1); RC=$?
 [[ -d "$SANDBOX/newhome" ]] && pass "新树已创建" || fail "新树没建出来"
 [[ "$(config_base_dir)" == "$SANDBOX/newhome" ]] \
     && pass "config.json 的 base_dir 已更新" || fail "config.json 没更新"
+if [[ "$OUT" == *"APFS clone"* || "$OUT" == *"copied"* ]]; then
+    pass "复制方式有明确交代（APFS clone 或普通复制）"
+else
+    fail "没说清用了哪种复制方式：$(printf '%.200s' "$OUT")"
+fi
 [[ "$(config_base_dir)" != "$OLD_CONFIG" ]] && pass "确实换了值（不是空操作）" \
     || fail "base_dir 没变"
 [[ -d "$BASE" ]] && pass "旧树保留（留作退路）" || fail "旧树被删了"

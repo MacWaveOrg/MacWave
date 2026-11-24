@@ -21,6 +21,7 @@
 import json
 import os
 import shutil
+import subprocess
 import sys
 
 from configpaths import (CONFIG_FILE_NAME, find_config_dir, load_base_dir,
@@ -159,6 +160,30 @@ def _write_base_dir(new):
     return 0
 
 
+def _copy_tree(source, target):
+    """"复制整棵树"。
+
+    APFS 上先试 `cp -Rc`（clonefile：写时复制，几乎瞬间、不占第二份磁盘）；不支持
+    或被拒（非 APFS 卷、外接 HFS+、网络盘）就退回 shutil.copytree —— 行为与以前完全
+    一样，只是慢、要占双份空间。
+
+    返回 "cloned" / "copied"；失败返回 None。`cp` 失败时可能已经建了半个目录，
+    先删掉再回退，否则 copytree 会因为目标已存在而失败。
+    """
+    if sys.platform == "darwin":
+        result = subprocess.run(["cp", "-Rc", source, target],
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        if result.returncode == 0:
+            return "cloned"
+        shutil.rmtree(target, ignore_errors=True)
+
+    try:
+        shutil.copytree(source, target, symlinks=True)
+    except OSError:
+        return None
+    return "copied"
+
+
 def _human_size(total):
     for unit in ("B", "KiB", "MiB", "GiB"):
         if total < 1024 or unit == "GiB":
@@ -246,11 +271,12 @@ def _switch_base_dir_locked(argument, old, new, dry_run):
         return _error(refusal.reason, ["nothing was changed"])
 
     print(f"🌊 Copying {to_tilde(str(old))} -> {to_tilde(new)} ...")
-    try:
-        shutil.copytree(str(old), new, symlinks=True)
-    except OSError as error:
-        return _error(f"copy failed: {error}",
+    how = _copy_tree(str(old), new)
+    if how is None:
+        return _error(f"copy failed: could not create {to_tilde(new)}",
                       [f"the old tree is untouched; remove {to_tilde(new)} and retry"])
+    if how == "cloned":
+        print("🌊       used APFS clone: instant, and no second copy on disk")
 
     expected = _count_entries(str(old))
     actual = _count_entries(new)

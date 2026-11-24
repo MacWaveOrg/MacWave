@@ -65,9 +65,11 @@ fi
 
 if [[ "$CHECK_ONLY" -eq 1 ]]; then
     # 只读检查：不改字节、不重签，所以只要 otool。缺了它才真的没法判断。
+    # 退出码 2 = "判断不了"（缺 otool / 非 Darwin），与 1 = "确实有绝对路径" 区分开：
+    # `wave doctor` 要把前者报成"跳过"，而不是"这个包是坏的"。
     if ! command -v otool >/dev/null 2>&1; then
-        echo -e "${RED_BOLD}🌊 Error: 'otool' not found, cannot inspect Mach-O files.${RESET}"
-        exit 1
+        echo -e "${YELLOW}🌊 Note: 'otool' not found, cannot inspect Mach-O files.${RESET}"
+        exit 2
     fi
 else
     for tool in otool install_name_tool codesign; do
