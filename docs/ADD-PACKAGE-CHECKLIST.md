@@ -52,6 +52,24 @@ hyperfine  1.20.0  1.21.0  2.0.0
 
 ## 二、动手前必须确认的三件事
 
+### 0. GNU 项目的包一律带 `g` 前缀
+
+上游是 **GNU 项目**（`hom` 指向 `gnu.org`/`savannah.gnu.org`，`aut` 是 Free Software
+Foundation / GNU Project）的，包名与 `bin_name` 都加 `g`：`gtar` / `gpatch` / `gbash` /
+`gwget`。**不管当下是否撞车** —— 撞不撞取决于用户装的 macOS 版本，而包名一旦发布就
+不好再改。
+
+理由：系统自带的那份往往是**另一个实现**（`/usr/bin/tar` 是 bsdtar、`/usr/bin/patch`
+是 Apple 派生的旧版、`/bin/bash` 卡在 3.2），同名安装会把它们顶掉；GNU 版加个 `g`
+两边并存，这也是 Homebrew（`gtar`/`gpatch`/`gmake`）与 MacPorts（`gsed`/`gawk`）的惯例。
+
+**不是 GNU 的不要加**：`git`（自有项目，只是用 GPL）、`ffmpeg`、`tmux`、`dtc`、
+`testdisk` 都保持原名。
+
+产物通常不用重编译：把已有 Ports 二进制改名 + 重新 ad-hoc 签名即可，见
+`Ports/gnu-prefix/relabel.sh`。归档型产物还要把包内登记了原路径的元数据一起改掉
+（conda 的 `info/has_prefix`）。
+
 ### 1. `bin_name` == 用户在终端敲的命令
 
 `bin_name` 决定 `bin/` 与 `links/` 下的目录名，也决定用户敲什么。
