@@ -8,9 +8,27 @@ DIR=$(cd "$(dirname "$0")" && pwd)
 LOG="$DIR/last-run.log"
 HIST="$DIR/history.log"
 ALERT="$DIR/ALERT"
+# 部署副本可能落后于仓库：mirror-sync.sh 的默认值变过一次（KEEP_BRANCHES），
+# 旧副本因此把 4.5 的 core 树删了。这里每次跑之前先对齐，避免同类漂移。
+SRC="${MIRROR_SRC:-$DIR/../mirror-src/tools}/scripts/mirror-sync/mirror-sync.sh"
+SELF_UPDATE="$DIR/mirror-sync.sh"
 
-/bin/bash "$DIR/mirror-sync.sh" "$@" > "$LOG" 2>&1
+refresh_self() {
+    [[ -f "$SRC" ]] || return 0
+    cmp -s "$SRC" "$SELF_UPDATE" && return 0
+    /bin/bash -n "$SRC" || { echo "⚠️  $SRC 语法有问题，继续用现有副本"; return 0; }
+    cp -a "$SELF_UPDATE" "$SELF_UPDATE.bak-$(date +%Y%m%d-%H%M)"
+    cp "$SRC" "$SELF_UPDATE" && chmod +x "$SELF_UPDATE"
+    echo "🔄 已用 $SRC 更新 $(basename "$SELF_UPDATE")（旧副本已备份）"
+}
+refresh_self > "$LOG.refresh" 2>&1
+
+/bin/bash "$SELF_UPDATE" "$@" > "$LOG" 2>&1
 rc=$?
+if [[ -s "$LOG.refresh" ]]; then
+    cat "$LOG" >> "$LOG.refresh" && mv "$LOG.refresh" "$LOG"
+fi
+rm -f "$LOG.refresh"
 
 ts=$(date '+%Y-%m-%d %H:%M:%S')
 if (( rc == 0 )); then
