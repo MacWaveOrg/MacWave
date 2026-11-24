@@ -40,6 +40,10 @@ MacWave 把每个软件包装进安装根目录下、带版本号的独立目录
         绝对路径，然后重新做一次临时签名。已经是位置无关的包会被认出
         来并跳过，所以这条命令可以反复跑。被点名的包用到的依赖也会一
         起改写，否则整棵树还是搬不走。
+* doctor::	只读体检：找出已经坏了、但平时不容易发现的地方 —— 版本目录里
+        没有可执行文件、悬空的链接、装了却没链接的包、没人引用的依赖
+        树、还写着绝对路径的产物。什么都不会改动，每条发现都附上该跑
+        哪条命令；退出码是发现的问题数，可以进脚本。
 * shellenv::	打印一段把 MacWave 的目录加到 PATH 前面的 shell 代码。在
         shell 配置里 eval 一次即可；它自己什么也不改。
 * version::	打印当前安装的 MacWave 版本。
@@ -480,7 +484,7 @@ Examples:
      wave basedir --set ~/apps/macwave --dry-run
 
 
-File: wave-zh.info, Node: transfer, Next: shellenv, Prev: basedir, Up: Top
+File: wave-zh.info, Node: transfer, Next: doctor, Prev: basedir, Up: Top
 
 
 改写已装软件包的二进制里的路径引用，让它们不再写死安装目录的绝对路径，然
@@ -501,7 +505,29 @@ Examples:
      wave transfer --all --dry-run
 
 
-File: wave-zh.info, Node: shellenv, Next: version, Prev: transfer, Up: Top
+File: wave-zh.info, Node: doctor, Next: shellenv, Prev: transfer, Up: Top
+
+
+只读体检：找出已经坏了、但平时不容易发现的地方 —— 版本目录里没有可执行文
+件、悬空的链接、装了却没链接的包、没人引用的依赖树、还写着绝对路径的产物。
+什么都不会改动，每条发现都附上该跑哪条命令；退出码是发现的问题数，可以进
+脚本。
+
+  --raw
+      机器可读：每条发现一行「严重程度<TAB>检查项<TAB>说明」
+
+  --list-checks
+      列出所有检查项及其检查内容
+
+Examples:
+
+     wave doctor
+     wave doctor links
+     wave doctor --raw
+     wave doctor --list-checks
+
+
+File: wave-zh.info, Node: shellenv, Next: version, Prev: doctor, Up: Top
 
 
 打印一段把 MacWave 的目录加到 PATH 前面的 shell 代码。在 shell 配置里

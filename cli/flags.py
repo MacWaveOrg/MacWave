@@ -92,6 +92,7 @@ basedir = {"--raw", "--set", "-n", "--dry-run"}
 # 给脚本吃。它同样不接 -s：-s 会把列表本身也吞掉。
 list = {"--raw"}
 # manual 的 --color 只给手册上色；--zh 在 EARLY 里（它不参与分发）。
+doctor = {"--raw", "--list-checks"}
 manual = {"--color"}
 # reinstall 复用 install 的白名单（它最后就是调 install），只多一个 -a/--all
 reinstall = {"-a", "--all", "-F", "--force", "--raw"} | set(NO_LINK) | silent
@@ -113,6 +114,7 @@ COMMAND_FLAGS = {
     "mirror": mirror,
     "basedir": basedir,
     "list": list,
+    "doctor": doctor,
     "manual": manual,
 }
 

@@ -292,6 +292,7 @@ Commands:
   mirror      Show which address each kind of data is fetched from
   latest      Show which packages have a newer version available
   basedir     Print MacWave's install root (the base_dir in config.json)
+  doctor      Check the install tree for problems (read-only)
   shellenv    Print the shell code that puts MacWave on your PATH
   manual      Show the full manual (same text as man and info)
 

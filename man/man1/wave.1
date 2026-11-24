@@ -89,6 +89,14 @@ so the command is safe to repeat. Dependencies used by the named
 packages are transferred too, otherwise the tree still could not be
 moved.
 .TP
+.B doctor
+Look for things that are already broken but rarely noticed: a version
+directory without its executable, a dangling link, a package that was
+never linked, an orphaned dependency tree, an artifact that still names
+an absolute install path. Nothing is changed; every finding comes with
+the command that fixes it. The exit status is the number of problems
+found, so it can be used in scripts.
+.TP
 .B shellenv
 Print the shell code that prepends MacWave's directories to PATH. You
 eval it once from your shell profile; it does nothing on its own.
@@ -166,6 +174,7 @@ wave mirror
 wave latest jq
 wave basedir
 wave transfer jq
+wave doctor
 eval "$(~/.local/macwave/lib/wave shellenv)"
 wave version
 wave manual

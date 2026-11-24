@@ -1,0 +1,28 @@
+.TH WAVE-DOCTOR-ZH 1 "" "MacWave" "MacWave Manual"
+
+.SH 名称
+wave-doctor-zh \- 只读体检：找出已经坏了、但平时不容易发现的地方 —— 版本目录里没有可执行文件、悬空的链接、装了却没链接的包、没人引用的依赖树、还写着绝对路径的产物。什么都不会改动，每条发现都附上该跑哪条命令；退出码是发现的问题数，可以进脚本。
+.SH 用法
+.B wave doctor [check ...] [\-\-raw] [\-\-list\-checks]
+.SH 说明
+只读体检：找出已经坏了、但平时不容易发现的地方 —— 版本目录里没有可执行文
+件、悬空的链接、装了却没链接的包、没人引用的依赖树、还写着绝对路径的产物。
+什么都不会改动，每条发现都附上该跑哪条命令；退出码是发现的问题数，可以进
+脚本。
+.SH 选项
+.TP
+.B \-\-raw
+机器可读：每条发现一行「严重程度<TAB>检查项<TAB>说明」
+.TP
+.B \-\-list\-checks
+列出所有检查项及其检查内容
+
+.SH 示例
+.nf
+wave doctor
+wave doctor links
+wave doctor --raw
+wave doctor --list-checks
+.fi
+.SH 另见
+wave-zh(1)

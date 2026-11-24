@@ -178,6 +178,31 @@ COMMANDS = (
         ],
     ),
     Command(
+        name="doctor",
+        module="doctor",
+        handler="handle_doctor",
+        takes_input=True,
+        listed=True,
+        summary="Check the install tree for problems (read-only)",
+        usage="wave doctor [check ...] [--raw] [--list-checks]",
+        desc="Look for things that are already broken but rarely noticed: a version "
+             "directory without its executable, a dangling link, a package that was "
+             "never linked, an orphaned dependency tree, an artifact that still names an "
+             "absolute install path. Nothing is changed; every finding comes with the "
+             "command that fixes it. The exit status is the number of problems found, so "
+             "it can be used in scripts.",
+        flags=[
+            ("--raw", "Machine-readable: one 'severity<TAB>check<TAB>detail' line per finding"),
+            ("--list-checks", "List the check names and what each one looks at"),
+        ],
+        examples=[
+            "wave doctor",
+            "wave doctor links",
+            "wave doctor --raw",
+            "wave doctor --list-checks",
+        ],
+    ),
+    Command(
         name="uninstall",
         module="uninstaller",
         handler="handle_uninstall",

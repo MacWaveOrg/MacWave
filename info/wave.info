@@ -62,6 +62,13 @@ nothing is compiled on the user's machine.
         command is safe to repeat. Dependencies used by the named
         packages are transferred too, otherwise the tree still could
         not be moved.
+* doctor::	Look for things that are already broken but rarely noticed:
+        a version directory without its executable, a dangling link,
+        a package that was never linked, an orphaned dependency
+        tree, an artifact that still names an absolute install path.
+        Nothing is changed; every finding comes with the command
+        that fixes it. The exit status is the number of problems
+        found, so it can be used in scripts.
 * shellenv::	Print the shell code that prepends MacWave's directories to
         PATH. You eval it once from your shell profile; it does
         nothing on its own.
@@ -548,7 +555,7 @@ Examples:
      wave basedir --set ~/apps/macwave --dry-run
 
 
-File: wave.info, Node: transfer, Next: shellenv, Prev: basedir, Up: Top
+File: wave.info, Node: transfer, Next: doctor, Prev: basedir, Up: Top
 
 
 Rewrite the Mach-O references of already installed packages so they no
@@ -572,7 +579,32 @@ Examples:
      wave transfer --all --dry-run
 
 
-File: wave.info, Node: shellenv, Next: version, Prev: transfer, Up: Top
+File: wave.info, Node: doctor, Next: shellenv, Prev: transfer, Up: Top
+
+
+Look for things that are already broken but rarely noticed: a version
+directory without its executable, a dangling link, a package that was
+never linked, an orphaned dependency tree, an artifact that still names
+an absolute install path. Nothing is changed; every finding comes with
+the command that fixes it. The exit status is the number of problems
+found, so it can be used in scripts.
+
+  --raw
+      Machine-readable: one 'severity<TAB>check<TAB>detail' line per
+      finding
+
+  --list-checks
+      List the check names and what each one looks at
+
+Examples:
+
+     wave doctor
+     wave doctor links
+     wave doctor --raw
+     wave doctor --list-checks
+
+
+File: wave.info, Node: shellenv, Next: version, Prev: doctor, Up: Top
 
 
 Print the shell code that prepends MacWave's directories to PATH. You
