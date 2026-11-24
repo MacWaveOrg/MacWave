@@ -37,9 +37,9 @@ INFO_DIR = REPO_DIR / "info"
 # 手册里的命令顺序。与 `wave -h` 的 Commands 一段保持一致，`manual` 排在最后
 # （它是看手册的命令，本身没什么可讲的）。COMMAND_HELP 里出现而这里没列的命令
 # 会让下面 assert 直接失败 —— 加命令忘了改这里，比生成一份缺章节的手册好。
-ORDER = ["install", "upgrade", "uninstall", "list", "search", "info",
+ORDER = ["install", "upgrade", "reinstall", "uninstall", "list", "search", "info",
          "selfupdate", "link", "unlink", "linkquery", "mirror", "latest",
-         "basedir", "shellenv", "version", "manual"]
+         "basedir", "transfer", "shellenv", "version", "manual"]
 
 # 每个语言一份静态散文。放在这里而不是 help.py：这些句子只属于手册，
 # `wave -h` 里不出现，写进 help.py 只会让那个模块背着没人读的段落。

@@ -1,0 +1,30 @@
+.TH WAVE-TRANSFER 1 "" "MacWave" "MacWave Manual"
+
+.SH NAME
+wave-transfer \- Rewrite the Mach-O references of already installed packages so they no longer name an absolute install path, then ad-hoc sign them again. Packages that are already position-independent are detected and skipped, so the command is safe to repeat. Dependencies used by the named packages are transferred too, otherwise the tree still could not be moved.
+.SH SYNOPSIS
+.B wave transfer <package>[@<version>] [, ...] | wave transfer \-\-all
+.SH DESCRIPTION
+Rewrite the Mach-O references of already installed packages so they no
+longer name an absolute install path, then ad-hoc sign them again.
+Packages that are already position-independent are detected and skipped,
+so the command is safe to repeat. Dependencies used by the named
+packages are transferred too, otherwise the tree still could not be
+moved.
+.SH OPTIONS
+.TP
+.B \-a, \-\-all
+Transfer every installed package and dependency
+.TP
+.B \-n, \-\-dry\-run
+Only report which packages would be transferred
+
+.SH EXAMPLES
+.nf
+wave transfer jq
+wave transfer ffmpeg@6.1
+wave transfer jq, yq
+wave transfer --all --dry-run
+.fi
+.SH SEE ALSO
+wave(1)

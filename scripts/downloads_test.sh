@@ -71,7 +71,7 @@ echo "========== 1. 只清超过 7 天的 .partial =========="
 aged "$TMP_DIR/jq-1.8.2-arm64.tar.gz.partial" 8
 aged "$TMP_DIR/yq-2.47.1-arm64.tar.gz.partial" 6
 sweep
-[[ "$RC" -eq 0 ]] && pass "清理本身不该失败" || fail "sweep 异常退出（rc=$RC）：$(printf '%.200s' "$OUT")"
+[[ "$RC" -eq 0 ]] && pass "清理本身不该失败" || fail "sweep 异常退出（rc=${RC}）：$(printf '%.200s' "$OUT")"
 [[ ! -e "$TMP_DIR/jq-1.8.2-arm64.tar.gz.partial" ]] && pass "8 天前的 .partial 被删掉" \
     || fail "8 天前的 .partial 还在"
 [[ -e "$TMP_DIR/yq-2.47.1-arm64.tar.gz.partial" ]] && pass "6 天前的 .partial 保留（还能续传）" \
@@ -122,7 +122,7 @@ echo "========== 3. 没有 downloads/tmp 时不报错 =========="
 rm -rf "$TMP_DIR"
 sweep
 [[ "$RC" -eq 0 ]] && pass "目录不存在时安静跳过" \
-    || fail "目录不存在就报错了（rc=$RC）：$(printf '%.200s' "$OUT")"
+    || fail "目录不存在就报错了（rc=${RC}）：$(printf '%.200s' "$OUT")"
 [[ "$OUT" == *"REMOVED="* ]] && pass "返回空列表" || fail "没有返回列表"
 mkdir -p "$TMP_DIR"
 
@@ -137,7 +137,7 @@ if [[ "$(id -u)" == "0" ]]; then
     echo "      （root 无视目录权限，跳过这组）"
 else
     [[ "$RC" -eq 0 ]] && pass "删不掉不抛异常" \
-        || fail "删不掉就失败了（rc=$RC）：$(printf '%.200s' "$OUT")"
+        || fail "删不掉就失败了（rc=${RC}）：$(printf '%.200s' "$OUT")"
     [[ -e "$TMP_DIR/locked.partial" ]] && pass "删不掉的那个留着（下次再说）" \
         || fail "说删不掉却删掉了？"
 fi

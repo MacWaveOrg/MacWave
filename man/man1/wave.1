@@ -22,6 +22,13 @@ Upgrade a package to its latest version; with --all, every installed
 package. Old versions are kept — -X, --remove-old-versions removes them
 in the same run.
 .TP
+.B reinstall
+Download and install the same version again, replacing what is on disk.
+Useful when a package was rebuilt under the same version number (4.6
+relocated Mach-O files to @loader_path), when files were damaged, or to
+pin a package back to the version already installed instead of
+upgrading.
+.TP
 .B uninstall
 Uninstall a package version. Several packages can be given at once,
 separated by commas; a package may carry several @versions, or @all for
@@ -69,7 +76,18 @@ downloaded.
 Print MacWave's install root -- the base_dir in config.json, which is
 where the binaries, the links and the dependencies live. A path under
 your home directory is shown with ~. With --raw it prints the absolute
-path as-is and nothing else.
+path as-is and nothing else. With --set it copies the whole tree to a
+new location and rewrites base_dir; that needs three typed
+confirmations, and every installed artifact must already be
+position-independent (run wave transfer --all first).
+.TP
+.B transfer
+Rewrite the Mach-O references of already installed packages so they no
+longer name an absolute install path, then ad-hoc sign them again.
+Packages that are already position-independent are detected and skipped,
+so the command is safe to repeat. Dependencies used by the named
+packages are transferred too, otherwise the tree still could not be
+moved.
 .TP
 .B shellenv
 Print the shell code that prepends MacWave's directories to PATH. You
@@ -135,6 +153,7 @@ inspection or a private-CA mirror (unset = system trust store)
 .nf
 wave install jq
 wave upgrade jq
+wave reinstall jq
 wave uninstall jq
 wave list
 wave search json
@@ -146,6 +165,7 @@ wave linkquery jq
 wave mirror
 wave latest jq
 wave basedir
+wave transfer jq
 eval "$(~/.local/macwave/lib/wave shellenv)"
 wave version
 wave manual

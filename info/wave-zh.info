@@ -12,6 +12,9 @@ MacWave 把每个软件包装进安装根目录下、带版本号的独立目录
         隔，每个都可以带自己的 @版本。
 * upgrade::	把软件包升级到最新版本；使用 --all 可升级所有已装包，旧版本
         会被保留。使用 -X, --remove-old-versions 可升级同时移除旧版。
+* reinstall::	把已经装着的那个版本重新下载、重新装一遍，覆盖磁盘上的旧文件。
+        适合同一个版本号下重出过产物、文件损坏，或者想把包按回已装的
+        版本而不是升级的时候。
 * uninstall::	卸载某个包的一个版本。一次可以卸多个，用逗号分隔；同一个包可
         以用 @ 连写多个版本，或写 @all 表示它的全部版本。不带版本号
         的链接会自动退到剩下的最高版本，并在最后一个版本被卸载时一起
@@ -30,7 +33,13 @@ MacWave 把每个软件包装进安装根目录下、带版本号的独立目录
 * latest::	将本机已装的版本与索引里的最新版本比较，不下载。
 * basedir::	打印 MacWave 的安装根目录 —— 即 config.json 里的 base_dir，
         可执行文件、链接与依赖都在这棵树下。家目录下的路径写作 ~。加
-        --raw 只输出原样的绝对路径。
+        --raw 只输出原样的绝对路径。加 --set 会把整棵树搬到新位置并
+        改写base_dir：需要三次逐字确认，而且每个已装产物必须已经是位
+        置无关的（先跑 wave transfer --all）。
+* transfer::	改写已装软件包的二进制里的路径引用，让它们不再写死安装目录的
+        绝对路径，然后重新做一次临时签名。已经是位置无关的包会被认出
+        来并跳过，所以这条命令可以反复跑。被点名的包用到的依赖也会一
+        起改写，否则整棵树还是搬不走。
 * shellenv::	打印一段把 MacWave 的目录加到 PATH 前面的 shell 代码。在
         shell 配置里 eval 一次即可；它自己什么也不改。
 * version::	打印当前安装的 MacWave 版本。
@@ -140,7 +149,7 @@ Examples:
      wave install jq --max-time=1min
 
 
-File: wave-zh.info, Node: upgrade, Next: uninstall, Prev: install, Up: Top
+File: wave-zh.info, Node: upgrade, Next: reinstall, Prev: install, Up: Top
 
 
 把软件包升级到最新版本；使用 --all 可升级所有已装包，旧版本会被保留。使
@@ -190,7 +199,54 @@ Examples:
      wave upgrade jq --remove-old-versions --max-time=2min
 
 
-File: wave-zh.info, Node: uninstall, Next: list, Prev: upgrade, Up: Top
+File: wave-zh.info, Node: reinstall, Next: uninstall, Prev: upgrade, Up: Top
+
+
+把已经装着的那个版本重新下载、重新装一遍，覆盖磁盘上的旧文件。适合同一个
+版本号下重出过产物、文件损坏，或者想把包按回已装的版本而不是升级的时候。
+
+  -a, --all
+      重装所有已安装的软件包
+
+  -C, --continue
+      断点续传
+
+  --proxy <string>
+      HTTP/HTTPS 代理（例如 http://127.0.0.1:8080）
+
+  --skip-ssl
+      跳过 SSL 证书校验（不安全）
+
+  --limit-rate <string>
+      限速（例如 200K、1M、5M；不输入单位默认 B）
+
+  --max-time <string>
+      单次请求最大时长（40s、1min、1min20s、2h；不输入单位默认 s）
+
+  --connect-timeout <string>
+      握手最大时长
+
+  --content-time <string>
+      接收数据的最大时长
+
+  --no-link
+      不动此软件包不带版本号的软链接（旧写法 --unlink 仍然可用）
+
+  -F, --force
+      当前 macOS 版本低于软件包声明要求时仍继续安装
+
+  --raw
+      给日志和脚本用的输出：不带 🌊、不带颜色、进度条用井号刻度
+
+Examples:
+
+     wave reinstall jq
+     wave reinstall jq@1.8.2
+     wave reinstall jq, yq
+     wave reinstall --all
+
+
+File: wave-zh.info, Node: uninstall, Next: list, Prev: reinstall, Up: Top
 
 
 卸载某个包的一个版本。一次可以卸多个，用逗号分隔；同一个包可以用 @ 连写
@@ -398,24 +454,54 @@ Examples:
      wave latest -a --max-time=1min
 
 
-File: wave-zh.info, Node: basedir, Next: shellenv, Prev: latest, Up: Top
+File: wave-zh.info, Node: basedir, Next: transfer, Prev: latest, Up: Top
 
 
 打印 MacWave 的安装根目录 —— 即 config.json 里的 base_dir，可执行文件、
 链接与依赖都在这棵树下。家目录下的路径写作 ~。加 --raw 只输出原样的绝对
-路径。
+路径。加 --set 会把整棵树搬到新位置并改写base_dir：需要三次逐字确认，而
+且每个已装产物必须已经是位置无关的（先跑 wave transfer --all）。
 
   --raw
       输出原样的绝对路径，不带 🌊 与颜色（给脚本用）
+
+  --set <path>
+      把整棵安装树搬到 <path> 并改写 base_dir
+
+  -n, --dry-run
+      配合 --set：只报告会拷什么、会改哪个配置文件，然后停
 
 Examples:
 
      wave basedir
      wave basedir --raw
      cd "$(wave basedir --raw)"
+     wave basedir --set ~/apps/macwave
+     wave basedir --set ~/apps/macwave --dry-run
 
 
-File: wave-zh.info, Node: shellenv, Next: version, Prev: basedir, Up: Top
+File: wave-zh.info, Node: transfer, Next: shellenv, Prev: basedir, Up: Top
+
+
+改写已装软件包的二进制里的路径引用，让它们不再写死安装目录的绝对路径，然
+后重新做一次临时签名。已经是位置无关的包会被认出来并跳过，所以这条命令可
+以反复跑。被点名的包用到的依赖也会一起改写，否则整棵树还是搬不走。
+
+  -a, --all
+      改写所有已安装的软件包与依赖
+
+  -n, --dry-run
+      只报告哪些包会被改写，不动文件
+
+Examples:
+
+     wave transfer jq
+     wave transfer ffmpeg@6.1
+     wave transfer jq, yq
+     wave transfer --all --dry-run
+
+
+File: wave-zh.info, Node: shellenv, Next: version, Prev: transfer, Up: Top
 
 
 打印一段把 MacWave 的目录加到 PATH 前面的 shell 代码。在 shell 配置里

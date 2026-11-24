@@ -16,6 +16,11 @@ nothing is compiled on the user's machine.
 * upgrade::	Upgrade a package to its latest version; with --all, every
         installed package. Old versions are kept — -X,
         --remove-old-versions removes them in the same run.
+* reinstall::	Download and install the same version again, replacing what
+        is on disk. Useful when a package was rebuilt under the same
+        version number (4.6 relocated Mach-O files to @loader_path),
+        when files were damaged, or to pin a package back to the
+        version already installed instead of upgrading.
 * uninstall::	Uninstall a package version. Several packages can be given
         at once, separated by commas; a package may carry several
         @versions, or @all for every installed version. The
@@ -46,6 +51,17 @@ nothing is compiled on the user's machine.
         which is where the binaries, the links and the dependencies
         live. A path under your home directory is shown with ~. With
         --raw it prints the absolute path as-is and nothing else.
+        With --set it copies the whole tree to a new location and
+        rewrites base_dir; that needs three typed confirmations, and
+        every installed artifact must already be
+        position-independent (run wave transfer --all first).
+* transfer::	Rewrite the Mach-O references of already installed packages
+        so they no longer name an absolute install path, then ad-hoc
+        sign them again. Packages that are already
+        position-independent are detected and skipped, so the
+        command is safe to repeat. Dependencies used by the named
+        packages are transferred too, otherwise the tree still could
+        not be moved.
 * shellenv::	Print the shell code that prepends MacWave's directories to
         PATH. You eval it once from your shell profile; it does
         nothing on its own.
@@ -166,7 +182,7 @@ Examples:
      wave install jq --max-time=1min
 
 
-File: wave.info, Node: upgrade, Next: uninstall, Prev: install, Up: Top
+File: wave.info, Node: upgrade, Next: reinstall, Prev: install, Up: Top
 
 
 Upgrade a package to its latest version; with --all, every installed
@@ -221,7 +237,62 @@ Examples:
      wave upgrade jq --remove-old-versions --max-time=2min
 
 
-File: wave.info, Node: uninstall, Next: list, Prev: upgrade, Up: Top
+File: wave.info, Node: reinstall, Next: uninstall, Prev: upgrade, Up: Top
+
+
+Download and install the same version again, replacing what is on disk.
+Useful when a package was rebuilt under the same version number (4.6
+relocated Mach-O files to @loader_path), when files were damaged, or to
+pin a package back to the version already installed instead of
+upgrading.
+
+  -a, --all
+      Reinstall every installed package
+
+  -C, --continue
+      Resume an interrupted download
+
+  --proxy <string>
+      HTTP/HTTPS proxy (e.g. http://127.0.0.1:8080)
+
+  --skip-ssl
+      Skip SSL certificate verification (insecure)
+
+  --limit-rate <string>
+      Limit download speed (e.g. 200K, 1M, 5M; a bare number means
+      bytes)
+
+  --max-time <string>
+      Maximum total time for one request (40s, 1min, 1min20s, 2h; a bare
+      number means seconds)
+
+  --connect-timeout <string>
+      Maximum time for the handshake
+
+  --content-time <string>
+      Maximum time to receive data
+
+  --no-link
+      Do not touch the unversioned link (the old name --unlink still
+      works)
+
+  -F, --force
+      Install anyway when the running macOS is older than the package
+      declares
+
+  --raw
+      Plain output for logs and scripts: no emoji, no colours, ASCII
+      progress bar
+
+Examples:
+
+     wave reinstall jq
+     wave reinstall jq@1.8.2
+     wave reinstall jq, yq
+     wave reinstall --all
+
+
+File: wave.info, Node: uninstall, Next: list, Prev: reinstall, Up: Top
 
 
 Uninstall a package version. Several packages can be given at once,
@@ -446,26 +517,62 @@ Examples:
      wave latest -a --max-time=1min
 
 
-File: wave.info, Node: basedir, Next: shellenv, Prev: latest, Up: Top
+File: wave.info, Node: basedir, Next: transfer, Prev: latest, Up: Top
 
 
 Print MacWave's install root -- the base_dir in config.json, which is
 where the binaries, the links and the dependencies live. A path under
 your home directory is shown with ~. With --raw it prints the absolute
-path as-is and nothing else.
+path as-is and nothing else. With --set it copies the whole tree to a
+new location and rewrites base_dir; that needs three typed
+confirmations, and every installed artifact must already be
+position-independent (run wave transfer --all first).
 
   --raw
       Print the absolute path as-is, with no emoji or colour (for
       scripts)
+
+  --set <path>
+      Move the whole install tree to <path> and update base_dir
+
+  -n, --dry-run
+      With --set: report what would be copied and which config file
+      would change, then stop
 
 Examples:
 
      wave basedir
      wave basedir --raw
      cd "$(wave basedir --raw)"
+     wave basedir --set ~/apps/macwave
+     wave basedir --set ~/apps/macwave --dry-run
 
 
-File: wave.info, Node: shellenv, Next: version, Prev: basedir, Up: Top
+File: wave.info, Node: transfer, Next: shellenv, Prev: basedir, Up: Top
+
+
+Rewrite the Mach-O references of already installed packages so they no
+longer name an absolute install path, then ad-hoc sign them again.
+Packages that are already position-independent are detected and skipped,
+so the command is safe to repeat. Dependencies used by the named
+packages are transferred too, otherwise the tree still could not be
+moved.
+
+  -a, --all
+      Transfer every installed package and dependency
+
+  -n, --dry-run
+      Only report which packages would be transferred
+
+Examples:
+
+     wave transfer jq
+     wave transfer ffmpeg@6.1
+     wave transfer jq, yq
+     wave transfer --all --dry-run
+
+
+File: wave.info, Node: shellenv, Next: version, Prev: transfer, Up: Top
 
 
 Print the shell code that prepends MacWave's directories to PATH. You

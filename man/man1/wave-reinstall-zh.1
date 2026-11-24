@@ -1,0 +1,53 @@
+.TH WAVE-REINSTALL-ZH 1 "" "MacWave" "MacWave Manual"
+
+.SH 名称
+wave-reinstall-zh \- 把已经装着的那个版本重新下载、重新装一遍，覆盖磁盘上的旧文件。适合同一个版本号下重出过产物、文件损坏，或者想把包按回已装的版本而不是升级的时候。
+.SH 用法
+.B wave reinstall <package>[@<version>] [, ...] | wave reinstall \-\-all
+.SH 说明
+把已经装着的那个版本重新下载、重新装一遍，覆盖磁盘上的旧文件。适合同一个
+版本号下重出过产物、文件损坏，或者想把包按回已装的版本而不是升级的时候。
+.SH 选项
+.TP
+.B \-a, \-\-all
+重装所有已安装的软件包
+.TP
+.B \-C, \-\-continue
+断点续传
+.TP
+.B \-\-proxy <string>
+HTTP/HTTPS 代理（例如 http://127.0.0.1:8080）
+.TP
+.B \-\-skip\-ssl
+跳过 SSL 证书校验（不安全）
+.TP
+.B \-\-limit\-rate <string>
+限速（例如 200K、1M、5M；不输入单位默认 B）
+.TP
+.B \-\-max\-time <string>
+单次请求最大时长（40s、1min、1min20s、2h；不输入单位默认 s）
+.TP
+.B \-\-connect\-timeout <string>
+握手最大时长
+.TP
+.B \-\-content\-time <string>
+接收数据的最大时长
+.TP
+.B \-\-no\-link
+不动此软件包不带版本号的软链接（旧写法 --unlink 仍然可用）
+.TP
+.B \-F, \-\-force
+当前 macOS 版本低于软件包声明要求时仍继续安装
+.TP
+.B \-\-raw
+给日志和脚本用的输出：不带 🌊、不带颜色、进度条用井号刻度
+
+.SH 示例
+.nf
+wave reinstall jq
+wave reinstall jq@1.8.2
+wave reinstall jq, yq
+wave reinstall --all
+.fi
+.SH 另见
+wave-zh(1)

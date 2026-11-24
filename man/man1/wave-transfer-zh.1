@@ -1,0 +1,27 @@
+.TH WAVE-TRANSFER-ZH 1 "" "MacWave" "MacWave Manual"
+
+.SH 名称
+wave-transfer-zh \- 改写已装软件包的二进制里的路径引用，让它们不再写死安装目录的绝对路径，然后重新做一次临时签名。已经是位置无关的包会被认出来并跳过，所以这条命令可以反复跑。被点名的包用到的依赖也会一起改写，否则整棵树还是搬不走。
+.SH 用法
+.B wave transfer <package>[@<version>] [, ...] | wave transfer \-\-all
+.SH 说明
+改写已装软件包的二进制里的路径引用，让它们不再写死安装目录的绝对路径，然
+后重新做一次临时签名。已经是位置无关的包会被认出来并跳过，所以这条命令可
+以反复跑。被点名的包用到的依赖也会一起改写，否则整棵树还是搬不走。
+.SH 选项
+.TP
+.B \-a, \-\-all
+改写所有已安装的软件包与依赖
+.TP
+.B \-n, \-\-dry\-run
+只报告哪些包会被改写，不动文件
+
+.SH 示例
+.nf
+wave transfer jq
+wave transfer ffmpeg@6.1
+wave transfer jq, yq
+wave transfer --all --dry-run
+.fi
+.SH 另见
+wave-zh(1)

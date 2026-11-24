@@ -19,6 +19,10 @@ MacWave 把每个软件包装进安装根目录下、带版本号的独立目录
 把软件包升级到最新版本；使用 --all 可升级所有已装包，旧版本会被保留。使
 用 -X, --remove-old-versions 可升级同时移除旧版。
 .TP
+.B reinstall
+把已经装着的那个版本重新下载、重新装一遍，覆盖磁盘上的旧文件。适合同一个
+版本号下重出过产物、文件损坏，或者想把包按回已装的版本而不是升级的时候。
+.TP
 .B uninstall
 卸载某个包的一个版本。一次可以卸多个，用逗号分隔；同一个包可以用 @ 连写
 多个版本，或写 @all 表示它的全部版本。不带版本号的链接会自动退到剩下的最
@@ -56,7 +60,13 @@ MacWave 把每个软件包装进安装根目录下、带版本号的独立目录
 .B basedir
 打印 MacWave 的安装根目录 —— 即 config.json 里的 base_dir，可执行文件、
 链接与依赖都在这棵树下。家目录下的路径写作 ~。加 --raw 只输出原样的绝对
-路径。
+路径。加 --set 会把整棵树搬到新位置并改写base_dir：需要三次逐字确认，而
+且每个已装产物必须已经是位置无关的（先跑 wave transfer --all）。
+.TP
+.B transfer
+改写已装软件包的二进制里的路径引用，让它们不再写死安装目录的绝对路径，然
+后重新做一次临时签名。已经是位置无关的包会被认出来并跳过，所以这条命令可
+以反复跑。被点名的包用到的依赖也会一起改写，否则整棵树还是搬不走。
 .TP
 .B shellenv
 打印一段把 MacWave 的目录加到 PATH 前面的 shell 代码。在 shell 配置里
@@ -118,6 +128,7 @@ HTTP/HTTPS 代理（例如 http://127.0.0.1:8080）
 .nf
 wave install jq
 wave upgrade jq
+wave reinstall jq
 wave uninstall jq
 wave list
 wave search json
@@ -129,6 +140,7 @@ wave linkquery jq
 wave mirror
 wave latest jq
 wave basedir
+wave transfer jq
 eval "$(~/.local/macwave/lib/wave shellenv)"
 wave version
 wave manual

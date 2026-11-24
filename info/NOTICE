@@ -4,6 +4,10 @@ Copyright 2026 MacWave Team
 This product is licensed under the Apache License, Version 2.0.
 See the LICENSE file for the full text.
 
+Releases 1.0.0 to 4.5.2 were published under the MIT License and remain under
+it; the Apache License above applies from 4.6.0 onwards. Already published
+releases are not relicensed retroactively.
+
 MacWave installs and redistributes third-party software. Each package keeps
 its own license; the license of a package is not covered by the Apache License
 above. `wave info <package>` and the upstream project's own release notes

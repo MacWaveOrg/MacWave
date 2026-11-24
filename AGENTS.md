@@ -449,6 +449,11 @@ git push origin 4.1
   **4.6.0 起项目许可证是 Apache-2.0**（`LICENSE` + `NOTICE`，随 `info/` 一起下发到
   安装树）。许可证的变更会影响使用者手里的权利，所以它算协议变更：改许可证必须
   同时换 `AGREEMENT_ID`（官网落款日期）与 `AGREEMENT_INTRODUCED_IN`。
+  **界线在 `4.5.2` / `4.6.0` 之间，而且只向前生效**：`1.0.0`–`4.5.2` 是按 MIT 发布的，
+  继续按 MIT 算，已发布的版本不会被追溯改协议；Apache-2.0 从 `4.6.0` 开始。两份 README
+  的「License / 许可证」一节、`NOTICE` 与这里必须说同一件事 —— 三个地方各写一句不同的
+  口径，用户按哪份理解都算数，那才是真麻烦。LinuxWave 同理：`4.6.0` 起同步升到
+  Apache-2.0，界线与 MacWave 对齐（`1.0.0`–`4.5.2` 是 MIT）。
   **`install.sh` 问完也要写这个文件**（标识从装好的 `lib/selfupdate.py` 里读，不另抄一份
   日期）：不写的话「已记录你的同意」是假话，而且下一次 `wave selfupdate` 会再问一遍
 - beta：`latest.toml` 永不写 beta；装 beta 只能带
