@@ -88,16 +88,27 @@ config_path() {
 
 # -------------------- 1. 用户目录：写得了，不提权 --------------------
 
+# 4.6.1 起菜单把 /opt/macwave 排在第一（系统级共享安装），用户级是第 2 项。
+USER_OPTION=2
+
 ROOT=$(new_root user)
-out=$(dry_run "$ROOT" --dir-option=1)
+out=$(dry_run "$ROOT" --dir-option="$USER_OPTION")
 if needs_admin "$out"; then
-    fail "默认的用户级目录不该要求提权"
+    fail "用户级目录不该要求提权"
 else
-    pass "默认的用户级目录不提权"
+    pass "用户级目录不提权"
 fi
 case "$(config_path "$out")" in
     *"/.config/macwave_config/config.json") pass "用户级安装用用户配置目录" ;;
     *) fail "用户级安装的配置目录不对：$(config_path "$out")" ;;
+esac
+
+# 第 1 项（/opt/macwave）走的是系统级语义：配置必须落 /opt/macwave_config。
+# 是否提权取决于那台机器 /opt 能不能写，所以这里只钉配置位置（与权限无关）。
+out=$(dry_run "$ROOT" --dir-option=1)
+case "$(config_path "$out")" in
+    *"/opt/macwave_config/config.json") pass "第 1 项（/opt/macwave）用系统配置目录" ;;
+    *) fail "系统级安装的配置目录不对：$(config_path "$out")" ;;
 esac
 
 # -------------------- 2. $HOME 之外、但自己可写：不提权（本次修复的重点） --------------------
@@ -121,7 +132,7 @@ ROOT=$(new_root unwritable-home)
 mkdir -p "$ROOT$HOME/.local/macwave"
 RO_DIRS+=("$ROOT$HOME/.local/macwave")
 chmod 555 "$ROOT$HOME/.local/macwave"
-out=$(dry_run "$ROOT" --dir-option=1)
+out=$(dry_run "$ROOT" --dir-option="$USER_OPTION")
 if needs_admin "$out"; then
     pass "家目录内但不可写 → 要求提权（旧逻辑会漏判）"
 else
@@ -204,7 +215,7 @@ sip_run() {
     # sip_run <SIP 状态> <SSV 状态> <目标目录>
     local sip="$1" ssv="$2" target="$3" root out rc
     root=$(new_root "sip-$RANDOM$RANDOM")
-    out=$(STUB_SIP="$sip" STUB_SSV="$ssv" dry_run "$root" --dir-option="3=$target")
+    out=$(STUB_SIP="$sip" STUB_SSV="$ssv" dry_run "$root" --dir-option="$CUSTOM_OPTION=$target")
     rc=$?
     printf '%s' "$out"
     return "$rc"
