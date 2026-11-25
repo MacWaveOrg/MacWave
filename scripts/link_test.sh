@@ -100,7 +100,10 @@ cleanup() {
 }
 
 trap cleanup EXIT
-cleanup
+
+# 这里以前还有一句 `cleanup`：那是测试还跑在**真实**安装树里时留下的「先清上次
+# 残留」。现在 cleanup 会把整个沙箱删掉，紧跟在建好沙箱之后调用等于把树拆了，
+# 第 1 段就报 "No such file or directory"。沙箱本身就是 mktemp 新建的，不需要预清。
 
 echo ""
 echo "========== 1. 建不带版本号的链接 =========="

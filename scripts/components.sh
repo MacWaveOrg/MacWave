@@ -82,6 +82,9 @@ sandbox_install_tree() {
     SANDBOX_BASE="$root/opt/macwave"
     SANDBOX_CONFIG_DIR="$root/opt/macwave_config"
     mkdir -p "$SANDBOX_BASE" "$SANDBOX_CONFIG_DIR"
+    # 与 install.sh 建的那几个目录对齐：link / uninstall 之类的测试会直接往
+    # bin/、links/、downloads/tmp 里放东西，缺一个就 "No such file or directory"。
+    mkdir -p "$SANDBOX_BASE"/{bin,links,pkg,surfboard,lib,downloads/tmp}
 
     for component in $(components) $(assets); do
         [ -d "$COMPONENT_REPO/$component" ] || continue
