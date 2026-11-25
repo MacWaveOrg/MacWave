@@ -110,17 +110,27 @@ def fetch(kind, name, version, arch, fields, work):
     filename = fields.get("file")
     if not filename:
         sys.exit(f"🌊 Error: record for {name}@{version} has no file field")
-    url = f"{domain(kind)}/{name}/{stored_name(name, version, arch, filename)}"
-    out = work / filename
-    print(f"🌊 fetching {url.split('repohub.top')[-1]}")
-    if subprocess.run(["curl", "-fsSL", "--http1.1", "--retry", "3", "-o", str(out), url]).returncode:
-        sys.exit(f"🌊 Error: download failed: {url}")
-    digest = hashlib.sha256(out.read_bytes()).hexdigest()
+    stored = stored_name(name, version, arch, filename)
     expect = fields.get("sha256", "")
-    if expect and digest != expect:
-        sys.exit(f"🌊 Error: sha256 mismatch for {name}@{version}\n"
-                 f"   expected {expect}\n   got      {digest}")
-    return out, filename
+    repo = "MacWaveOrg/Bottle" if kind == "pkg" else "MacWaveOrg/Deps"
+    out = work / filename
+
+    # 镜像与 GitHub Releases 都试：刚上传的产物镜像要等一次同步才有，
+    # 而索引记录已经是新的 —— 那种情况下 sha256 会对不上，换回源地址再取一次。
+    candidates = [f"{domain(kind)}/{name}/{stored}",
+                  f"https://github.com/{repo}/releases/download/{name}/{stored}"]
+    for attempt, url in enumerate(candidates, 1):
+        print(f"🌊 fetching {url.split('repohub.top')[-1] if 'repohub.top' in url else url}")
+        if subprocess.run(["curl", "-fsSL", "--http1.1", "--retry", "3", "-o", str(out), url]).returncode:
+            continue
+        digest = hashlib.sha256(out.read_bytes()).hexdigest()
+        if not expect or digest == expect:
+            return out, filename
+        if attempt == len(candidates):
+            sys.exit(f"🌊 Error: sha256 mismatch for {name}@{version}\n"
+                     f"   expected {expect}\n   got      {digest}")
+        print("🌊 mirror copy is stale (sha256 differs); falling back to GitHub Releases")
+    sys.exit(f"🌊 Error: download failed for {name}@{version}")
 
 
 # -------------------- 解包 / 打包 --------------------

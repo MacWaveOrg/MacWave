@@ -194,10 +194,27 @@ def package_root(path, root):
 
 
 def build_index(root):
-    """basename -> [绝对路径]；同名多份时留给调用方去按"同包优先"裁决。"""
+    """basename -> [绝对路径]；同名多份时留给调用方去按"同包优先"裁决。
+
+    软链接也要进索引：conda 的 `libc++.1.dylib` 常常只是指向 `libc++.1.0.dylib`
+    的符号链接，而引用写的是链接名。只登记真实文件的话，icu / gettext 这类
+    「按名字引用兄弟依赖」的包会被判成 "not provided by staging tree"，永远重打不了
+    —— 客户端 2026-11-24 踩过同一个坑（见 docs/CI-AND-PITFALLS.md 第 4 条）。
+    """
     index = {}
     for path in iter_macho(root):
         index.setdefault(os.path.basename(path), []).append(path)
+    for dirpath, dirnames, filenames in os.walk(root):
+        for name in filenames:
+            link = os.path.join(dirpath, name)
+            if not os.path.islink(link):
+                continue
+            target = os.path.realpath(link)
+            if not os.path.exists(target):
+                continue
+            entries = index.setdefault(name, [])
+            if target not in entries:
+                entries.append(target)
     return index
 
 
