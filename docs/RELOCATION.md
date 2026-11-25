@@ -61,10 +61,37 @@ id — every reference is explicit — so the id is advisory.
 
 | Stage | Tool | Action |
 |---|---|---|
-| Build (CI) | `scripts/relocate_rpath.py <stage-dir>` | rewrite references to `@loader_path/...`, ids to `@rpath/...`, ad-hoc sign |
-| Install | `surfboard/transfer.sh` | new artifacts: **nothing**, only check `@loader_path` targets exist. Old artifacts: rewrite to absolute (4.5 behaviour) |
+| Build (CI) | `scripts/relocate_stage.sh` → `scripts/relocate_rpath.py` | rewrite references to `@loader_path/...`, ids to `@rpath/...`, ad-hoc sign, then **mark the artifact as prebuilt** |
+| Install | `surfboard/transfer.sh` | prebuilt artifacts: **nothing at all** — no rewrite, no re-sign, not even a scan. Unmarked artifacts: rewrite to relative, re-sign |
 | Migrate an old tree | `wave transfer <pkg>` / `--all` | `transfer.sh --relative`: rewrite in place, re-sign |
 | Move the tree | `wave basedir --set <path>` | copy, verify entry count, rewrite `config.json`; refuses unless everything is already relative |
+
+### 3.1 How the client knows an artifact is prebuilt
+
+Two channels, because not every payload can carry a file:
+
+| Form | Carrier | Who writes it |
+|---|---|---|
+| tree / archive payload | `_RELOCATED` file inside `<name>@<version>/` | `relocate_stage.sh`, after `relocate_rpath.py --check` passes |
+| single-file payload | `relocated: "loader_path"` in the version record | whoever publishes the index record |
+
+Both mean the same thing and produce the same client behaviour: `transfer.sh` returns
+immediately (`--check` and `--rescan` excepted, they exist to really scan), and the
+install tail does not even count the artifact in its "Checking Mach-O files" line.
+
+Trust: the payload marker is inside the bytes the index `sha256` covers, so it cannot be
+added to someone else's artifact; the record field is as trustworthy as the record
+itself, which is where the `sha256` comes from. Neither can be forged without also
+changing the checksum.
+
+Marking an **existing** bottle without republishing: run
+
+```bash
+python3 scripts/relocate_rpath.py <extracted-tree> --check     # must print OK
+```
+
+and add `relocated: "loader_path"` to the record. Rebuilding is only needed when the
+check reports references it cannot map.
 
 The build stage requires the staging tree to look like the runtime tree:
 
@@ -154,3 +181,9 @@ Related commands, side by side:
 - **Old artifacts never gain this property by themselves.** `wave reinstall <pkg>`
   fetches the build-time relocated copy; `wave transfer <pkg>` converts what is already
   installed. Both are idempotent.
+- **Payloads that come straight from upstream (conda repacks) are not prebuilt yet.**
+  Their bytes must stay identical to upstream (`Deps/README.md`: "字节原样搬运"), so they
+  carry `@rpath/<name>` + `LC_RPATH=@loader_path/../lib/`, which does not resolve once the
+  libraries live under `deps/`. The client still rewrites those at install time. Moving
+  them to build-time relocation means repacking every dep artifact (new sha256) and
+  publishing them as new versions — a data migration, not a code change.

@@ -434,6 +434,40 @@ else
     echo "  ·  跳过：夹具没能引用到系统 libiconv（before=${before_iconv}）"
 fi
 
+echo "========== 11. 构建时已重定位的产物（_RELOCATED 标记）直接跳过 =========="
+# 构建端按运行时布局算好相对路径、打完包，并在版本目录里留下 _RELOCATED 之后，
+# 客户端不该再做任何事 —— 一次 otool 都不该跑。这条断言把"跳过"钉住：
+# 既不能改写字节，也不能在 --check / --rescan 时偷懒（那两种就是要真扫）。
+MARKED="$WORK/marked"
+build_legacy "$MARKED" 7
+MPKG="$MARKED/stage/bin/bar@1.0"
+MBASE="$MARKED/stage"
+transfer --relative "$MPKG" "$MBASE"
+sum_before="$(sum_of "$MPKG/bin/bar")"
+printf '@loader_path\n' > "$MPKG/_RELOCATED"
+
+transfer "$MPKG" "$MBASE"
+[[ -z "$OUT" ]] && pass "带标记：不输出任何东西（连扫描提示都没有）" \
+    || fail "带标记却还有输出：$OUT"
+[[ "$(sum_of "$MPKG/bin/bar")" == "$sum_before" ]] \
+    && pass "带标记：一个字节都没动" || fail "带标记却改写了字节"
+
+transfer --check "$MPKG" "$MBASE"
+[[ "$RC" -eq 0 && "$OUT" == *"relative: bin/bar@1.0"* ]] \
+    && pass "--check 不认标记，照常核对（确实扫了，结论是 relative）" \
+    || fail "--check 在带标记的树上出错（rc=$RC）：$OUT"
+
+# 标记不是护身符：把引用改回绝对路径，--check 必须看得见，--rescan 必须修回来
+install_name_tool -change "$(ref_of "$MPKG/bin/bar")" \
+    "$MBASE/deps/foo/foo@1.0/lib/libfoo.dylib" "$MPKG/bin/bar" 2>/dev/null
+transfer --check "$MPKG" "$MBASE"
+[[ "$RC" -ne 0 ]] && pass "--check 能看见标记之外的绝对引用" \
+    || fail "--check 被标记骗过去了"
+transfer --relative --rescan "$MPKG" "$MBASE"
+[[ "$(ref_of "$MPKG/bin/bar")" == @loader_path/* ]] \
+    && pass "--rescan 无视标记重新重定位" \
+    || fail "--rescan 没有重新重定位：$(ref_of "$MPKG/bin/bar")"
+
 echo
 echo "=========================================="
 echo -e "🌊 Passed: $PASSED"

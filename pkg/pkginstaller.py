@@ -1244,11 +1244,20 @@ def _install_single_locked(input_string):
                  "please report it to the administrator")
 
     # 5.1 解析 deps 字段（写在版本文件里，可能多行），缺失视为无依赖
-    dep_refs = get_deps(parse_common_fields(resp.text))
+    version_fields = parse_common_fields(resp.text)
+    dep_refs = get_deps(version_fields)
+
+    # 5.1.0 「这份产物构建时就重定位好了」的声明。两种写法都认：
+    #   * 版本记录里写 relocated: "loader_path"（单文件产物没法带标记文件，
+    #     只能用这条）；
+    #   * 产物里带 _RELOCATED 标记（整树包里随之落地，见 surfboard/transfer.sh）。
+    # 声明为真时客户端**一个字节都不改**，连扫描都不做 —— 这就是「用户端不再构建」。
+    # 声明本身受两个东西保护：索引记录是信任起点，产物字节由 sha256 锁死。
+    prebuilt = (get_field(version_fields, "relocated") or "").strip() == "loader_path"
 
     # 5.1.1 安装形态：缺省 binary（只取一个可执行文件），tree 表示整树软件包。
     #       两种形态的落盘位置都是 bin/{名}@{版本}/，区别只在于整棵树是否保留。
-    install_fields = parse_common_fields(resp.text).get("install") or ["binary"]
+    install_fields = version_fields.get("install") or ["binary"]
     install_mode = install_fields[0].strip() or "binary"
     if install_mode not in ("binary", "tree"):
         steplog.fail(
@@ -1361,7 +1370,13 @@ def _install_single_locked(input_string):
     # 11. 路径替换：依赖与软件包都就位后统一做一遍
     #     （必须放最后：先装的依赖可能引用后装的依赖，提前替换会解析不到）
     steplog.begin("relocate and link")
-    transfer_installed_artifacts(target_dir)
+    if prebuilt:
+        # 构建时就重定位好的产物：本包什么都不用做。新装的依赖仍要处理，
+        # 所以照常走一遍（只处理这一轮解包落盘的那些）。
+        steplog.detail("this bottle was relocated at build time; nothing to rewrite")
+        transfer_installed_artifacts()
+    else:
+        transfer_installed_artifacts(target_dir)
 
     # 12. 把不带版本号的软链接指到刚装好的版本（--no-link 可跳过）
     if not (set(flags_module.NO_LINK) & set(input_string.split())):

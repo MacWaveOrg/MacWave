@@ -280,12 +280,21 @@ def transfer_installed_artifacts(*extra_dirs):
 
     targets = []
 
+    prebuilt = 0
     for target in list(drain_newly_installed()) + list(extra_dirs):
         path = Path(target)
-        if path not in targets:
-            targets.append(path)
+        if path in targets:
+            continue
+        # 构建时就重定位好、并带了 _RELOCATED 标记的产物：客户端无事可做。
+        # 连"要不要扫"都不用问 —— 这就是「用户端不再构建」的落点。
+        if (path / "_RELOCATED").is_file():
+            prebuilt += 1
+            continue
+        targets.append(path)
 
     if not targets:
+        if prebuilt:
+            steplog.detail(f"{prebuilt} artifact(s) were relocated at build time; nothing to do")
         return
 
     # 这一步会逐个扫描产物里的 Mach-O（依赖多时有上万文件），不打声招呼
@@ -468,8 +477,10 @@ def ensure_dependency(dep_ref, arch, config, input_string, depender, visited=Non
     install_dependency_shell(dep_name, dep_version, dep_sha256, dep_display_name,
                              target_dir, dep_refs, depender, original_filename)
 
-    # 记下来交给收尾重定位 —— 只有这一轮解包出来的目录需要（重新）重定位
-    _NEWLY_INSTALLED.append(target_dir)
+    # 记下来交给收尾重定位 —— 只有这一轮解包出来的目录需要（重新）重定位。
+    # 构建时就重定位好的依赖（版本记录写了 relocated: "loader_path"）不必再扫。
+    if (get_field(version_fields, "relocated") or "").strip() != "loader_path":
+        _NEWLY_INSTALLED.append(target_dir)
 
 
 def install_dependencies(dep_refs, arch, config, input_string, depender, visited=None):

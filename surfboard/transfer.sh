@@ -37,11 +37,13 @@ RESET='\033[0m'
 # 从任意位置取走，剩下的按位置参数解释。
 RELATIVE=0
 CHECK_ONLY=0
+RESCAN=0
 POSITIONAL=()
 for arg in "$@"; do
     case "$arg" in
         --relative|-r) RELATIVE=1 ;;
         --check) CHECK_ONLY=1 ;;
+        --rescan) RESCAN=1 ;;
         *) POSITIONAL+=("$arg") ;;
     esac
 done
@@ -52,6 +54,19 @@ BASE_DIR="${POSITIONAL[1]:-}"
 # 若每个都重建"全部依赖"的索引就是 O(n²)（实测 18 个依赖要跑 5 分钟）。
 # 调用方给一个目录，这里建一次、其余复用。
 SHARED_INDEX_DIR="${POSITIONAL[2]:-}"
+
+# -------------------- 构建时就重定位好的产物：直接跳过 --------------------
+#
+# 构建端（Ports/scripts/relocate_stage.sh）是照**运行时布局**（bin/<名>@<版本号>/、
+# deps/<名>/<名>@<版本号>/）算相对路径的，所以打包出来的瓶已经是 @loader_path
+# 形式，并在版本目录里留下 _RELOCATED 标记。这种产物在客户端没有任何要改的地方，
+# 逐个文件确认只是白花时间（git 的 164 个 Mach-O 实测 6 秒）。
+#
+# 标记可信度：索引里的 sha256 锁的是整份产物，改标记就要改校验值，改不了。
+# --check（`wave doctor` 用）与 --rescan 不跳过 —— 它们存在的意义就是真的扫一遍。
+if [[ "$CHECK_ONLY" -eq 0 && "$RESCAN" -eq 0 && -f "$TARGET_DIR/_RELOCATED" ]]; then
+    exit 0
+fi
 
 if [[ -z "$TARGET_DIR" || -z "$BASE_DIR" ]]; then
     echo -e "${RED_BOLD}🌊 Error: Missing target directory or base directory.${RESET}"
