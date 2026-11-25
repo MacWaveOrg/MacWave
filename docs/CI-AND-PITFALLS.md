@@ -360,6 +360,21 @@ mktemp "${TMPDIR:-/tmp}/macwave-write-probe.XXXXXX"
 - **Python 3.15 的 `Path.resolve()` / `re` 等没有影响本项目的行为**；
   3.15 起 UTF-8 模式默认开启（PEP 686），`argparse` 的 dest 推断有变。
 - 终端里 `gh` 会把看起来像密钥的字面量打码显示，别据此判断源码内容（用 `hexdump` 核对）。
+- **本机装开发工具（ruff、shellcheck-py）走 TUNA**：这台机器直连 pypi.org 会超时，
+  而 `MACWAVE_PIP_INDEX` 只管客户端装 `requests`/`packaging`/`rich` 那一次，管不到
+  我们自己的 `pip install`。给开发工具设 pip 自己的变量：
+
+  ```sh
+  export PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+  python3 -m pip install --quiet ruff shellcheck-py
+  ```
+
+  装上之后就能在本地跑 CI 那两条 lint，不必等 macOS runner：
+
+  ```sh
+  python3 -m ruff check $(sed -e 's/#.*//' scripts/components.txt) scripts
+  shellcheck -S warning $(find $(sed -e 's/#.*//' scripts/components.txt) -maxdepth 1 -name '*.sh') scripts/*.sh
+  ```
 
 ---
 
