@@ -431,7 +431,7 @@ if [[ "$before_iconv" == "/usr/lib/libiconv.2.dylib" ]] && \
     "$ICONV/bin/bar@1.0/bin/bar" > /dev/null 2>&1
     [[ $? -eq 0 ]] && pass "仍能运行" || fail "运行失败"
 else
-    echo "  ·  跳过：夹具没能引用到系统 libiconv（before=$before_iconv）"
+    echo "  ·  跳过：夹具没能引用到系统 libiconv（before=${before_iconv}）"
 fi
 
 echo
