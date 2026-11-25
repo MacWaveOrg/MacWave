@@ -137,10 +137,16 @@ def extract(path, dest):
         inner.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(path) as archive:
             archive.extractall(inner)
-        payload = next(p for p in inner.iterdir() if p.name.endswith(".tar.zst"))
-        rc = subprocess.run(["tar", "--zstd", "-xf", str(payload), "-C", str(dest)]).returncode
-        if rc != 0:
-            sys.exit(f"🌊 Error: cannot extract {payload.name} (needs bsdtar with zstd)")
+        # `.conda` 里有两个成员：`pkg-*.tar.zst`（真正的产物）与 `info-*.tar.zst`
+        # （包元数据）。两个都要解 —— 只解第一个会把产物解成空树，而空树「检查通过」，
+        # 于是被误判为 already-prebuilt（2026-11-26 踩过）。
+        members = sorted(p for p in inner.iterdir() if p.name.endswith(".tar.zst"))
+        if not members:
+            sys.exit(f"🌊 Error: {path.name} has no .tar.zst member")
+        for member in members:
+            rc = subprocess.run(["tar", "--zstd", "-xf", str(member), "-C", str(dest)]).returncode
+            if rc != 0:
+                sys.exit(f"🌊 Error: cannot extract {member.name} (needs bsdtar with zstd)")
         return
     shutil.copy2(path, dest / path.name)
 
