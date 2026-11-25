@@ -25,7 +25,7 @@ fi
 SANDBOX_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/format_test.XXXXXX")"
 
 trap 'rm -rf "$SANDBOX_ROOT"' EXIT
-sandbox_install_tree "$SANDBOX_ROOT" "1.0"
+sandbox_install_tree "$SANDBOX_ROOT"
 CONFIG_FILE="$SANDBOX_CONFIG_FILE"
 BASE_DIR="$SANDBOX_BASE"
 BIN_DIR="$BASE_DIR/bin"

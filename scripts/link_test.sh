@@ -25,7 +25,7 @@ fi
 # 沙箱：这个测试会真装真卸，必须在自己的树里跑。以前它读的是**真实**安装的
 # base_dir，跑一次就把现有安装改一遍（2026-11-24 的教训）。
 SANDBOX_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/link_test.XXXXXX")"
-sandbox_install_tree "$SANDBOX_ROOT" "1.0"
+sandbox_install_tree "$SANDBOX_ROOT"
 CONFIG_FILE="$SANDBOX_CONFIG_FILE"
 BASE_DIR="$SANDBOX_BASE"
 BIN_DIR="$BASE_DIR/bin"
