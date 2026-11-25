@@ -120,7 +120,7 @@ wave basedir --set "$SANDBOX/newhome" --dry-run
 [[ "$(config_base_dir)" == "$BEFORE_CONFIG" ]] \
     && pass "--dry-run 没有改 config.json" || fail "--dry-run 改了 config.json"
 
-echo "========== 3. 没有 tty：拒绝，而不是"假装确认" =========="
+echo '========== 3. 没有 tty：拒绝，而不是"假装确认" ==========='
 
 wave basedir --set "$SANDBOX/newhome"
 [[ "$RC" -eq 1 && "$OUT" == *"interactive terminal"* ]] \
@@ -271,7 +271,7 @@ wave transfer --all > /dev/null 2>&1
 OUT=$(drive_set short-sentence 2>&1); RC=$?
 [[ "$RC" -ne 0 ]] && pass "第三段没打完就回车即中止" \
     || fail "第三段不完整仍继续（rc=${RC}）"
-[[ "$OUT" == *"not complete"* ]] && pass "报出"没打完"" || fail "提示不对：$(printf '%.160s' "$OUT")"
+[[ "$OUT" == *"not complete"* ]] && pass '报出"没打完"' || fail "提示不对：$(printf '%.160s' "$OUT")"
 [[ ! -e "$SANDBOX/newhome" ]] && pass "第三段不完整没有复制" || fail "第三段不完整却复制了"
 
 # --- 5d 第三段中间打错一个字符：不前进，最终仍然成功 ---
