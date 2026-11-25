@@ -99,6 +99,19 @@ def is_position_independent(path, file_path=None):
     return False
 
 
+def is_signed(path):
+    """文件里有没有有效的代码签名。
+
+    arm64 上 dyld 拒绝加载**未签名**的 Mach-O，而症状极具误导性：它不会说
+    "unsigned"，而是把同名符号解析到系统里另一份库上，于是报
+    `Symbol not found: _libiconv`（2026-11-24 的 gwget / libidn2 就是这样）。
+    conda 的产物普遍没签名，所以「位置无关」还不够 —— 必须同时签过，
+    客户端才真的可以一步不做。
+    """
+    return subprocess.run(["codesign", "--verify", path],
+                          capture_output=True).returncode == 0
+
+
 def is_position_independent_id(value):
     """install name（LC_ID_DYLIB）是否已经就位。
 
@@ -306,18 +319,35 @@ def main(argv):
         print("🌊 Refusing to continue: every reference must resolve inside the staging tree.")
         return 1
 
+    unsigned = [path for path in iter_macho(root) if not is_signed(path)]
+
     if check_only:
-        if actions:
-            print(f"🌊 Not position-independent: {len(actions)} absolute reference(s)/identifier(s)")
-            for file_path, kind, old, _new in actions[:20]:
-                print(f"🌊   {os.path.relpath(file_path, root)}: {kind} {old}")
+        if actions or unsigned:
+            if actions:
+                print(f"🌊 Not position-independent: {len(actions)} absolute reference(s)/identifier(s)")
+                for file_path, kind, old, _new in actions[:20]:
+                    print(f"🌊   {os.path.relpath(file_path, root)}: {kind} {old}")
+            if unsigned:
+                print(f"🌊 Unsigned Mach-O: {len(unsigned)} file(s) (dyld refuses those on Apple silicon)")
+                for file_path in unsigned[:20]:
+                    print(f"🌊   {os.path.relpath(file_path, root)}")
             return 1
-        print(f"🌊 OK: all Mach-O files are position-independent ({root})")
+        print(f"🌊 OK: all Mach-O files are position-independent and signed ({root})")
         return 0
 
-    if not actions:
-        print(f"🌊 Already position-independent, nothing to do ({root})")
+    if not actions and not unsigned:
+        print(f"🌊 Already position-independent and signed, nothing to do ({root})")
         return 0
+
+    # 只差签名的那批：没有引用要改，但 arm64 上不签就不能加载
+    if unsigned and sign:
+        print(f"🌊 Signing {len(unsigned)} unsigned Mach-O file(s)")
+        for path in unsigned:
+            if not is_signed(path) and subprocess.run(
+                    ["codesign", "--force", "--sign", "-", path],
+                    capture_output=True).returncode != 0:
+                print(f"🌊 Error: codesign failed: {os.path.relpath(path, root)}")
+                return 1
 
     failures = apply_actions(actions, sign)
     for path, reason in failures:
