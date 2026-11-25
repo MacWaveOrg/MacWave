@@ -27,6 +27,7 @@ from configpaths import assert_inside, load_base_dir, require_safe_filename
 import domains
 import tls
 import silent
+import steplog
 
 
 BASE_DIR = load_base_dir()

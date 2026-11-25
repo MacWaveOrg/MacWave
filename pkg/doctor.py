@@ -19,7 +19,6 @@
 # 慢检查排在最后（逐个产物扫 Mach-O 是这里唯一的重活），让前几项先给出结论。
 
 import os
-import subprocess
 import sys
 
 from configpaths import load_base_dir

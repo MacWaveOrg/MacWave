@@ -28,7 +28,6 @@ import os
 import sys
 import termios
 import time
-import tty
 
 
 RED_BOLD = "\033[1;31m"
@@ -104,8 +103,8 @@ def require_exact_path(expected):
     _require_tty()
 
     print()
-    print(f"Now type the current install path, so it is clear which tree you are "
-          f"moving:")
+    print("Now type the current install path, so it is clear which tree you are "
+          "moving:")
     print(f"{GRAY}{expected}{RESET}   (do not copy from above: type it)")
     print("Path:")
 
