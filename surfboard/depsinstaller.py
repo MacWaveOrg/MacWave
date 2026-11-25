@@ -270,24 +270,27 @@ def transfer_installed_artifacts(*extra_dirs):
     # 否则“先装的依赖引用了后装的依赖”（例如 libidn2 → libunistring）会解析不到，
     # 留下 @rpath 引用导致运行时 dyld 加载失败。
     # 每个目录单独处理，解析时优先该产物自己的 lib/。
+    #
+    # 只处理**这一轮真的落到磁盘上**的东西：本次新装的依赖 + 调用方给的目录。
+    # 以前这里无条件把 deps/ 下所有已装依赖再扫一遍 —— 装 git 时就是「21 个产物」，
+    # 其中 20 个是几个月前就重定位好的依赖，扫它们只会花掉十几秒，一个字节都不会改
+    # （2026-11-25 实测：整步 16 秒，git 自己 9 秒，依赖 7 秒，全在空扫）。
+    # 旧依赖若真有没重定位好的（上次安装中断、或用了很老的客户端），
+    # 用 `wave transfer --all` 统一体检一次即可 —— 那才是这条路径该在的地方。
 
     targets = []
 
-    deps_root = BASE_DIR / "deps"
-    if deps_root.is_dir():
-        for owner_dir in sorted(deps_root.iterdir()):
-            if not owner_dir.is_dir():
-                continue
-            for version_dir in sorted(owner_dir.iterdir()):
-                if version_dir.is_dir():
-                    targets.append(version_dir)
+    for target in list(drain_newly_installed()) + list(extra_dirs):
+        path = Path(target)
+        if path not in targets:
+            targets.append(path)
 
-    targets.extend(extra_dirs)
+    if not targets:
+        return
 
     # 这一步会逐个扫描产物里的 Mach-O（依赖多时有上万文件），不打声招呼
     # 用户会以为卡死了。只报总进度，实际改写了几个文件由 transfer.sh 逐个报告。
-    if targets:
-        silent.say(f"🌊 Relocating Mach-O files in {len(targets)} installed artifact(s)...")
+    silent.say(f"🌊 Checking Mach-O files in {len(targets)} installed artifact(s)...")
 
     # 兜底索引目录：多个 target 共用一个，否则每个 target 都要把全部依赖树重扫
     # 一遍，target 一多就是 O(n²)。实测 18 个依赖时收尾会从几秒涨到 5 分钟。
@@ -335,6 +338,19 @@ def install_dependency_shell(dep_name, dep_version, dep_sha256, dep_display_name
 
 
 # -------------------- 依赖安装 --------------------
+
+# 这一轮真正解包落盘的依赖目录。收尾重定位只处理它们 + 软件包自己：
+# 已装的依赖在它自己那次安装收尾时就已经重定位过了，再扫一遍纯属空转。
+_NEWLY_INSTALLED = []
+
+
+def drain_newly_installed():
+    # 取走本轮装过的依赖，并清空记录（一次安装结束后不再需要）
+    global _NEWLY_INSTALLED
+    taken = list(_NEWLY_INSTALLED)
+    _NEWLY_INSTALLED = []
+    return taken
+
 
 def local_dep_refs(dep_dir):
 
@@ -451,6 +467,9 @@ def ensure_dependency(dep_ref, arch, config, input_string, depender, visited=Non
                                             dep_display_name, config, input_string)
     install_dependency_shell(dep_name, dep_version, dep_sha256, dep_display_name,
                              target_dir, dep_refs, depender, original_filename)
+
+    # 记下来交给收尾重定位 —— 只有这一轮解包出来的目录需要（重新）重定位
+    _NEWLY_INSTALLED.append(target_dir)
 
 
 def install_dependencies(dep_refs, arch, config, input_string, depender, visited=None):

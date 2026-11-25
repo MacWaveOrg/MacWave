@@ -372,14 +372,53 @@ list_macho_files() {
     # `od`/`head`：依赖树有上万文件时，光这一项的开销就超过真正的重写。
     # 与 `find -type f` 保持一致：跳过符号链接本身（链接指向的真实文件会被处理）。
     # 静态库（!<arch>）不参与运行时加载，同样被过滤掉。
+    #
+    # 每行输出 "路径<TAB>signed"，signed 顺带回答"这个文件有没有 LC_CODE_SIGNATURE"：
+    # arm64 上 dyld 拒绝加载未签名的 Mach-O，所以每个文件都要确认一次签名，
+    # 以前是逐文件 fork `codesign --verify`（一次约 40 毫秒，164 个 Mach-O 的
+    # git 光这一步就是 6 秒多），而它绝大多数时候只是在确认"本来就签好的没坏"。
+    # 没有 LC_CODE_SIGNATURE 的一定没签 → 直接补签；有的按已签处理（被改写过的
+    # 文件在下面本来就会重新签一遍）。fat 二进制各架构可能不同，标成 "?" 仍走
+    # 原来的 verify 路径，不冒进。
     local root="$1"
     python3 - "$root" <<'PY'
 import os
+import struct
 import sys
 
-MAGICS = {
-    "cffaedfe", "cefaedfe", "feedfacf", "feedface", "cafebabe", "bebafeca",
-}
+MAGICS = {"cffaedfe", "cefaedfe", "feedfacf", "feedface"}
+FAT_MAGICS = {"cafebabe", "bebafeca"}
+LC_CODE_SIGNATURE = 0x1D
+
+
+def thin_is_signed(data):
+    # 读 Mach-O 头与 load commands，找 LC_CODE_SIGNATURE 且 datasize > 0
+    if len(data) < 32:
+        return "?"
+    magic = struct.unpack_from("<I", data, 0)[0]
+    if magic in (0xFEEDFACE, 0xFEEDFACF):
+        endian, is64 = "<", magic == 0xFEEDFACF
+    elif magic in (0xCEFAEDFE, 0xCFFAEDFE):
+        endian, is64 = ">", magic == 0xCFFAEDFE
+    else:
+        return "?"
+
+    ncmds, sizeofcmds = struct.unpack_from(endian + "II", data, 16)
+    offset = 32 if is64 else 28
+    end = min(offset + sizeofcmds, len(data))
+
+    for _ in range(ncmds):
+        if offset + 8 > end:
+            break
+        cmd, cmdsize = struct.unpack_from(endian + "II", data, offset)
+        if cmdsize < 8:
+            break
+        if cmd == LC_CODE_SIGNATURE and offset + 16 <= end:
+            _dataoff, datasize = struct.unpack_from(endian + "II", data, offset + 8)
+            return "1" if datasize > 0 else "0"
+        offset += cmdsize
+    return "0"
+
 
 for dirpath, _dirnames, filenames in os.walk(sys.argv[1]):
     for name in filenames:
@@ -388,8 +427,13 @@ for dirpath, _dirnames, filenames in os.walk(sys.argv[1]):
             continue
         try:
             with open(path, "rb") as handle:
-                if handle.read(4).hex() in MAGICS:
-                    print(path)
+                head = handle.read(4)
+                magic = head.hex()
+                if magic in FAT_MAGICS:
+                    print(path + "\t?")
+                elif magic in MAGICS:
+                    handle.seek(0)
+                    print(path + "\t" + thin_is_signed(handle.read()))
         except OSError:
             continue
 PY
@@ -400,7 +444,23 @@ PY
 CHANGED=0
 SIGNED=0
 
-while IFS= read -r file; do
+# 惰性求值：只有在真要判断某条引用时才去问 filetype 与自己的 install name。
+# 绝大多数产物引用的全是系统库（git 的 164 个 Mach-O 一个例外都没有），
+# 提前求值等于每个文件白花两次 otool。
+SELF_ID=""
+SELF_ID_KNOWN=0
+
+ensure_self_id() {
+    # $1 = 当前文件；结果写进 SELF_ID
+    [[ "$SELF_ID_KNOWN" -eq 1 ]] && return 0
+    SELF_ID_KNOWN=1
+    if is_dylib_file "$1"; then
+        SELF_ID="$(otool -D "$1" 2>/dev/null | sed -n '2p' || true)"
+    fi
+    return 0
+}
+
+while IFS=$'\t' read -r file file_signed; do
     if ! otool_output="$(otool -L "$file" 2>/dev/null)"; then
         continue
     fi
@@ -415,10 +475,12 @@ while IFS= read -r file; do
     # 那条不是引用，改写它只会空转：install_name_tool 报成功、字节没变，却把
     # modified 置 1 → 白重签一次，`wave transfer` 第二次跑还会报 "Relocated 1"。
     # ID 由下面那段单独处理。
-    self_id=""
-    if is_dylib_file "$file"; then
-        self_id="$(otool -D "$file" 2>/dev/null | sed -n '2p' || true)"
-    fi
+    #
+    # 惰性求值：只有在真要判断某条引用时才去问 filetype 与 ID。绝大多数产物
+    # 引用的全是系统库（git 的 164 个 Mach-O 一个例外都没有），提前求值等于
+    # 每个文件白花两次 otool。
+    SELF_ID=""
+    SELF_ID_KNOWN=0
 
     while IFS= read -r ref_line; do
         # otool -L 里只有缩进行是库引用（首行是文件名）
@@ -426,12 +488,11 @@ while IFS= read -r file; do
             continue
         fi
 
-        old_path="$(printf '%s' "$ref_line" | awk '{print $1}')"
+        # 取这一行的第一个字段（= 依赖的路径）。用参数展开而不是
+        # `printf | awk`：git 这类树有上千条引用，每条一个 awk 就是几千次 fork。
+        old_path="${ref_line#"${ref_line%%[![:space:]]*}"}"
+        old_path="${old_path%%[[:space:]]*}"
         if [[ -z "$old_path" ]]; then
-            continue
-        fi
-
-        if [[ -n "$self_id" && "$old_path" == "$self_id" ]]; then
             continue
         fi
 
@@ -452,6 +513,12 @@ while IFS= read -r file; do
                     # 反过来，用 `iconv*` 的（多数包）必须留在系统那份上：conda 的
                     # libiconv 不导出不带前缀的那组，换了就是
                     #   Symbol not found: _iconv（2026-11-24 的 git 被我这么改坏过）。
+                    # 先排除"这一行其实是它自己的 ID"：文件自己就叫这个名字时，
+                    # 这行不是引用，换了只会空转。
+                    ensure_self_id "$file"
+                    if [[ -n "$SELF_ID" && "$old_path" == "$SELF_ID" ]]; then
+                        continue
+                    fi
                     needs_conda_libiconv "$file" || continue
                     map_lookup "${old_path##*/}" || continue
                     ;;
@@ -459,6 +526,12 @@ while IFS= read -r file; do
                     continue
                     ;;
             esac
+        else
+            # 引用不是系统库：这时才值得问一次 filetype 与自己的 ID
+            ensure_self_id "$file"
+            if [[ -n "$SELF_ID" && "$old_path" == "$SELF_ID" ]]; then
+                continue
+            fi
         fi
 
         if is_position_independent "$old_path" "$file"; then
@@ -549,16 +622,32 @@ while IFS= read -r file; do
             echo -e "${YELLOW}🌊 Warning: Failed to re-sign: $file${RESET}"
         fi
         CHANGED=$((CHANGED + 1))
-    elif [[ "$CHECK_ONLY" -eq 0 ]] && ! codesign --verify "$file" >/dev/null 2>&1; then
+    elif [[ "$CHECK_ONLY" -eq 0 ]]; then
         # 没改写 ≠ 能用。conda 的依赖库普遍**没有签名**，而 arm64 上 dyld 拒绝加载
         # 未签名的 Mach-O —— 症状是 `Symbol not found: _libiconv`，而且它会把符号
         # 解析到系统里同名的另一份库上（2026-11-24 的 gwget / libiconv 就是这样：
         # 依赖树里明明有 libiconv，dyld 却去找 /usr/lib 那份，然后找不到 `_libiconv`）。
-        # 只对这种"本来就没签名"的文件补一个 ad-hoc 签名，不动它的字节结构。
-        if codesign --force --sign - "$file" >/dev/null 2>&1; then
-            SIGNED=$((SIGNED + 1))
-        else
-            echo -e "${YELLOW}🌊 Warning: Failed to sign: $file${RESET}"
+        # 判据来自预筛选时读到的 LC_CODE_SIGNATURE，不再逐文件 fork codesign：
+        #   0 → 一定没签，直接补一个 ad-hoc 签名（不动它的字节结构）
+        #   1 → 已经签过（真被改写的文件在上面重签过了），跳过
+        #   ? → fat 二进制各架构可能不同，退回 codesign --verify 老实问一次
+        resign_needed=0
+        case "$file_signed" in
+            0) resign_needed=1 ;;
+            \?)
+                if ! codesign --verify "$file" >/dev/null 2>&1; then
+                    resign_needed=1
+                fi
+                ;;
+            *) resign_needed=0 ;;
+        esac
+
+        if [[ "$resign_needed" -eq 1 ]]; then
+            if codesign --force --sign - "$file" >/dev/null 2>&1; then
+                SIGNED=$((SIGNED + 1))
+            else
+                echo -e "${YELLOW}🌊 Warning: Failed to sign: $file${RESET}"
+            fi
         fi
     fi
 done < <(list_macho_files "$TARGET_DIR")
