@@ -455,7 +455,7 @@ transfer "$MPKG" "$MBASE"
 transfer --check "$MPKG" "$MBASE"
 [[ "$RC" -eq 0 && "$OUT" == *"relative: bin/bar@1.0"* ]] \
     && pass "--check 不认标记，照常核对（确实扫了，结论是 relative）" \
-    || fail "--check 在带标记的树上出错（rc=$RC）：$OUT"
+    || fail "--check 在带标记的树上出错（rc=${RC}）：$OUT"
 
 # 标记不是护身符：把引用改回绝对路径，--check 必须看得见，--rescan 必须修回来
 install_name_tool -change "$(ref_of "$MPKG/bin/bar")" \
