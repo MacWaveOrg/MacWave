@@ -363,18 +363,21 @@ exec "$@"
 SHIM
 chmod 755 "$WORK/bin/sudo"
 
-probe_handover() {   # probe_handover <need_sudo> <dir>
+probe_handover() {   # probe_handover <system_install> <need_sudo> <dir>
+    # 4.6.1 起「是不是系统级安装」与「这次需不需要提权」是两个变量：
+    # 前者看目录位置，后者看写探测的结果。只设 NEED_SUDO 的话函数会在第一行
+    # 就返回（SYSTEM_INSTALL 为空），什么都不下发 —— 这个测试原本就是这么挂的。
     : > "$SUDO_LOG"
     PATH="$WORK/bin:$PATH" SUDO_LOG="$SUDO_LOG" \
-        /bin/bash -c 'source /dev/stdin <<< "$1"; NEED_SUDO="$2"; CURRENT_USER="$(whoami)"; hand_over_system_install "$3"' \
-        _ "$SELF_BODY" "$1" "$2" >/dev/null 2>&1
+        /bin/bash -c 'source /dev/stdin <<< "$1"; SYSTEM_INSTALL="$2"; NEED_SUDO="$3"; CURRENT_USER="$(whoami)"; hand_over_system_install "$4"' \
+        _ "$SELF_BODY" "$1" "$2" "$3" >/dev/null 2>&1
     cat "$SUDO_LOG"
 }
 
 TARGET="$WORK/sys-level-macwave"
 mkdir -p "$TARGET/lib"
 
-CALLS=$(probe_handover true "$TARGET")
+CALLS=$(probe_handover true true "$TARGET")
 if [[ "$CALLS" == *"chown -R root:"*"$TARGET"* ]]; then
     pass "系统级：把树交给 root"
 else
@@ -391,11 +394,21 @@ else
     fail "系统级没有给目录加 setgid（组员的写入会落回他自己的主组）"
 fi
 
-CALLS=$(probe_handover false "$TARGET")
+CALLS=$(probe_handover false false "$TARGET")
 if [[ -z "$CALLS" ]]; then
     pass "用户级安装不动属主"
 else
     fail "用户级安装也动了属主（实际：${CALLS}）"
+fi
+
+# 系统级、但这棵树现在还归安装者所有（老安装，或上次迁移没做完）：即使这次
+# 不需要提权，也必须把属主收回 root —— 否则 links/ 里的二进制对该用户可写，
+# 而它会被所有用户执行。
+CALLS=$(probe_handover true false "$TARGET")
+if [[ "$CALLS" == *"chown -R root:"*"$TARGET"* ]]; then
+    pass "系统级但属主仍是普通用户：即使不需要提权也交回 root"
+else
+    fail "系统级安装被普通用户持有时没有交回 root（实际：${CALLS:-无}）"
 fi
 
 echo
