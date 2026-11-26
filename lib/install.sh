@@ -1397,10 +1397,49 @@ echo ""
 mw_say "🌊 Detected architecture: $ARCH" "🌊 检测到架构：$ARCH"
 
 # ==========================================
-# 选择安装目录（交互式 / --dir-option / --ci 默认）
+# 升级模式（selfupdate 调起来的那一次）
+# ==========================================
+#
+# `wave selfupdate` 不再自己维护一套「下载 + 迁移 + 写凭据 + 建 venv」的流程：
+# 它取目标版本的 lib/install.sh，带着下面这组变量执行本文件。于是「怎么装」只有
+# 一份实现 —— 全新安装与升级跑的是同一个脚本，区别只在几个开关。
+#
+# 为什么不是「下载一段代码去 bash」：本文件是**目标版本 tag 里的 install.sh**，
+# 与发布资产同名同源，审计时看它 + 同版本的 files.txt 就够；且它的哈希被写进
+# latest.toml（installer_sha256），selfupdate 会先校验再执行。
+#
+# 变量契约（全部可选；缺任何一个就退回旧行为，便于 4.6 的老客户端继续用旧轨）：
+#
+#   MACWAVE_SELFUPDATE=1        我在升级一棵已有的树
+#   MACWAVE_INSTALL_DIR=<路径>  装哪棵树（不猜、不问、不发散）
+#   MACWAVE_VERSION / MACWAVE_BRANCH   目标版本与分支（已存在的口子）
+#   MACWAVE_NEED_SUDO=1|0       提权结论沿用调用方的，不重新探测
+#   MACWAVE_AGREED=<协议标识>    已经同意过这一版：不再提问，直接记下
+SELFUPDATE_MODE=false
+if [[ "${MACWAVE_SELFUPDATE:-}" == "1" ]]; then
+    SELFUPDATE_MODE=true
+    if [[ -z "${MACWAVE_INSTALL_DIR:-}" ]]; then
+        echo -e "${RED_BOLD}🌊 Error: MACWAVE_SELFUPDATE=1 needs MACWAVE_INSTALL_DIR.${RESET}" >&2
+        exit 1
+    fi
+    # 路径来自调用方（也就是用户的安装树），仍要过一遍安全校验：它会参与
+    # rm -rf 与 chown。这个函数在下面「判断是否需要 sudo」一节之后才定义，所以
+    # 这里只做最基本的规范化，真正的白名单校验在 resolve 之后进行。
+    BASE_DIR="${MACWAVE_INSTALL_DIR}"
+    while [[ "$BASE_DIR" == */ && "$BASE_DIR" != "/" ]]; do
+        BASE_DIR="${BASE_DIR%/}"
+    done
+fi
+
+# ==========================================
+# 选择安装目录（交互式 / --dir-option / --ci 默认 / 升级模式）
 # ==========================================
 
-if [[ -n "$CLI_DIR_OPTION" ]]; then
+if [[ "$SELFUPDATE_MODE" == "true" ]]; then
+    # 升级：目录由调用方给，不显示菜单、不接受 --dir-option。
+    choice=""
+    mw_say "🌊 Updating the installation at $BASE_DIR" "🌊 正在更新 ${BASE_DIR} 这棵安装树"
+elif [[ -n "$CLI_DIR_OPTION" ]]; then
     choice="$CLI_DIR_OPTION"
     mw_say "🌊 Directory option: $choice (from --dir-option)" "🌊 目录选项：${choice}（来自 --dir-option）"
 elif [[ "$CLI_CI" == "true" ]]; then
@@ -1422,6 +1461,9 @@ else
     read -r choice < /dev/tty
 fi
 
+if [[ "$SELFUPDATE_MODE" == "true" ]]; then
+    :   # BASE_DIR 已经定好了
+else
 case "$choice" in
     1)
         BASE_DIR="$SYS_ROOT/opt/macwave"
@@ -1444,6 +1486,7 @@ case "$choice" in
         BASE_DIR="$SYS_ROOT/opt/macwave"
         ;;
 esac
+fi
 
 DISPLAY_DIR=$(home_to_tilde "$BASE_DIR")
 
@@ -1810,6 +1853,17 @@ mw_write_state() {
     return "$status"
 }
 
+# 升级模式下用调用方的结论：`wave selfupdate` 已经做过写探测（它自己那次就是
+# 判据），这里再探测一遍只会在「组可写的共享安装」上问一次多余的密码。
+if [[ "$SELFUPDATE_MODE" == "true" && -n "${MACWAVE_NEED_SUDO:-}" ]]; then
+    if [[ "$MACWAVE_NEED_SUDO" == "1" ]]; then
+        NEED_SUDO=true
+    else
+        NEED_SUDO=false
+    fi
+    mw_say "🌊 Privilege: $([ "$NEED_SUDO" = "true" ] && echo "administrator access (from selfupdate)" || echo "none needed (from selfupdate)")" \
+           "🌊 提权：$([ "$NEED_SUDO" = "true" ] && echo "需要管理员权限（沿用自更新判定）" || echo "不需要（沿用自更新判定）")"
+else
 # `|| var=$?` 而不是直接取 $?：set -e 下裸调一个返回非零的函数会当场退出。
 base_state=0
 mw_write_state "$BASE_DIR" || base_state=$?
@@ -1819,6 +1873,7 @@ if [[ "$base_state" -eq 0 && "$config_state" -eq 0 ]]; then
     NEED_SUDO=false
 else
     NEED_SUDO=true
+fi
 fi
 
 # 以 root 身份跑（`sudo bash install.sh`、容器里的 `--ci`）时 NEED_SUDO 为假 ——
@@ -2143,9 +2198,10 @@ STATE_FILE="$STATE_DIR/config.sh"
 # 4.7 两者都会写，读的时候树内优先（见 config/configpaths.py）。
 CONFIG_FILE="$CONFIG_DIR/config.json"
 VERSION_FILE="$CONFIG_DIR/VERSION.json"
-# 同意记录。selfupdate.py 读的就是这个文件（AGREEMENT_FILE_NAME）；
-# 这里不写的话，「已记录你的同意」是句假话，而且下次自更新会再问一遍。
-AGREEMENT_FILE="$CONFIG_DIR/AGREEMENT.json"
+# 同意记录。selfupdate.py 读的就是这个文件（AGREEMENT_FILE_NAME）。
+# 4.7 起它与状态一起放在树内 `<base>/var/`（configpaths 的 find_config_dir 优先
+# 返回那里）：外部配置目录只是 4.6 及更早的兼容位置，新写入不再去那儿。
+AGREEMENT_FILE="$STATE_DIR/AGREEMENT.json"
 
 MW_OPTIONAL_RESULT=""
 
@@ -2192,6 +2248,10 @@ trap install_failed ERR
 # 必须在第一条 mkdir 之前判断。
 TREE_PREEXISTED=0
 if [[ -d "$BASE_DIR" || -d "$CONFIG_DIR" ]]; then
+    TREE_PREEXISTED=1
+fi
+# 升级永远是在一棵已有的树上动手：失败时**绝不能**删它（那等于把用户的安装毁掉）。
+if [[ "$SELFUPDATE_MODE" == "true" ]]; then
     TREE_PREEXISTED=1
 fi
 
@@ -3061,7 +3121,14 @@ record_agreement() {
 
 echo ""
 mw_say "${YELLOW}Please read the agreement before use (see bottom of https://macwave.org).${RESET}" "${YELLOW}使用前请先阅读用户协议（见 https://macwave.org 页面底部）。${RESET}"
-if mw_dry_run; then
+if [[ "$SELFUPDATE_MODE" == "true" && -n "${MACWAVE_AGREED:-}" ]]; then
+    # 升级：调用方已经问过、也已经记下同一份协议（MACWAVE_AGREED 就是记下的标识）。
+    # 这里不再问 —— 用户刚刚在 `wave selfupdate` 里回答过；重复问一次会让人以为
+    # 「上次的同意没生效」。换协议时（标识不同）调用方不会传这个变量。
+    agreement="yes"
+    mw_say "🌊 Agreement already accepted for this version (identifier $MACWAVE_AGREED)." \
+           "🌊 这一版的协议已经接受过（标识 ${MACWAVE_AGREED}）。"
+elif mw_dry_run; then
     # 试运行不碰终端：否则 `install.sh --dry-run` 会停在协议提问上，
     # 只想看输出的人反而被卡住。真实安装仍然要求回答。
     agreement="yes"
@@ -3149,6 +3216,12 @@ if mw_dry_run; then
         echo ""
         echo -e "${SKY_BLUE}~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~${RESET}"
     fi
+elif [[ "$SELFUPDATE_MODE" == "true" ]]; then
+    # 升级：不重复「安装完成」那套说明（PATH、其他用户、管理员权限都没变），
+    # 只报一句结果。这些提示是第一次装的人要看的，升级时纯属噪音。
+    mw_say "🌊 MacWave updated to $MACWAVE_VERSION." "🌊 MacWave 已更新到 ${MACWAVE_VERSION}。"
+    mw_say "🌊 Installation directory: $DISPLAY_DIR" "🌊 安装目录：${DISPLAY_DIR}"
+    exit 0
 else
     mw_say "🌊 Installation complete!" "🌊 安装完成！"
     mw_say "🌊 MacWave installed to: $DISPLAY_DIR" "🌊 MacWave 已安装到：$DISPLAY_DIR"
