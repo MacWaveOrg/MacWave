@@ -323,3 +323,23 @@ BASE_DIR/links/                  wget@1.25.0，以及每个依赖 bin/ 下可执
 | 5 | 站点 `index.html`（`MacWaveOrg/Pages`） | 版本行的版本号 |
 
 镜像只认 configdata 声明的那一个发布分支，所以 `2.3` / `2.4` / `2.5` 这类历史分支不会被碰到。
+
+---
+
+## 十、`5.0` 分支：合并实验，**长期不发布**
+
+`5.0` 不是发布线，是「把 MacWave 与 LinuxWave 收成同一个核心」的实验分支。它可以在上面
+随便推翻、随便重写，但**不对外**。
+
+具体约定：
+
+| 项 | 约定 |
+| --- | --- |
+| `MacWaveOrg/configdata` 的 `versiondata/latest_version` | **不改**（`branch` 仍指发布线），所以镜像、自更新、官网都不会指向 `5.0` |
+| `.github/workflows/format-test.yml` 的 `on.push.branches` | **不加入 `5.0`**（否则每个实验提交都跑满 CI 矩阵）；需要时用 `workflow_dispatch` 手动跑 |
+| tag / Release | **不打** |
+| `MacWaveOrg/Selfupdate` | **不生成 `5.0` 的数据** |
+| 合并完成前 | 允许长期落后于发布线；需要时把发布线 merge 进来对齐 |
+
+判断能不能合、按什么顺序合（先让该相同的文件相同，再谈单仓库）另行记录，结论是
+**分阶段收敛，不做一次性大合并**。若最终放弃，直接删掉这个分支即可，不影响 4.x。
