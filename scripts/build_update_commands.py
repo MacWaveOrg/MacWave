@@ -173,6 +173,26 @@ def file_digests(paths, repo, ref=None):
     return digests
 
 
+def manifest_lines(paths, digests=None):
+    """生成 files.txt 的一行：`<仓库内路径> <0|1> <sha256>`（空白分隔，无 shell 语法）。
+
+    这是 4.7 起的**数据形态**清单：逻辑全在 lib/install.sh 里，这里只描述
+    「这一版的安装树应该长什么样」。与 4.6 及更早的 update_commands.sh 相比：
+
+      * 不再是可执行脚本 —— 没有人会去 bash 它，也就不存在「执行了什么」的疑问；
+      * 不再区分 full / delta —— 客户端拿本地的 sha256 与清单逐条比对，
+        只下载不一致的那些，比维护两份清单更准（手工删掉一个文件也能自愈）；
+      * 路径里的空格由 `` 转义（目前没有这种路径，但格式先定死，
+        以后加进来不必改客户端）。
+    """
+    lines = []
+    for path in paths:
+        executable = "1" if path.endswith(".sh") else "0"
+        digest = (digests or {}).get(path, "-")
+        lines.append(f"{path.replace(' ', chr(92) + ' ')} {executable} {digest}")
+    return "\n".join(lines)
+
+
 def list_lines(paths):
     """全量清单的裸路径，一行一个，给脚本里的 tree_complete() 用。
 
@@ -304,12 +324,18 @@ def main():
                         .replace("@@DELTA@@", want_lines(delta, digests)))
     args.out.chmod(0o755)
 
+    # files.txt：与上面那份同源、同时生成。install.sh 只读它，不再 bash 任何东西。
+    manifest_path = args.out.parent / "files.txt"
+    manifest_path.write_text(manifest_lines(files, digests) + "\n")
+
     print(f"🌊 {args.out}")
     print(f"   version {args.version}  branch {branch}")
     print(f"   full {len(files)} file(s), delta {len(delta)} file(s)")
     # 这一行是给 latest.toml 用的：客户端先验 latest.toml 的签名，再用这里记下的
     # 哈希确认「即将被 bash 执行的那个脚本」没被换过。
     print(f"   update_commands_sha256 = {hashlib.sha256(args.out.read_bytes()).hexdigest()}")
+    print(f"   files.txt {manifest_path}")
+    print(f"   files_sha256 = {hashlib.sha256(manifest_path.read_bytes()).hexdigest()}")
     return 0
 
 
