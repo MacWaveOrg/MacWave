@@ -106,12 +106,27 @@ def stored_name(name, version, arch, filename):
     return f"{name}@{version}.{arch}{ext}"
 
 
-def fetch(kind, name, version, arch, fields, work):
+def fetch(kind, name, version, arch, fields, work, from_upstream=False):
     filename = fields.get("file")
     if not filename:
         sys.exit(f"🌊 Error: record for {name}@{version} has no file field")
     stored = stored_name(name, version, arch, filename)
     expect = fields.get("sha256", "")
+
+    if from_upstream:
+        # 从记录里的原始 url 取（产物被重打过之后，镜像上那份已经不是上游字节了）。
+        # 这种情况没法再用记录里的 sha256 校验 —— 调用方要自己接受这个前提。
+        url = fields.get("url", "")
+        if not url:
+            sys.exit(f"🌊 Error: {name}@{version} has no url field to fetch from upstream")
+        # 用 url 里的文件名，不要用记录里的 file 字段：重打过的记录里 file 已经是
+        # <名>@<版本>.<架构>.tar.bz2，按它解包会把 .conda 当成 tar 去开。
+        out = work / url.split("/")[-1]
+        print(f"🌊 fetching upstream {url}")
+        if subprocess.run(["curl", "-fsSL", "--http1.1", "--retry", "3", "-o", str(out), url]).returncode:
+            sys.exit(f"🌊 Error: upstream download failed: {url}")
+        return out, filename
+
     repo = "MacWaveOrg/Bottle" if kind == "pkg" else "MacWaveOrg/Deps"
     out = work / filename
 
@@ -177,7 +192,7 @@ def stage_target(stage, kind, name, version):
     return stage / "deps" / name / f"{name}@{version}"
 
 
-def prepare(infosource, kind, name, version, arch, out_dir, keep):
+def prepare(infosource, kind, name, version, arch, out_dir, keep, from_upstream=False):
     work = Path(tempfile.mkdtemp(prefix=f"prepare-{name}-"))
     try:
         stage = work / "stage"
@@ -194,7 +209,8 @@ def prepare(infosource, kind, name, version, arch, out_dir, keep):
             fields = read_record(infosource, current_kind, arch, current_name, current_version)
             target = stage_target(stage, current_kind, current_name, current_version)
             target.mkdir(parents=True, exist_ok=True)
-            payload, _ = fetch(current_kind, current_name, current_version, arch, fields, work)
+            payload, _ = fetch(current_kind, current_name, current_version, arch, fields, work,
+                               from_upstream=from_upstream and key == (kind, name, version))
             extract(payload, target)
             for ref in dep_list(fields):
                 dep_name, _, dep_version = ref.partition("@")
@@ -239,12 +255,14 @@ def main():
     parser.add_argument("--infosource", default=str(DEFAULT_INFOSOURCE))
     parser.add_argument("--out", default=str(Path.cwd() / "prebuilt"))
     parser.add_argument("--keep", action="store_true", help="keep the staging tree for inspection")
+    parser.add_argument("--from-upstream", action="store_true",
+                        help="fetch the record's url instead of the mirror (use when the published copy was already rebuilt)")
     args = parser.parse_args()
 
     if not RELOCATE.is_file():
         sys.exit(f"🌊 Error: {RELOCATE} not found")
     prepare(Path(args.infosource), args.kind, args.name, args.version,
-            args.arch, Path(args.out), args.keep)
+            args.arch, Path(args.out), args.keep, args.from_upstream)
 
 
 if __name__ == "__main__":

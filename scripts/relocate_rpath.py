@@ -204,17 +204,20 @@ def build_index(root):
     index = {}
     for path in iter_macho(root):
         index.setdefault(os.path.basename(path), []).append(path)
-    for dirpath, dirnames, filenames in os.walk(root):
+    for dirpath, _dirnames, filenames in os.walk(root):
         for name in filenames:
             link = os.path.join(dirpath, name)
             if not os.path.islink(link):
                 continue
-            target = os.path.realpath(link)
-            if not os.path.exists(target):
+            if not os.path.exists(link):
                 continue
+            # 登记**链接自身的路径**，不要 realpath：realpath 会把 /var 展开成
+            # /private/var（macOS），算出来的相对路径于是跑到 stage 外面去，
+            # 生成的 @loader_path/../../../../../../private/var/... 在用户机上
+            # 根本不存在（2026-11-26 的 btop 就是这样装完 134 的）。
             entries = index.setdefault(name, [])
-            if target not in entries:
-                entries.append(target)
+            if link not in entries:
+                entries.append(link)
     return index
 
 
@@ -273,6 +276,10 @@ def plan(root, index):
                 continue
 
             rel = os.path.relpath(target, dir_name)
+            landed = os.path.normpath(os.path.join(dir_name, rel))
+            if os.path.commonpath([os.path.abspath(landed), root]) != os.path.abspath(root):
+                problems.append((path, f"resolved path escapes the staging tree: {ref} -> {landed}"))
+                continue
             actions.append((path, "change", ref, "@loader_path/" + rel))
 
         if current_id and not is_position_independent_id(current_id):
