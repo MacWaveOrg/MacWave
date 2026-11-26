@@ -601,6 +601,40 @@ else
 fi
 
 echo
+echo "========== 11. 旧版外部配置目录的清理顺序（install.sh）=========="
+
+# 4.7 把状态搬进 <base>/var/，旧的外部配置目录（/opt/macwave_config、
+# ~/.config/macwave_config）要清理掉。顺序只有一种正确写法：
+#
+#   判定 → 写 var/config.sh → 写版本凭据（最后还写了一次外部 VERSION.json）→ 删除
+#
+# 反过来（先删再写）的后果是 tee 落到一个不存在的目录、安装当场失败；而「判定
+# 排在 var/config.sh 之前」则永远判出 none —— 两种都不会崩在明显的报错上，
+# 所以把顺序钉成断言。
+SETTLE="$REPO_DIR/lib/install.sh"
+DECIDE_LINE=$(grep -n 'LEGACY_CONFIG_ACTION="$(mw_legacy_config_action' "$SETTLE" | head -1 | cut -d: -f1)
+STATE_LINE=$(grep -n "^run_cmd tee \"\$STATE_FILE\"" "$SETTLE" | head -1 | cut -d: -f1)
+VERSION_LINE=$(grep -n "^    run_cmd tee \"\$VERSION_FILE\"" "$SETTLE" | head -1 | cut -d: -f1)
+DELETE_LINE=$(grep -n 'for _legacy_file in "\$CONFIG_FILE" "\$VERSION_FILE"' "$SETTLE" | head -1 | cut -d: -f1)
+
+if [[ -n "$DECIDE_LINE" && -n "$STATE_LINE" && -n "$VERSION_LINE" && -n "$DELETE_LINE" \
+      && "$STATE_LINE" -lt "$DECIDE_LINE" && "$DECIDE_LINE" -lt "$VERSION_LINE" \
+      && "$VERSION_LINE" -lt "$DELETE_LINE" ]]; then
+    pass "顺序正确：写状态 → 判定 → 写版本凭据 → 删除旧目录"
+else
+    fail "顺序不对（state=${STATE_LINE:-?} decide=${DECIDE_LINE:-?} version=${VERSION_LINE:-?} delete=${DELETE_LINE:-?}）"
+fi
+
+# 判定必须在「清理旧版（2.1.0）平铺 bin」之后 —— 那一段之后不再有别的目录动作，
+# 也是用户要求的归置位置：三件「旧版清理」放在一起。
+LEGACY_BINS_LINE=$(grep -n '请重新安装软件包\|Please reinstall the packages' "$SETTLE" | head -1 | cut -d: -f1)
+if [[ -n "$LEGACY_BINS_LINE" && -n "$DECIDE_LINE" && "$LEGACY_BINS_LINE" -lt "$DECIDE_LINE" ]]; then
+    pass "判定排在 2.1.0 平铺 bin 清理之后"
+else
+    fail "判定没有跟在 2.1.0 清理之后（bins=${LEGACY_BINS_LINE:-?} decide=${DECIDE_LINE:-?}）"
+fi
+
+echo
 echo "=========================================="
 echo -e "🌊 Passed: $PASSED"
 echo -e "🌊 Failed: $FAILED"

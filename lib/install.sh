@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # bash 3.2 (macOS)
-# 本文件最近一次更新于：2026-11-19
+# 本文件最近一次更新于：2026-11-26
 
 # MacWave 🌊 Official Installer
 # This script downloads wave.py, installs dependencies, and configures PATH.
@@ -2055,10 +2055,28 @@ fi
 # 写入配置文件
 # ==========================================
 
+# 这份外部 config.json 只对 **4.6 及更早的客户端**有意义（它们不知道树内 var/）。
+# 全新安装时本文件由这里建出来，收尾时不该被当成「旧版残留」删掉 —— 那份判断要
+# 看「装之前它在不在」，所以先记下来。升级（4.6 → 4.7）时它本来就在，届时才会
+# 被清理。
+LEGACY_CONFIG_PREEXISTED=0
+[[ -f "$CONFIG_FILE" ]] && LEGACY_CONFIG_PREEXISTED=1
+
 run_cmd tee "$CONFIG_FILE" > /dev/null << EOF
 {
   "base_dir": "$BASE_DIR"
 }
+EOF
+
+# 树内状态先落一份**只有 base_dir** 的：后面「清理旧版外部配置目录」那一步
+# 只有在 var/config.sh 已经存在时才允许动手（否则等于把这棵树的位置信息删了）。
+# 版本号故意不在这里写 —— 它是「装好了」的凭据，必须等文件真的下完，
+# 理由与 VERSION.json 完全相同，见下面「写入版本凭据」一节。
+run_cmd tee "$STATE_FILE" > /dev/null << EOF
+# MacWave state file —— 由 install.sh / selfupdate.sh 生成，会被覆盖。
+# 不要手工编辑：base_dir 与版本号都在这里，改错了 wave 就找不到自己的安装树。
+# 用 `wave basedir --set` 加新路径来搬树，用 `wave selfupdate` 升级。
+MACWAVE_BASE_DIR='$BASE_DIR'
 EOF
 
 # VERSION.json 故意**不**在这里写。它是「装好了」的凭据，必须等文件真的下完
@@ -2116,6 +2134,68 @@ if [[ -n "$LEGACY_BINS" ]]; then
     done <<< "$LEGACY_BINS"
     echo -e "${YELLOW}🌊 ${BRANCH} keeps packages in bin/{name}@{version}/ directories.${RESET}"
     echo -e "${YELLOW}🌊 Please reinstall the packages: wave install {name}${RESET}"
+fi
+
+# ==========================================
+# 迁移：清理旧版外部配置目录（4.7）—— 判定处
+# ==========================================
+#
+# 4.6 及更早把两样东西放在安装树**外面**：
+#
+#   /opt/macwave_config/{config.json,VERSION.json}        系统级安装
+#   ~/.config/macwave_config/{config.json,VERSION.json}   用户级安装
+#
+# 两样都搬进树里（<base>/var/）之后，这个目录没有存在意义了，而且是个隐患：
+#
+#   * config.json 里的 base_dir 指向一棵可能已经删掉的树。uninstall.sh 与
+#     wave selfupdate 都要先读它再判断，读到一个过期路径就会说「没装」，
+#     而实际上树好好的；
+#   * 同一台机器有两份安装时，只能靠「系统级优先」这条规则猜该用哪份，
+#     猜错的后果是命令跑到另一棵树上。
+#
+# **判据不在这里**：`mw_legacy_config_action` 的正文来自
+# scripts/shared/legacy_config_action.sh，同一个函数在 install.sh /
+# selfupdate.sh / update_commands.template.sh 三处逐字节一致，由
+# scripts/check_shared_blocks.py 在 CI 里盯着。这里只负责执行它给出的结论。
+
+# >>> SHARED: legacy-config-action
+mw_legacy_config_action() {
+    local base_dir="$1" state_file="$2" legacy_dir="$3"
+
+    [[ -n "$state_file" && -f "$state_file" ]] || { printf 'none\n'; return 0; }
+    [[ -n "$legacy_dir" && -f "$legacy_dir/config.json" ]] || { printf 'none\n'; return 0; }
+
+    local recorded
+    recorded="$(python3 -c 'import json,sys
+try:
+    print(json.load(open(sys.argv[1])).get("base_dir", "") or "")
+except Exception:
+    print("")' "$legacy_dir/config.json" 2>/dev/null)"
+
+    if [[ -z "$recorded" ]]; then
+        printf 'none\n'
+        return 0
+    fi
+    if [[ "$recorded" == "$base_dir" ]]; then
+        printf 'clear\n'
+    else
+        printf 'other:%s\n' "$recorded"
+    fi
+}
+# <<< SHARED
+
+# 这里只做**判定**，不删。原因：本次安装稍后还要往这个目录写 VERSION.json
+# （4.6 及更早的客户端靠它判断装没装好，见「写入版本凭据」一节），现在删掉，
+# 那边 tee 会因为目录不存在而失败。所以结论存进 LEGACY_CONFIG_ACTION，
+# 真正动手放在版本凭据写完之后（见「清理旧版外部配置目录」一节的收尾）。
+#
+# 判定本身不需要等待：它依赖的 var/config.sh 在「写入配置文件」那一节就已经
+# 落了 base_dir（版本号那时候还没有，判定也用不到）。
+LEGACY_CONFIG_ACTION="skip"
+if ! mw_dry_run && [[ "$LEGACY_CONFIG_PREEXISTED" == "1" ]]; then
+    # 只清理「本来就有」的那一份：全新安装时这个文件是本次刚写出来给 4.6 客户端
+    # 看的，删掉它没有意义（而且会让收尾的 VERSION.json 落到一个不存在的目录里）。
+    LEGACY_CONFIG_ACTION="$(mw_legacy_config_action "$BASE_DIR" "$STATE_FILE" "$CONFIG_DIR")"
 fi
 
 # ==========================================
@@ -2187,7 +2267,9 @@ $( [[ -n "$BUILD_NUMBER" ]] && printf '  "build_number": "%s",\n' "$BUILD_NUMBER
 EOF
     run_cmd chmod "$(config_file_mode)" "$VERSION_FILE"
 
-    # 树内状态（4.7 起的唯一来源）。用 .sh 而不是 JSON 的理由见
+    # 树内状态：这里覆盖写完整的一份（base_dir + 版本号）。base_dir 在「写入配置
+    # 文件」那一节已经写过一次 —— 那次是为了让「清理旧版外部配置目录」有依据，
+    # 这次补上版本号，才是「装好了」的凭据。用 .sh 而不是 JSON 的理由见
     # config/configpaths.py 里 STATE_FILE_NAME 那段注释：shell 写它是一行 heredoc。
     #
     # MACWAVE_INSTALLED_AT 只给人看（排查「这台机器什么时候装的」），代码不读它。
@@ -2208,66 +2290,16 @@ EOF
     fi
     # 4.6 及更早的客户端只认这个文件；留着它，「装完 4.7 又回退到 4.6」才走得通。
     mw_say "🌊 Version saved to $VERSION_FILE" "🌊 版本信息已保存到 $VERSION_FILE"
-fi
 
-# ==========================================
-# 迁移：清理旧版外部配置目录（4.7）
-# ==========================================
-#
-# 4.6 及更早把两样东西放在安装树**外面**：
-#
-#   /opt/macwave_config/{config.json,VERSION.json}        系统级安装
-#   ~/.config/macwave_config/{config.json,VERSION.json}   用户级安装
-#
-# 两样都搬进树里（<base>/var/）之后，这个目录没有存在意义了，而且是个隐患：
-#
-#   * config.json 里的 base_dir 指向一棵可能已经删掉的树。uninstall.sh 与
-#     wave selfupdate 都要先读它再判断，读到一个过期路径就会说「没装」，
-#     而实际上树好好的；
-#   * 同一台机器有两份安装时，只能靠「系统级优先」这条规则猜该用哪份，
-#     猜错的后果是命令跑到另一棵树上。
-#
-# **判据不在这里**：`mw_legacy_config_action` 的正文来自
-# scripts/shared/legacy_config_action.sh，同一个函数在 install.sh /
-# selfupdate.sh / update_commands.template.sh 三处逐字节一致，由
-# scripts/check_shared_blocks.py 在 CI 里盯着。这里只负责执行它给出的结论。
-
-# >>> SHARED: legacy-config-action
-mw_legacy_config_action() {
-    local base_dir="$1" state_file="$2" legacy_dir="$3"
-
-    [[ -n "$state_file" && -f "$state_file" ]] || { printf 'none\n'; return 0; }
-    [[ -n "$legacy_dir" && -f "$legacy_dir/config.json" ]] || { printf 'none\n'; return 0; }
-
-    local recorded
-    recorded="$(python3 -c 'import json,sys
-try:
-    print(json.load(open(sys.argv[1])).get("base_dir", "") or "")
-except Exception:
-    print("")' "$legacy_dir/config.json" 2>/dev/null)"
-
-    if [[ -z "$recorded" ]]; then
-        printf 'none\n'
-        return 0
-    fi
-    if [[ "$recorded" == "$base_dir" ]]; then
-        printf 'clear\n'
-    else
-        printf 'other:%s\n' "$recorded"
-    fi
-}
-# <<< SHARED
-
-if ! mw_dry_run; then
-    _legacy_action="$(mw_legacy_config_action "$BASE_DIR" "$STATE_FILE" "$CONFIG_DIR")"
-    case "$_legacy_action" in
-        none)
-            :   # 没有旧配置，或旧配置已经不存在
-            ;;
-        other:*)
-            mw_say "🌊 Keeping $CONFIG_DIR: it points at another installation (${_legacy_action#other:})." \
-                   "🌊 保留 ${CONFIG_DIR}：它指向另一份安装（${_legacy_action#other:}）。"
-            ;;
+    # ==========================================
+    # 清理旧版外部配置目录（4.7）—— 执行处
+    # ==========================================
+    #
+    # 判定在「清理旧版（2.1.0）遗留的平铺 bin/ 文件」那一节之后做完
+    # （LEGACY_CONFIG_ACTION），这里才动手：上面最后一次写 VERSION.json 就在
+    # 这个目录里，删早了那边会失败。这也是本文件里最后一件碰 CONFIG_DIR 的事，
+    # 排在它后面才算安全。
+    case "$LEGACY_CONFIG_ACTION" in
         clear)
             for _legacy_file in "$CONFIG_FILE" "$VERSION_FILE" "$CONFIG_DIR/AGREEMENT.json"; do
                 [[ -f "$_legacy_file" ]] && run_cmd rm -f "$_legacy_file"
@@ -2280,6 +2312,13 @@ if ! mw_dry_run; then
                 mw_say "🌊 Cleared the MacWave files in $CONFIG_DIR; kept the directory itself (it holds other files)." \
                        "🌊 已清掉 ${CONFIG_DIR} 里的 MacWave 文件；目录里还有其它文件，所以目录本身保留。"
             fi
+            ;;
+        other:*)
+            mw_say "🌊 Keeping $CONFIG_DIR: it points at another installation (${LEGACY_CONFIG_ACTION#other:})." \
+                   "🌊 保留 ${CONFIG_DIR}：它指向另一份安装（${LEGACY_CONFIG_ACTION#other:}）。"
+            ;;
+        *)
+            :
             ;;
     esac
 fi
