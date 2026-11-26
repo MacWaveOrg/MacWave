@@ -1,3 +1,20 @@
+> # 🚚 This repository is archived — MacWave is now **Summerwave**
+>
+> **New home: <https://github.com/SummerwaveOrg/Summerwave>**
+> **Website: <https://summerwaveorg.github.io/>** *(will move to a dedicated domain later; this
+> notice will be updated when it does)*
+>
+> - **Existing 4.x installs keep working.** `wave`, `wave install` and `wave selfupdate` are
+>   unaffected — you do not need to do anything, and this repository stays readable and its
+>   releases stay downloadable.
+> - **New installs, issues and pull requests go to the new repository.** This one is read-only:
+>   no pushes, no issues, no pull requests.
+> - Summerwave merges MacWave and LinuxWave into one codebase, one release line and one data
+>   layout. The 4.x line ends at 4.6.x; security fixes, if any are ever needed, would be cut
+>   here after a temporary unarchive.
+
+---
+
 ## 🌊 MacWave
 
 A package manager for macOS software developers.
