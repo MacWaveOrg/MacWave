@@ -1,3 +1,16 @@
+> # 🚚 本仓库已归档 —— MacWave 现在是 **Summerwave**
+>
+> **新仓库：<https://github.com/SummerwaveOrg/Summerwave>**
+> **官网：<https://summerwaveorg.github.io/>**（将来会换成自有域名，届时更新这条公告）
+>
+> - **已装 4.x 的机器继续可用。** `wave`、`wave install`、`wave selfupdate` 都不受影响，
+>   不需要做任何操作；本仓库仍然可读，Release 也仍然可下载。
+> - **新安装、issue、PR 请到新仓库。** 这里是只读的：不能推送、不能提 issue、不能提 PR。
+> - Summerwave 把 MacWave 与 LinuxWave 合成一个代码库、一条发布线、一套数据布局。
+>   4.x 停在 4.6.x；万一将来需要安全补丁，会临时解除归档在这里发。
+
+---
+
 ## 🌊 MacWave
 
 面向 macOS 软件开发者的包管理器。
