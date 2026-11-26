@@ -293,6 +293,14 @@ jobs:
         run: |
           /bin/bash scripts/markdown_test.sh
 
+      # 三个「被 curl 下来直接执行」的脚本各带一份共享代码块（它们没法 source
+      # 同一份文件）。副本会漂移，而漂移的后果是「某一条路径上少了半句判断」——
+      # 不崩溃、只在那条路径上出错。正本在 scripts/shared/，这里逐字节比对；
+      # 这个测试同时验证「不一致时真的会红」。
+      - name: Check shared code blocks are in sync
+        run: |
+          /bin/bash scripts/shared_blocks_test.sh
+
       # 静态检查：配置在 pyproject.toml 与 .shellcheckrc 里。
       # 只装工具、不自动修 —— CI 的职责是「报告」，改动应当由人提交。
       - name: Lint Python

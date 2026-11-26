@@ -892,8 +892,13 @@ PYEOF
     fi
     rm -f "$LOG_FILE"
 
-    # VERSION.json 必须变成目标版本号（这一步同时证明 selfupdate.sh 真的跑过）
-    if [[ "$(python3 -c "import json; print(json.load(open('$VERSION_FILE'))['version'])")" == "$TARGET" ]]; then
+    # VERSION.json 必须变成目标版本号（这一步同时证明 selfupdate.sh 真的跑过）。
+    # 4.7 起它跟着状态一起搬进树内 `<base>/var/`，所以两个位置都要看。
+    CHECKED_VERSION_FILE="$VERSION_FILE"
+    if [[ -f "$SANDBOX_BASE/var/VERSION.json" ]]; then
+        CHECKED_VERSION_FILE="$SANDBOX_BASE/var/VERSION.json"
+    fi
+    if [[ "$(python3 -c "import json; print(json.load(open('$CHECKED_VERSION_FILE'))['version'])")" == "$TARGET" ]]; then
         echo -e "${GREEN}🌊 OK: end-to-end selfupdate ($INSTALLED -> $TARGET)${RESET}"
     else
         echo -e "${RED_BOLD}🌊 FAIL: VERSION.json was not updated to $TARGET${RESET}"
@@ -909,7 +914,25 @@ fi
 
 echo "========== every listed file landed =========="
 
-BASE_DIR=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE'))['base_dir'])")
+# 4.7 起自更新会把状态搬进树内 `var/config.sh`，并清掉外部 config.json ——
+# 所以这里要先看树内那份，再退回旧路径（测的就是「迁移之后还能找到树」）。
+BASE_DIR=""
+if [[ -f "$SANDBOX_BASE/var/config.sh" ]]; then
+    BASE_DIR=$(sed -n "s/^MACWAVE_BASE_DIR='\\(.*\\)'$/\\1/p" "$SANDBOX_BASE/var/config.sh" | head -n 1)
+fi
+if [[ -z "$BASE_DIR" ]]; then
+    BASE_DIR=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE'))['base_dir'])")
+fi
+if [[ "$BASE_DIR" != "$SANDBOX_BASE" ]]; then
+    echo -e "${RED_BOLD}🌊 FAIL: selfupdate did not record the install root (got '$BASE_DIR')${RESET}"
+    FAILED=$((FAILED + 1))
+fi
+if [[ -f "$SANDBOX_BASE/var/config.sh" ]] && [[ ! -e "$CONFIG_DIR/config.json" ]]; then
+    echo -e "${GREEN}🌊 OK: legacy config.json replaced by in-tree var/config.sh and removed${RESET}"
+elif [[ -f "$SANDBOX_BASE/var/config.sh" ]]; then
+    echo -e "${RED_BOLD}🌊 FAIL: in-tree state written but the legacy config.json is still there${RESET}"
+    FAILED=$((FAILED + 1))
+fi
 
 FILES_INFO_TMP="$SU_WORK/selfupdate/macwavedata/$SU_VERSION/update_commands.sh"
 

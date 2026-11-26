@@ -203,6 +203,28 @@ updatedata/{版本号}/transfer_commands      Y/y 时执行这个脚本（bash -
 - Shell 脚本 `set -e`，同样的颜色定义与 🌊 前缀
 - 脚本之间用 `\n` 分隔的长字符串传参；安装信息为 8 行：名称 / 版本号 / sha256 / 目标目录 / BASE_DIR / 可执行文件名 / 依赖者 / 原文件名
 
+### 共享代码块：三份副本 + 一个正本
+
+有三个脚本是**被 curl 下来直接执行**的独立文件，没法 `source` 仓库里的东西：
+
+| 脚本 | 什么时候跑 |
+| --- | --- |
+| `lib/install.sh` | 全新安装 |
+| `lib/selfupdate.sh` | 4.7 → 4.8 及以后的升级（跑的是**已装那一版**） |
+| `scripts/update_commands.template.sh` → 生成的 `macwavedata/<版本>/update_commands.sh` | 4.6 → 4.7 的升级（旧客户端执行**新代码**，是那一路唯一能跑到的新逻辑） |
+
+同一段逻辑要在三处都成立（例如 4.7 的「清理旧版外部配置目录」），就只能各带一份副本。
+副本一定会漂移，而漂移的后果不是崩溃，是「某一条路径上少了半句判断」——
+
+- **正本**：`scripts/shared/<名字>.sh`，正文用 `# >>> SHARED: <名字>` / `# <<< SHARED` 包起来
+- **副本**：原样拷进每个需要的脚本，标记也要一起拷
+- **闸门**：`scripts/check_shared_blocks.py` 逐字节比对；新块要在它的 `SYNC` 表里登记「哪几个文件必须有」
+- **闸门自己的测试**：`scripts/shared_blocks_test.sh`（少一份副本 / 改一个字符 / 正本缺标记，三种都必须红）
+- CI：`.github/workflows/format-test.yml` 的 `Check shared code blocks are in sync`
+
+改共享块的正确顺序：改正本 → 逐个脚本粘同一段 → 跑 `scripts/shared_blocks_test.sh`。
+判据类的东西尤其要这样收：它藏在三条不同的代码路径里，只有其中一条出错时最难查。
+
 ---
 
 ## 八、安装「带依赖的软件包」时，各程序依次做什么

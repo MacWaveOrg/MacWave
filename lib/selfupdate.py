@@ -22,7 +22,8 @@ RESET = '\033[0m'
 
 # -------------------- 常量 --------------------
 
-from configpaths import VERSION_FILE_NAME, config_dir_candidates, find_config_dir
+from configpaths import (VERSION_FILE_NAME, config_dir_candidates, find_config_dir,
+                         load_base_dir)
 import domains
 import versioncompare
 import tls
@@ -237,6 +238,10 @@ AGREEMENT_INTRODUCED_IN = "4.6.0"
 # install.sh 写（按版本冻结、两条线的写法还不一样），把协议状态放进去会被它们覆盖掉。
 AGREEMENT_FILE_NAME = "AGREEMENT.json"
 
+# 本次升级算出来的安装根（见 version_file() 的说明）。模块级变量而不是参数：
+# installed_version() 有三个调用点，其中两个在子进程跑完之后。
+_known_base_dir = None
+
 
 def agreement_file():
     config_dir = find_config_dir()
@@ -428,6 +433,15 @@ def confirm_agreement(current):
 def version_file():
     # 配置目录可能在上一次升级里被迁移（见 update_commands.sh 里的迁移步骤），
     # 所以每次都重新解析一遍，不要用模块级常量。
+    #
+    # 4.7 起版本凭据在树内 `<base>/var/VERSION.json`。升级刚做完那一刻，旧的外部
+    # 配置已经被清掉，而 find_config_dir() 靠「代码自身位置」找不到树 —— 开发目录
+    # 里跑（测试就是这么做的）或代码与树不同源时都会这样。所以先用本次升级
+    # 已经算出来的安装根，再退回原来的查找。
+    if _known_base_dir is not None:
+        candidate = _known_base_dir / "var" / VERSION_FILE_NAME
+        if candidate.exists():
+            return candidate
     config_dir = find_config_dir()
     if config_dir is not None:
         return config_dir / VERSION_FILE_NAME
@@ -574,6 +588,12 @@ def _handle_selfupdate_locked(input_string=""):
     # 分支与目标版本通过环境变量传给 selfupdate.sh，避免脚本自己去猜。
     # --max-time 也这样传：原样传文本，让脚本自己解析（它才是真正发请求的那一层）。
     environment = dict(os.environ)
+    # 编排脚本会被复制到临时目录再执行（它要覆盖自己），所以**不能**靠自身路径
+    # 找安装根 —— 必须由这里告诉它。4.7 起状态在树内 <base>/var/，这一项就是
+    # 那份状态所在的地方。
+    global _known_base_dir
+    _known_base_dir = load_base_dir()
+    environment["MACWAVE_BASE_DIR"] = str(_known_base_dir)
     environment["MACWAVE_UPDATE_VERSION"] = latest
     # 编排脚本还要自己取一份 latest.toml（验签与哈希都对着那份），所以渠道也得传，
     # 否则它会去读正式版探针，验的是另一份数据。

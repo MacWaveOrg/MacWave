@@ -372,22 +372,46 @@ SYSTEM_CONFIG_DIR="$SYS_ROOT/opt/macwave_config"
 USER_CONFIG_DIR="$HOME/.config/macwave_config"
 
 resolve_config_dir() {
+    # 4.7 起状态在树内 `<base>/var/config.sh`（见 config/configpaths.py）。
+    #
+    # 安装根来自 MACWAVE_BASE_DIR，**不能**用这份脚本自身的路径：lib/selfupdate.py
+    # 会把它复制到临时目录再执行（更新过程要覆盖它自己），那时 ${BASH_SOURCE[0]}
+    # 指向 /var/folders/… 的临时文件，推出来的「安装根」完全是错的。
+    #
+    # 顺序：MACWAVE_BASE_DIR 给的树内状态 → 旧的外部目录。后者是 4.6 及更早的
+    # 安装，也正是这次要被迁移掉的那批。
     CONFIG_DIR=""
-    for candidate in "$SYSTEM_CONFIG_DIR" "$USER_CONFIG_DIR"; do
-        if [[ -f "$candidate/config.json" ]]; then
-            CONFIG_DIR="$candidate"
-            break
-        fi
-    done
+    if [[ -n "${MACWAVE_BASE_DIR:-}" && -f "$MACWAVE_BASE_DIR/var/config.sh" ]]; then
+        CONFIG_DIR="$MACWAVE_BASE_DIR/var"
+    fi
 
     if [[ -z "$CONFIG_DIR" ]]; then
-        echo -e "${RED_BOLD}🌊 Error: MacWave is not installed (no config.json in $SYSTEM_CONFIG_DIR or $USER_CONFIG_DIR).${RESET}"
+        for candidate in "$SYSTEM_CONFIG_DIR" "$USER_CONFIG_DIR"; do
+            if [[ -f "$candidate/config.json" ]]; then
+                CONFIG_DIR="$candidate"
+                break
+            fi
+        done
+    fi
+
+    if [[ -z "$CONFIG_DIR" ]]; then
+        echo -e "${RED_BOLD}🌊 Error: MacWave is not installed (no var/config.sh next to this script, and no legacy config.json in $SYSTEM_CONFIG_DIR or $USER_CONFIG_DIR).${RESET}"
         echo -e "${RED_BOLD}🌊 Install it first with lib/install.sh.${RESET}"
         exit 1
     fi
 
+    if [[ -n "${MACWAVE_BASE_DIR:-}" && "$CONFIG_DIR" == "$MACWAVE_BASE_DIR/var" ]]; then
+        # 树内状态：没有 config.json，base_dir 由调用方给出。
+        CONFIG_FILE=""
+        VERSION_FILE="$CONFIG_DIR/VERSION.json"
+        BASE_DIR="$MACWAVE_BASE_DIR"
+        LEGACY_CONFIG_DIR=""
+        return 0
+    fi
+
     CONFIG_FILE="$CONFIG_DIR/config.json"
     VERSION_FILE="$CONFIG_DIR/VERSION.json"
+    LEGACY_CONFIG_DIR="$CONFIG_DIR"
 
     # 判据是「这个目录**写不写得动**」，不是「它在不在 $HOME 下面」。
     # 原来的 HOME 判据把系统级安装（/opt/macwave_config）一律当成需要提权，
@@ -477,7 +501,9 @@ echo ""
 # 读取安装目录
 # ==========================================
 
-BASE_DIR=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE'))['base_dir'])")
+if [[ -z "${BASE_DIR:-}" ]]; then
+    BASE_DIR=$(python3 -c "import json; print(json.load(open('$CONFIG_FILE'))['base_dir'])")
+fi
 
 if [[ -z "$BASE_DIR" || ! -d "$BASE_DIR" ]]; then
     echo -e "${RED_BOLD}🌊 Error: Cannot read base_dir from $CONFIG_FILE.${RESET}"
@@ -1227,10 +1253,31 @@ fi
 # 写入新的版本号
 # ==========================================
 
-config_cmd mkdir -p "$CONFIG_DIR"
+# 4.7 起写入位置换成树内 `<base>/var/`。这不是「搬目录」而是「换来源」：
+# 那个文件里写的 base_dir 就是这棵树自己的位置，读它的人（wave.py 的
+# load_base_dir）已经改成树内优先，所以这里写完，外部目录就该清掉了。
+STATE_DIR="$BASE_DIR/var"
+STATE_FILE="$STATE_DIR/config.sh"
+config_cmd mkdir -p "$STATE_DIR"
+
+# 版本凭据也跟着搬进树内。从 4.6 升级时 VERSION_FILE 还指着旧的外部目录，
+# 若继续往那儿写，收尾清理旧目录会把它一起删掉 —— 症状是「更新成功，但版本号
+# 变成未知」。所以从这里开始，VERSION_FILE 指向树内。
+VERSION_FILE="$STATE_DIR/VERSION.json"
 
 # 构建号（`323R1250` 这种）是 RC 渠道区分「同一个版本的第几次构建」的唯一依据，
-# 所以必须落进 VERSION.json —— 少了它，RC 客户端会认为「已经是最新」，再也升不上去。
+# 所以必须落进状态里 —— 少了它，RC 客户端会认为「已经是最新」，再也升不上去。
+config_cmd tee "$STATE_FILE" > /dev/null << EOF
+# MacWave state file —— 由 install.sh / selfupdate.sh 生成，会被覆盖。
+# 不要手工编辑：base_dir 与版本号都在这里，改错了 wave 就找不到自己的安装树。
+# 用 `wave basedir --set` 加新路径来搬树，用 `wave selfupdate` 升级。
+MACWAVE_BASE_DIR='$BASE_DIR'
+MACWAVE_VERSION='$VERSION'
+$( [[ -n "$BUILD" ]] && printf "MACWAVE_BUILD='%s'\n" "$BUILD" )
+MACWAVE_INSTALLED_AT='$(date -u +%Y-%m-%dT%H:%M:%SZ)'
+EOF
+
+# VERSION.json 仍然写在树内（同目录）。4.7 客户端读它，4.6 客户端不会来这里。
 config_cmd tee "$VERSION_FILE" > /dev/null << EOF
 {
   "version": "$VERSION",
@@ -1244,14 +1291,76 @@ EOF
 
 if [[ "$CONFIG_NEED_SUDO" == "true" ]]; then
     # 与 install.sh 同一套规则：不归个人，归 root:<管理员组>。
-    # 配置目录只有读的需求，但保持与 install.sh 一致，免得两次安装留下不同属主。
     _admin_group="$(admin_group)"
-    sudo chown -R "root:$_admin_group" "$CONFIG_DIR" 2>/dev/null \
-        || sudo chown -R "$CURRENT_USER": "$CONFIG_DIR"
+    sudo chown -R "root:$_admin_group" "$STATE_DIR" 2>/dev/null \
+        || sudo chown -R "$CURRENT_USER": "$STATE_DIR"
 fi
 
-config_cmd chmod 755 "$CONFIG_DIR"
-config_cmd chmod 644 "$CONFIG_FILE" "$VERSION_FILE"
+config_cmd chmod 755 "$STATE_DIR"
+config_cmd chmod 644 "$STATE_FILE" "$VERSION_FILE"
 
-echo "🌊 Version saved to $VERSION_FILE"
+echo "🌊 State saved to $STATE_FILE"
+
+# ==========================================
+# 迁移：清理旧版外部配置目录（4.7）
+# ==========================================
+#
+# 与 install.sh 那一段同一条规则，判据也不在这里：`mw_legacy_config_action` 的
+# 正文来自 scripts/shared/legacy_config_action.sh，三处副本逐字节一致，由
+# scripts/check_shared_blocks.py 在 CI 里盯着。
+#
+# 这一路只覆盖「4.7 → 4.8 及以后」。4.6 → 4.7 走的是 update_commands.sh ——
+# 旧客户端的 selfupdate.sh 不认得 var/，新逻辑只能来自那份被下载的新脚本。
+
+# >>> SHARED: legacy-config-action
+mw_legacy_config_action() {
+    local base_dir="$1" state_file="$2" legacy_dir="$3"
+
+    [[ -n "$state_file" && -f "$state_file" ]] || { printf 'none\n'; return 0; }
+    [[ -n "$legacy_dir" && -f "$legacy_dir/config.json" ]] || { printf 'none\n'; return 0; }
+
+    local recorded
+    recorded="$(python3 -c 'import json,sys
+try:
+    print(json.load(open(sys.argv[1])).get("base_dir", "") or "")
+except Exception:
+    print("")' "$legacy_dir/config.json" 2>/dev/null)"
+
+    if [[ -z "$recorded" ]]; then
+        printf 'none\n'
+        return 0
+    fi
+    if [[ "$recorded" == "$base_dir" ]]; then
+        printf 'clear\n'
+    else
+        printf 'other:%s\n' "$recorded"
+    fi
+}
+# <<< SHARED
+
+if ! mw_dry_run; then
+    _legacy_action="$(mw_legacy_config_action "$BASE_DIR" "$STATE_FILE" "${LEGACY_CONFIG_DIR:-}")"
+    case "$_legacy_action" in
+        none)
+            :
+            ;;
+        other:*)
+            echo "🌊 Keeping ${LEGACY_CONFIG_DIR}: it points at another installation (${_legacy_action#other:})."
+            ;;
+        clear)
+            for _legacy_file in "$LEGACY_CONFIG_DIR/config.json" \
+                               "$LEGACY_CONFIG_DIR/VERSION.json" \
+                               "$LEGACY_CONFIG_DIR/AGREEMENT.json"; do
+                [[ -f "$_legacy_file" ]] && run_cmd rm -f "$_legacy_file"
+            done
+            if [[ -z "$(ls -A "$LEGACY_CONFIG_DIR" 2>/dev/null)" ]]; then
+                run_cmd rmdir "$LEGACY_CONFIG_DIR" 2>/dev/null || true
+                echo "🌊 Removed the legacy config directory $LEGACY_CONFIG_DIR (state now lives in $STATE_DIR)."
+            else
+                echo "🌊 Cleared the MacWave files in $LEGACY_CONFIG_DIR; kept the directory itself (it holds other files)."
+            fi
+            ;;
+    esac
+fi
+
 exit 0

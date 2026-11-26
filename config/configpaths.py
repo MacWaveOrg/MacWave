@@ -90,8 +90,90 @@ USER_CONFIG_DIR = Path.home() / ".config" / "macwave_config"
 
 
 def config_dir_candidates():
-    # 系统级优先，其次用户级
+    # 系统级优先，其次用户级。4.7 起只是**兼容路径**：新装与升级都会把状态搬进
+    # 安装树自己的 var/，这里留着是为了让 4.6 及更早的安装还能被读到。
     return [SYSTEM_CONFIG_DIR, USER_CONFIG_DIR]
+
+
+# -------------------- 安装树自带的状态（4.7 起） --------------------
+#
+# 为什么不再用外部配置目录：
+#
+#   1. **base_dir 本来就是多余的**。这个文件就在 <base>/config/ 下，安装根由它
+#      自己的位置决定 —— 比「去两个固定目录里找一个写着路径的 JSON」可靠得多，
+#      而且不会再出现「系统级与用户级各有一份、谁优先」的问题。
+#   2. **版本号也放得进树里**。它描述的就是这棵树；放在树外，同一台机器有两份
+#      安装时只能靠「系统级优先」猜。
+#   3. **自更新不用再为一个 JSON 申请提权**。树是 root:<管理员组> 775、目录带
+#      setgid，写 <base>/var/ 与写 <base>/lib/ 是同一件事，不需要额外的 2775
+#      配置目录。
+#
+# 形态用 `.sh` 而不是 JSON：install.sh / selfupdate.sh 是 shell 脚本，写它就一行
+# heredoc（不必调 Python、也不必担心 JSON 转义）；Python 侧解析 `KEY='value'` 也
+# 只是几行。两种语言都能读，JSON 做不到「shell 侧零成本」。
+#
+# 内容（都带引号，值里有空格/斜杠也不用转义）：
+#
+#   MACWAVE_BASE_DIR='/opt/macwave'
+#   MACWAVE_VERSION='4.7.0'
+#   MACWAVE_BUILD='328B1519'
+#   MACWAVE_INSTALLED_AT='2026-11-26T08:00:00Z'
+STATE_DIR_NAME = "var"
+STATE_FILE_NAME = "config.sh"
+LEGACY_STATE_NOTE = "config.json"
+
+
+def self_install_root():
+    # 本模块装在 <base>/config/configpaths.py，所以安装根是它的上两级。
+    # 用 resolve() 是为了兼容经软链接调用的情况（<base>/lib/wave 就是个启动器）。
+    return Path(__file__).resolve().parent.parent
+
+
+def internal_state_dir():
+    # 树内状态目录；<base>/var/config.sh 不存在时返回 None（老安装或开发目录）。
+    #
+    # MACWAVE_TEST 下 rooted() 不需要介入：测试会把组件拷进沙箱的
+    # <sandbox>/opt/macwave/，self_install_root() 自然指向那里。
+    base = self_install_root()
+    state_dir = base / STATE_DIR_NAME
+    if (state_dir / STATE_FILE_NAME).is_file():
+        return state_dir
+    return None
+
+
+def read_state_values(state_file):
+    # 解析 config.sh：只认 `KEY='value'` 与 `KEY="value"`、`KEY=value` 三种写法。
+    # 不执行它 —— 这个文件由安装器生成、用户也可能手改，读比 source 安全。
+    values = {}
+    try:
+        text = Path(state_file).read_text(encoding="utf-8")
+    except OSError:
+        return values
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, raw = line.partition("=")
+        key = key.strip()
+        raw = raw.strip()
+        if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in ("'", '"'):
+            raw = raw[1:-1]
+        if key:
+            values[key] = raw
+    return values
+
+
+def internal_base_dir():
+    # 树内声明的安装根。刻意**不用**它自己的位置、而是读文件里的值：
+    # 树被整体搬走后，`wave basedir --set` 会同时改写这个字段 —— 那时位置已经
+    # 指向新地方了，两者本该一致；不一致时以文件里写的为准，便于人工修复。
+    state_dir = internal_state_dir()
+    if state_dir is None:
+        return None
+    value = read_state_values(state_dir / STATE_FILE_NAME).get("MACWAVE_BASE_DIR", "")
+    if not value:
+        return None
+    return Path(value)
 
 
 # -------------------- 配置读取 --------------------
@@ -107,7 +189,12 @@ def _read_base_dir(config_file):
 
 
 def find_config_dir():
-    # 第一个装了 MacWave 的配置目录（config.json 合法且含 base_dir）；都没装时返回 None
+    # 「状态文件在哪」。4.7 起优先返回树内 <base>/var（VERSION.json 也搬了进去），
+    # 找不到才回落到 4.6 及更早的外部配置目录。
+    state_dir = internal_state_dir()
+    if state_dir is not None:
+        return state_dir
+
     for directory in config_dir_candidates():
         if _read_base_dir(directory / CONFIG_FILE_NAME) is not None:
             return directory
@@ -115,13 +202,26 @@ def find_config_dir():
 
 
 def load_base_dir():
-    # 按系统级 → 用户级的顺序读取 base_dir，读到就返回
+    # 读取安装根，顺序即优先级：
+    #   1. MACWAVE_BASE_DIR —— 启动器用它告诉 Python「我在哪」，也便于测试注入
+    #   2. 树内 <base>/var/config.sh
+    #   3. 4.6 及更早的外部配置文件（/opt/macwave_config 或 ~/.config/macwave_config）
+    override = os.environ.get("MACWAVE_BASE_DIR", "")
+    if override:
+        return Path(override)
+
+    base_dir = internal_base_dir()
+    if base_dir is not None:
+        return base_dir
+
     for directory in config_dir_candidates():
         base_dir = _read_base_dir(directory / CONFIG_FILE_NAME)
         if base_dir is not None:
             return base_dir
 
     print(f"{RED_BOLD}🌊 Error: Configuration file not found or invalid.{RESET}")
+    print(f"{RED_BOLD}🌊 Expected {('<install root>/' + STATE_DIR_NAME + '/' + STATE_FILE_NAME)} "
+          f"next to this installation, or a legacy config.json.{RESET}")
     print(f"{RED_BOLD}🌊 Please run the install script again to reinstall MacWave.{RESET}")
     sys.exit(1)
 

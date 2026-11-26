@@ -23,6 +23,72 @@
 
 set -u
 
+# ==========================================
+# 迁移：旧版外部配置目录（4.7）
+# ==========================================
+#
+# 这一份是 4.6 → 4.7 唯一能跑到的新代码：旧客户端的 lib/selfupdate.sh 不认得
+# 树内 var/，所以「写状态 + 清旧目录」必须在这里做一遍。4.7 之后升级由
+# lib/selfupdate.sh 自己做，全新安装由 lib/install.sh 做 —— 三处用同一个判据。
+#
+# 本脚本由客户端以环境变量驱动，安装根是 MACWAVE_INSTALL_DIR。
+#
+# 判据正文来自 scripts/shared/legacy_config_action.sh（三处副本逐字节一致，
+# 由 scripts/check_shared_blocks.py 在 CI 里盯着）。
+
+# >>> SHARED: legacy-config-action
+mw_legacy_config_action() {
+    local base_dir="$1" state_file="$2" legacy_dir="$3"
+
+    [[ -n "$state_file" && -f "$state_file" ]] || { printf 'none\n'; return 0; }
+    [[ -n "$legacy_dir" && -f "$legacy_dir/config.json" ]] || { printf 'none\n'; return 0; }
+
+    local recorded
+    recorded="$(python3 -c 'import json,sys
+try:
+    print(json.load(open(sys.argv[1])).get("base_dir", "") or "")
+except Exception:
+    print("")' "$legacy_dir/config.json" 2>/dev/null)"
+
+    if [[ -z "$recorded" ]]; then
+        printf 'none\n'
+        return 0
+    fi
+    if [[ "$recorded" == "$base_dir" ]]; then
+        printf 'clear\n'
+    else
+        printf 'other:%s\n' "$recorded"
+    fi
+}
+# <<< SHARED
+
+mq_migrate_legacy_config() {
+    # 只在 4.7 及以上调用（调用点会先判断目标版本）。
+    local base_dir="${MACWAVE_INSTALL_DIR:-}" state_file legacy_dir action
+    [[ -n "$base_dir" ]] || return 0
+    state_file="$base_dir/var/config.sh"
+    [[ -f "$state_file" ]] || return 0
+
+    for legacy_dir in "$base_dir/../macwave_config" \
+                      "${HOME:-/nonexistent}/.config/macwave_config"; do
+        [[ -d "$legacy_dir" ]] || continue
+        action="$(mw_legacy_config_action "$base_dir" "$state_file" "$legacy_dir")"
+        case "$action" in
+            none) : ;;
+            other:*)
+                mw_say "🌊 Keeping $legacy_dir: it points at another installation (${action#other:})." \
+                       "🌊 保留 ${legacy_dir}：它指向另一份安装（${action#other:}）。"
+                ;;
+            clear)
+                rm -f "$legacy_dir/config.json" "$legacy_dir/VERSION.json" "$legacy_dir/AGREEMENT.json" 2>/dev/null || true
+                rmdir "$legacy_dir" 2>/dev/null || true
+                mw_say "🌊 Removed the legacy config directory $legacy_dir (state now lives in $base_dir/var)." \
+                       "🌊 已删除旧版配置目录 ${legacy_dir}（状态现在在 ${base_dir}/var）。"
+                ;;
+        esac
+    done
+}
+
 : "${MACWAVE_INSTALL_DIR:?MACWAVE_INSTALL_DIR is required}"
 : "${MACWAVE_CORE_URL:?MACWAVE_CORE_URL is required}"
 
@@ -456,6 +522,18 @@ main() {
             run rm -f "$stale" || exit 1
         fi
     done
+
+    # 4.7：状态搬进树内 <base>/var/，旧的外部配置目录（4.6 及更早）在这里清掉。
+    #
+    # **必须放在所有文件都到位之后**：mq_migrate_legacy_config 只在
+    # var/config.sh 已经存在时才动手，否则删掉旧配置就等于把这棵树的位置信息
+    # 一起删了 —— 客户端下次 wave selfupdate 会报「没装」。
+    #
+    # 这一路是 4.6 → 4.7 唯一能跑到的新代码：旧客户端的 lib/selfupdate.sh 不认得
+    # var/，所以安装器里那两处（install.sh / selfupdate.sh）覆盖不到这次升级。
+    #
+    # 顺序也要留意：改这一行之前先确认它仍在 `want` 清单下载完成之后。
+    mq_migrate_legacy_config || true
 
     return 0
 }
