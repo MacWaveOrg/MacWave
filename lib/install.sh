@@ -2095,6 +2095,8 @@ apply_migrations() {
 # （「执行更新脚本」那一节）。
 SYNC_MODE="legacy"
 if mw_dry_run; then
+    # 试运行不取清单（那是网络动作），但**按主轨报告**：4.7 起的正常路径就是它。
+    SYNC_MODE="manifest"
     mw_plan "🌊 Dry run: would fetch $MANIFEST_URL and download only the files that differ." \
         "🌊 试运行：将获取 ${MANIFEST_URL}，只下载与本地不一致的文件。"
     mw_plan "🌊   If that list is unavailable, the update commands for $MACWAVE_VERSION would run instead." \
@@ -2238,7 +2240,7 @@ EOF
 run_cmd tee "$STATE_FILE" > /dev/null << EOF
 # MacWave state file —— 由 install.sh / selfupdate.sh 生成，会被覆盖。
 # 不要手工编辑：base_dir 与版本号都在这里，改错了 wave 就找不到自己的安装树。
-# 用 `wave basedir --set` 加新路径来搬树，用 `wave selfupdate` 升级。
+# 搬树用 wave basedir --set <新路径>，升级用 wave selfupdate。
 MACWAVE_BASE_DIR='$BASE_DIR'
 EOF
 
@@ -2387,7 +2389,10 @@ fi
 # 清单与脚本对不上时最难查。SYNC_MODE 在下载阶段就已经定下来。
 
 if [[ "$SYNC_MODE" == "manifest" ]]; then
-    if ! mw_dry_run; then
+    if mw_dry_run; then
+        mw_plan "🌊 Dry run: would download the files that differ from the list, then apply directory migrations." \
+            "🌊 试运行：将下载与清单不一致的文件，然后执行目录结构迁移。"
+    else
         sync_tree
         apply_migrations
     fi
@@ -2439,6 +2444,21 @@ $( [[ -n "$BUILD_NUMBER" ]] && printf '  "build_number": "%s",\n' "$BUILD_NUMBER
 EOF
     run_cmd chmod "$(config_file_mode)" "$VERSION_FILE"
 
+    # 树内也写一份版本凭据：4.7 客户端读的是 <base>/var/（configpaths 里
+    # find_config_dir 优先返回它）。上面那份是给 4.6 及更早的客户端看的，
+    # 少了这一份，新客户端会报「版本未知」——即使文件都装对了。
+    run_cmd tee "$STATE_DIR/VERSION.json" > /dev/null << EOF
+{
+  "version": "$MACWAVE_VERSION",
+$( [[ -n "$BUILD_NUMBER" ]] && printf '  "build_number": "%s",\n' "$BUILD_NUMBER" )
+  "components": {
+    "installer": "$MACWAVE_VERSION",
+    "parser": "$MACWAVE_VERSION"
+  }
+}
+EOF
+    run_cmd chmod "$(config_file_mode)" "$STATE_DIR/VERSION.json"
+
     # 树内状态：这里覆盖写完整的一份（base_dir + 版本号）。base_dir 在「写入配置
     # 文件」那一节已经写过一次 —— 那次是为了让「清理旧版外部配置目录」有依据，
     # 这次补上版本号，才是「装好了」的凭据。用 .sh 而不是 JSON 的理由见
@@ -2448,7 +2468,7 @@ EOF
     run_cmd tee "$STATE_FILE" > /dev/null << EOF
 # MacWave state file —— 由 install.sh / selfupdate.sh 生成，会被覆盖。
 # 不要手工编辑：base_dir 与版本号都在这里，改错了 wave 就找不到自己的安装树。
-# 用 `wave basedir --set` 加新路径来搬树，用 `wave selfupdate` 升级。
+# 搬树用 wave basedir --set <新路径>，升级用 wave selfupdate。
 MACWAVE_BASE_DIR='$BASE_DIR'
 MACWAVE_VERSION='$MACWAVE_VERSION'
 $( [[ -n "$BUILD_NUMBER" ]] && printf "MACWAVE_BUILD='%s'\n" "$BUILD_NUMBER" )

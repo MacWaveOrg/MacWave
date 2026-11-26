@@ -1270,7 +1270,7 @@ VERSION_FILE="$STATE_DIR/VERSION.json"
 config_cmd tee "$STATE_FILE" > /dev/null << EOF
 # MacWave state file —— 由 install.sh / selfupdate.sh 生成，会被覆盖。
 # 不要手工编辑：base_dir 与版本号都在这里，改错了 wave 就找不到自己的安装树。
-# 用 `wave basedir --set` 加新路径来搬树，用 `wave selfupdate` 升级。
+# 搬树用 wave basedir --set <新路径>，升级用 wave selfupdate。
 MACWAVE_BASE_DIR='$BASE_DIR'
 MACWAVE_VERSION='$VERSION'
 $( [[ -n "$BUILD" ]] && printf "MACWAVE_BUILD='%s'\n" "$BUILD" )
