@@ -1,7 +1,10 @@
+> **🌊 迁移提示：官网已迁至 <https://summerwave.org/>；本仓库已归档，开发转到 <https://github.com/SummerwaveOrg/Summerwave>。**
+> **🌊 Migration notice: the official site is now <https://summerwave.org/>. This repository is archived — development continues at <https://github.com/SummerwaveOrg/Summerwave>.**
+>
 > # 🚚 本仓库已归档 —— MacWave 现在是 **Summerwave**
 >
 > **新仓库：<https://github.com/SummerwaveOrg/Summerwave>**
-> **官网：<https://summerwaveorg.github.io/>**（将来会换成自有域名，届时更新这条公告）
+> **官网：<https://summerwave.org/>**
 >
 > - **已装 4.x 的机器继续可用。** `wave`、`wave install`、`wave selfupdate` 都不受影响，
 >   不需要做任何操作；本仓库仍然可读，Release 也仍然可下载。
@@ -420,6 +423,7 @@ batt             by charlie0129
 btm              by Clement Tsang
 btop             by Aristocratos
 chezmoi          by twpayne
+checkra1n        by checkra1n team
 choma            by opa334
 circleci         by CircleCI
 cloc             by Al Danial
